@@ -20,9 +20,6 @@ use chrono::{DateTime, Duration, Utc};
 use crate::models::user::{User, UserId};
 use crate::signing;
 
-/// How long a link stays valid when `PASSWORD_RESET_TTL_MINUTES` is not set.
-pub const DEFAULT_TTL_MINUTES: i64 = 30;
-
 /// Prefix of the signed message. It keeps a reset signature from ever being replayed as
 /// another kind of signed message (a preview link, a webhook body) and leaves room to change
 /// the format later.

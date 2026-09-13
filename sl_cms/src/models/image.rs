@@ -9,15 +9,6 @@ pub struct ImageResponse {
     pub url: String,
 }
 
-impl ImageResponse {
-    pub fn from_id(id: ImageID) -> Self {
-        ImageResponse {
-            url: format!("/images/{}", *id),
-            id,
-        }
-    }
-}
-
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Image {
     pub original_filename: String,

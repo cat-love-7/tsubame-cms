@@ -946,15 +946,6 @@ mod tests {
         fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        fn take_upload_key(&self, _key: &str) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(None)
-        }
-        fn read_image_bytes(&self, _file_name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(None)
-        }
-        fn write_image_bytes(&self, _file_name: &str, _data: &[u8]) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
     }
 
     /// Records the events a service emits, so the notification contract can be asserted

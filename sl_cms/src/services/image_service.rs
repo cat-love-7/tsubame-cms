@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::models::error::{map_internal_error, HttpError};
 use crate::models::image::{ImageEntry, ImageID, NewImageInfo, NewImageRequest};
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::local_image_bytes::LocalImageBytes;
 
 pub struct ImageService<R: ImageRepository> {
     repository: Arc<R>,
@@ -59,6 +60,12 @@ impl<R: ImageRepository> ImageService<R> {
             .map_err(map_internal_error)
     }
 
+}
+
+/// Serving the bytes is a local adapter's business, so these exist only for the feature that
+/// has one (see [`LocalImageBytes`]). The routes that call them are gated the same way.
+#[cfg(feature = "on-premises")]
+impl<R: ImageRepository + LocalImageBytes> ImageService<R> {
     /// Consume a one-shot upload token, yielding the file name it authorises.
     pub fn take_upload_key(&self, key: &str) -> Result<Option<String>, HttpError> {
         self.repository.take_upload_key(key).map_err(map_internal_error)

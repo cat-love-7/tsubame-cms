@@ -6,6 +6,7 @@ use rkv::{StoreOptions, Value};
 use crate::models::image::{is_safe_file_name, Image, ImageID, NewImageInfo, NewImageRequest};
 use crate::on_premises::repository::Repository;
 use crate::repositories::image_repository::{BoxError, ImageRepository};
+use crate::repositories::local_image_bytes::LocalImageBytes;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ImageData {
@@ -161,6 +162,11 @@ impl ImageRepository for Repository {
         Ok(())
     }
 
+}
+
+/// The bytes themselves: this adapter stores them on disk and hands out its own upload URL,
+/// so it is the one that authorises and serves the transfers (see [`LocalImageBytes`]).
+impl LocalImageBytes for Repository {
     fn take_upload_key(&self, key: &str) -> Result<Option<String>, BoxError> {
         Ok(self.consume_upload_key(key))
     }

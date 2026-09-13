@@ -17,8 +17,41 @@ use crate::webhook::Notifier;
 
 /// The full set of storage capabilities the HTTP layer requires.
 ///
-/// Both the on-premises (rkv) and the AWS (DynamoDB + S3) adapters implement this, which
-/// is what lets one axum router serve every backend.
+/// Every backend implements this, which is what lets one axum router serve all of them. The
+/// local feature adds one more requirement - serving and accepting image bytes itself - so
+/// that the routes for it can exist without the shared layers pretending every backend has
+/// them.
+#[cfg(feature = "on-premises")]
+pub trait Storage:
+    CollectionRepository
+    + CompositeFieldRepository
+    + SinglePageRepository
+    + ImageRepository
+    + UserRepository
+    + crate::repositories::local_image_bytes::LocalImageBytes
+    + Send
+    + Sync
+    + 'static
+{
+}
+
+#[cfg(feature = "on-premises")]
+impl<T> Storage for T where
+    T: CollectionRepository
+        + CompositeFieldRepository
+        + SinglePageRepository
+        + ImageRepository
+        + UserRepository
+        + crate::repositories::local_image_bytes::LocalImageBytes
+        + Send
+        + Sync
+        + 'static
+{
+}
+
+/// See the on-premises definition above: the local byte capability is not part of the
+/// contract every backend has to meet.
+#[cfg(not(feature = "on-premises"))]
 pub trait Storage:
     CollectionRepository
     + CompositeFieldRepository
@@ -31,6 +64,7 @@ pub trait Storage:
 {
 }
 
+#[cfg(not(feature = "on-premises"))]
 impl<T> Storage for T where
     T: CollectionRepository
         + CompositeFieldRepository

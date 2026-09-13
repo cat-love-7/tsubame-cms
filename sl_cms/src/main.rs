@@ -23,12 +23,6 @@ compile_error!(
 #[cfg(all(feature = "gcp", feature = "azure"))]
 compile_error!("only one of the `gcp` / `azure` features may be enabled");
 
-#[cfg(feature = "aws")]
-compile_error!(
-    "the `aws` backend (DynamoDB + S3) is not implemented yet; build with the default \
-     `on-premises` feature"
-);
-
 mod app_module;
 mod auth;
 mod config;
@@ -41,6 +35,9 @@ mod services;
 mod signing;
 mod webhook;
 
+#[cfg(feature = "aws")]
+mod aws;
+
 #[cfg(feature = "on-premises")]
 mod on_premises;
 
@@ -48,6 +45,7 @@ mod on_premises;
 async fn main() {
     init_tracing();
 
+    // One arm per backend feature; `aws` has none yet (selecting it is refused in `aws.rs`).
     #[cfg(feature = "on-premises")]
     if let Err(error) = run_on_premises().await {
         // `eprintln!` as well as the log: a bind failure must be visible even when the
