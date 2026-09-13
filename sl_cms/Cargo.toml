@@ -36,7 +36,12 @@ uuid = { version = "1.20.0", features = ["v4", "serde"] }
 # Password hashing (Argon2id) and JWT signing. `rust_crypto` keeps jsonwebtoken on
 # pure-Rust crypto so the build needs no C toolchain for ring/aws-lc-rs.
 argon2 = { version = "0.6", features = ["password-hash", "rand_core", "getrandom"] }
-jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", default-features = false, features = [
+    "rust_crypto",
+    # PEM parsing. Pure Rust, so it keeps the "no C toolchain" rule the rest of the stack
+    # follows; the tests sign with a key they hold as text.
+    "use_pem",
+] }
 # Outbound webhooks (content events). reqwest 0.13 leaves the TLS crypto provider to the
 # process, so `rustls-no-provider` plus an explicit `ring` below keeps the build free of
 # CMake, which `aws-lc-rs` (the provider reqwest would otherwise enable) needs. Certificate

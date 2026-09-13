@@ -282,9 +282,19 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
 「どちらで弾かれたか」が説明できなくなる。サーバー側で `AdminInitiateAuth` して自前で数える案
 (B)は、MFA や `NEW_PASSWORD_REQUIRED` のチャレンジフローを実装する代償に見合わないと判断した。
 
-- [ ] トークン検証器を抽象化(ローカル HS256 / Cognito RS256 + JWKS)。JWKS 取得は差し替え可能に
-      → **完了条件**: テスト内で RSA 鍵を生成して、正常・期限切れ・iss/aud 不一致・別鍵・
-      `alg` 混乱・未知の `kid` を単体テストで判定。
+- [x] トークン検証器を抽象化した(2026-09)。
+      `auth/identity.rs` の `TokenVerifier` が `Identity`(Local = 自前 HS256 / External =
+      プロバイダの `sub`)を返し、`auth/cognito.rs` が RS256 + JWKS を検証する。鍵の取得は
+      `JwksSource` の背後(本番は HTTPS、テストは固定の鍵セット)で、キャッシュ
+      (10 分 + 未知の `kid` でのみ再取得)は検証器側にある。
+      → **完了条件**: 正常・期限切れ・iss 不一致・aud 不一致・別鍵・`alg` 混乱(HS256 で
+      公開鍵を秘密鍵として署名)・未知の `kid`・`token_use` が access・`exp` 無し・鍵セット
+      不達 → **11 件のテストで達成**。テスト用の RSA 鍵は `auth/test_rsa_key*.pem` /
+      `test_jwks.json`(テスト専用。本番は検証だけなので秘密鍵を持たない)。
+      期限の余裕(`leeway`)は **10 秒**に固定した(既定は 60 秒で、本来切れているトークンが
+      1 分生き残る)。
+      **まだ配線していない**: `AuthService::user_from_token` は今も自前トークンだけを見る
+      (次の `external_id` の項目でつなぐ)。
 - [ ] `User` に `external_id`(`sub`)を追加(`#[serde(default)]`、既存レコードは `None`)
       → **完了条件**: Cognito の `sub` から権限レコードを解決するテスト。
 - [ ] 未プロビジョニングの扱いと初回ブートストラップ(§1「初回起動」)を実装

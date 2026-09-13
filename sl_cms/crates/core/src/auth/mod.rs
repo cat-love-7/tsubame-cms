@@ -1,5 +1,7 @@
 //! Authentication: credential verification, token issuing, and the user lifecycle.
 
+pub mod cognito;
+pub mod identity;
 pub mod throttle;
 pub mod token;
 
