@@ -63,6 +63,12 @@ export class List {
     return this.metadata[String(id)]?.status ?? 'draft';
   }
 
+  /** When the item's values were last saved, or a dash when that was never recorded. */
+  updatedAt(id: number): string {
+    const updated = this.metadata[String(id)]?.updated_at;
+    return updated ? new Date(updated).toLocaleString() : '—';
+  }
+
   /** Publish or unpublish one item, without leaving the list. */
   togglePublished(id: number) {
     const request =

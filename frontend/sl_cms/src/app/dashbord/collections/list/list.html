@@ -21,6 +21,7 @@
         <th>{{ field.name }}</th>
       }
       <th>Status</th>
+      <th>Updated</th>
       <th></th>
     </tr>
   </thead>
@@ -32,6 +33,7 @@
           <td>{{ format(item[1][field.name]) }}</td>
         }
         <td><app-item-status [status]="statusOf(item[0])" /></td>
+        <td class="updated">{{ updatedAt(item[0]) }}</td>
         <td class="actions">
           <button
             matIconButton
@@ -56,7 +58,7 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema.length + 3" class="empty">No items yet.</td>
+        <td [attr.colspan]="schema.length + 4" class="empty">No items yet.</td>
       </tr>
     }
   </tbody>

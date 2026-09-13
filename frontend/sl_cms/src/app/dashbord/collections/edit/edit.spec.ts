@@ -13,7 +13,12 @@ import { Edit } from './edit';
 class StubCollectionsService {
   public published: number[] = [];
   public unpublished: number[] = [];
-  public metadata: ItemMetadata = { status: 'draft', published_at: null };
+  public metadata: ItemMetadata = {
+    status: 'draft',
+    published_at: null,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  };
 
   getCollectionSchema(): Observable<unknown> {
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
@@ -29,12 +34,12 @@ class StubCollectionsService {
 
   publishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.published.push(id);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
   }
 
   unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.unpublished.push(id);
-    return of({ status: 'draft', published_at: null });
+    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
   }
 }
 
@@ -126,7 +131,12 @@ describe('Edit', () => {
   });
 
   it('unpublishes an item that is currently published', () => {
-    stub.metadata = { status: 'published', published_at: '2024-01-01T00:00:00Z' };
+    stub.metadata = {
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    };
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();
 

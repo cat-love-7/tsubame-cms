@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use chrono::Utc;
+
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::item_status::{ItemMetadata, ItemStatus};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
@@ -177,9 +179,27 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 self.single_page_repository
                     .update_single_page_item(name, item_data)
                     .map_err(map_internal_error)?;
+                self.stamp_page(name)?;
                 Ok(())
             }
         }
+    }
+
+    /// Record when the page's values were last saved.
+    ///
+    /// Saving must not disturb the published state: a published page stays published, and
+    /// only `updated_at` moves.
+    fn stamp_page(&self, name: &SinglePageName) -> Result<(), HttpError> {
+        let metadata = self
+            .single_page_repository
+            .get_page_metadata(name)
+            .map_err(map_internal_error)?
+            .unwrap_or_default()
+            .touched(Utc::now());
+
+        self.single_page_repository
+            .set_page_metadata(name, &metadata)
+            .map_err(map_internal_error)
     }
 
     /// Update a single page's item from an **untagged** JSON body.
@@ -237,7 +257,13 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         status: ItemStatus,
     ) -> Result<ItemMetadata, HttpError> {
         self.get_single_page_schema(name)?;
-        let metadata = ItemMetadata::with_status(status);
+        // Built from the stored record so publishing keeps the content timestamps.
+        let metadata = self
+            .single_page_repository
+            .get_page_metadata(name)
+            .map_err(map_internal_error)?
+            .unwrap_or_default()
+            .with_status(status);
         self.single_page_repository
             .set_page_metadata(name, &metadata)
             .map_err(map_internal_error)?;

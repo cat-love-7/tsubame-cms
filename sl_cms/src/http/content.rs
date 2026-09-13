@@ -7,8 +7,12 @@
 //! Responses carry the collection schema alongside the values: values are untyped (the
 //! schema is what gives them meaning), so a consumer would otherwise need a second,
 //! authenticated request just to interpret them.
+//!
+//! Item lists are paginated. `/content/collections/{name}` returns at most
+//! [`DEFAULT_PAGE_LIMIT`] items ordered by id and reports `total` and `next_offset`, so a
+//! build walks the pages instead of pulling everything in one request.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -20,6 +24,7 @@ use crate::models::collection::{
     CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
 use crate::models::error::HttpError;
+use crate::models::pagination::{PageQuery, Pagination};
 use crate::models::single_page::{SinglePageItemResponse, SinglePageName, SinglePageSchema};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
@@ -44,12 +49,22 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
 struct CollectionContent {
     schema: CollectionSchema,
     items: Vec<PublishedItem>,
+    /// Published items in the collection, before this page was cut out of them.
+    total: usize,
+    /// Page size that was applied (`null` would mean "everything", which this route never
+    /// does), and where this page starts.
+    limit: Option<usize>,
+    offset: usize,
+    /// Pass this as `?offset=` for the next page; `null` on the last page.
+    next_offset: Option<usize>,
 }
 
 #[derive(serde::Serialize)]
 struct PublishedItem {
     id: CollectionItemId,
     published_at: Option<DateTime<Utc>>,
+    /// When the values were last saved, so a build can skip content it has already seen.
+    updated_at: Option<DateTime<Utc>>,
     values: CollectionItemResponse,
 }
 
@@ -57,6 +72,7 @@ struct PublishedItem {
 struct SinglePageContent {
     schema: SinglePageSchema,
     published_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
     values: SinglePageItemResponse,
 }
 
@@ -74,21 +90,33 @@ async fn list_collections<R: Storage>(
 async fn get_collection<R: Storage>(
     State(module): State<AppState<R>>,
     Path(collection_name): Path<String>,
+    Query(query): Query<PageQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
+    let pagination = Pagination::limited(query)?;
     let name = CollectionName::from(collection_name.as_str());
     let schema = module.collection_service.get_collection_schema(&name)?;
-    let items = module
+    let page = module
         .collection_service
-        .list_published_items(&name)?
+        .list_published_items(&name, &pagination)?;
+    let items = page
+        .items
         .into_iter()
         .map(|(id, metadata, values)| PublishedItem {
             id,
             published_at: metadata.published_at,
+            updated_at: metadata.updated_at,
             values,
         })
         .collect();
 
-    Ok(Json(CollectionContent { schema, items }))
+    Ok(Json(CollectionContent {
+        schema,
+        items,
+        total: page.total,
+        limit: page.limit,
+        offset: page.offset,
+        next_offset: page.next_offset,
+    }))
 }
 
 async fn get_collection_item<R: Storage>(
@@ -103,6 +131,7 @@ async fn get_collection_item<R: Storage>(
     Ok(Json(PublishedItem {
         id: CollectionItemId::from_u64(id),
         published_at: metadata.published_at,
+        updated_at: metadata.updated_at,
         values,
     }))
 }
@@ -126,6 +155,7 @@ async fn get_single_page<R: Storage>(
     Ok(Json(SinglePageContent {
         schema,
         published_at: metadata.published_at,
+        updated_at: metadata.updated_at,
         values,
     }))
 }

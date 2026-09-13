@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
@@ -10,6 +10,7 @@ use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::pagination::{PageQuery, Pagination};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -163,10 +164,21 @@ async fn delete_collection<R: Storage>(
 async fn get_collection_items<R: Storage>(
     State(module): State<AppState<R>>,
     Path(collection_name): Path<String>,
+    Query(query): Query<PageQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
+    // The admin list is returned whole unless the caller asks for a page: the UI renders
+    // every row, and silently truncating it would be worse than a long response.
+    let pagination = Pagination::optional(query)?;
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(
-        module.collection_service.get_collection_items(&name)?,
+    let page = module
+        .collection_service
+        .get_collection_items_page(&name, &pagination)?;
+
+    // The body keeps the `[id, values]` array the UI already reads; the total travels in a
+    // header so a paging caller knows how much is left.
+    Ok((
+        [("x-total-count", page.total.to_string())],
+        Json(page.items),
     ))
 }
 

@@ -12,7 +12,12 @@ import { Edit } from './edit';
 class StubSinglePagesService {
   public published: string[] = [];
   public unpublished: string[] = [];
-  public metadata: ItemMetadata = { status: 'draft', published_at: null };
+  public metadata: ItemMetadata = {
+    status: 'draft',
+    published_at: null,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  };
 
   getPageSchema(): Observable<unknown> {
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
@@ -28,12 +33,12 @@ class StubSinglePagesService {
 
   publishPage(name: string): Observable<ItemMetadata> {
     this.published.push(name);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
   }
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     this.unpublished.push(name);
-    return of({ status: 'draft', published_at: null });
+    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
   }
 }
 
@@ -113,7 +118,12 @@ describe('Edit', () => {
   });
 
   it('unpublishes a page that is currently published', () => {
-    stub.metadata = { status: 'published', published_at: '2024-01-01T00:00:00Z' };
+    stub.metadata = {
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    };
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();
 

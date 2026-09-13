@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use chrono::Utc;
+
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -133,9 +136,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 )))
             }
             Some(schema) => {
-                let items = self.collection_repository
+                let mut items = self.collection_repository
                     .list_collection_items(collection_name)
                     .map_err(map_internal_error)?;
+                // Ordered by id: it is what makes offset paging stable, and it keeps the
+                // admin list from depending on the adapter's iteration order.
+                items.sort_by_key(|(id, _)| **id);
 
                 let composite_schema_map = self
                     .composite_field_repository
@@ -216,6 +222,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collection_repository
             .add_collection_item(collection_name, item_data)
             .map_err(map_internal_error)?;
+        self.stamp_item(collection_name, CollectionItemId::from_u64(item_id), true)?;
         Ok(item_id)
     }
     pub fn update_collection_item(
@@ -258,9 +265,41 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 self.collection_repository
                     .update_collection_item(collection_name, &item_id, item_data)
                     .map_err(|e| HttpError::InternalServerError(&e.to_string()))?;
+                self.stamp_item(collection_name, item_id, false)?;
                 Ok(())
             }
         }
+    }
+
+    /// Record when the item's values were last saved.
+    ///
+    /// `created` distinguishes the first save from a later one: a new item starts as a
+    /// draft with both timestamps, while an edit only moves `updated_at` and leaves the
+    /// status and `published_at` exactly as they were.
+    fn stamp_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+        created: bool,
+    ) -> Result<(), HttpError> {
+        let now = Utc::now();
+        let metadata = if created {
+            ItemMetadata {
+                created_at: Some(now),
+                updated_at: Some(now),
+                ..ItemMetadata::default()
+            }
+        } else {
+            self.collection_repository
+                .get_item_metadata(collection_name, &item_id)
+                .map_err(map_internal_error)?
+                .unwrap_or_default()
+                .touched(now)
+        };
+
+        self.collection_repository
+            .set_item_metadata(collection_name, &item_id, &metadata)
+            .map_err(map_internal_error)
     }
 
     pub fn delete_collection_item(
@@ -397,7 +436,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         status: ItemStatus,
     ) -> Result<ItemMetadata, HttpError> {
         self.require_item(collection_name, &item_id)?;
-        let metadata = ItemMetadata::with_status(status);
+        // Built from the stored record so publishing keeps the content timestamps.
+        let metadata = self
+            .collection_repository
+            .get_item_metadata(collection_name, &item_id)
+            .map_err(map_internal_error)?
+            .unwrap_or_default()
+            .with_status(status);
         self.collection_repository
             .set_item_metadata(collection_name, &item_id, &metadata)
             .map_err(map_internal_error)?;
@@ -408,11 +453,24 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         Ok(metadata)
     }
 
+    /// Items with the window the caller asked for. The total travels alongside, because
+    /// `X-Total-Count` is what tells an admin caller there is more to fetch.
+    pub fn get_collection_items_page(
+        &self,
+        collection_name: &CollectionName,
+        pagination: &Pagination,
+    ) -> Result<Page<(CollectionItemId, CollectionItemResponse)>, HttpError> {
+        Ok(pagination.apply(self.get_collection_items(collection_name)?))
+    }
+
     /// Items visible to the public delivery API, with the metadata it reports.
+    ///
+    /// Ordered by id, which is the order the pages have to be walked in.
     pub fn list_published_items(
         &self,
         collection_name: &CollectionName,
-    ) -> Result<Vec<(CollectionItemId, ItemMetadata, CollectionItemResponse)>, HttpError> {
+        pagination: &Pagination,
+    ) -> Result<Page<(CollectionItemId, ItemMetadata, CollectionItemResponse)>, HttpError> {
         let metadata: HashMap<CollectionItemId, ItemMetadata> =
             self.list_item_metadata(collection_name)?.into_iter().collect();
 
@@ -424,7 +482,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 }
             }
         }
-        Ok(published)
+        Ok(pagination.apply(published))
     }
 
     /// One item, but only if it is published.

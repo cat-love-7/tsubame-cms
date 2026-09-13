@@ -34,6 +34,12 @@ table.items th {
   text-align: right;
 }
 
+/* Timestamps are secondary information, so they do not compete with the content. */
+.updated {
+  white-space: nowrap;
+  color: #666;
+}
+
 .empty {
   text-align: center;
   color: #666;

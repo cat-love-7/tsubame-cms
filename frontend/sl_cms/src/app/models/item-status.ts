@@ -14,6 +14,13 @@ export interface ItemMetadata {
   status: ItemStatus;
   /** When it was last published; `null` while it is a draft. */
   published_at: string | null;
+  /** When the values were first saved; `null` for content saved before this was recorded. */
+  created_at: string | null;
+  /**
+   * When the values were last saved. Publishing does not change it, so it answers "did the
+   * content itself change?" rather than "was it released?".
+   */
+  updated_at: string | null;
 }
 
 /** Status of every item of a collection, keyed by item id (`"1"`, `"2"`, ...). */

@@ -20,6 +20,7 @@ use tower::ServiceExt;
 use crate::app_module::AppModule;
 use crate::auth::token::TokenIssuer;
 use crate::http;
+use crate::models::pagination::DEFAULT_PAGE_LIMIT;
 use crate::on_premises::repository::Repository;
 use crate::webhook::{NoopNotifier, Notifier, WebhookNotifier};
 
@@ -96,6 +97,41 @@ async fn send_raw(
         .expect("failed to read body")
         .to_vec();
     (status, bytes)
+}
+
+/// Like [`send_raw`], but also hands back the response headers (for `X-Total-Count`).
+async fn send_with_headers(
+    router: &Router,
+    method: Method,
+    uri: &str,
+    token: Option<&str>,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(token) = token {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let request = builder.body(Body::empty()).expect("failed to build request");
+
+    let response = router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router failed");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("failed to read body")
+        .to_vec();
+    (status, headers, bytes)
+}
+
+/// Read a timestamp out of a JSON body, failing loudly when it is missing.
+fn timestamp(value: &Value) -> chrono::DateTime<chrono::FixedOffset> {
+    let raw = value
+        .as_str()
+        .unwrap_or_else(|| panic!("expected a timestamp, got {value}"));
+    chrono::DateTime::parse_from_rfc3339(raw).expect("an RFC3339 timestamp")
 }
 
 /// A schema with the shape the Angular client sends.
@@ -1614,4 +1650,375 @@ async fn an_unreachable_webhook_receiver_does_not_break_publishing() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+// --------------------------------------------------------------- pagination / updated_at
+
+/// Create `count` items in a fresh collection and publish all of them.
+async fn create_published_items(app: &TestApp, collection: &str, count: u64) -> Vec<u64> {
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/{collection}/schema"),
+        Some(&app.admin_token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let mut ids = Vec::new();
+    for index in 0..count {
+        let (status, body) = send(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/{collection}/item"),
+            Some(&app.admin_token),
+            Some(json!({ "title": format!("Item {index}"), "tags": [] })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let id = body.as_u64().expect("the item id");
+
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/{collection}/items/{id}/publish"),
+            Some(&app.admin_token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        ids.push(id);
+    }
+    ids
+}
+
+#[tokio::test]
+async fn the_content_api_pages_through_published_items() {
+    let app = test_app().await;
+    let ids = create_published_items(&app, "blog", 4).await;
+
+    // A draft must not show up in any page, nor in the total.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&app.admin_token),
+        Some(json!({ "title": "Draft", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let draft = body.as_u64().unwrap();
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog?limit=2",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["total"], 4);
+    assert_eq!(body["limit"], 2);
+    assert_eq!(body["offset"], 0);
+    assert_eq!(body["next_offset"], 2);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+    // Ordered by id, which is what makes walking the offsets safe.
+    assert_eq!(body["items"][0]["id"], ids[0]);
+    assert_eq!(body["items"][1]["id"], ids[1]);
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog?limit=2&offset=2",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+    assert_eq!(body["items"][0]["id"], ids[2]);
+    assert_eq!(body["items"][1]["id"], ids[3]);
+    assert_eq!(body["next_offset"], Value::Null);
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["id"] != draft),
+        "the draft must stay hidden on every page"
+    );
+
+    // An offset past the end is an empty last page, not an error.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog?limit=2&offset=99",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"], json!([]));
+    assert_eq!(body["total"], 4);
+    assert_eq!(body["next_offset"], Value::Null);
+
+    // A page size that cannot be answered is refused rather than guessed at.
+    for query in ["limit=0", "limit=201", "limit=abc"] {
+        let (status, _) = send_raw(
+            &app.router,
+            Method::GET,
+            &format!("/content/collections/blog?{query}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "?{query} should be rejected");
+    }
+}
+
+#[tokio::test]
+async fn the_content_api_returns_a_bounded_page_without_an_explicit_limit() {
+    let app = test_app().await;
+    let ids = create_published_items(&app, "blog", DEFAULT_PAGE_LIMIT as u64 + 1).await;
+    assert_eq!(ids.len(), DEFAULT_PAGE_LIMIT + 1);
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["items"].as_array().unwrap().len(),
+        DEFAULT_PAGE_LIMIT,
+        "a site build must not be handed an unbounded list"
+    );
+    assert_eq!(body["total"], DEFAULT_PAGE_LIMIT + 1);
+    assert_eq!(body["next_offset"], DEFAULT_PAGE_LIMIT);
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog?offset={DEFAULT_PAGE_LIMIT}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["next_offset"], Value::Null);
+}
+
+#[tokio::test]
+async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for index in 0..3 {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/models/collections/blog/item",
+            Some(&token),
+            Some(json!({ "title": format!("Item {index}"), "tags": [] })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Without a query the whole list comes back (the UI renders every row), with the total
+    // in a header.
+    let (status, headers, bytes) = send_with_headers(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items",
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 3);
+    assert_eq!(headers.get("x-total-count").unwrap(), "3");
+
+    // A page keeps the `[id, values]` body shape the UI already reads.
+    let (status, headers, bytes) = send_with_headers(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items?limit=2&offset=1",
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 2);
+    assert_eq!(body[0][0], 2);
+    assert_eq!(body[1][0], 3);
+    assert_eq!(headers.get("x-total-count").unwrap(), "3");
+
+    // Paging does not open the list up.
+    let (status, _, _) = send_with_headers(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items?limit=2",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn saving_records_when_content_changed_but_publishing_does_not() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let item_id = create_sample_item(&app, "blog").await;
+    let metadata_url = format!("/models/collections/blog/items/{item_id}/metadata");
+
+    let (status, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let created_at = timestamp(&body["created_at"]);
+    let updated_at = timestamp(&body["updated_at"]);
+    assert_eq!(
+        created_at, updated_at,
+        "a new item is created and updated at the same moment"
+    );
+
+    // Publishing changes the status, not the content.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(
+        timestamp(&body["updated_at"]),
+        updated_at,
+        "publishing is not an edit"
+    );
+
+    // An edit moves `updated_at`, keeps `created_at`, and does not unpublish.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &format!("/models/collections/blog/items/{item_id}"),
+        Some(&token),
+        Some(json!({ "title": "Edited", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        timestamp(&body["updated_at"]) > updated_at,
+        "an edit has to move updated_at"
+    );
+    assert_eq!(
+        timestamp(&body["created_at"]),
+        created_at,
+        "created_at must not move"
+    );
+    assert_eq!(body["status"], "published");
+    assert!(body["published_at"].is_string());
+
+    // The delivery API exposes it, so a build can skip content it already has.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog/items/{item_id}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Edited");
+    assert!(body["updated_at"].is_string());
+    assert!(body["published_at"].is_string());
+}
+
+#[tokio::test]
+async fn saving_a_single_page_records_when_it_changed() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "title": "Home", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let metadata_url = "/models/single_pages/home/item/metadata";
+    let (status, body) = send(&app.router, Method::GET, metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let updated_at = timestamp(&body["updated_at"]);
+    assert_eq!(timestamp(&body["created_at"]), updated_at);
+
+    // A published page that is saved again stays published.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "title": "Home again", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(&app.router, Method::GET, metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(timestamp(&body["updated_at"]) > updated_at);
+    assert_eq!(body["status"], "published", "saving must not unpublish");
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Home again");
+    assert!(body["updated_at"].is_string());
 }
