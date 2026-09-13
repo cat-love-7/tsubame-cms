@@ -12,6 +12,16 @@
     }
   </mat-select>
 </mat-form-field>
+<div class="layout-row">
+  <mat-form-field appearance="fill">
+    <mat-label>Width (1-12)</mat-label>
+    <input matInput type="number" min="1" max="12" [(ngModel)]="field.width" name="fieldWidth" />
+  </mat-form-field>
+  <mat-form-field appearance="fill">
+    <mat-label>Height</mat-label>
+    <input matInput type="number" min="1" [(ngModel)]="field.height" name="fieldHeight" />
+  </mat-form-field>
+</div>
 @if ((field.field_type | isTextFieldSchema)) {
   <app-text-field [(fieldOptions)]="field.field_type.Text"></app-text-field>
 }
@@ -23,10 +33,11 @@
 }
 @if (field.field_type | isArrayFieldSchema) {
   <mat-form-field appearance="fill" class="full-width">
-    <mat-label>Composite Field Type {{field.field_type.Array}}</mat-label>
-    <mat-select name="compositeFieldType" [(ngModel)]="field.field_type.Array" >
-      <mat-option value="Object">Object</mat-option>
-      <mat-option value="Array">Array</mat-option>
+    <mat-label>Array item types</mat-label>
+    <mat-select multiple name="arrayItemTypes" [(ngModel)]="field.field_type.Array">
+      @for (itemType of arrayItemTypeOptions; track itemType.label) {
+        <mat-option [value]="itemType.value">{{ itemType.label }}</mat-option>
+      }
     </mat-select>
   </mat-form-field>
 }

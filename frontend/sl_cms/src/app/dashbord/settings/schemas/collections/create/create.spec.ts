@@ -3,22 +3,19 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 
-import { Edit } from './edit';
+import { Create } from './create';
 
-describe('Edit', () => {
-  let component: Edit;
-  let fixture: ComponentFixture<Edit>;
+describe('Create', () => {
+  let component: Create;
+  let fixture: ComponentFixture<Create>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Edit],
-      // `provideRouter` is what supplies ActivatedRoute, which Edit reads the collection
-      // name from.
+      imports: [Create],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
-    fixture = TestBed.createComponent(Edit);
+    fixture = TestBed.createComponent(Create);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

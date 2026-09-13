@@ -3,7 +3,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIcon, MatIconModule } from '@angular/material/icon';
 import { MatTreeModule } from '@angular/material/tree';
 import { RouterLink } from '@angular/router';
-import { CollectionRepository } from 'app/repositories/schema/collections.repository';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { map, Observable, combineLatest} from 'rxjs';
 
@@ -22,19 +21,6 @@ interface SidebarItem {
     MatIconModule,
     RouterLink,
   ],
-  providers: [
-    {
-        provide: CollectionRepository,
-        useClass: CollectionRepository,
-    },
-    {
-        provide: CollectionsService,
-        useFactory: (collectionRepository: CollectionRepository) => {
-            return new CollectionsService(collectionRepository);
-        },
-        deps: [CollectionRepository],
-    }
-  ]
 })
 export class Sidebar {
   private collectionsService = inject(CollectionsService);

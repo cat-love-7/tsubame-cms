@@ -1,5 +1,4 @@
 import { Pipe, PipeTransform } from "@angular/core";
-import { FieldValue } from "../values/fields";
 
 export type TextFieldOptions = {
   max_length?: number;
@@ -19,14 +18,21 @@ export type CompositeFieldSchema = {
   };
 }
 
-export type ArrayColumnType = Exclude<FieldSchema, ArrayFieldSchema>;
-
+/**
+ * An array element is a bare field *type*, matching the Rust
+ * `FieldType::Array(Vec<FieldType>)` (it is not a full `FieldSchema`, which would also
+ * carry a name and a required flag).
+ */
 export type ArrayFieldSchema = {
-  Array: ArrayColumnType[];
+  Array: FieldType[];
 }
 
+/**
+ * Enum options travel as a JSON array on the wire (`{"TextEnum":["a","b"]}`). A `Set`
+ * would serialise to `{}`, so this must stay an array.
+ */
 export type EnumFieldSchema = {
-  TextEnum: Set<string>;
+  TextEnum: string[];
 }
 
 export type FieldTypeMap = {
@@ -52,15 +58,25 @@ export const FieldDefaults: FieldTypeMap = {
   Image: 'Image',
   CompositeField: { CompositeField: { id: '' } },
   Array: { Array: [] },
-  TextEnum: { TextEnum: new Set<string>() },
+  TextEnum: { TextEnum: [] },
 };
 export type FieldType = typeof FieldDefaults[keyof typeof FieldDefaults];
 
+/**
+ * `width` and `height` are required by the backend (`FieldSchema` in
+ * `sl_cms/src/models/schema.rs` declares them as non-optional `u32`), so a schema saved
+ * without them is rejected. `width` is a colspan (1-12) and `height` a rowspan (1-).
+ */
 export type FieldSchema = {
   name: string;
   field_type: FieldType;
   required: boolean;
+  width: number;
+  height: number;
 }
+
+/** The layout a newly added field starts with: full width, single row. */
+export const DefaultFieldLayout = { width: 12, height: 1 } as const;
 
 export function isTextFieldSchema(field: FieldType): field is TextFieldSchema {
   return typeof field === 'object' && field !== null && 'Text' in field;
@@ -79,6 +95,19 @@ export function isArrayFieldSchema(field: FieldType): field is ArrayFieldSchema 
 export function isEnumFieldSchema(field: FieldType): field is EnumFieldSchema {
   return typeof field === 'object' && field !== null && 'TextEnum' in field;
 }
+
+/**
+ * Field types that can appear as array items. Text/Markdown/Array/TextEnum/CompositeField
+ * are omitted because they carry configuration of their own that this editor does not
+ * collect yet.
+ */
+export const ArrayItemTypeOptions: { label: string; value: FieldType }[] = [
+  { label: 'Number', value: 'Number' },
+  { label: 'Boolean', value: 'Boolean' },
+  { label: 'Date', value: 'Date' },
+  { label: 'DateTime', value: 'DateTime' },
+  { label: 'Image', value: 'Image' },
+];
 
 @Pipe({
   name: 'isTextFieldSchema',
@@ -107,7 +136,7 @@ export class IsCompositeFieldSchemaPipe implements PipeTransform {
 @Pipe({
   name: 'isArrayFieldSchema',
 })
-export class IsArrayFieldSchemaSchemaPipe implements PipeTransform {
+export class IsArrayFieldSchemaPipe implements PipeTransform {
   transform(field: FieldType): field is ArrayFieldSchema {
     return isArrayFieldSchema(field);
   }
@@ -140,42 +169,4 @@ export class FieldTypeStringPipe implements PipeTransform {
     }
     return 'Unknown';
   }
-}
-
-export function getValueTypeFromFieldSchema(fields: Array<FieldSchema>): { [key: string]: FieldValue} {
-  let result: { [key: string]: FieldValue } = {};
-  for (const field of fields) {
-    {
-      switch (field.field_type) {
-        case 'Number':
-          result[field.name] = { Number: 0 };
-          break;
-        case 'Boolean':
-          result[field.name] = { Boolean: false };
-          break;
-        case 'Date':
-          result[field.name] = { Date: '' };
-          break;
-        case 'DateTime':
-          result[field.name] = { DateTime: '' };
-          break;
-        case 'Image':
-          result[field.name] = { Image: 0 };
-          break;
-        default:
-          if (isTextFieldSchema(field.field_type)) {
-            result[field.name] = { Text: '' };
-          } else if (isMarkdownFieldSchema(field.field_type)) {
-            result[field.name] = { Markdown: '' };
-          } else if (isCompositeFieldSchema(field.field_type)) {
-            result[field.name] = { CompositeField: getValueTypeFromFieldSchema([]) };
-          } else if (isArrayFieldSchema(field.field_type)) {
-            result[field.name] = { Array: [] };
-          } else if (isEnumFieldSchema(field.field_type)) {
-            result[field.name] = { TextEnum: [] };
-          }
-      }
-    }
-  }
-  return result;
 }

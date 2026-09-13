@@ -14,4 +14,13 @@ export class CollectionsService {
   getCollectionSchema(name: string): Observable<CollectionSchema> {
     return this.collectionRepository.getCollectionSchema(name);
   }
+  createCollection(name: string, schema: CollectionSchema): Observable<void> {
+    return this.collectionRepository.createCollection(name, schema);
+  }
+  updateCollectionSchema(name: string, schema: CollectionSchema): Observable<void> {
+    return this.collectionRepository.updateCollectionSchema(name, schema);
+  }
+  deleteCollection(name: string): Observable<void> {
+    return this.collectionRepository.deleteCollection(name);
+  }
 }

@@ -1,6 +1,6 @@
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>Enum Field Value List</mat-label>
-  <mat-chip-grid #chipGrid [(ngModel)]="field">
+  <mat-chip-grid #chipGrid>
     @for (value of field(); track value) {
       <mat-chip-row
         (removed)="removeEnumOption(value)"
@@ -11,7 +11,7 @@
           <mat-icon>edit</mat-icon>
         </button>    
         {{value}}
-        <button matChipRemove [attr.aria-label]="'remove template form' + value">
+        <button matChipRemove [attr.aria-label]="'remove ' + value">
           <mat-icon>cancel</mat-icon>
         </button>
       </mat-chip-row>

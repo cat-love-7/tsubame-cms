@@ -1,9 +1,15 @@
-import { HttpClient } from "@angular/common/http";
-import { Injectable } from "@angular/core";
-import { Observable } from "rxjs/internal/Observable";
-import { CollectionSchema } from "app/models/schema/collection";
+import { HttpClient } from '@angular/common/http';
+import { Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
+import { CollectionSchema } from 'app/models/schema/collection';
 
-@Injectable()
+/**
+ * `providedIn: 'root'` so every consumer (and every TestBed) gets the same instance
+ * without the per-component provider duplication this used to need.
+ */
+@Injectable({
+  providedIn: 'root',
+})
 export class CollectionRepository {
   constructor(private http: HttpClient) {}
   getAllCollectionNames(): Observable<string[]> {
@@ -16,6 +22,9 @@ export class CollectionRepository {
     return this.http.put<void>(`/api/models/collections/${name}/schema`, schema);
   }
   createCollection(name: string, schema: CollectionSchema): Observable<void> {
-    return this.http.post<void>(`/api/models/collections/${name}/schema`, schema );
+    return this.http.post<void>(`/api/models/collections/${name}/schema`, schema);
+  }
+  deleteCollection(name: string): Observable<void> {
+    return this.http.delete<void>(`/api/models/collections/${name}`);
   }
 }

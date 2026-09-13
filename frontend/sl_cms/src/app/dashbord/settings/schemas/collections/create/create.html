@@ -1,0 +1,10 @@
+<h2>New collection</h2>
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+<mat-form-field appearance="fill">
+  <mat-label>Collection name</mat-label>
+  <input matInput [(ngModel)]="name" name="name" (keyup.enter)="create()" />
+</mat-form-field>
+<button matButton color="primary" (click)="create()">Create</button>
+<button matButton [routerLink]="['/settings/schemas/collections']">Cancel</button>

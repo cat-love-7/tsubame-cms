@@ -1,6 +1,9 @@
-<button matIconButton [routerLink]="['/dashbord/settings/schemas/collections/create']">
+<button matIconButton [routerLink]="['/settings/schemas/collections/create']">
   <mat-icon>add</mat-icon>
 </button>
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
 <table mat-table [dataSource]="collectionNames" class="mat-elevation-z8">
   <ng-container matColumnDef="name">
       <th mat-header-cell *matHeaderCellDef> Collection Name </th>
@@ -17,7 +20,7 @@
   <ng-container matColumnDef="delete">
     <th mat-header-cell *matHeaderCellDef></th>
     <td mat-cell *matCellDef="let collection"> 
-      <button matIconButton>
+      <button matIconButton (click)="delete(collection)" [attr.aria-label]="'delete ' + collection">
         <mat-icon>delete</mat-icon>
       </button>
     </td>

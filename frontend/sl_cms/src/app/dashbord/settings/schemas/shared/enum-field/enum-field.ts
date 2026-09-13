@@ -23,33 +23,34 @@ import { MatSelectModule } from '@angular/material/select';
   styleUrl: './enum-field.scss',
 })
 export class EnumField {
-  field = model<Set<string>>(new Set());
+  /**
+   * Enum options travel as a JSON array on the wire. This used to be a `Set`, which
+   * serialises to `{}` and whose in-place mutation did not change the signal value, so
+   * neither the UI nor the backend ever saw an update.
+   */
+  field = model<string[]>([]);
   separatorKeysCodes: number[] = [ENTER, COMMA];
   addOnBlur = true;
+
   removeEnumOption(value: string) {
-    this.field.update((field) => {
-      field.delete(value);
-      return field;
-    });
+    // Return a new array so the signal actually notifies its consumers.
+    this.field.update((values) => values.filter((v) => v !== value));
   }
+
   editEnumOption(oldValue: string, event: MatChipEditedEvent) {
     const newValue = event.value.trim();
-    this.field.update((field) => {
-      if (field.has(oldValue) && newValue) {
-        field.delete(oldValue);
-        field.add(newValue);
-      }
-      return field;
-    });
+    if (!newValue) {
+      this.removeEnumOption(oldValue);
+      return;
+    }
+    this.field.update((values) => values.map((v) => (v === oldValue ? newValue : v)));
   }
+
   addEnumOption(event: MatChipInputEvent) {
     const value = (event.value || '').trim();
-    this.field.update((field) => {
-      if (value) {
-        field.add(value);
-      }
-      event.chipInput!.clear();
-      return field;
-    });
+    if (value) {
+      this.field.update((values) => (values.includes(value) ? values : [...values, value]));
+    }
+    event.chipInput?.clear();
   }
 }

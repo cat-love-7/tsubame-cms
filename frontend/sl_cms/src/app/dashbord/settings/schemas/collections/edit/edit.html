@@ -1,1 +1,8 @@
-<app-edit-schema [Schema]="(collectionSchema | async) || []"></app-edit-schema>
+<h2>{{ collectionName }}</h2>
+@if (status()) {
+  <p class="status">{{ status() }}</p>
+}
+@if (error()) {
+  <p class="error">{{ error() }}</p>
+}
+<app-edit-schema [Schema]="collectionSchema" (save)="save($event)"></app-edit-schema>

@@ -6,8 +6,6 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { IsCompositeFieldSchemaPipe, IsArrayFieldSchemaSchemaPipe, IsEnumFieldSchemaPipe } from 'app/models/schema/fields';
-import { EnumField } from '../enum-field/enum-field';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 import { AsyncPipe, KeyValuePipe } from '@angular/common';
 
