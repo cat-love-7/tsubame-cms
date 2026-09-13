@@ -83,10 +83,10 @@ describe('Edit', () => {
   // shown by the schema editor meaningless.
   it('lays fields out using the width and height from the schema', () => {
     const fresh = TestBed.createComponent(Edit);
-    fresh.componentInstance.schema = [
+    fresh.componentInstance.schema.set([
       { name: 'a', field_type: 'Number', required: false, width: 6, height: 2 },
       { name: 'b', field_type: 'Boolean', required: false, width: 6, height: 1 },
-    ];
+    ]);
     fresh.detectChanges();
 
     const cells = fresh.nativeElement.querySelectorAll('.field-cell') as NodeListOf<HTMLElement>;

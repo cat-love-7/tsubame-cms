@@ -32,8 +32,10 @@ export class Edit {
   private pages = inject(SinglePagesService);
 
   public pageName: string = this.route.snapshot.params['name'];
-  public schema: CollectionSchema = [];
-  public values: ContentValue = {};
+  /** Signals, for the reason given in the collection item editor: both arrive from
+   * asynchronous loads that would otherwise trip the dev-mode change check. */
+  public schema = signal<CollectionSchema>([]);
+  public values = signal<ContentValue>({});
   public error = signal('');
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
@@ -45,7 +47,7 @@ export class Edit {
   constructor() {
     this.pages.getPageSchema(this.pageName).subscribe({
       next: (schema) => {
-        this.schema = schema;
+        this.schema.set(schema);
         this.loadItem(schema);
       },
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
@@ -59,7 +61,7 @@ export class Edit {
 
   private loadItem(schema: CollectionSchema) {
     this.pages.getPageItem(this.pageName).subscribe({
-      next: (values) => (this.values = withDefaults(schema, values)),
+      next: (values) => this.values.set(withDefaults(schema, values)),
       error: (e) => this.error.set(`Failed to load the content: ${message(e)}`),
     });
   }
@@ -80,7 +82,8 @@ export class Edit {
   }
 
   setValue(field: FieldSchema, value: FieldValue) {
-    this.values[field.name] = value;
+    // Replaced rather than mutated: the template reads the signal.
+    this.values.update((values) => ({ ...values, [field.name]: value }));
   }
 
   setFieldError(field: FieldSchema, message: string | null) {
@@ -99,7 +102,7 @@ export class Edit {
     }
 
     this.error.set('');
-    this.pages.updatePageItem(this.pageName, { ...this.values }).subscribe({
+    this.pages.updatePageItem(this.pageName, { ...this.values() }).subscribe({
       next: () => {
         this.error.set('');
         this.router.navigate(['/settings/single-pages']);

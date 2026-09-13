@@ -42,8 +42,16 @@ export class Edit {
       : Number(this.route.snapshot.params['id']);
   public readonly isNew = this.itemId === null;
 
-  public schema: CollectionSchema = [];
-  public values: CollectionValue = {};
+  /**
+   * The schema and the values being edited, as signals.
+   *
+   * They arrive from two asynchronous loads, and a plain field assigned from a response
+   * can land while Angular is checking the view: dev mode then reported
+   * `ExpressionChangedAfterItHasBeenCheckedError` for `schema.length === 0` every time an
+   * item was opened. A signal tells Angular the view changed instead of tripping over it.
+   */
+  public schema = signal<CollectionSchema>([]);
+  public values = signal<CollectionValue>({});
   public error = signal('');
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
@@ -61,9 +69,9 @@ export class Edit {
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
       next: (schema) => {
-        this.schema = schema;
+        this.schema.set(schema);
         if (this.itemId === null) {
-          this.values = withDefaults(schema, {});
+          this.values.set(withDefaults(schema, {}));
         } else {
           this.loadItem(schema, this.itemId);
           this.loadMetadata(this.itemId);
@@ -75,7 +83,7 @@ export class Edit {
 
   private loadItem(schema: CollectionSchema, id: number) {
     this.collectionsService.getCollectionItem(this.collectionName, id).subscribe({
-      next: (values) => (this.values = withDefaults(schema, values)),
+      next: (values) => this.values.set(withDefaults(schema, values)),
       error: (e) => this.error.set(`Failed to load the item: ${message(e)}`),
     });
   }
@@ -108,7 +116,9 @@ export class Edit {
   }
 
   setValue(field: FieldSchema, value: FieldValue) {
-    this.values[field.name] = value;
+    // Replaced rather than mutated: the template reads the signal, and changing the object
+    // inside it would not tell Angular anything happened.
+    this.values.update((values) => ({ ...values, [field.name]: value }));
   }
 
   setFieldError(field: FieldSchema, message: string | null) {
@@ -127,7 +137,7 @@ export class Edit {
     }
 
     this.error.set('');
-    const values: CollectionValue = { ...this.values };
+    const values: CollectionValue = { ...this.values() };
 
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.

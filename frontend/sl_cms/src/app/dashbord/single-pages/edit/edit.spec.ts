@@ -81,9 +81,9 @@ describe('Edit', () => {
 
   it('lays fields out on the shared grid', () => {
     const fresh = TestBed.createComponent(Edit);
-    fresh.componentInstance.schema = [
+    fresh.componentInstance.schema.set([
       { name: 'title', field_type: 'Number', required: false, width: 8, height: 1 },
-    ];
+    ]);
     fresh.detectChanges();
 
     const cell = fresh.nativeElement.querySelector('.field-cell') as HTMLElement;

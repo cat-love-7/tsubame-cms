@@ -15,17 +15,17 @@
   <p class="error" role="alert">{{ error() }}</p>
 }
 
-@if (schema.length === 0) {
+@if (schema().length === 0) {
   <p class="note">This page has no fields yet. Add fields in the schema editor first.</p>
 }
 
 <!-- Same grid as the collection editor, so widths and order read the same. -->
 <div class="field-grid">
-  @for (field of schema; track field.name) {
+  @for (field of schema(); track field.name) {
     <div class="field-cell" [style]="cellStyle(field)">
       <app-value-field
         [field]="field"
-        [value]="values[field.name]"
+        [value]="values()[field.name]"
         (valueChange)="setValue(field, $event)"
         (errorChange)="setFieldError(field, $event)"
       />
