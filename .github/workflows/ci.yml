@@ -1,0 +1,73 @@
+# Continuous integration.
+#
+# The three suites are the same scripts a developer runs locally, so what passes here is what
+# passes on a laptop (and the other way round). The AWS job is deliberately absent: the
+# adapter does not exist yet and selecting it is refused by design, so the emulator job lands
+# with that work (see doc/aws-plan.md).
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rust:
+    name: Rust (on-premises backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sl_cms
+      # Runs the suite and checks that a build with no backend (or with the unimplemented
+      # aws backend) is still refused.
+      - run: scripts/test-rust.sh
+
+  frontend:
+    name: Angular
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/sl_cms
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/sl_cms/package-lock.json
+      - run: npm ci
+      - run: ../../scripts/test-frontend.sh
+
+  e2e:
+    name: Browser end-to-end
+    runs-on: ubuntu-latest
+    # Slower than the other two and it needs a browser download, so it is not what every push
+    # waits on for a first signal.
+    needs: [rust, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sl_cms
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/sl_cms/package-lock.json
+      - run: npm ci
+        working-directory: frontend/sl_cms
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend/sl_cms
+      - run: scripts/test-e2e.sh
+      # The harness writes what it saw to these logs; without them a failure is a mystery.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-logs
+          path: /tmp/sl-cms-e2e-*.log
+          if-no-files-found: ignore
