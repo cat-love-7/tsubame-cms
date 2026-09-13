@@ -30,10 +30,10 @@ jsonwebtoken = { version = "11", default-features = false, features = ["rust_cry
 # provider: aws-lc-rs needs CMake, ring only needs a C compiler.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 # HMAC-SHA256 for the webhook signature.
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 
 [dev-dependencies]
-strum = "0.27.2"
-strum_macros = "0.27.2"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 tower = { version = "0.5", features = ["util"] }
