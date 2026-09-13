@@ -2,6 +2,7 @@
 
 pub mod cognito;
 pub mod identity;
+pub mod provisioner;
 pub mod throttle;
 pub mod token;
 
@@ -9,9 +10,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::auth::identity::{Identity, TokenVerifier};
+use crate::auth::provisioner::{AccountProvisioner, NewAccount};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewUserRequest,
+    is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewAccountRequest,
+    NewUserRequest,
     PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
@@ -37,6 +40,8 @@ pub struct AuthService<R: UserRepository> {
     /// administrators by signing in. Empty where the deployment creates its first account with
     /// `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
     bootstrap_admins: Vec<String>,
+    /// The identity provider's side of account management, where one owns the credential.
+    provisioner: Option<Arc<dyn AccountProvisioner>>,
     /// Mints the links an administrator hands out for an account to set its own password.
     password_resets: PasswordResetIssuer,
     /// Counts failed sign-ins per account, so guessing a password is not free.
@@ -52,6 +57,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             repository,
             verifier: Arc::new(issuer.clone()) as Arc<dyn TokenVerifier>,
             bootstrap_admins: Vec::new(),
+            provisioner: None,
             issuer,
             password_resets,
             throttle: LoginThrottle::new(),
@@ -76,6 +82,73 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     pub fn with_bootstrap_admins(mut self, usernames: Vec<String>) -> Self {
         self.bootstrap_admins = usernames;
         self
+    }
+
+    /// Let the deployment's identity provider look after the accounts themselves.
+    pub fn with_account_provisioner(mut self, provisioner: Arc<dyn AccountProvisioner>) -> Self {
+        self.provisioner = Some(provisioner);
+        self
+    }
+
+    /// Create an account where an identity provider owns the credential.
+    ///
+    /// The provider is asked first (see [`AccountProvisioner`]): if it refuses, nothing is left
+    /// behind here. This is the counterpart of the password-taking `create_user`, which exists
+    /// only for a deployment that stores the credential itself.
+    pub async fn create_account(
+        &self,
+        request: NewAccountRequest,
+    ) -> Result<UserResponse, HttpError> {
+        let username = normalize_username(&request.username);
+        if !is_plausible_username(&username) {
+            return Err(HttpError::BadRequest(
+                "a username of up to 128 letters, digits or + = , . @ _ - is required",
+            ));
+        }
+        let email = request
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|email| !email.is_empty())
+            .map(|email| {
+                if is_plausible_email(email) {
+                    Ok(email.to_ascii_lowercase())
+                } else {
+                    Err(HttpError::BadRequest("that is not a plausible email address"))
+                }
+            })
+            .transpose()?;
+        if self
+            .repository
+            .get_user_from_username(&username)
+            .await
+            .map_err(internal)?
+            .is_some()
+        {
+            return Err(HttpError::Conflict("a user with that username already exists"));
+        }
+
+        if let Some(provisioner) = &self.provisioner {
+            let account = NewAccount {
+                username: username.clone(),
+                email: email.clone(),
+            };
+            provisioner.create(&account).await.map_err(|e| {
+                // The provider's reason is worth logging, but not worth handing to a client.
+                tracing::warn!("could not create {username} at the identity provider: {e}");
+                HttpError::InternalServerError("the identity provider refused the account")
+            })?;
+        }
+
+        let permission = if request.is_admin {
+            Permission::admin()
+        } else {
+            request.permission
+        };
+        let mut user = User::new(&username, request.is_admin, permission);
+        user.email = email;
+        self.repository.add_user(&user).await.map_err(internal)?;
+        Ok(user.to_response())
     }
 
     pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
@@ -204,6 +277,14 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         let user = self.require_user(id).await?;
         if user.is_admin && user.is_active {
             self.ensure_another_active_admin(id).await?;
+        }
+        // The provider first, so a refusal leaves the CMS exactly as it was rather than with a
+        // record whose account can still sign in.
+        if let Some(provisioner) = &self.provisioner {
+            provisioner.delete(&user.username).await.map_err(|e| {
+                tracing::warn!("could not remove {} at the identity provider: {e}", user.username);
+                HttpError::InternalServerError("the identity provider refused to remove the account")
+            })?;
         }
         self.repository.delete_user(id).await.map_err(internal)
     }
@@ -523,6 +604,8 @@ mod tests {
 
     use super::*;
     use crate::auth::identity::VerifyFuture;
+    use crate::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionFuture};
+    use crate::models::user::NewAccountRequest;
     use crate::repositories::user_repository::BoxError;
 
     #[derive(Default)]
@@ -996,6 +1079,92 @@ mod tests {
         // A change to an account that does not exist is a 404.
         let missing = UserId::from("00000000-0000-0000-0000-000000000000");
         assert_eq!(auth.set_password(&missing, "supersecret").await.unwrap_err().status_code, 404);
+    }
+
+    /// A provisioner that writes down what it was asked to do, and can refuse.
+    #[derive(Default)]
+    struct RecordingProvisioner {
+        created: std::sync::Mutex<Vec<String>>,
+        deleted: std::sync::Mutex<Vec<String>>,
+        refuse: bool,
+    }
+
+    impl AccountProvisioner for RecordingProvisioner {
+        fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, ()> {
+            Box::pin(async move {
+                if self.refuse {
+                    return Err("no".to_string());
+                }
+                self.created.lock().unwrap().push(account.username.clone());
+                Ok(())
+            })
+        }
+        fn delete<'a>(&'a self, username: &'a str) -> ProvisionFuture<'a, ()> {
+            Box::pin(async move {
+                if self.refuse {
+                    return Err("no".to_string());
+                }
+                self.deleted.lock().unwrap().push(username.to_string());
+                Ok(())
+            })
+        }
+    }
+
+    fn account(username: &str) -> NewAccountRequest {
+        NewAccountRequest {
+            username: username.to_string(),
+            email: None,
+            is_admin: false,
+            permission: Permission::viewer(),
+        }
+    }
+
+    /// Where an identity provider owns the credential, an account is two records that have to
+    /// agree — and the provider is asked first, so a refusal leaves nothing behind.
+    #[tokio::test]
+    async fn creating_an_account_asks_the_provider_first() {
+        let (auth, repository) = service();
+        let provisioner = Arc::new(RecordingProvisioner::default());
+        let auth = auth.with_account_provisioner(provisioner.clone());
+
+        let created = auth.create_account(account("ops@example.com")).await.unwrap();
+        assert_eq!(created.username, "ops@example.com");
+        assert_eq!(
+            provisioner.created.lock().unwrap().as_slice(),
+            ["ops@example.com".to_string()]
+        );
+        assert_eq!(repository.users.read().unwrap().len(), 1);
+
+        // The provider refuses: no record is written, so there is no account that cannot sign
+        // in and no half-created user to clean up.
+        let (refusing_auth, refusing_store) = service();
+        let refusing_auth = refusing_auth.with_account_provisioner(Arc::new(
+            RecordingProvisioner {
+                refuse: true,
+                ..Default::default()
+            },
+        ));
+        assert_eq!(
+            refusing_auth
+                .create_account(account("nope@example.com"))
+                .await
+                .unwrap_err(),
+            HttpError::InternalServerError("the identity provider refused the account")
+        );
+        assert!(refusing_store.users.read().unwrap().is_empty());
+
+        // Deleting asks the provider, so the account cannot sign in afterwards either.
+        let user = repository
+            .get_user_from_username("ops@example.com")
+            .await
+            .unwrap()
+            .expect("the account");
+        auth.delete_user(&user.id).await.unwrap();
+        assert_eq!(
+            provisioner.deleted.lock().unwrap().as_slice(),
+            ["ops@example.com".to_string()]
+        );
+        assert!(repository.users.read().unwrap().is_empty());
     }
 
     /// A verifier that always says the same thing, so the *resolution* is what is under test.

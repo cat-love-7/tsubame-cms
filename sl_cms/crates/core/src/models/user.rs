@@ -270,6 +270,20 @@ pub struct NewUserRequest {
     pub permission: Permission,
 }
 
+/// A new account where an identity provider owns the credential: the same fields as
+/// [`NewUserRequest`] without a password, because there is none for the CMS to choose.
+#[derive(serde::Deserialize, Debug)]
+pub struct NewAccountRequest {
+    pub username: String,
+    /// Contact address, if the operator has one to record.
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub is_admin: bool,
+    #[serde(default)]
+    pub permission: Permission,
+}
+
 /// A partial change to one account. Absent fields are left alone, so a client that only
 /// knows about roles cannot accidentally reset the others.
 #[derive(serde::Deserialize, Debug, Default)]

@@ -343,6 +343,18 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       → **達成**: `a_role_change_takes_effect_on_the_next_request`(ビューア → 編集許可 →
       コレクション単位の拒否、を同じトークンで確認。両バックエンドで実行)。
 
+- [~] **Cognito のユーザー管理**(`AdminCreateUser` / `AdminDeleteUser` /
+      `AdminSetUserPassword`)。継ぎ目は先に入れた:
+      `auth::provisioner::AccountProvisioner`(create / delete)を `AuthService` が持ち、
+      `create_account` は**プロバイダを先に**呼んでから記録を書く(拒否されたら何も残らない)。
+      `delete_user` も先にプロバイダへ依頼する。テストは偽プロバイダで
+      「作成時に依頼される」「拒否されたら記録が残らない」「削除時にも依頼される」を確認。
+      **残り**: `aws-sdk-cognitoidentityprovider` を足して `CognitoAccountProvisioner` を実装し、
+      AWS の `build_router` が `POST /auth/users` の 501 スタブを本物のルートに差し替えること。
+      この SDK 呼び出しは**手元で検証する手段が無い**(Cognito のエミュレータは無く、
+      LocalStack は採用していない)ので、P5 の staging で確かめられる段階で入れるのが正直な順序。
+      パスワード再設定(`AdminSetUserPassword` で一時パスワード + 変更強制)もそこで。
+
 ### P5. デプロイと運用
 
 - [ ] IaC でスタック定義(Lambda + Function URL/API Gateway、DynamoDB、S3、CORS、環境変数、
