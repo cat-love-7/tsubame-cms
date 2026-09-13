@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
-use crate::models::schema::validate_schema;
+use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -40,6 +41,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        self.ensure_composites_exist(schema)?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -60,12 +62,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .list_collection_names()
             .map_err(map_internal_error)
     }
+
+    /// Every composite a schema references must exist, otherwise the schema can be stored
+    /// but never used to read or write values.
+    fn ensure_composites_exist(&self, schema: &CollectionSchema) -> Result<(), HttpError> {
+        let available: HashSet<CompositeFieldId> = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?
+            .into_keys()
+            .collect();
+        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+    }
     pub fn add_collection_schema(
         &self,
         collection_name: &CollectionName,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        self.ensure_composites_exist(schema)?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)

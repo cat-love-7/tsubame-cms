@@ -687,6 +687,110 @@ async fn missing_resources_are_404_and_duplicates_are_409() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Composite values are read wrapped (`{id, values}`) and written bare, which used to make
+/// a load-then-save round trip fail with "Unknown field 'id'".
+#[tokio::test]
+async fn composite_values_round_trip_and_references_are_validated() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let composite = json!([
+        { "name": "description", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
+        { "name": "score", "field_type": "Number", "required": false, "width": 6, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/composite_fields/seo",
+        Some(&token),
+        Some(composite),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let schema = json!([
+        { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1 },
+        { "name": "seo", "field_type": { "CompositeField": { "id": "seo" } }, "required": false, "width": 12, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/posts/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // A write sends the bare object of sub-values.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/posts/item",
+        Some(&token),
+        Some(json!({ "title": "Hello", "seo": { "description": "meta", "score": 7 } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A read wraps it, and re-submitting that unchanged has to be accepted.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/posts/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["seo"]["id"], "seo");
+    assert_eq!(body["seo"]["values"]["description"], "meta");
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/posts/items/1",
+        Some(&token),
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // A dangling composite reference is refused when the schema is saved.
+    let dangling = json!([{
+        "name": "bad",
+        "field_type": { "CompositeField": { "id": "missing" } },
+        "required": false, "width": 12, "height": 1
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/bad/schema",
+        Some(&token),
+        Some(dangling),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("does not exist"));
+
+    // And a composite cannot reference itself.
+    let cyclic = json!([{
+        "name": "self",
+        "field_type": { "CompositeField": { "id": "loop" } },
+        "required": false, "width": 12, "height": 1
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/composite_fields/loop",
+        Some(&token),
+        Some(cyclic),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("cannot reference itself"));
+}
+
 #[tokio::test]
 async fn deleting_a_collection_without_items_succeeds() {    let app = test_app().await;
     let token = app.admin_token.clone();

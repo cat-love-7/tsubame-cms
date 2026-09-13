@@ -24,7 +24,9 @@ import {
   isCompositeFieldSchema,
   isEnumFieldSchema,
 } from 'app/models/schema/fields';
-import { FieldValue, imageIdOf } from 'app/models/values/fields';
+import { ContentValue } from 'app/models/values/collection';
+import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
+import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 import { ImagesService } from 'app/services/media/images.service';
 
 type FieldKind =
@@ -46,6 +48,10 @@ type FieldKind =
  * The schema decides which widget appears, and values are held **without type tags**
  * (the schema is what gives them meaning). Kept as a separate component so the content
  * editor and the schema editor's preview render the same thing from one implementation.
+ *
+ * A composite field renders its sub-fields by referring back to this same component, so
+ * nesting works to any depth. That is also why the server refuses composite reference
+ * cycles: this recursion would never terminate.
  */
 @Component({
   selector: 'app-value-field',
@@ -56,6 +62,7 @@ type FieldKind =
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    ValueField,
   ],
   templateUrl: './value-field.html',
   styleUrl: './value-field.scss',
@@ -68,30 +75,42 @@ export class ValueField implements OnInit, OnChanges {
   @Output() valueChange = new EventEmitter<FieldValue>();
   /**
    * Non-null while the field holds input that cannot be turned into a value (an array
-   * edited as JSON that does not parse, or a failed upload). The parent refuses to save
-   * while any field reports one, so bad input is never quietly dropped or replaced by a
-   * stale value.
+   * edited as JSON that does not parse, a failed upload, or a problem in a sub-field).
+   * The parent refuses to save while any field reports one, so bad input is never quietly
+   * dropped or replaced by a stale value.
    */
   @Output() errorChange = new EventEmitter<string | null>();
 
   private images = inject(ImagesService);
+  private compositeFields = inject(CompositeFieldsService);
 
   public uploading = signal(false);
   /** JSON buffer for Array fields, which are edited as raw JSON. */
   public arrayText = '';
   public imageUrl = apiUrl;
 
+  /** The referenced composite's sub-schema, or null when it is not defined. */
+  public compositeSchema = signal<FieldSchema[] | null>(null);
+  public compositeId = signal('');
+  public compositeValues: ContentValue = {};
+
   /** The last value this component emitted, so its own output is not mistaken for new
-   * input (which would reset the JSON buffer mid-typing). */
+   * input (which would reset the JSON buffer or the sub-field state mid-typing). */
   private lastEmitted: FieldValue = null;
+
+  /** Problems reported by sub-fields, so one clearing does not clear another's. */
+  private subErrors: { [field: string]: string } = {};
 
   ngOnInit() {
     this.syncArrayBuffer();
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['value']) {
+    if (changes['field']) {
+      this.loadCompositeSchema();
+    } else if (changes['value']) {
       this.syncArrayBuffer();
+      this.syncCompositeValues();
     }
   }
 
@@ -111,10 +130,6 @@ export class ValueField implements OnInit, OnChanges {
 
   enumOptions(): string[] {
     return isEnumFieldSchema(this.field.field_type) ? this.field.field_type.TextEnum : [];
-  }
-
-  isComposite(): boolean {
-    return isCompositeFieldSchema(this.field.field_type);
   }
 
   imageId(): number | null {
@@ -184,6 +199,23 @@ export class ValueField implements OnInit, OnChanges {
     }
   }
 
+  setCompositeValue(subField: FieldSchema, value: FieldValue) {
+    this.compositeValues[subField.name] = value;
+    // Emit the bare object of sub-values: that is what a composite write accepts. The
+    // `{id, values}` wrapper only appears on reads.
+    this.update({ ...this.compositeValues });
+  }
+
+  forwardCompositeError(subField: FieldSchema, problem: string | null) {
+    if (problem) {
+      this.subErrors[subField.name] = problem;
+    } else {
+      delete this.subErrors[subField.name];
+    }
+    const remaining = Object.values(this.subErrors);
+    this.errorChange.emit(remaining.length > 0 ? remaining.join('; ') : null);
+  }
+
   onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -204,6 +236,57 @@ export class ValueField implements OnInit, OnChanges {
         this.errorChange.emit(`Upload failed: ${message(e)}`);
       },
     });
+  }
+
+  private loadCompositeSchema() {
+    const type = this.field.field_type;
+    if (!isCompositeFieldSchema(type)) {
+      return;
+    }
+    const id = String(type.CompositeField.id);
+    this.compositeId.set(id);
+    this.compositeFields.getAllCompositeFields().subscribe({
+      next: (all) => {
+        const schema = all[id] ?? null;
+        this.compositeSchema.set(schema);
+        this.compositeValues = schema ? withDefaults(schema, this.innerCompositeValue(schema)) : {};
+      },
+      error: (e) => this.errorChange.emit(`Failed to load composite field '${id}': ${message(e)}`),
+    });
+  }
+
+  private syncCompositeValues() {
+    const schema = this.compositeSchema();
+    if (!schema || this.value === this.lastEmitted) {
+      return;
+    }
+    this.compositeValues = withDefaults(schema, this.innerCompositeValue(schema));
+  }
+
+  /**
+   * A composite's own sub-values.
+   *
+   * Reads wrap them as `{id, values}`, so the wrapper is unwrapped here — except when the
+   * composite genuinely declares a sub-field called `values`, which mirrors what the
+   * server does.
+   */
+  private innerCompositeValue(schema: FieldSchema[]): ContentValue {
+    const value = this.value;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    const record = value as ContentValue;
+    const declaresValues = schema.some((field) => field.name === 'values');
+    const wrapped = record['values'];
+    if (
+      !declaresValues &&
+      wrapped !== null &&
+      typeof wrapped === 'object' &&
+      !Array.isArray(wrapped)
+    ) {
+      return wrapped as ContentValue;
+    }
+    return record;
   }
 
   private syncArrayBuffer() {

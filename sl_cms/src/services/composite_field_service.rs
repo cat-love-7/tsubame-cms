@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::field::{CompositeFieldSchema, FieldSchema};
-use crate::models::schema::{validate_schema, CompositeFieldId};
+use crate::models::schema::{
+    validate_composite_references, validate_no_composite_cycles, validate_schema, CompositeFieldId,
+};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 
 pub struct CompositeFieldService<CFR: CompositeFieldRepository> {
@@ -30,8 +32,31 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         self.composite_field_repository.list_composite_field_schemas()
             .map_err(map_internal_error)
     }
+
+    /// Reject references to composites that do not exist, and references that would form a
+    /// cycle. Both matter because values are parsed and rendered by following references:
+    /// a cycle never terminates.
+    fn validate_composite_graph(
+        &self,
+        id: &CompositeFieldId,
+        schema: &CompositeFieldSchema,
+    ) -> Result<(), HttpError> {
+        let all = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+
+        // A composite is never an available target for its own references; if it were,
+        // the cycle check below would not report the self-reference.
+        let mut available: HashSet<CompositeFieldId> = all.keys().cloned().collect();
+        available.remove(id);
+
+        validate_no_composite_cycles(id, schema, &all).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+    }
     pub fn add_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        self.validate_composite_graph(field_name, schema)?;
         let s = self.composite_field_repository.get_composite_field_schema(&field_name)
             .map_err(map_internal_error)?;
         match s {
@@ -46,6 +71,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
     }
     pub fn update_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &Vec<FieldSchema>) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        self.validate_composite_graph(field_name, schema)?;
         let s = self.composite_field_repository.get_composite_field_schema(field_name)
             .map_err(map_internal_error)?;
         match s {

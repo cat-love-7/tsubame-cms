@@ -130,15 +130,27 @@ fn parse_field_value(
         }
         FieldType::CompositeField(reference) => match raw {
             serde_json::Value::Null => Ok(FieldValue::CompositeField(None)),
-            serde_json::Value::Object(_) => {
+            serde_json::Value::Object(map) => {
                 let nested_schema = composite_schemas.get(&reference.id).ok_or_else(|| {
                     format!(
                         "Field '{}': composite field schema '{}' not found",
                         field.name, reference.id
                     )
                 })?;
+
+                // Reads wrap a composite as `{ "id": ..., "values": { ... } }`, while a
+                // write accepts the bare object of sub-values. Accepting the wrapper back
+                // means a client can load an item, change one field and save the rest
+                // untouched. A composite that genuinely declares a `values` sub-field is
+                // not wrapped, so it is left alone.
+                let declares_values = nested_schema.iter().any(|field| field.name == "values");
+                let inner = match (map.get("values"), declares_values) {
+                    (Some(values @ serde_json::Value::Object(_)), false) => values,
+                    _ => raw,
+                };
+
                 let nested = FieldValueMap::<CompositeFieldSchema>::from_untyped(
-                    raw,
+                    inner,
                     composite_schemas,
                     nested_schema,
                 )
@@ -447,6 +459,70 @@ mod untyped_parsing_tests {
             false,
         )];
         assert!(FieldValueMap::from_untyped(&json!({ "seo": {} }), &schemas, &unknown).is_err());
+    }
+
+    #[test]
+    fn composite_values_accept_the_response_wrapper_so_items_round_trip() {
+        let composite_id = CompositeFieldId::from("seo");
+        let composite_schema: CompositeFieldSchema = vec![field(
+            "description",
+            FieldType::Text(TextFieldOptions::default()),
+            false,
+        )];
+        let mut schemas = HashMap::new();
+        schemas.insert(composite_id.clone(), composite_schema);
+
+        let outer: CollectionSchema = vec![field(
+            "seo",
+            FieldType::CompositeField(CompositeFieldReference { id: composite_id.clone() }),
+            false,
+        )];
+
+        // The bare object is what a write normally sends.
+        let bare = FieldValueMap::from_untyped(
+            &json!({ "seo": { "description": "nested" } }),
+            &schemas,
+            &outer,
+        )
+        .unwrap();
+
+        // The wrapper is what a read returns.
+        let wrapped = FieldValueMap::from_untyped(
+            &json!({ "seo": { "id": "seo", "values": { "description": "nested" } } }),
+            &schemas,
+            &outer,
+        )
+        .unwrap();
+
+        assert_eq!(bare.0["seo"], wrapped.0["seo"]);
+    }
+
+    #[test]
+    fn a_composite_that_declares_a_values_field_is_not_unwrapped() {
+        // `values` is a legitimate sub-field name here, so an object with that key is the
+        // composite's own content rather than a response wrapper.
+        let composite_id = CompositeFieldId::from("wrapper");
+        let composite_schema: CompositeFieldSchema =
+            vec![field("values", FieldType::Number, false)];
+        let mut schemas = HashMap::new();
+        schemas.insert(composite_id.clone(), composite_schema);
+
+        let outer: CollectionSchema = vec![field(
+            "wrapped",
+            FieldType::CompositeField(CompositeFieldReference { id: composite_id.clone() }),
+            false,
+        )];
+
+        let parsed =
+            FieldValueMap::from_untyped(&json!({ "wrapped": { "values": 3 } }), &schemas, &outer)
+                .unwrap();
+
+        match &parsed.0["wrapped"] {
+            FieldValue::CompositeField(Some(value)) => {
+                assert_eq!(value.values.0["values"], FieldValue::Number(Some(3.0)));
+            }
+            other => panic!("expected a composite value, got {other:?}"),
+        }
     }
 
     #[test]

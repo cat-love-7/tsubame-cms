@@ -120,11 +120,28 @@
       }
     </div>
   }
-  @default {
-    @if (isComposite()) {
-      <p class="note">Composite fields are not editable here yet; the existing value is kept.</p>
+  @case ('CompositeField') {
+    @if (compositeSchema(); as subSchema) {
+      <!-- Sub-fields are edited by this same component, so composites nest to any depth. -->
+      <fieldset class="composite" [disabled]="disabled">
+        @for (subField of subSchema; track subField.name) {
+          <app-value-field
+            [field]="subField"
+            [value]="compositeValues[subField.name]"
+            [disabled]="disabled"
+            (valueChange)="setCompositeValue(subField, $event)"
+            (errorChange)="forwardCompositeError(subField, $event)"
+          />
+        }
+      </fieldset>
     } @else {
-      <p class="note">Unsupported field type.</p>
+      <p class="note">
+        Composite field '{{ compositeId() }}' is not defined, so this value cannot be
+        edited. Its existing value is kept.
+      </p>
     }
+  }
+  @default {
+    <p class="note">Unsupported field type.</p>
   }
 }

@@ -1,14 +1,22 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 
+import { CompositeFieldDefinition } from 'app/models/schema/collection';
 import { FieldSchema, FieldType } from 'app/models/schema/fields';
 import { FieldValue } from 'app/models/values/fields';
+import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 import { ValueField } from './value-field';
 
 function field(name: string, field_type: FieldType): FieldSchema {
   return { name, field_type, required: false, width: 12, height: 1 };
 }
+
+/** The composite definitions the component reads, keyed by id. */
+const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
+  seo: [field('description', { Text: {} })],
+};
 
 describe('ValueField', () => {
   let fixture: ComponentFixture<ValueField>;
@@ -16,7 +24,16 @@ describe('ValueField', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ValueField],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // A stub rather than the HTTP-backed service, so the composite definitions are
+        // available synchronously.
+        {
+          provide: CompositeFieldsService,
+          useValue: { getAllCompositeFields: () => of(COMPOSITE_DEFINITIONS) },
+        },
+      ],
     }).compileComponents();
   });
 
@@ -60,9 +77,32 @@ describe('ValueField', () => {
     expect(query('mat-select')).toBeFalsy();
   });
 
-  it('explains that composite fields are not editable rather than dropping them', () => {
+  it('explains that an undefined composite field cannot be edited rather than dropping it', () => {
+    create(field('missing', { CompositeField: { id: 'nope' } }));
+    expect(fixture.nativeElement.textContent).toContain('is not defined');
+  });
+
+  it('renders a composite field as its sub-fields, nested through this same component', () => {
     create(field('seo', { CompositeField: { id: 'seo' } }));
-    expect(fixture.nativeElement.textContent).toContain('not editable here yet');
+
+    // The sub-field is rendered by another ValueField instance: the recursion works.
+    expect(fixture.nativeElement.querySelector('app-value-field')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('description');
+  });
+
+  it('emits the bare object for a composite value, unwrapping the read wrapper', () => {
+    // Reads wrap a composite as `{id, values}`; the wrapper must not leak into sub-fields
+    // or back out onto the wire.
+    const component = create(
+      field('seo', { CompositeField: { id: 'seo' } }),
+      { id: 'seo', values: { description: 'meta' } },
+    );
+    const emitted: FieldValue[] = [];
+    component.valueChange.subscribe((value) => emitted.push(value));
+
+    component.setCompositeValue(field('description', { Text: {} }), 'changed');
+
+    expect(emitted).toEqual([{ description: 'changed' }]);
   });
 
   it('emits a new value when the input changes', () => {

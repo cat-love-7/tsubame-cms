@@ -34,3 +34,19 @@
   color: #666;
   font-size: 0.875rem;
 }
+
+.composite {
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 8px;
+  margin: 0 0 8px;
+  padding: 8px 12px 0;
+}
+
+// Nesting is shown by an indent rather than a deeper border, which gets noisy fast.
+.composite .composite {
+  border: none;
+  border-left: 2px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 0;
+  padding-right: 0;
+  margin-left: 8px;
+}

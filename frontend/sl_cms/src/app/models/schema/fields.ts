@@ -12,7 +12,14 @@ export type MarkdownFieldSchema = {
   Markdown: TextFieldOptions;
 }
 
-export type CompositeFieldSchema = {
+/**
+ * The field *type* descriptor for a composite field: just the id of the composite it
+ * points at.
+ *
+ * Not to be confused with the composite's own definition, which is a list of field
+ * schemas — see `CompositeFieldDefinition` in `./collection`.
+ */
+export type CompositeFieldType = {
   CompositeField: {
     id: string;
   };
@@ -43,7 +50,7 @@ export type FieldTypeMap = {
   Date: 'Date',
   DateTime: 'DateTime',
   Image: 'Image',
-  CompositeField: CompositeFieldSchema,
+  CompositeField: CompositeFieldType,
   Array: ArrayFieldSchema,
   TextEnum: EnumFieldSchema,
 };
@@ -86,7 +93,7 @@ export function isMarkdownFieldSchema(field: FieldType): field is MarkdownFieldS
   return typeof field === 'object' && field !== null && 'Markdown' in field;
 }
 
-export function isCompositeFieldSchema(field: FieldType): field is CompositeFieldSchema {
+export function isCompositeFieldSchema(field: FieldType): field is CompositeFieldType {
   return typeof field === 'object' && field !== null && 'CompositeField' in field;
 }
 export function isArrayFieldSchema(field: FieldType): field is ArrayFieldSchema {
@@ -155,7 +162,7 @@ export class IsMarkdownFieldSchema implements PipeTransform {
   name: 'isCompositeFieldSchema',
 })
 export class IsCompositeFieldSchemaPipe implements PipeTransform {
-  transform(field: FieldType): field is CompositeFieldSchema {
+  transform(field: FieldType): field is CompositeFieldType {
     return isCompositeFieldSchema(field);
   }
 }

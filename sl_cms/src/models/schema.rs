@@ -190,8 +190,77 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
     Ok(())
 }
 
+/// Every composite id referenced by `fields`, including inside array item types.
+pub fn referenced_composite_ids(fields: &[FieldSchema]) -> Vec<CompositeFieldId> {
+    let mut ids = Vec::new();
+    collect_type_references_in(fields, &mut ids);
+    ids
+}
+
+fn collect_type_references_in(fields: &[FieldSchema], into: &mut Vec<CompositeFieldId>) {
+    for field in fields {
+        collect_type_references(&field.field_type, into);
+    }
+}
+
+fn collect_type_references(field_type: &FieldType, into: &mut Vec<CompositeFieldId>) {
+    match field_type {
+        FieldType::CompositeField(reference) => into.push(reference.id.clone()),
+        FieldType::Array(items) => {
+            for item in items {
+                collect_type_references(item, into);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A composite reference must point at a composite that exists, otherwise the schema
+/// cannot be used to read or write values at all.
+pub fn validate_composite_references(
+    fields: &[FieldSchema],
+    available: &std::collections::HashSet<CompositeFieldId>,
+) -> Result<(), String> {
+    for id in referenced_composite_ids(fields) {
+        if !available.contains(&id) {
+            return Err(format!("composite field '{id}' does not exist"));
+        }
+    }
+    Ok(())
+}
+
+/// A composite must not reference itself, directly or through other composites.
+///
+/// Parsing a value would recurse forever, and the editor renders sub-fields by following
+/// the references, so a cycle would hang the browser rather than fail visibly.
+pub fn validate_no_composite_cycles(
+    id: &CompositeFieldId,
+    fields: &[FieldSchema],
+    all: &std::collections::HashMap<CompositeFieldId, CompositeFieldSchema>,
+) -> Result<(), String> {
+    let mut stack = referenced_composite_ids(fields);
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = stack.pop() {
+        if &current == id {
+            return Err(format!(
+                "composite field '{id}' cannot reference itself, directly or through \
+                 another composite"
+            ));
+        }
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+        if let Some(schema) = all.get(&current) {
+            stack.extend(referenced_composite_ids(schema));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+
     use super::*;
 
     fn field(name: &str, field_type: FieldType) -> FieldSchema {
@@ -278,5 +347,69 @@ mod tests {
         )])
         .unwrap_err()
         .contains("composite fields cannot be used as array items"));
+    }
+
+    fn composite_ref(id: &str) -> FieldType {
+        FieldType::CompositeField(CompositeFieldReference {
+            id: CompositeFieldId::from(id),
+        })
+    }
+
+    #[test]
+    fn collects_referenced_composite_ids() {
+        let fields = vec![
+            field("title", FieldType::Number),
+            field("seo", composite_ref("seo")),
+            field("nested", composite_ref("other")),
+        ];
+        let mut ids: Vec<String> = referenced_composite_ids(&fields)
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["other".to_string(), "seo".to_string()]);
+
+        assert!(referenced_composite_ids(&[field("plain", FieldType::Number)]).is_empty());
+    }
+
+    #[test]
+    fn rejects_references_to_composites_that_do_not_exist() {
+        let available: HashSet<CompositeFieldId> =
+            [CompositeFieldId::from("seo")].into_iter().collect();
+
+        assert!(validate_composite_references(&[field("seo", composite_ref("seo"))], &available).is_ok());
+        assert!(validate_composite_references(&[field("nope", composite_ref("nope"))], &available)
+            .unwrap_err()
+            .contains("composite field 'nope' does not exist"));
+    }
+
+    #[test]
+    fn rejects_composites_that_reference_themselves() {
+        let id = CompositeFieldId::from("seo");
+
+        // Directly.
+        let direct = vec![field("self", composite_ref("seo"))];
+        assert!(validate_no_composite_cycles(&id, &direct, &HashMap::new())
+            .unwrap_err()
+            .contains("cannot reference itself"));
+
+        // Through another composite: seo -> other -> seo.
+        let indirect = vec![field("other", composite_ref("other"))];
+        let mut all: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
+        all.insert(
+            CompositeFieldId::from("other"),
+            vec![field("back", composite_ref("seo"))],
+        );
+        assert!(validate_no_composite_cycles(&id, &indirect, &all)
+            .unwrap_err()
+            .contains("cannot reference itself"));
+
+        // A plain chain is fine, and a missing target must not loop forever.
+        let chain = vec![field("a", composite_ref("a")), field("b", composite_ref("b"))];
+        let mut all: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
+        all.insert(CompositeFieldId::from("a"), vec![field("b", composite_ref("b"))]);
+        all.insert(CompositeFieldId::from("b"), vec![]);
+        assert!(validate_no_composite_cycles(&id, &chain, &all).is_ok());
+        assert!(validate_no_composite_cycles(&id, &vec![field("gone", composite_ref("gone"))], &all).is_ok());
     }
 }

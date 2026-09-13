@@ -9,6 +9,8 @@ import { Edit as ItemEdit } from "./collections/edit/edit";
 import { List as SinglePageList } from "./settings/single-pages/list/list";
 import { Schema as SinglePageSchema } from "./settings/single-pages/schema/schema";
 import { Edit as SinglePageEdit } from "./single-pages/edit/edit";
+import { List as CompositeFieldList } from "./settings/composite-fields/list/list";
+import { Schema as CompositeFieldSchema } from "./settings/composite-fields/schema/schema";
 
 
 const dashbordRoutes: Routes = [
@@ -56,6 +58,15 @@ const dashbordRoutes: Routes = [
     {
         path: 'settings/single-pages/:name/schema',
         component: SinglePageSchema
+    },
+    // Composite fields: reusable groups of fields that other schemas reference by id.
+    {
+        path: 'settings/composite-fields',
+        component: CompositeFieldList
+    },
+    {
+        path: 'settings/composite-fields/:id/schema',
+        component: CompositeFieldSchema
     }
 ];
 

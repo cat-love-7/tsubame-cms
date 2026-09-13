@@ -78,6 +78,7 @@ export class Sidebar {
               },
               {
                 name: 'Composite Fields',
+                link: '/settings/composite-fields',
               }
             ],
           },
