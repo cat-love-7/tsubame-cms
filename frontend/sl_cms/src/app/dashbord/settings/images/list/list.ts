@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
@@ -19,6 +19,7 @@ import { ImagesService } from 'app/services/media/images.service';
   selector: 'app-image-library',
   imports: [MatButtonModule, MatIconModule],
   templateUrl: './list.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './list.scss',
 })
 export class List {

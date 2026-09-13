@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { BehaviorSubject, Observable, switchMap } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
@@ -17,6 +17,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
     RouterLink,
   ],
   templateUrl: './list.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './list.scss',
 })
 export class List {

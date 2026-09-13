@@ -14,7 +14,11 @@
     "importHelpers": true,
     "target": "ES2022",
     "module": "preserve",
-    "baseUrl": "src"
+    // TypeScript 6 deprecates `baseUrl`, so the bare `app/...` imports the project uses
+    // are mapped explicitly. `paths` without `baseUrl` resolves against this file.
+    "paths": {
+      "app/*": ["./src/app/*"]
+    }
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

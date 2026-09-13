@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
@@ -21,6 +21,7 @@ const DEFAULT_PAGE_SIZE = 25;
   selector: 'app-collection-items',
   imports: [MatButtonModule, MatIconModule, MatPaginatorModule, RouterLink, ItemStatusBadge],
   templateUrl: './list.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './list.scss',
 })
 export class List {

@@ -1,4 +1,4 @@
-import { Component, model } from '@angular/core';
+import { Component, model, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
@@ -19,6 +19,7 @@ import { MatSelectModule } from '@angular/material/select';
     MatIconModule,
   ],
   templateUrl: './array-field.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './array-field.scss',
 })
 export class ArrayField {

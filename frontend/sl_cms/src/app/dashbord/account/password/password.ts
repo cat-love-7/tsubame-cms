@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -18,6 +18,7 @@ import { UsersService } from 'app/services/auth/users.service';
   selector: 'app-password',
   imports: [FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule],
   templateUrl: './password.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './password.scss',
 })
 export class Password {

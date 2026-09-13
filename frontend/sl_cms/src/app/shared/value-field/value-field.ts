@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -61,6 +61,7 @@ type FieldKind =
     ValueField,
   ],
   templateUrl: './value-field.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './value-field.scss',
 })
 export class ValueField implements OnInit, OnChanges {

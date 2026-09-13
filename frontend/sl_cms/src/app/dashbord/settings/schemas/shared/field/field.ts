@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
@@ -47,6 +47,7 @@ import { FieldWidthPresets } from 'app/core/field-layout';
     TextField
 ],
   templateUrl: './field.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './field.scss',
 })
 export class Field {
