@@ -33,7 +33,7 @@ use tower_http::trace::TraceLayer;
 use crate::app_module::{AppModule, Storage};
 use crate::models::error::HttpError;
 use crate::preview_link::PreviewLinkError;
-use crate::models::user::User;
+use crate::models::user::{Permission, User};
 
 pub type AppState<R> = Arc<AppModule<R>>;
 
@@ -89,12 +89,53 @@ pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
         .with_state(state)
 }
 
+/// One resource that can carry permissions of its own.
+///
+/// Only collections and single pages do; everything else (the image library, the composite
+/// field definitions, the site's structure) is governed by the account-wide permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resource<'a> {
+    Collection(&'a str),
+    SinglePage(&'a str),
+}
+
+/// The resource a path is about, when it is about one.
+///
+/// The shapes are the two the routes use: `/models/collections/{name}/...` and
+/// `/models/single_pages/{name}/...`. Anything else — including the lists at
+/// `/models/collections` — answers `None`, and the account-wide permission applies.
+fn resource_of(path: &str) -> Option<Resource<'_>> {
+    let rest = path.strip_prefix("/models/")?;
+    let (kind, rest) = rest.split_once('/')?;
+    let name = rest.split('/').next().filter(|name| !name.is_empty())?;
+    match kind {
+        "collections" => Some(Resource::Collection(name)),
+        "single_pages" => Some(Resource::SinglePage(name)),
+        _ => None,
+    }
+}
+
+/// The permission that governs a request about `resource`.
+///
+/// A per-resource entry replaces the account-wide permission for that resource (see
+/// [`crate::models::user::User::permission_for_collection`]), so an override can both give
+/// and take away.
+pub fn permission_for(user: &User, resource: Option<Resource<'_>>) -> Permission {
+    match resource {
+        Some(Resource::Collection(name)) => user.permission_for_collection(name),
+        Some(Resource::SinglePage(name)) => user.permission_for_single_page(name),
+        None => user.permission,
+    }
+}
+
 /// Authenticate the bearer token and apply coarse authorization.
 ///
-/// Reads need `can_view`, every other method needs `can_edit`. The checks that depend on
-/// more than the method — releasing content, or changing the site's structure — belong to
-/// the handlers, which use [`require_publish`] and [`require_admin`], because one path
-/// often serves several of them (a `GET` and a `DELETE` on the same URL, for instance).
+/// Reads need `can_view`, every other method needs `can_edit` — judged against the resource
+/// the path is about, so an account with a grant for one collection is not refused before the
+/// handler can see which collection was asked for. The checks that depend on more than the
+/// method — releasing content, or changing the site's structure — belong to the handlers,
+/// which use [`require_publish`] and [`require_admin`], because one path often serves several
+/// of them (a `GET` and a `DELETE` on the same URL, for instance).
 async fn require_auth<R: Storage>(
     State(state): State<AppState<R>>,
     mut request: Request,
@@ -112,11 +153,12 @@ async fn require_auth<R: Storage>(
     // it needs authentication but not permission to edit content. A read-only account must
     // still be able to change its password.
     let is_self_service = request.uri().path().starts_with("/auth/me");
+    let permission = permission_for(&user, resource_of(request.uri().path()));
     if is_write && !is_self_service {
-        if !user.can_write() {
+        if !user.can_write(permission) {
             return Err(HttpError::Forbidden("edit permission required"));
         }
-    } else if !is_write && !user.can_read() {
+    } else if !is_write && !user.can_read(permission) {
         return Err(HttpError::Forbidden("view permission required"));
     }
 
@@ -127,9 +169,10 @@ async fn require_auth<R: Storage>(
 /// Releasing or hiding content, and deleting it.
 ///
 /// Safe to keep separate from "may edit" because the draft a user edits is not what the
-/// delivery API serves; only publishing copies it across.
-pub fn require_publish(user: &User) -> Result<(), HttpError> {
-    if user.can_publish() {
+/// delivery API serves; only publishing copies it across. `resource` is the collection or
+/// page the request is about, so a per-resource grant applies here too.
+pub fn require_publish(user: &User, resource: Option<Resource<'_>>) -> Result<(), HttpError> {
+    if user.can_publish(permission_for(user, resource)) {
         Ok(())
     } else {
         Err(HttpError::Forbidden("publish permission required"))

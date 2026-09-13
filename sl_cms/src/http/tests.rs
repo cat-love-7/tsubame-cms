@@ -1948,6 +1948,241 @@ async fn an_expired_preview_link_is_refused() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+/// Per-resource permissions: an account can be trusted with one collection and not the rest,
+/// and the account-wide role is what it has everywhere else.
+#[tokio::test]
+async fn a_collection_grant_applies_to_that_collection_only() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    for collection in ["blog", "news", "docs"] {
+        create_sample_item(&app, collection).await;
+    }
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/schema",
+        Some(&admin),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A viewer everywhere to start with...
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&admin),
+        Some(json!({
+            "email": "scoped@example.com",
+            "password": "scoped-password",
+            "is_admin": false,
+            "permission": Permission::viewer(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let scoped_id = created["id"].as_str().unwrap().to_string();
+
+    // ...then trusted with `blog` (edit), `news` (edit and release) and nothing of `home`.
+    let deny = json!({ "can_view": false, "can_edit": false, "can_publish": false });
+    let (status, updated) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{scoped_id}"),
+        Some(&admin),
+        Some(json!({
+            "collection_permissions": {
+                "blog": Permission::editor(),
+                "news": Permission { can_view: true, can_edit: true, can_publish: true },
+            },
+            "single_page_permissions": { "home": deny },
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    // The overrides come back, which is what the account screen reads.
+    assert_eq!(updated["collection_permissions"]["blog"]["can_edit"], true);
+    assert_eq!(updated["collection_permissions"]["blog"]["can_publish"], false);
+    assert_eq!(updated["single_page_permissions"]["home"]["can_view"], false);
+
+    let (_, body) = login(&app.router, "scoped@example.com", "scoped-password").await;
+    let scoped = body["token"].as_str().unwrap().to_string();
+    let edit = json!({ "title": "edited by the scoped account", "tags": [] });
+
+    // `blog` is editable but not releasable.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/collections/blog/items/1",
+        Some(&scoped),
+        Some(edit.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "grant したコレクションは編集できる");
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/1/publish",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "公開の grant は無い");
+
+    // `news` carries the publish grant, so both work there.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/collections/news/items/1",
+        Some(&scoped),
+        Some(edit.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/news/items/1/publish",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // `docs` has no override: the account-wide viewer role applies, so it reads and cannot
+    // write.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/docs/items/1",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "共通ロールはどこでも効く");
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/collections/docs/items/1",
+        Some(&scoped),
+        Some(edit),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "grant の無いコレクションは読み取りだけ");
+
+    // `home` was denied, so even reading it is refused...
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/models/single_pages/home/item",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "拒否したページは読めない");
+    // ...and the list does not offer it, so the sidebar cannot lead there.
+    let (status, pages) = send(
+        &app.router,
+        Method::GET,
+        "/models/single_pages",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pages, json!([]), "deny したページは一覧に出ない");
+
+    let (status, collections) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections",
+        Some(&scoped),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let names: Vec<&str> = collections
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"blog") && names.contains(&"news") && names.contains(&"docs"));
+
+    // An administrator keeps seeing and doing everything.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/models/single_pages/home/item",
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// A grant for something that does not exist is a typo, not a permission.
+#[tokio::test]
+async fn a_grant_for_an_unknown_resource_is_refused() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+    create_sample_item(&app, "blog").await;
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&admin),
+        Some(json!({
+            "email": "typo@example.com",
+            "password": "typo-password",
+            "is_admin": false,
+            "permission": Permission::viewer(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // A typo in the collection name is refused...
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "collection_permissions": { "blgo": Permission::editor() } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8_lossy(&body).contains("blgo"),
+        "the answer names the typo: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // ...as is one in a page name, while the real names are accepted.
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "single_page_permissions": { "nope": Permission::viewer() } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "collection_permissions": { "blog": Permission::editor() } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 /// A throttled sign-in is a 429 with `Retry-After`, so a client knows when to come back
 /// instead of guessing.
 #[tokio::test]

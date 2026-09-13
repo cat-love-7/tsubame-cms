@@ -1,8 +1,6 @@
 use rkv::{StoreOptions, Value};
 
-use crate::models::collection::CollectionName;
-use crate::models::single_page::SinglePageName;
-use crate::models::user::{normalize_email, Permission, User, UserId};
+use crate::models::user::{normalize_email, User, UserId};
 use crate::on_premises::repository::Repository;
 use crate::repositories::user_repository::{BoxError, UserRepository};
 
@@ -97,30 +95,4 @@ impl UserRepository for Repository {
         Ok(())
     }
 
-    fn get_user_permissions(&self, user_id: &UserId) -> Result<Option<Permission>, BoxError> {
-        Ok(self.get_user_from_id(user_id)?.map(|user| user.permission))
-    }
-
-    // Per-resource permissions are not stored yet. Rather than inventing a half-model,
-    // these report "no specific grant", which lets callers fall back to the account-wide
-    // permissions returned by `get_user_permissions`.
-    fn get_collection_permissions(
-        &self,
-        _user_id: &UserId,
-        _collection_name: &CollectionName,
-    ) -> Result<Option<Permission>, BoxError> {
-        Ok(None)
-    }
-
-    fn get_single_page_permissions(
-        &self,
-        _user_id: &UserId,
-        _page_name: &SinglePageName,
-    ) -> Result<Option<Permission>, BoxError> {
-        Ok(None)
-    }
-
-    fn get_image_permissions(&self, _user_id: &UserId) -> Result<Option<Permission>, BoxError> {
-        Ok(None)
-    }
 }

@@ -20,9 +20,6 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::signing;
 
-/// How long a link stays valid when `PREVIEW_LINK_TTL_MINUTES` is not set.
-pub const DEFAULT_TTL_MINUTES: i64 = 60;
-
 /// Prefix of the signed message. It keeps a preview signature from ever being confused with
 /// another signed message (a webhook body, say) and leaves room to change the format later.
 const PREFIX: &str = "sl-cms-preview:v1";
@@ -103,10 +100,6 @@ impl PreviewLinkIssuer {
         }
     }
 
-    pub fn ttl_minutes(&self) -> i64 {
-        self.ttl.num_minutes()
-    }
-
     /// Mint a link for `target`, valid until `now + ttl`.
     ///
     /// `now` is a parameter so tests can issue a link that is already expired without
@@ -161,8 +154,12 @@ mod tests {
         }
     }
 
+    /// The lifetime these tests ask for; the deployment's own default is
+    /// `config::DEFAULT_PREVIEW_LINK_TTL_MINUTES`.
+    const TTL_MINUTES: i64 = 60;
+
     fn issuer() -> PreviewLinkIssuer {
-        PreviewLinkIssuer::new(b"preview-secret", DEFAULT_TTL_MINUTES)
+        PreviewLinkIssuer::new(b"preview-secret", TTL_MINUTES)
     }
 
     /// The token comes back out of the query string as written, so the link needs no
@@ -178,13 +175,12 @@ mod tests {
         let link = issuer.issue(&item_link(), now);
 
         assert!(link.expires_at > now);
-        assert_eq!(link.expires_at, now + Duration::minutes(DEFAULT_TTL_MINUTES));
+        assert_eq!(link.expires_at, now + Duration::minutes(TTL_MINUTES));
         assert_eq!(
             link.path,
             format!("/preview/collections/blog/items/7?token={}", token_of(&link))
         );
         assert!(issuer.verify(&item_link(), &token_of(&link), now).is_ok());
-        assert_eq!(issuer.ttl_minutes(), DEFAULT_TTL_MINUTES);
 
         // The token is URL-safe: nothing in it needs escaping.
         assert!(token_of(&link)
@@ -214,7 +210,7 @@ mod tests {
         }
 
         // As is a link signed with a different secret.
-        let other_secret = PreviewLinkIssuer::new(b"another-secret", DEFAULT_TTL_MINUTES);
+        let other_secret = PreviewLinkIssuer::new(b"another-secret", TTL_MINUTES);
         assert_eq!(
             other_secret.verify(&item_link(), &token, now),
             Err(PreviewLinkError::Invalid)
@@ -290,9 +286,13 @@ mod tests {
         assert!(link.path.starts_with("/preview/single_pages/home?token="), "{}", link.path);
     }
 
+    /// A misconfigured lifetime must not mint links that are dead on arrival.
     #[test]
     fn a_non_positive_ttl_is_clamped() {
-        assert_eq!(PreviewLinkIssuer::new(b"secret", 0).ttl_minutes(), 1);
-        assert_eq!(PreviewLinkIssuer::new(b"secret", -30).ttl_minutes(), 1);
+        for ttl in [0, -30] {
+            let now = Utc::now();
+            let link = PreviewLinkIssuer::new(b"secret", ttl).issue(&item_link(), now);
+            assert_eq!(link.expires_at, now + Duration::minutes(1), "ttl={ttl}");
+        }
     }
 }

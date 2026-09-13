@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::app_module::Storage;
 use crate::http::{
     preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
-    PreviewTokenQuery,
+    PreviewTokenQuery, Resource,
 };
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
@@ -197,7 +197,7 @@ async fn publish_collection_item<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
-    require_publish(&user)?;
+    require_publish(&user, Some(Resource::Collection(&collection_name)))?;
     let actor = PublishedBy::from(&user);
     set_collection_item_status(module, collection_name, id, ItemStatus::Published, actor).await
 }
@@ -207,7 +207,7 @@ async fn unpublish_collection_item<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
-    require_publish(&user)?;
+    require_publish(&user, Some(Resource::Collection(&collection_name)))?;
     let actor = PublishedBy::from(&user);
     set_collection_item_status(module, collection_name, id, ItemStatus::Draft, actor).await
 }
@@ -230,8 +230,17 @@ async fn set_collection_item_status<R: Storage>(
 
 async fn get_collections<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.collection_service.get_all_collections()?))
+    // Only the collections this account may read: the sidebar should not offer a name that
+    // answers 403 when it is opened. An administrator sees them all.
+    let readable: Vec<CollectionName> = module
+        .collection_service
+        .get_all_collections()?
+        .into_iter()
+        .filter(|name| user.can_read(user.permission_for_collection(name.as_str())))
+        .collect();
+    Ok(Json(readable))
 }
 
 async fn get_collection_schema<R: Storage>(
@@ -348,7 +357,7 @@ async fn delete_collection_item<R: Storage>(
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
     // Deleting content removes it from the site just as unpublishing does.
-    require_publish(&user)?;
+    require_publish(&user, Some(Resource::Collection(&collection_name)))?;
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service

@@ -9,12 +9,12 @@
     @if (meta.published_by; as publisher) {
       <span class="publisher" title="公開したアカウント">{{ publisher.email }}</span>
     }
-    @if (auth.canPublish()) {
+    @if (canPublish()) {
       <button matButton (click)="togglePublished()">
         {{ published() ? 'Unpublish' : 'Publish' }}
       </button>
     }
-    @if (auth.canEdit()) {
+    @if (canEdit()) {
       <button matButton (click)="sharePreview()">
         プレビュー URL
       </button>
@@ -53,7 +53,7 @@
       <app-value-field
         [field]="field"
         [value]="values()[field.name]"
-        [disabled]="!auth.canEdit()"
+        [disabled]="!canEdit()"
         (valueChange)="setValue(field, $event)"
         (errorChange)="setFieldError(field, $event)"
       />
@@ -61,7 +61,7 @@
   }
 </div>
 
-@if (auth.canEdit()) {
+@if (canEdit()) {
   <div class="actions">
     <button matButton color="primary" (click)="save()">Save</button>
   </div>

@@ -3,7 +3,7 @@
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
@@ -73,6 +73,27 @@ async fn update_user<R: Storage>(
     Json(request): Json<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
+    // A grant for a collection that does not exist would be invisible in every screen and
+    // silently inert, so it is refused rather than stored.
+    if let Some(overrides) = request.collection_permissions.as_ref() {
+        let known = module.collection_service.get_all_collections()?;
+        for name in overrides.keys() {
+            if !known.iter().any(|collection| collection.as_str() == name) {
+                return Err(HttpError::BadRequest(&format!(
+                    "unknown collection '{name}'"
+                )));
+            }
+        }
+    }
+    if let Some(overrides) = request.single_page_permissions.as_ref() {
+        let known = module.single_page_service.get_all_page_names()?;
+        for name in overrides.keys() {
+            if !known.iter().any(|page| page.as_str() == name) {
+                return Err(HttpError::BadRequest(&format!("unknown single page '{name}'")));
+            }
+        }
+    }
+
     Ok(Json(
         module
             .auth_service

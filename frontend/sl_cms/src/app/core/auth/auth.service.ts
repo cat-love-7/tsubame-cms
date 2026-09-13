@@ -18,16 +18,52 @@ export interface CurrentUser {
   permission: Permission;
   created_at: string;
   last_login: string | null;
+  /** Per-resource overrides; absent name means the account-wide permission applies. */
+  collection_permissions: Record<string, Permission>;
+  single_page_permissions: Record<string, Permission>;
 }
+
+/** The role options a resource override can take, including "the account-wide one" and "none". */
+export type ResourceRole = Role | 'inherit' | 'deny';
+
+/** Which role an override holds, reading the stored capabilities back. */
+export function resourceRoleOf(permission: Permission | undefined): ResourceRole {
+  if (!permission) {
+    return 'inherit';
+  }
+  if (!permission.can_view && !permission.can_edit && !permission.can_publish) {
+    return 'deny';
+  }
+  return roleOfPermission(permission);
+}
+
+/** The capabilities a resource override stands for. */
+export function permissionForResource(role: ResourceRole): Permission | null {
+  if (role === 'inherit') {
+    return null;
+  }
+  if (role === 'deny') {
+    return { can_view: false, can_edit: false, can_publish: false };
+  }
+  return permissionFor(role);
+}
+
+/** The kinds of resource that can carry permissions of their own. */
+export type ResourceKind = 'collections' | 'single_pages';
 
 /** The three capabilities, presented as roles on the account screens. */
 export type Role = 'viewer' | 'editor' | 'publisher';
 
 export function roleOf(user: CurrentUser): Role {
-  if (!user.permission.can_edit) {
+  return roleOfPermission(user.permission);
+}
+
+/** The role a set of capabilities reads as. */
+export function roleOfPermission(permission: Permission): Role {
+  if (!permission.can_edit) {
     return 'viewer';
   }
-  return user.permission.can_publish ? 'publisher' : 'editor';
+  return permission.can_publish ? 'publisher' : 'editor';
 }
 
 export function permissionFor(role: Role): Permission {
@@ -83,6 +119,43 @@ export class AuthService {
 
   token(): string | null {
     return this.tokenSignal();
+  }
+
+  /**
+   * Whether the signed-in account may read / edit / release one named resource.
+   *
+   * A per-resource override replaces the account-wide role for that resource (see the
+   * server's `User::permission_for_collection`), so the screens have to ask about the
+   * resource they are showing rather than about the account in general. An administrator is
+   * allowed everywhere.
+   */
+  canReadIn(kind: ResourceKind, name: string): boolean {
+    return this.allowedIn(kind, name, (permission) => permission.can_view);
+  }
+
+  canEditIn(kind: ResourceKind, name: string): boolean {
+    return this.allowedIn(kind, name, (permission) => permission.can_edit);
+  }
+
+  canPublishIn(kind: ResourceKind, name: string): boolean {
+    return this.allowedIn(kind, name, (permission) => permission.can_publish);
+  }
+
+  private allowedIn(
+    kind: ResourceKind,
+    name: string,
+    allows: (permission: Permission) => boolean,
+  ): boolean {
+    const user = this.userSignal();
+    if (!user) {
+      return false;
+    }
+    if (user.is_admin) {
+      return true;
+    }
+    const overrides =
+      kind === 'collections' ? user.collection_permissions : user.single_page_permissions;
+    return allows(overrides?.[name] ?? user.permission);
   }
 
   login(email: string, password: string): Observable<LoginResponse> {

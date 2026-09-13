@@ -1,7 +1,7 @@
 <div class="toolbar">
   <h2>{{ collectionName }}</h2>
   <span class="spacer"></span>
-  @if (auth.canEdit()) {
+  @if (canEdit()) {
     <button matButton [routerLink]="['/collections', collectionName, 'create']">
       <mat-icon>add</mat-icon>
       New item
@@ -45,7 +45,7 @@
         </td>
         <td class="updated">{{ updatedAt(item[0]) }}</td>
         <td class="actions">
-          @if (auth.canPublish()) {
+          @if (canPublish()) {
             <button
               matIconButton
               (click)="togglePublished(item[0])"
@@ -63,7 +63,7 @@
           >
             <mat-icon>edit</mat-icon>
           </button>
-          @if (auth.canPublish()) {
+          @if (canPublish()) {
             <button matIconButton (click)="delete(item[0])" [attr.aria-label]="'delete item ' + item[0]">
               <mat-icon>delete</mat-icon>
             </button>

@@ -7,7 +7,7 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::{
     preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
-    PreviewTokenQuery,
+    PreviewTokenQuery, Resource,
 };
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
@@ -145,7 +145,7 @@ async fn publish_single_page<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
-    require_publish(&user)?;
+    require_publish(&user, Some(Resource::SinglePage(&page_name)))?;
     let actor = PublishedBy::from(&user);
     set_single_page_status(module, page_name, ItemStatus::Published, actor).await
 }
@@ -155,7 +155,7 @@ async fn unpublish_single_page<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
-    require_publish(&user)?;
+    require_publish(&user, Some(Resource::SinglePage(&page_name)))?;
     let actor = PublishedBy::from(&user);
     set_single_page_status(module, page_name, ItemStatus::Draft, actor).await
 }
@@ -174,8 +174,16 @@ async fn set_single_page_status<R: Storage>(
 
 async fn get_single_pages<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.single_page_service.get_all_page_names()?))
+    // Only the pages this account may read (see `get_collections`).
+    let readable: Vec<SinglePageName> = module
+        .single_page_service
+        .get_all_page_names()?
+        .into_iter()
+        .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
+        .collect();
+    Ok(Json(readable))
 }
 
 async fn get_single_page_schema<R: Storage>(

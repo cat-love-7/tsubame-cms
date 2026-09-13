@@ -69,6 +69,8 @@
               <mat-option [value]="role.value">{{ role.label }}</mat-option>
             }
           </mat-select>
+          <!-- Per-resource overrides on top of the account-wide role above. -->
+          <span class="overrides" title="コレクション / 単一ページごとの許可">{{ resourceSummary(user) }}</span>
         </td>
         <td>
           <mat-checkbox
@@ -88,6 +90,13 @@
         <td class="actions">
           <button
             matIconButton
+            (click)="openResources(user)"
+            [attr.aria-label]="'resource permissions of ' + user.email"
+          >
+            <mat-icon>tune</mat-icon>
+          </button>
+          <button
+            matIconButton
             (click)="resetPassword(user)"
             [attr.aria-label]="'reset password of ' + user.email"
           >
@@ -101,6 +110,50 @@
             <mat-icon>delete</mat-icon>
           </button>
         </td>
+        @if (editingResources() === user.id) {
+          <tr class="resource-row">
+            <td colspan="6">
+              <p class="hint">
+                アカウント共通のロールに加えて、コレクション / 単一ページごとに許可を上書きできます。
+                「なし」はそのリソースだけ拒否します。
+              </p>
+              <div class="resource-grid">
+                @for (name of collections; track name) {
+                  <label class="resource">
+                    <span class="resource-name">collection: {{ name }}</span>
+                    <mat-select
+                      [ngModel]="draftCollections[name]"
+                      (ngModelChange)="draftCollections[name] = $event"
+                      [attr.aria-label]="'permission for collection ' + name"
+                    >
+                      @for (role of resourceRoles; track role.value) {
+                        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+                      }
+                    </mat-select>
+                  </label>
+                }
+                @for (name of pages; track name) {
+                  <label class="resource">
+                    <span class="resource-name">single page: {{ name }}</span>
+                    <mat-select
+                      [ngModel]="draftPages[name]"
+                      (ngModelChange)="draftPages[name] = $event"
+                      [attr.aria-label]="'permission for single page ' + name"
+                    >
+                      @for (role of resourceRoles; track role.value) {
+                        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+                      }
+                    </mat-select>
+                  </label>
+                }
+              </div>
+              <div class="resource-actions">
+                <button matButton color="primary" (click)="saveResources(user)">Save permissions</button>
+                <button matButton (click)="editingResources.set(null)">Cancel</button>
+              </div>
+            </td>
+          </tr>
+        }
       </tr>
     } @empty {
       <tr>

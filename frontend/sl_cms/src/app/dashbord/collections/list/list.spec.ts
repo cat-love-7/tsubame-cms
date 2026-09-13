@@ -92,6 +92,10 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
       user: () => null,
       canEdit: () => canEdit,
       canPublish: () => canPublish,
+      // The screens ask about the resource they are showing; these stubs answer the same way
+      // everywhere.
+      canEditIn: () => canEdit,
+      canPublishIn: () => canPublish,
       isAdmin: () => isAdmin,
     },
   };

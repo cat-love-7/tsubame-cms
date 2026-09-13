@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
@@ -41,6 +41,10 @@ export class List {
   public error = signal('');
   /** Draft/published state per item id; the server sends drafts for untouched items. */
   public metadata = signal<ItemMetadataMap>({});
+
+  /** What this account may do *with this collection*, overrides included. */
+  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName));
+  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName));
   /** Items in the collection, not just on this page. Drives the paginator. */
   public total = signal(0);
   public pageIndex = signal(0);

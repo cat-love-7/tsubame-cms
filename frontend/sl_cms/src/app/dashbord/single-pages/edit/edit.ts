@@ -43,6 +43,9 @@ export class Edit {
   public error = signal('');
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** What this account may do *with this page*, overrides included. */
+  public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName));
+  public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName));
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */

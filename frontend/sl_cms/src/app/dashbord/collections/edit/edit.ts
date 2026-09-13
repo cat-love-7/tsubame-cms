@@ -60,6 +60,9 @@ export class Edit {
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** What this account may do *with this collection*, overrides included. */
+  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName));
+  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName));
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */

@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::user::User;
 
-/// Token lifetime in hours when `TOKEN_TTL_HOURS` is not set.
-pub const DEFAULT_TTL_HOURS: i64 = 12;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Claims {
     /// Subject: the user id.
@@ -92,6 +89,8 @@ mod tests {
             created_at: Utc::now(),
             last_login: None,
             token_version: 0,
+            collection_permissions: Default::default(),
+            single_page_permissions: Default::default(),
         }
     }
 

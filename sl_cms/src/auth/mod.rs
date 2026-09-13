@@ -168,6 +168,14 @@ impl<R: UserRepository> AuthService<R> {
         if let Some(permission) = request.permission {
             user.permission = permission;
         }
+        // The maps are replaced whole when they are given, so an administrator can take an
+        // override back as well as add one.
+        if let Some(collection_permissions) = request.collection_permissions {
+            user.collection_permissions = collection_permissions;
+        }
+        if let Some(single_page_permissions) = request.single_page_permissions {
+            user.single_page_permissions = single_page_permissions;
+        }
 
         if was_active_admin && !(user.is_admin && user.is_active) {
             self.ensure_another_active_admin(id)?;
@@ -293,11 +301,6 @@ impl<R: UserRepository> AuthService<R> {
         };
         self.create_user(request).map(Some)
     }
-
-    /// Look up a user by id (used by the `/auth/me` handler).
-    pub fn find_user(&self, id: &UserId) -> Result<Option<User>, HttpError> {
-        self.repository.get_user_from_id(id).map_err(internal)
-    }
 }
 
 fn validate_password(password: &str) -> Result<(), HttpError> {
@@ -319,8 +322,6 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use super::*;
-    use crate::models::collection::CollectionName;
-    use crate::models::single_page::SinglePageName;
     use crate::repositories::user_repository::BoxError;
 
     #[derive(Default)]
@@ -368,26 +369,6 @@ mod tests {
         fn delete_user(&self, user_id: &UserId) -> Result<(), BoxError> {
             self.users.write().unwrap().remove(&user_id.to_string());
             Ok(())
-        }
-        fn get_user_permissions(&self, user_id: &UserId) -> Result<Option<Permission>, BoxError> {
-            Ok(self.get_user_from_id(user_id)?.map(|u| u.permission))
-        }
-        fn get_collection_permissions(
-            &self,
-            _user_id: &UserId,
-            _collection_name: &CollectionName,
-        ) -> Result<Option<Permission>, BoxError> {
-            Ok(None)
-        }
-        fn get_single_page_permissions(
-            &self,
-            _user_id: &UserId,
-            _page_name: &SinglePageName,
-        ) -> Result<Option<Permission>, BoxError> {
-            Ok(None)
-        }
-        fn get_image_permissions(&self, _user_id: &UserId) -> Result<Option<Permission>, BoxError> {
-            Ok(None)
         }
     }
 

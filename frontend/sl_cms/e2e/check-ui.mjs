@@ -672,13 +672,103 @@ try {
   await editor.context.close();
   await viewer.context.close();
 
+  // ------------------------------------ per-resource permissions, granted from the screen
+  const scopedEmail = 'e2e-scoped@example.com';
+  for (const account of await api('GET', '/auth/users', undefined, token)) {
+    if (account.email === scopedEmail) {
+      await api('DELETE', `/auth/users/${account.id}`, undefined, token);
+    }
+  }
+  const scoped = await api(
+    'POST',
+    '/auth/users',
+    {
+      email: scopedEmail,
+      password: 'scoped-password',
+      is_admin: false,
+      permission: { can_view: true, can_edit: false, can_publish: false },
+    },
+    token,
+  );
+  await api(
+    'PATCH',
+    `/auth/users/${scoped.id}`,
+    {
+      collection_permissions: {
+        [COLLECTION]: { can_view: true, can_edit: true, can_publish: false },
+        [LAST_PAGE_COLLECTION]: { can_view: false, can_edit: false, can_publish: false },
+      },
+    },
+    token,
+  );
+
+  // The account screen edits them: open the panel and raise the grant to publisher.
+  await page.goto(`${BASE}/settings/users`, { waitUntil: 'networkidle' });
+  await page.locator(`button[aria-label="resource permissions of ${scopedEmail}"]`).click();
+  // The selects are found by the resource they belong to: Material applies `aria-label` to its
+  // own inner element, so the host attribute is not something to rely on.
+  const grant = page
+    .locator('.resource', { hasText: `collection: ${COLLECTION}` })
+    .locator('mat-select');
+  await grant.waitFor({ timeout: 10000 });
+  check('アカウント画面にリソース権限の一覧が出る', (await page.locator('.resource').count()) >= 2);
+
+  await grant.click();
+  await page.locator('mat-option', { hasText: '公開(編集 + 公開)' }).click();
+  await page.click('button:has-text("Save permissions")');
+  await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
+  const scopedAfterSave = (await api('GET', '/auth/users', undefined, token)).find(
+    (account) => account.email === scopedEmail,
+  );
+  check(
+    '保存した権限がサーバに届く',
+    scopedAfterSave.collection_permissions[COLLECTION].can_publish === true,
+    JSON.stringify(scopedAfterSave.collection_permissions),
+  );
+
+  // What that account is offered follows the grant: the collection it was given, and not the
+  // one it was denied.
+  const scopedLogin = await request.fetch(`${API}/auth/login`, {
+    method: 'POST',
+    data: { email: scopedEmail, password: 'scoped-password' },
+  });
+  const scopedToken = (await scopedLogin.json()).token;
+  const offered = await api('GET', '/models/collections', undefined, scopedToken);
+  check(
+    '許可したコレクションだけが一覧に出る',
+    offered.includes(COLLECTION) && !offered.includes(LAST_PAGE_COLLECTION),
+    offered.join(','),
+  );
+
+  const scopedSession = await openAs(scopedEmail, 'scoped-password');
+  await scopedSession.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await scopedSession.page
+    .locator('table.items tbody tr')
+    .first()
+    .waitFor({ timeout: 15000 });
+  check(
+    'grant したコレクションは編集できる',
+    (await scopedSession.page.locator('button:has-text("New item")').count()) === 1,
+  );
+  // The denied collection is refused by the server as well. Checked over the API rather than by
+  // opening it: a 403 in the browser is a console error, and the check at the end rightly
+  // treats those as failures.
+  const denied = await request.fetch(`${API}/models/collections/${LAST_PAGE_COLLECTION}/items/1`, {
+    headers: { Authorization: `Bearer ${scopedToken}` },
+  });
+  check('拒否したコレクションは API でも 403', denied.status() === 403, `status=${denied.status()}`);
+  await scopedSession.context.close();
+
   // ------------------------------------------- guessing a password is not free
   // A throwaway account, so the lock this leaves behind touches nothing else. The API is
   // called from here rather than through the form: what matters is the status codes, and a
   // refused sign-in is a console error the check below would rightly report.
-  const throttleEmail = 'e2e-throttle@example.com';
+  // A fresh address per run: the lock lives in the server's memory and deleting the account
+  // does not clear it, so a fixed address would make the second run against the same server
+  // fail. Older ones from previous runs are cleaned up here.
+  const throttleEmail = `e2e-throttle-${Date.now()}@example.com`;
   for (const account of await api('GET', '/auth/users', undefined, token)) {
-    if (account.email === throttleEmail) {
+    if (account.email.startsWith('e2e-throttle-')) {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }

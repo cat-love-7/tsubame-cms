@@ -25,6 +25,9 @@ export interface UserChange {
   is_admin?: boolean;
   is_active?: boolean;
   permission?: Permission;
+  /** Replaces the collection overrides when present; the map is sent whole. */
+  collection_permissions?: Record<string, Permission>;
+  single_page_permissions?: Record<string, Permission>;
 }
 
 /**
