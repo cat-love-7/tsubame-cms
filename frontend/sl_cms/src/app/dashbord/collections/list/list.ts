@@ -28,11 +28,16 @@ export class List {
 
   public collectionName: string = this.route.snapshot.params['name'];
   public schema: CollectionSchema = [];
-  /** The rows on screen. The server does the slicing; see `onPage`. */
-  public items: CollectionItemEntry[] = [];
+  /**
+   * The rows on screen. A signal, not a plain field: the response can land while Angular
+   * is checking the view, and a plain field changing then trips
+   * `ExpressionChangedAfterItHasBeenCheckedError` — which in dev mode left the row's
+   * bindings unapplied (empty cells) when the last page went from 25 rows to one.
+   */
+  public items = signal<CollectionItemEntry[]>([]);
   public error = signal('');
   /** Draft/published state per item id; the server sends drafts for untouched items. */
-  public metadata: ItemMetadataMap = {};
+  public metadata = signal<ItemMetadataMap>({});
   /** Items in the collection, not just on this page. Drives the paginator. */
   public total = signal(0);
   public pageIndex = signal(0);
@@ -66,27 +71,33 @@ export class List {
       )
       .subscribe({
         next: ({ page, metadata }) => {
-          this.items = page.items;
+          this.items.set(page.items);
           this.total.set(page.total);
-          this.metadata = metadata;
+          this.metadata.set(metadata);
         },
         error: (e) => this.error.set(`Failed to load the items: ${message(e)}`),
       });
   }
 
   onPage(event: PageEvent) {
+    const moved =
+      event.pageIndex !== this.pageIndex() || event.pageSize !== this.pageSize();
     this.pageIndex.set(event.pageIndex);
     this.pageSize.set(event.pageSize);
-    this.reload.next();
+    // The paginator also emits when it clamps itself (e.g. after the row count shrinks);
+    // reloading for those would fetch the same window twice.
+    if (moved) {
+      this.reload.next();
+    }
   }
 
   statusOf(id: number): ItemStatus {
-    return this.metadata[String(id)]?.status ?? 'draft';
+    return this.metadata()[String(id)]?.status ?? 'draft';
   }
 
   /** When the item's values were last saved, or a dash when that was never recorded. */
   updatedAt(id: number): string {
-    const updated = this.metadata[String(id)]?.updated_at;
+    const updated = this.metadata()[String(id)]?.updated_at;
     return updated ? new Date(updated).toLocaleString() : '—';
   }
 
@@ -100,7 +111,7 @@ export class List {
     request.subscribe({
       next: (metadata) => {
         this.error.set('');
-        this.metadata = { ...this.metadata, [String(id)]: metadata };
+        this.metadata.set({ ...this.metadata(), [String(id)]: metadata });
       },
       error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
     });
