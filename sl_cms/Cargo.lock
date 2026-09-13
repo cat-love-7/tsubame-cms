@@ -2724,7 +2724,6 @@ dependencies = [
 name = "sl-cms-core"
 version = "0.1.0"
 dependencies = [
- "argon2",
  "axum",
  "chrono",
  "hmac 0.13.0",
@@ -2746,6 +2745,7 @@ dependencies = [
 name = "sl-cms-on-premises"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "axum",
  "chrono",
  "rkv",

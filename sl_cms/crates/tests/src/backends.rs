@@ -12,9 +12,21 @@ use axum::Router;
 use sl_cms_aws::AwsRepository;
 use sl_cms_core::app_module::AppModule;
 use sl_cms_core::http;
+use sl_cms_core::auth::token::TokenIssuer;
+use sl_cms_core::models::user::{Permission, User};
+use sl_cms_core::repositories::user_repository::UserRepository;
 use sl_cms_on_premises::repository::Repository;
 
-use crate::TestBackend;
+use crate::{ADMIN_EMAIL, ADMIN_PASSWORD, TestBackend, TEST_SECRET, TEST_TOKEN_TTL_HOURS};
+
+/// Mint a token the way the harness's issuer would, so a backend can sign someone in without a
+/// password endpoint.
+fn mint(user: &User) -> String {
+    TokenIssuer::new(TEST_SECRET, TEST_TOKEN_TTL_HOURS)
+        .issue(user)
+        .expect("a token")
+        .0
+}
 
 /// The local adapter: an rkv environment and an image directory, in a scratch directory of
 /// their own that goes away when the run does.
@@ -27,6 +39,7 @@ impl TestBackend for OnPremises {
     type Storage = Repository;
 
     const SERVES_IMAGE_BYTES: bool = true;
+    const PASSWORD_LOGIN: bool = true;
 
     async fn open(hint: &str) -> Self {
         // Under `target/`, so a leaked directory from a panicking run is ignored by git and
@@ -47,6 +60,45 @@ impl TestBackend for OnPremises {
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
         sl_cms_on_premises::build_router(module, test_cors())
+    }
+
+    async fn sign_in_admin(&self, module: &Arc<AppModule<Self::Storage>>) -> String {
+        module
+            .auth_service
+            .bootstrap_admin(Some(ADMIN_EMAIL), Some(ADMIN_PASSWORD), None)
+            .await
+            .unwrap_or_else(|e| panic!("bootstrap admin: {e}"))
+            .expect("the store was empty, so an administrator is created");
+        let response = module
+            .auth_service
+            .login(ADMIN_EMAIL, ADMIN_PASSWORD)
+            .await
+            .expect("the administrator can sign in");
+        response.token
+    }
+
+    async fn user_for(&self, username: &str) -> User {
+        self.repository
+            .get_user_from_username(username)
+            .await
+            .expect("a readable store")
+            .unwrap_or_else(|| panic!("no account for {username}"))
+    }
+
+    async fn create_account(
+        &self,
+        username: &str,
+        is_admin: bool,
+        permission: Permission,
+    ) -> Result<User, String> {
+        // The suite creates accounts through the endpoint here, because that is where the
+        // password gets set; this exists for a backend that has no such endpoint.
+        let user = User::new(username, is_admin, permission);
+        self.repository
+            .add_user(&user)
+            .await
+            .map(|_| user)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -70,6 +122,7 @@ impl TestBackend for Aws {
     type Storage = AwsRepository;
 
     const SERVES_IMAGE_BYTES: bool = false;
+    const PASSWORD_LOGIN: bool = false;
 
     async fn open(hint: &str) -> Self {
         let (repository, _table) = sl_cms_aws::open_test_repository(hint)
@@ -88,8 +141,40 @@ impl TestBackend for Aws {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        // No extra routes: the object store serves the bytes.
-        http::router(module, test_cors())
+        sl_cms_aws::build_router(module, test_cors())
+    }
+
+    async fn sign_in_admin(&self, _module: &Arc<AppModule<Self::Storage>>) -> String {
+        // No password endpoint to sign in through: this is what a deployment does once Cognito
+        // has authenticated someone — resolve the local record and mint the token for it.
+        let user = User::new(ADMIN_EMAIL, true, Permission::admin());
+        self.repository
+            .add_user(&user)
+            .await
+            .expect("the administrator record");
+        mint(&user)
+    }
+
+    async fn user_for(&self, username: &str) -> User {
+        self.repository
+            .get_user_from_username(username)
+            .await
+            .expect("a readable table")
+            .unwrap_or_else(|| panic!("no account for {username}"))
+    }
+
+    async fn create_account(
+        &self,
+        username: &str,
+        is_admin: bool,
+        permission: Permission,
+    ) -> Result<User, String> {
+        let user = User::new(username, is_admin, permission);
+        self.repository
+            .add_user(&user)
+            .await
+            .map(|_| user)
+            .map_err(|e| e.to_string())
     }
 }
 

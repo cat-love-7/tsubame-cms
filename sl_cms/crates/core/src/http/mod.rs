@@ -10,10 +10,14 @@
 //! request to the only client there is.
 
 pub mod auth;
+/// What this deployment can do, for a client that has to ask.
+pub mod capabilities;
 pub mod collections;
 pub mod composite_fields;
 pub mod content;
 pub mod images;
+/// The password endpoints, which only a deployment that stores credentials itself has.
+pub mod password_auth;
 /// The byte-serving routes, which only a backend that stores the bytes itself has.
 pub mod local_images;
 pub mod single_pages;

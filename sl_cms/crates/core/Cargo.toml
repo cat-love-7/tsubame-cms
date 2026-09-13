@@ -13,7 +13,6 @@ serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-argon2.workspace = true
 jsonwebtoken.workspace = true
 # Webhooks. The core owns the notifier, so the HTTP client lives here; an adapter does not
 # need one.

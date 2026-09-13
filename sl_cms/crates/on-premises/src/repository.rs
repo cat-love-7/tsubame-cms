@@ -22,6 +22,13 @@ pub(crate) const METADATA_STORE: &str = "item_metadata";
 /// can never change the live site.
 pub(crate) const DRAFT_STORE: &str = "item_draft";
 
+/// Store holding the local password of an account, keyed by user id.
+///
+/// Deliberately not part of the user record: the record is identity and authorisation, and a
+/// credential that is nowhere near it cannot leak through a response, a log line or a debug
+/// print (see `crate::credentials`).
+pub(crate) const CREDENTIAL_STORE: &str = "credential";
+
 /// The side stores (metadata, draft) key an item as `collection:<name>:<id>`, so
 /// everything belonging to one collection can be scanned and purged by prefix.
 fn collection_prefix(collection_name: &str) -> String {

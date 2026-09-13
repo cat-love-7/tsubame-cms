@@ -15,6 +15,7 @@ use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
+pub mod credentials;
 pub mod repository;
 
 /// Number of named LMDB databases the environment is allowed to open.
@@ -101,12 +102,18 @@ pub fn build_router(
     module: std::sync::Arc<AppModule<repository::Repository>>,
     cors: tower_http::cors::CorsLayer,
 ) -> axum::Router {
-    sl_cms_core::http::router_with(
-        module,
-        cors,
-        sl_cms_core::http::local_images::public_routes(),
-        sl_cms_core::http::local_images::protected_routes(),
-    )
+    // Everything this backend has that a deployment without local storage does not: serving and
+    // accepting image bytes, and the password endpoints (it is the CMS, not an identity
+    // provider, that checks a password here).
+    let extra_public = sl_cms_core::http::local_images::public_routes()
+        .merge(sl_cms_core::http::password_auth::public_routes())
+        .merge(sl_cms_core::http::capabilities::routes(
+            sl_cms_core::models::capabilities::Capabilities::ON_PREMISES,
+        ));
+    let extra_protected = sl_cms_core::http::local_images::protected_routes()
+        .merge(sl_cms_core::http::password_auth::protected_routes());
+
+    sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
 }
 
 /// A fresh rkv environment plus a repository over it, for the integration tests.

@@ -23,9 +23,10 @@ use sl_cms_core::models::pagination::DEFAULT_PAGE_LIMIT;
 use sl_cms_core::models::user::Permission;
 use sl_cms_core::preview_link::PreviewTarget;
 use sl_cms_core::webhook::{Notifier, WebhookNotifier};
+use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_tests::{
-    login, send, send_raw, send_with_headers, TestBackend, ADMIN_EMAIL, ADMIN_PASSWORD,
-    VIEWER_EMAIL, VIEWER_PASSWORD,
+    send, send_raw, send_with_headers, TestBackend, ADMIN_EMAIL, ADMIN_PASSWORD, TEST_SECRET,
+    TEST_TOKEN_TTL_HOURS, VIEWER_EMAIL, VIEWER_PASSWORD,
 };
 
 /// Which backend this copy drives; the runner file defines it just before including this file.
@@ -63,15 +64,125 @@ async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
 }
 
 async fn create_user(app: &TestApp, email: &str, password: &str, is_admin: bool) -> StatusCode {
+    create_account(
+        app,
+        json!({ "username": email, "password": password, "is_admin": is_admin }),
+    )
+    .await
+    .0
+}
+
+/// Create an account, the way this deployment creates one.
+///
+/// Where the CMS stores the credential this is `POST /auth/users`, so the endpoint and its 201
+/// and 409 are exercised. Where an identity provider owns the credential there is no such
+/// endpoint yet — provisioning a Cognito user is `doc/aws-plan.md` P4 — so the account record is
+/// written directly: the tests *about* permissions run against both deployments, and the ones
+/// about passwords are gated on `Backend::PASSWORD_LOGIN`.
+async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
+    if app.password_login() {
+        return send(
+            &app.router,
+            Method::POST,
+            "/auth/users",
+            Some(&app.admin_token),
+            Some(payload),
+        )
+        .await;
+    }
+    let username = payload["username"].as_str().expect("a username");
+    let is_admin = payload["is_admin"].as_bool().unwrap_or(false);
+    let permission: Permission = serde_json::from_value(payload["permission"].clone())
+        .unwrap_or_else(|_| Permission::viewer());
+    match app
+        .backend()
+        .create_account(username, is_admin, permission)
+        .await
+    {
+        Ok(user) => (
+            StatusCode::CREATED,
+            serde_json::to_value(user.to_response()).expect("a serialisable account"),
+        ),
+        Err(_) => (StatusCode::CONFLICT, Value::Null),
+    }
+}
+
+/// Sign in, the way this deployment signs in.
+///
+/// Where the CMS checks passwords this posts to `/auth/login`, so a test that needs a token
+/// also exercises signing in. Where an identity provider does it there is no endpoint to post
+/// to, and the harness mints the token the way a deployment does once the provider has
+/// authenticated someone. The tests *about* passwords are gated on `Backend::PASSWORD_LOGIN`;
+/// this is for the ones that only need to be someone.
+async fn login(app: &TestApp, username: &str, password: &str) -> (StatusCode, Value) {
+    if app.password_login() {
+        return sl_cms_tests::login(&app.router, username, password).await;
+    }
+    // The same answer the real endpoint gives, assembled from the account record: the suite's
+    // password tests are gated, and this keeps the rest reading like a sign-in.
+    let user = app.backend().user_for(username).await;
+    let (token, expires_at) = TokenIssuer::new(TEST_SECRET, TEST_TOKEN_TTL_HOURS)
+        .issue(&user)
+        .expect("a token");
+    (
+        StatusCode::OK,
+        json!({ "token": token, "expires_at": expires_at, "user": user.to_response() }),
+    )
+}
+
+/// What the deployment can do, which a client asks before it draws anything.
+#[tokio::test]
+async fn capabilities_say_how_this_deployment_signs_users_in() {
+    let app = test_app().await;
+
+    let (status, body) = send(&app.router, Method::GET, "/auth/capabilities", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["password_login"], Backend::PASSWORD_LOGIN);
+    assert_eq!(
+        body["image_upload"],
+        if Backend::SERVES_IMAGE_BYTES {
+            "proxied"
+        } else {
+            "presigned"
+        }
+    );
+}
+
+/// Where there are no local passwords, the endpoints that would use one say so rather than
+/// disappearing: a client that guessed the path learns where to sign in instead of reading a
+/// 404 as "wrong URL".
+#[tokio::test]
+async fn a_deployment_without_local_passwords_explains_itself() {
+    if Backend::PASSWORD_LOGIN {
+        return;
+    }
+    let app = test_app().await;
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/auth/login",
+        None,
+        Some(json!({ "username": ADMIN_EMAIL, "password": ADMIN_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    let message = String::from_utf8_lossy(&body);
+    assert!(
+        message.contains("Cognito"),
+        "the answer should say where to sign in: {message}"
+    );
+
+    // The same for an account route that would touch a credential, with a real token.
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/users",
+        "/auth/me/password",
         Some(&app.admin_token),
-        Some(json!({ "username": email, "password": password, "is_admin": is_admin })),
+        Some(json!({ "current_password": "x", "new_password": "y" })),
     )
     .await;
-    status
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
 
 // ---------------------------------------------------------------- liveness / routing
@@ -124,10 +235,16 @@ async fn model_routes_require_a_bearer_token() {
 
 #[tokio::test]
 async fn login_rejects_bad_credentials_without_revealing_which_part_was_wrong() {
+    // This deployment leaves sign-in to an identity provider: there is no password endpoint to
+    // drive, which is what `GET /auth/capabilities` reports to a client.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
 
-    let (unknown_status, unknown_body) = login(&app.router, "nobody@example.com", ADMIN_PASSWORD).await;
-    let (wrong_status, wrong_body) = login(&app.router, ADMIN_EMAIL, "not-the-password").await;
+    let (unknown_status, unknown_body) = login(&app, "nobody@example.com", ADMIN_PASSWORD).await;
+    let (wrong_status, wrong_body) = login(&app, ADMIN_EMAIL, "not-the-password").await;
 
     assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
     assert_eq!(wrong_status, StatusCode::UNAUTHORIZED);
@@ -163,7 +280,7 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
         StatusCode::CREATED
     );
 
-    let (status, body) = login(&app.router, VIEWER_EMAIL, VIEWER_PASSWORD).await;
+    let (status, body) = login(&app, VIEWER_EMAIL, VIEWER_PASSWORD).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["user"]["is_admin"], false);
     let viewer_token = body["token"].as_str().unwrap().to_string();
@@ -214,6 +331,12 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
 
 #[tokio::test]
 async fn rejects_duplicate_and_weak_user_registrations() {
+    // The validation lives in the account-creation endpoint, which this deployment does not
+    // have: it is Cognito that would reject a weak or duplicate registration.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
     assert_eq!(
         create_user(&app, VIEWER_EMAIL, VIEWER_PASSWORD, false).await,
@@ -1357,7 +1480,7 @@ async fn publishing_requires_edit_permission() {
         create_user(&app, VIEWER_EMAIL, VIEWER_PASSWORD, false).await,
         StatusCode::CREATED
     );
-    let (status, body) = login(&app.router, VIEWER_EMAIL, VIEWER_PASSWORD).await;
+    let (status, body) = login(&app, VIEWER_EMAIL, VIEWER_PASSWORD).await;
     assert_eq!(status, StatusCode::OK);
     let viewer_token = body["token"].as_str().unwrap().to_string();
 
@@ -1849,18 +1972,12 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     assert_eq!(status, StatusCode::OK);
 
     // A viewer everywhere to start with...
-    let (status, created) = send(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&admin),
-        Some(json!({
+    let (status, created) = create_account(&app, json!({
             "username": "scoped@example.com",
             "password": "scoped-password",
             "is_admin": false,
             "permission": Permission::viewer(),
-        })),
-    )
+        }))
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let scoped_id = created["id"].as_str().unwrap().to_string();
@@ -1887,7 +2004,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     assert_eq!(updated["collection_permissions"]["blog"]["can_publish"], false);
     assert_eq!(updated["single_page_permissions"]["home"]["can_view"], false);
 
-    let (_, body) = login(&app.router, "scoped@example.com", "scoped-password").await;
+    let (_, body) = login(&app, "scoped@example.com", "scoped-password").await;
     let scoped = body["token"].as_str().unwrap().to_string();
     let edit = json!({ "title": "edited by the scoped account", "tags": [] });
 
@@ -2010,18 +2127,12 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
     let admin = app.admin_token.clone();
     create_sample_item(&app, "blog").await;
 
-    let (status, created) = send(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&admin),
-        Some(json!({
+    let (status, created) = create_account(&app, json!({
             "username": "typo@example.com",
             "password": "typo-password",
             "is_admin": false,
             "permission": Permission::viewer(),
-        })),
-    )
+        }))
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let id = created["id"].as_str().unwrap().to_string();
@@ -2067,27 +2178,27 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
 /// uses it without being signed in, and the link is spent.
 #[tokio::test]
 async fn an_administrator_can_issue_a_reset_link_that_works_once() {
+    // This deployment leaves sign-in to an identity provider: there is no password endpoint to
+    // drive, which is what `GET /auth/capabilities` reports to a client.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
     let admin = app.admin_token.clone();
 
-    let (status, created) = send(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&admin),
-        Some(json!({
+    let (status, created) = create_account(&app, json!({
             "username": "ops",
             "password": "ops-password",
             "is_admin": false,
             "permission": Permission::viewer(),
-        })),
-    )
+        }))
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let id = created["id"].as_str().unwrap().to_string();
 
     // A session that existed before the reset, to watch it die.
-    let (_, body) = login(&app.router, "ops", "ops-password").await;
+    let (_, body) = login(&app, "ops", "ops-password").await;
     let old_token = body["token"].as_str().unwrap().to_string();
 
     // Only an administrator may mint a link.
@@ -2129,9 +2240,9 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
         .to_string();
 
     // The new password works, the old one does not, and the old session is gone.
-    let (status, _) = login(&app.router, "ops", "chosen-by-ops").await;
+    let (status, _) = login(&app, "ops", "chosen-by-ops").await;
     assert_eq!(status, StatusCode::OK);
-    let (status, _) = login(&app.router, "ops", "ops-password").await;
+    let (status, _) = login(&app, "ops", "ops-password").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&old_token), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -2148,7 +2259,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) = login(&app.router, "ops", "chosen-by-ops").await;
+    let (status, _) = login(&app, "ops", "chosen-by-ops").await;
     assert_eq!(status, StatusCode::OK, "パスワードは変わっていない");
 
     // Nothing usable comes out of a token that was never issued.
@@ -2167,10 +2278,16 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
 /// instead of guessing.
 #[tokio::test]
 async fn a_throttled_sign_in_answers_429_with_retry_after() {
+    // This deployment leaves sign-in to an identity provider: there is no password endpoint to
+    // drive, which is what `GET /auth/capabilities` reports to a client.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
 
     for attempt in 1..=5 {
-        let (status, _) = login(&app.router, ADMIN_EMAIL, "not-the-password").await;
+        let (status, _) = login(&app, ADMIN_EMAIL, "not-the-password").await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{attempt} 回目");
     }
 
@@ -2196,7 +2313,7 @@ async fn a_throttled_sign_in_answers_429_with_retry_after() {
     assert!((1..=15 * 60).contains(&retry_after), "retry-after={retry_after}");
 
     // Someone else's failures are their own.
-    let (status, _) = login(&app.router, "someone-else@example.com", "whatever").await;
+    let (status, _) = login(&app, "someone-else@example.com", "whatever").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -2204,27 +2321,27 @@ async fn a_throttled_sign_in_answers_429_with_retry_after() {
 /// change gets a token for the new generation, so the screen they are on keeps working.
 #[tokio::test]
 async fn changing_a_password_ends_the_tokens_that_came_before_it() {
+    // This deployment leaves sign-in to an identity provider: there is no password endpoint to
+    // drive, which is what `GET /auth/capabilities` reports to a client.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
     let admin = app.admin_token.clone();
 
     // A second account, so the administrator's own session is not the one under test.
-    let (status, created) = send(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&admin),
-        Some(json!({
+    let (status, created) = create_account(&app, json!({
             "username": "editor@example.com",
             "password": "editor-password",
             "is_admin": false,
             "permission": Permission::editor(),
-        })),
-    )
+        }))
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let editor_id = created["id"].as_str().unwrap().to_string();
 
-    let (_, body) = login(&app.router, "editor@example.com", "editor-password").await;
+    let (_, body) = login(&app, "editor@example.com", "editor-password").await;
     let editor = body["token"].as_str().unwrap().to_string();
 
     let (status, body) = send(
@@ -2274,21 +2391,15 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let item_id = create_sample_item(&app, "blog").await;
 
     // A second account, so "who published" is not just the admin who set everything up.
-    let (status, body) = send_raw(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&app.admin_token),
-        Some(json!({
+    let (status, body) = create_account(&app, json!({
             "username": "publisher@example.com",
             "password": "publisher-password",
             "is_admin": false,
             "permission": Permission { can_view: true, can_edit: true, can_publish: true },
-        })),
-    )
+        }))
     .await;
-    assert_eq!(status, StatusCode::CREATED, "{}", String::from_utf8_lossy(&body));
-    let (_, body) = login(&app.router, "publisher@example.com", "publisher-password").await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (_, body) = login(&app, "publisher@example.com", "publisher-password").await;
     let publisher = body["token"].as_str().unwrap().to_string();
 
     let publish = format!("/models/collections/blog/items/{item_id}/publish");
@@ -2900,7 +3011,6 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
 #[tokio::test]
 async fn each_role_can_do_exactly_what_it_is_granted() {
     let app = test_app().await;
-    let admin = app.admin_token.clone();
     let item_id = create_sample_item(&app, "blog").await;
 
     let roles = [
@@ -2916,25 +3026,19 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
         ),
     ];
     for (email, permission) in roles {
-        let (status, body) = send_raw(
-            &app.router,
-            Method::POST,
-            "/auth/users",
-            Some(&admin),
-            Some(json!({
+        let (status, body) = create_account(&app, json!({
                 "username": email,
                 "password": "role-password",
                 "is_admin": false,
                 "permission": permission,
-            })),
-        )
+            }))
         .await;
-        assert_eq!(status, StatusCode::CREATED, "{email}: {}", String::from_utf8_lossy(&body));
+        assert_eq!(status, StatusCode::CREATED, "{email}: {body}");
     }
 
     let mut tokens = HashMap::new();
     for (email, _) in roles {
-        let (status, body) = login(&app.router, email, "role-password").await;
+        let (status, body) = login(&app, email, "role-password").await;
         assert_eq!(status, StatusCode::OK, "{email} login: {body}");
         tokens.insert(email, body["token"].as_str().unwrap().to_string());
     }
@@ -3152,16 +3256,16 @@ async fn edits_wait_in_the_working_copy_until_they_are_published() {
 /// own password, and the CMS can never be left without an active administrator.
 #[tokio::test]
 async fn accounts_can_be_managed_without_locking_the_cms_out() {
+    // This deployment leaves sign-in to an identity provider: there is no password endpoint to
+    // drive, which is what `GET /auth/capabilities` reports to a client.
+    if !Backend::PASSWORD_LOGIN {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
     let app = test_app().await;
     let admin = app.admin_token.clone();
 
-    let (status, created) = send(
-        &app.router,
-        Method::POST,
-        "/auth/users",
-        Some(&admin),
-        Some(json!({ "username": "user@example.com", "password": "user-password" })),
-    )
+    let (status, created) = create_account(&app, json!({ "username": "user@example.com", "password": "user-password" }))
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let id = created["id"].as_str().unwrap().to_string();
@@ -3198,7 +3302,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        login(&app.router, "user@example.com", "user-password").await.0,
+        login(&app, "user@example.com", "user-password").await.0,
         StatusCode::FORBIDDEN,
         "a disabled account cannot sign in"
     );
@@ -3217,7 +3321,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = login(&app.router, "user@example.com", "user-password").await;
+    let (status, body) = login(&app, "user@example.com", "user-password").await;
     assert_eq!(status, StatusCode::OK);
     let user_token = body["token"].as_str().unwrap().to_string();
 
@@ -3257,7 +3361,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        login(&app.router, "user@example.com", "another-password").await.0,
+        login(&app, "user@example.com", "another-password").await.0,
         StatusCode::OK
     );
 
@@ -3272,7 +3376,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        login(&app.router, "user@example.com", "reset-password").await.0,
+        login(&app, "user@example.com", "reset-password").await.0,
         StatusCode::OK
     );
 
@@ -3312,7 +3416,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        login(&app.router, "user@example.com", "reset-password").await.0,
+        login(&app, "user@example.com", "reset-password").await.0,
         StatusCode::UNAUTHORIZED
     );
 

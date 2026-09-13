@@ -83,7 +83,6 @@ mod tests {
             id: StringId::from("u-1"),
             username: "a@example.com".to_string(),
             email: None,
-            password_hash: "x".to_string(),
             is_active: true,
             is_admin: true,
             permission: Permission::default(),

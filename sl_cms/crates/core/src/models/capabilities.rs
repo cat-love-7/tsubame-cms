@@ -1,0 +1,44 @@
+//! What a deployment can do, so a client can ask instead of guessing.
+//!
+//! The same CMS runs in places that differ in ways a client has to know about: the on-premises
+//! deployment verifies passwords itself and takes image bytes through its own endpoints, while
+//! the AWS one signs users in through Cognito and hands out presigned URLs so the browser talks
+//! to S3 directly. Discovering that from a 501 is a poor way to find out.
+
+/// A deployment's shape, as `GET /auth/capabilities` reports it.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Capabilities {
+    /// Whether the CMS verifies passwords: `/auth/login`, `/auth/me/password` and the reset
+    /// links exist only where it does.
+    pub password_login: bool,
+    /// Whether an administrator can mint a password-reset link to hand to someone.
+    pub password_reset_links: bool,
+    /// How image bytes reach storage.
+    pub image_upload: ImageUpload,
+}
+
+/// Who accepts the bytes of an uploaded image.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageUpload {
+    /// The CMS accepts them and stores them itself (the upload URL points at this server).
+    Proxied,
+    /// The CMS hands out a presigned URL and the browser PUTs straight to object storage.
+    Presigned,
+}
+
+impl Capabilities {
+    /// The on-premises deployment: it is the CMS that verifies passwords and keeps the bytes.
+    pub const ON_PREMISES: Capabilities = Capabilities {
+        password_login: true,
+        password_reset_links: true,
+        image_upload: ImageUpload::Proxied,
+    };
+
+    /// The AWS deployment: Cognito signs users in, and S3 takes the bytes directly.
+    pub const AWS: Capabilities = Capabilities {
+        password_login: false,
+        password_reset_links: false,
+        image_upload: ImageUpload::Presigned,
+    };
+}

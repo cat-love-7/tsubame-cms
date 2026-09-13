@@ -166,7 +166,9 @@ mod tests {
     const TTL_MINUTES: i64 = 30;
 
     fn account() -> User {
-        User::new("ops", "hash".to_string(), false, Permission::viewer())
+        User::new(
+            "ops",
+            false, Permission::viewer())
     }
 
     fn issuer() -> PasswordResetIssuer {
@@ -245,7 +247,9 @@ mod tests {
             Err(PasswordResetError::Invalid)
         );
 
-        let someone_else = User::new("other", "hash".to_string(), false, Permission::viewer());
+        let someone_else = User::new(
+            "other",
+            false, Permission::viewer());
         let forged_account = format!(
             "{}.{}.{}.{}",
             someone_else.id,

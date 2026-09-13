@@ -21,9 +21,6 @@ pub struct User {
     /// absent; a future Cognito deployment keeps it as an attribute, not an identity.
     #[serde(default)]
     pub email: Option<String>,
-    /// Argon2 PHC string. It has to be serialised (the record is stored as JSON), so
-    /// never hand a `User` to a client — use [`User::to_response`].
-    pub password_hash: String,
     pub is_active: bool,
     pub is_admin: bool,
     pub permission: Permission,
@@ -52,17 +49,16 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(
-        username: &str,
-        password_hash: String,
-        is_admin: bool,
-        permission: Permission,
-    ) -> Self {
+    /// A new account record.
+    ///
+    /// No password: where one is stored, it is stored by the deployment's adapter
+    /// ([`LocalCredentials`](crate::repositories::local_credentials::LocalCredentials)), never
+    /// in the record the CMS reasons about.
+    pub fn new(username: &str, is_admin: bool, permission: Permission) -> Self {
         User {
             id: UserId::from(uuid::Uuid::new_v4().to_string().as_str()),
             username: normalize_username(username),
             email: None,
-            password_hash,
             is_active: true,
             is_admin,
             permission,
@@ -341,7 +337,7 @@ mod tests {
 
     #[test]
     fn new_user_is_a_viewer_with_no_write_access() {
-        let user = User::new("Ops.User", "hash".to_string(), false, Permission::default());
+        let user = User::new("Ops.User", false, Permission::default());
         assert_eq!(user.username, "ops.user");
         assert!(user.email.is_none(), "メールアドレスは任意");
         assert!(!user.can_write(user.permission));
@@ -356,7 +352,7 @@ mod tests {
     #[test]
     fn an_account_from_before_usernames_existed_falls_back_to_its_email() {
         let mut legacy: User = serde_json::from_str(
-            r#"{"id":"u-1","email":"ops@example.com","password_hash":"h","is_active":true,
+            r#"{"id":"u-1","email":"ops@example.com","is_active":true,
                 "is_admin":false,"permission":{"can_publish":false,"can_edit":false,"can_view":true},
                 "created_at":"2024-01-01T00:00:00Z","last_login":null}"#,
         )
@@ -373,7 +369,7 @@ mod tests {
     /// A record that already has a username keeps it, even if an address is recorded too.
     #[test]
     fn adopting_a_legacy_identifier_does_not_overwrite_a_username() {
-        let mut user = User::new("ops", "hash".to_string(), false, Permission::default());
+        let mut user = User::new("ops", false, Permission::default());
         user.email = Some("ops@example.com".to_string());
         user.adopt_legacy_identifier();
         assert_eq!(user.username, "ops");
@@ -385,7 +381,7 @@ mod tests {
     #[test]
     fn an_account_from_before_token_versions_existed_is_still_readable() {
         let legacy: User = serde_json::from_str(
-            r#"{"id":"u-1","email":"a@example.com","password_hash":"h","is_active":true,
+            r#"{"id":"u-1","email":"a@example.com","is_active":true,
                 "is_admin":false,"permission":{"can_publish":false,"can_edit":false,"can_view":true},
                 "created_at":"2024-01-01T00:00:00Z","last_login":null}"#,
         )
@@ -406,7 +402,7 @@ mod tests {
     /// grant can widen access and take it away.
     #[test]
     fn a_resource_override_replaces_the_account_wide_permission() {
-        let mut user = User::new("a@b.co", "h".into(), false, Permission::viewer());
+        let mut user = User::new("a@b.co", false, Permission::viewer());
         // Everywhere: read only.
         assert!(user.can_read(user.permission));
         assert!(!user.can_write(user.permission));
@@ -435,7 +431,7 @@ mod tests {
     /// the resource they are supposed to be able to fix.
     #[test]
     fn an_administrator_is_not_bound_by_resource_overrides() {
-        let mut admin = User::new("a@b.co", "h".into(), true, Permission::admin());
+        let mut admin = User::new("a@b.co", true, Permission::admin());
         admin.single_page_permissions.insert(
             "home".to_string(),
             Permission { can_view: false, can_edit: false, can_publish: false },
@@ -446,8 +442,8 @@ mod tests {
 
     #[test]
     fn admin_and_editor_can_write() {
-        let admin = User::new("a@b.co", "h".into(), true, Permission::admin());
-        let editor = User::new("a@b.co", "h".into(), false, Permission::editor());
+        let admin = User::new("a@b.co", true, Permission::admin());
+        let editor = User::new("a@b.co", false, Permission::editor());
         assert!(admin.can_write(admin.permission));
         assert!(editor.can_write(editor.permission));
     }
@@ -456,21 +452,20 @@ mod tests {
     /// them, and only a publisher (or an administrator) can.
     #[test]
     fn publishing_is_a_separate_capability_from_editing() {
-        let editor = User::new("a@b.co", "h".into(), false, Permission::editor());
+        let editor = User::new("a@b.co", false, Permission::editor());
         assert!(editor.can_write(editor.permission));
         assert!(editor.can_read(editor.permission));
         assert!(!editor.can_publish(editor.permission));
 
         let publisher = User::new(
             "a@b.co",
-            "h".into(),
             false,
             Permission { can_view: true, can_edit: true, can_publish: true },
         );
         assert!(publisher.can_publish(publisher.permission));
 
         // An administrator can do all three whatever the permission record says.
-        let admin = User::new("a@b.co", "h".into(), true, Permission::viewer());
+        let admin = User::new("a@b.co", true, Permission::viewer());
         assert!(admin.can_read(admin.permission) && admin.can_write(admin.permission) && admin.can_publish(admin.permission));
     }
 
@@ -478,7 +473,6 @@ mod tests {
     fn an_account_without_can_view_cannot_read() {
         let none = User::new(
             "a@b.co",
-            "h".into(),
             false,
             Permission { can_view: false, can_edit: false, can_publish: false },
         );

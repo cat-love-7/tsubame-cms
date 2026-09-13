@@ -1,3 +1,4 @@
+pub mod capabilities;
 pub mod schema;
 pub mod field;
 pub mod collection;

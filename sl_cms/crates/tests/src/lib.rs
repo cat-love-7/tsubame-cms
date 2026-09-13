@@ -30,6 +30,7 @@ use sl_cms_core::app_module::{AppModule, Storage};
 use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
+use sl_cms_core::models::user::{Permission, User};
 use sl_cms_core::webhook::{NoopNotifier, Notifier};
 
 pub mod backends;
@@ -55,6 +56,13 @@ pub trait TestBackend: Sized {
     /// tests that PUT bytes through this router only apply to the other kind.
     const SERVES_IMAGE_BYTES: bool;
 
+    /// Whether the CMS itself verifies passwords.
+    ///
+    /// The on-premises deployment does, and the tests about signing in, reset links and
+    /// changing a password are its tests. Where an identity provider signs users in there is no
+    /// password endpoint at all, so those tests have nothing to drive.
+    const PASSWORD_LOGIN: bool;
+
     /// A storage of its own, with whatever scratch space it needs. Dropping it cleans up.
     ///
     /// `hint` names the scratch space; it is unique per test so tests can run at once.
@@ -64,7 +72,40 @@ pub trait TestBackend: Sized {
 
     /// The whole router for this backend: the shared one, plus any routes it adds.
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router;
+
+    /// Create the administrator the suite uses and mint the token it signs in with.
+    ///
+    /// Where the CMS checks passwords this really does bootstrap an account and POST to
+    /// `/auth/login`, so every test that needs a token also exercises signing in. Where an
+    /// identity provider does it, there is no endpoint to post to: the account record is
+    /// written and the token minted, which is what a deployment does once the provider has
+    /// authenticated someone.
+    fn sign_in_admin(
+        &self,
+        module: &Arc<AppModule<Self::Storage>>,
+    ) -> impl std::future::Future<Output = String> + Send;
+
+    /// The account record for `username`, for a suite helper that has to answer "who am I" the
+    /// way a real sign-in would where there is no sign-in endpoint to ask.
+    fn user_for(&self, username: &str) -> impl std::future::Future<Output = User> + Send;
+
+    /// Write an account record, the way this deployment creates one.
+    ///
+    /// The credential is not part of it: on-premises sets the password through the endpoint the
+    /// suite calls, and AWS leaves it to Cognito.
+    fn create_account(
+        &self,
+        username: &str,
+        is_admin: bool,
+        permission: Permission,
+    ) -> impl std::future::Future<Output = Result<User, String>> + Send;
 }
+
+/// The token issuer every test deployment is built with.
+///
+/// The harness and the backends have to agree on the secret for a minted token to verify.
+pub const TEST_SECRET: &[u8] = b"integration-test-secret";
+pub const TEST_TOKEN_TTL_HOURS: i64 = 1;
 
 /// A running router plus the storage behind it.
 pub struct TestApp<B: TestBackend> {
@@ -88,25 +129,16 @@ impl<B: TestBackend> TestApp<B> {
         let backend = B::open(&format!("test_http_{id}")).await;
         let module = Arc::new(AppModule::new(
             backend.storage(),
-            TokenIssuer::new(b"integration-test-secret", 1),
+            TokenIssuer::new(TEST_SECRET, TEST_TOKEN_TTL_HOURS),
             notifier,
             // Long enough that a link minted during a test is never expired, and signed with
             // the same secret the tokens use, as a deployment does.
-            PreviewLinkIssuer::new(b"integration-test-secret", 60),
-            PasswordResetIssuer::new(b"integration-test-secret", 30),
+            PreviewLinkIssuer::new(TEST_SECRET, 60),
+            PasswordResetIssuer::new(TEST_SECRET, 30),
         ));
 
-        module
-            .auth_service
-            .bootstrap_admin(Some(ADMIN_EMAIL), Some(ADMIN_PASSWORD), None)
-            .await
-            .unwrap_or_else(|e| panic!("bootstrap admin: {e}"))
-            .expect("the store was empty, so an administrator is created");
-
+        let admin_token = backend.sign_in_admin(&module).await;
         let router = B::router(module.clone());
-        let (status, body) = login(&router, ADMIN_EMAIL, ADMIN_PASSWORD).await;
-        assert_eq!(status, StatusCode::OK, "admin login failed: {body}");
-        let admin_token = body["token"].as_str().unwrap().to_string();
 
         TestApp {
             router,
@@ -114,6 +146,17 @@ impl<B: TestBackend> TestApp<B> {
             admin_token,
             backend,
         }
+    }
+
+    /// Whether the password endpoints exist in this deployment.
+    pub fn password_login(&self) -> bool {
+        B::PASSWORD_LOGIN
+    }
+
+    /// The backend, for the few things a test has to do without the HTTP layer (writing an
+    /// account record where there is no endpoint that would).
+    pub fn backend(&self) -> &B {
+        &self.backend
     }
 }
 

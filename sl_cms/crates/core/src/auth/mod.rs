@@ -1,6 +1,5 @@
 //! Authentication: credential verification, token issuing, and the user lifecycle.
 
-pub mod password;
 pub mod throttle;
 pub mod token;
 
@@ -13,6 +12,7 @@ use crate::models::user::{
     PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
+use crate::repositories::local_credentials::LocalCredentials;
 use crate::repositories::user_repository::UserRepository;
 use throttle::LoginThrottle;
 use token::TokenIssuer;
@@ -33,8 +33,7 @@ pub struct AuthService<R: UserRepository> {
     throttle: LoginThrottle,
 }
 
-impl<R: UserRepository> AuthService<R> {
-    pub fn new(
+impl<R: UserRepository> AuthService<R> {    pub fn new(
         repository: Arc<R>,
         issuer: TokenIssuer,
         password_resets: PasswordResetIssuer,
@@ -46,7 +45,6 @@ impl<R: UserRepository> AuthService<R> {
             throttle: LoginThrottle::new(),
         }
     }
-
     pub async fn has_any_user(&self) -> Result<bool, HttpError> {
         Ok(!self
             .repository
@@ -55,51 +53,6 @@ impl<R: UserRepository> AuthService<R> {
             .map_err(internal)?
             .is_empty())
     }
-
-    /// Verify credentials and issue a token.
-    pub async fn login(&self, username: &str, password: &str) -> Result<LoginResponse, HttpError> {
-        let username = normalize_username(username);
-        // Checked before the password is even looked at, and for unknown identifiers too, so
-        // the limiter cannot be used to find out which accounts exist.
-        if let Some(wait) = self.throttle.retry_after(&username, Instant::now()) {
-            return Err(HttpError::TooManyRequests(wait));
-        }
-
-        let user = self
-            .repository
-            .get_user_from_username(&username)
-            .await
-            .map_err(internal)?;
-
-        let Some(mut user) = user else {
-            self.throttle.record_failure(&username, Instant::now());
-            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
-        };
-
-        if !password::verify_password(password, &user.password_hash) {
-            self.throttle.record_failure(&username, Instant::now());
-            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
-        }
-        if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled"));
-        }
-        self.throttle.record_success(&username);
-
-        // Recording the login is a side effect; a failure here must not deny a valid
-        // login, so it is logged and swallowed.
-        user.last_login = Some(chrono::Utc::now());
-        if let Err(e) = self.repository.update_user(&user.id, &user).await {
-            tracing::warn!("failed to record last_login for {}: {e}", user.username);
-        }
-
-        let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
-        Ok(LoginResponse {
-            token,
-            expires_at,
-            user: user.to_response(),
-        })
-    }
-
     /// Resolve a bearer token to the (active) user it belongs to.
     pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
         let claims = self.issuer.verify(token).map_err(|e| {
@@ -129,7 +82,145 @@ impl<R: UserRepository> AuthService<R> {
         }
         Ok(user)
     }
+    /// Change an account's role, or whether it may sign in at all.
+    ///
+    /// Refuses to leave the CMS without an active administrator, so the last one cannot be
+    /// demoted or disabled — by another administrator or by themselves.
+    pub async fn update_user(
+        &self,
+        id: &UserId,
+        request: UpdateUserRequest,
+    ) -> Result<UserResponse, HttpError> {
+        let mut user = self.require_user(id).await?;
+        // Only losing an administrator has to be guarded; a viewer staying a viewer is not
+        // what would leave the CMS without one.
+        let was_active_admin = user.is_admin && user.is_active;
 
+        if let Some(is_admin) = request.is_admin {
+            user.is_admin = is_admin;
+        }
+        if let Some(is_active) = request.is_active {
+            user.is_active = is_active;
+        }
+        if let Some(permission) = request.permission {
+            user.permission = permission;
+        }
+        // The maps are replaced whole when they are given, so an administrator can take an
+        // override back as well as add one.
+        if let Some(collection_permissions) = request.collection_permissions {
+            user.collection_permissions = collection_permissions;
+        }
+        if let Some(single_page_permissions) = request.single_page_permissions {
+            user.single_page_permissions = single_page_permissions;
+        }
+
+        if was_active_admin && !(user.is_admin && user.is_active) {
+            self.ensure_another_active_admin(id).await?;
+        }
+
+        self.repository.update_user(id, &user).await.map_err(internal)?;
+        Ok(user.to_response())
+    }
+    /// Delete an account, refusing to remove the last active administrator.
+    pub async fn delete_user(&self, id: &UserId) -> Result<(), HttpError> {
+        let user = self.require_user(id).await?;
+        if user.is_admin && user.is_active {
+            self.ensure_another_active_admin(id).await?;
+        }
+        self.repository.delete_user(id).await.map_err(internal)
+    }
+    async fn require_user(&self, id: &UserId) -> Result<User, HttpError> {
+        self.repository
+            .get_user_from_id(id)
+            .await
+            .map_err(internal)?
+            .ok_or_else(|| HttpError::NotFound(&format!("user '{id}' does not exist")))
+    }
+    /// At least one active administrator has to remain, or nobody could manage accounts or
+    /// change the shape of the site again.
+    async fn ensure_another_active_admin(&self, excluding: &UserId) -> Result<(), HttpError> {
+        let others = self
+            .repository
+            .get_all_users()
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .filter(|(id, user)| id != excluding && user.is_admin && user.is_active)
+            .count();
+        if others == 0 {
+            return Err(HttpError::Conflict(
+                "the last administrator cannot be demoted, disabled or deleted",
+            ));
+        }
+        Ok(())
+    }
+    pub async fn list_users(&self) -> Result<Vec<UserResponse>, HttpError> {
+        let mut users: Vec<User> = self
+            .repository
+            .get_all_users()
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .map(|(_, user)| user)
+            .collect();
+        users.sort_by(|a, b| a.email.cmp(&b.email));
+        Ok(users.iter().map(User::to_response).collect())
+    }
+}
+
+/// The same service, for a deployment that stores passwords itself.
+///
+/// Nothing here exists where sign-in belongs to an identity provider: there is no password to
+/// verify and no credential to set, so the endpoints that call these are not part of that
+/// backend's router either (see [`LocalCredentials`](crate::repositories::local_credentials::LocalCredentials)).
+impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify credentials and issue a token.
+    pub async fn login(&self, username: &str, password: &str) -> Result<LoginResponse, HttpError> {
+        let username = normalize_username(username);
+        // Checked before the password is even looked at, and for unknown identifiers too, so
+        // the limiter cannot be used to find out which accounts exist.
+        if let Some(wait) = self.throttle.retry_after(&username, Instant::now()) {
+            return Err(HttpError::TooManyRequests(wait));
+        }
+
+        let user = self
+            .repository
+            .get_user_from_username(&username)
+            .await
+            .map_err(internal)?;
+
+        let Some(mut user) = user else {
+            self.throttle.record_failure(&username, Instant::now());
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
+        };
+
+        if !self
+            .repository
+            .verify_password(&user.id, password)
+            .await
+            .map_err(internal)?
+        {
+            self.throttle.record_failure(&username, Instant::now());
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
+        }
+        if !user.is_active {
+            return Err(HttpError::Forbidden("account is disabled"));
+        }
+        self.throttle.record_success(&username);
+
+        // Recording the login is a side effect; a failure here must not deny a valid
+        // login, so it is logged and swallowed.
+        user.last_login = Some(chrono::Utc::now());
+        if let Err(e) = self.repository.update_user(&user.id, &user).await {
+            tracing::warn!("failed to record last_login for {}: {e}", user.username);
+        }
+
+        let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
+        Ok(LoginResponse {
+            token,
+            expires_at,
+            user: user.to_response(),
+        })
+    }
     /// Issue a link that lets one account set a new password, for an administrator to pass on.
     ///
     /// Nothing is mailed: the administrator decides how the link reaches its owner, which is
@@ -142,7 +233,6 @@ impl<R: UserRepository> AuthService<R> {
         }
         Ok(self.password_resets.issue(&user, chrono::Utc::now()))
     }
-
     /// Set a new password using an issued link, and sign the caller in with the result.
     ///
     /// Completing this ends every session that exists (see
@@ -192,7 +282,10 @@ impl<R: UserRepository> AuthService<R> {
         }
         validate_password(new_password)?;
 
-        user.password_hash = password::hash_password(new_password).map_err(internal)?;
+        self.repository
+            .set_password(&user.id, new_password)
+            .await
+            .map_err(internal)?;
         user.end_existing_sessions();
         self.repository.update_user(&user.id, &user).await.map_err(internal)?;
         self.throttle.record_success(&user.username);
@@ -200,7 +293,6 @@ impl<R: UserRepository> AuthService<R> {
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
         Ok(PasswordChangedResponse { token, expires_at })
     }
-
     pub async fn create_user(&self, request: NewUserRequest) -> Result<UserResponse, HttpError> {
         let username = normalize_username(&request.username);
         if !is_plausible_username(&username) {
@@ -233,67 +325,22 @@ impl<R: UserRepository> AuthService<R> {
             return Err(HttpError::Conflict("a user with that username already exists"));
         }
 
-        let hash = password::hash_password(&request.password).map_err(internal)?;
         let permission = if request.is_admin {
             Permission::admin()
         } else {
             request.permission
         };
-        let mut user = User::new(&username, hash, request.is_admin, permission);
+        let mut user = User::new(&username, request.is_admin, permission);
         user.email = email;
         self.repository.add_user(&user).await.map_err(internal)?;
+        // The credential goes with the record. A failure here leaves an account that cannot
+        // sign in, which an administrator can repair with a reset link.
+        self.repository
+            .set_password(&user.id, &request.password)
+            .await
+            .map_err(internal)?;
         Ok(user.to_response())
     }
-
-    /// Change an account's role, or whether it may sign in at all.
-    ///
-    /// Refuses to leave the CMS without an active administrator, so the last one cannot be
-    /// demoted or disabled — by another administrator or by themselves.
-    pub async fn update_user(
-        &self,
-        id: &UserId,
-        request: UpdateUserRequest,
-    ) -> Result<UserResponse, HttpError> {
-        let mut user = self.require_user(id).await?;
-        // Only losing an administrator has to be guarded; a viewer staying a viewer is not
-        // what would leave the CMS without one.
-        let was_active_admin = user.is_admin && user.is_active;
-
-        if let Some(is_admin) = request.is_admin {
-            user.is_admin = is_admin;
-        }
-        if let Some(is_active) = request.is_active {
-            user.is_active = is_active;
-        }
-        if let Some(permission) = request.permission {
-            user.permission = permission;
-        }
-        // The maps are replaced whole when they are given, so an administrator can take an
-        // override back as well as add one.
-        if let Some(collection_permissions) = request.collection_permissions {
-            user.collection_permissions = collection_permissions;
-        }
-        if let Some(single_page_permissions) = request.single_page_permissions {
-            user.single_page_permissions = single_page_permissions;
-        }
-
-        if was_active_admin && !(user.is_admin && user.is_active) {
-            self.ensure_another_active_admin(id).await?;
-        }
-
-        self.repository.update_user(id, &user).await.map_err(internal)?;
-        Ok(user.to_response())
-    }
-
-    /// Delete an account, refusing to remove the last active administrator.
-    pub async fn delete_user(&self, id: &UserId) -> Result<(), HttpError> {
-        let user = self.require_user(id).await?;
-        if user.is_admin && user.is_active {
-            self.ensure_another_active_admin(id).await?;
-        }
-        self.repository.delete_user(id).await.map_err(internal)
-    }
-
     /// Set someone else's password (an administrator resetting an account).
     /// Reset someone else's password, ending every session they have.
     ///
@@ -302,11 +349,13 @@ impl<R: UserRepository> AuthService<R> {
     pub async fn set_password(&self, id: &UserId, password: &str) -> Result<(), HttpError> {
         let mut user = self.require_user(id).await?;
         validate_password(password)?;
-        user.password_hash = password::hash_password(password).map_err(internal)?;
+        self.repository
+            .set_password(id, password)
+            .await
+            .map_err(internal)?;
         user.end_existing_sessions();
         self.repository.update_user(id, &user).await.map_err(internal)
     }
-
     /// Change your own password, proving you know the current one so that a stolen session
     /// is not enough to lock the owner out.
     ///
@@ -325,60 +374,27 @@ impl<R: UserRepository> AuthService<R> {
         if let Some(wait) = self.throttle.retry_after(&user.username, Instant::now()) {
             return Err(HttpError::TooManyRequests(wait));
         }
-        if !password::verify_password(current, &user.password_hash) {
+        if !self
+            .repository
+            .verify_password(&user.id, current)
+            .await
+            .map_err(internal)?
+        {
             self.throttle.record_failure(&user.username, Instant::now());
             return Err(HttpError::Forbidden("current password is incorrect"));
         }
         validate_password(new)?;
         self.throttle.record_success(&user.username);
-        user.password_hash = password::hash_password(new).map_err(internal)?;
+        self.repository
+            .set_password(id, new)
+            .await
+            .map_err(internal)?;
         user.end_existing_sessions();
         self.repository.update_user(id, &user).await.map_err(internal)?;
 
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
         Ok(PasswordChangedResponse { token, expires_at })
     }
-
-    async fn require_user(&self, id: &UserId) -> Result<User, HttpError> {
-        self.repository
-            .get_user_from_id(id)
-            .await
-            .map_err(internal)?
-            .ok_or_else(|| HttpError::NotFound(&format!("user '{id}' does not exist")))
-    }
-
-    /// At least one active administrator has to remain, or nobody could manage accounts or
-    /// change the shape of the site again.
-    async fn ensure_another_active_admin(&self, excluding: &UserId) -> Result<(), HttpError> {
-        let others = self
-            .repository
-            .get_all_users()
-            .await
-            .map_err(internal)?
-            .into_iter()
-            .filter(|(id, user)| id != excluding && user.is_admin && user.is_active)
-            .count();
-        if others == 0 {
-            return Err(HttpError::Conflict(
-                "the last administrator cannot be demoted, disabled or deleted",
-            ));
-        }
-        Ok(())
-    }
-
-    pub async fn list_users(&self) -> Result<Vec<UserResponse>, HttpError> {
-        let mut users: Vec<User> = self
-            .repository
-            .get_all_users()
-            .await
-            .map_err(internal)?
-            .into_iter()
-            .map(|(_, user)| user)
-            .collect();
-        users.sort_by(|a, b| a.email.cmp(&b.email));
-        Ok(users.iter().map(User::to_response).collect())
-    }
-
     /// Create the first administrator if the user store is still empty.
     ///
     /// Refuses to start with an empty store and no credentials, because the alternative
@@ -408,6 +424,7 @@ impl<R: UserRepository> AuthService<R> {
     }
 }
 
+
 fn validate_password(password: &str) -> Result<(), HttpError> {
     if password.len() < MIN_PASSWORD_LENGTH {
         return Err(HttpError::BadRequest(&format!(
@@ -432,6 +449,31 @@ mod tests {
     #[derive(Default)]
     struct InMemoryUsers {
         users: RwLock<HashMap<String, User>>,
+        /// Passwords in the clear: this is a test double, and the adapter that does the real
+        /// hashing has its own tests.
+        passwords: RwLock<HashMap<String, String>>,
+    }
+
+    impl LocalCredentials for InMemoryUsers {
+        async fn set_password(&self, user_id: &UserId, password: &str) -> Result<(), BoxError> {
+            self.passwords
+                .write()
+                .unwrap()
+                .insert(user_id.to_string(), password.to_string());
+            Ok(())
+        }
+        async fn verify_password(&self, user_id: &UserId, password: &str) -> Result<bool, BoxError> {
+            Ok(self
+                .passwords
+                .read()
+                .unwrap()
+                .get(&user_id.to_string())
+                .is_some_and(|stored| stored == password))
+        }
+        async fn delete_password(&self, user_id: &UserId) -> Result<(), BoxError> {
+            self.passwords.write().unwrap().remove(&user_id.to_string());
+            Ok(())
+        }
     }
 
     impl UserRepository for InMemoryUsers {
@@ -600,7 +642,7 @@ mod tests {
     #[tokio::test]
     async fn a_link_for_an_unknown_account_is_refused_like_any_other_bad_token() {
         let (auth, _) = service();
-        let account = User::new("ops", "hash".to_string(), false, Permission::viewer());
+        let account = User::new("ops", false, Permission::viewer());
         let link = PasswordResetIssuer::new(b"test-secret", 30).issue(&account, chrono::Utc::now());
 
         let error = auth

@@ -1076,7 +1076,6 @@ mod tests {
     fn publisher() -> PublishedBy {
         PublishedBy::from(&crate::models::user::User::new(
             "admin@example.com",
-            String::new(),
             true,
             crate::models::user::Permission::admin(),
         ))

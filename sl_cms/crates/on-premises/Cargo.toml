@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 sl-cms-core = { path = "../core" }
+argon2.workspace = true
 rkv.workspace = true
 serde.workspace = true
 serde_json.workspace = true

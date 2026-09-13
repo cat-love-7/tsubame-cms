@@ -133,7 +133,6 @@ mod tests {
     fn publishing_records_who_did_it_and_unpublishing_forgets_that_too() {
         let admin = User::new(
             "Admin",
-            "hash".to_string(),
             true,
             crate::models::user::Permission::admin(),
         );

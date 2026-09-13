@@ -122,7 +122,18 @@ pub fn build_router(
     module: std::sync::Arc<AppModule<AwsRepository>>,
     cors: tower_http::cors::CorsLayer,
 ) -> axum::Router {
-    sl_cms_core::http::router(module, cors)
+    // Sign-in belongs to Cognito here, so the password endpoints do not exist. They are
+    // registered anyway, answering 501 with a sentence that says where to sign in: a client
+    // that guessed the path learns something, and a 404 would only say "wrong URL".
+    let message = "this deployment signs users in through Cognito; the CMS does not handle                    passwords. Set the pool and app client in the client, and ask                    GET /auth/capabilities what this deployment supports";
+    let extra_public = sl_cms_core::http::password_auth::unavailable_public(message).merge(
+        sl_cms_core::http::capabilities::routes(
+            sl_cms_core::models::capabilities::Capabilities::AWS,
+        ),
+    );
+    let extra_protected = sl_cms_core::http::password_auth::unavailable_protected(message);
+
+    sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
 }
 
 /// Serve the CMS on AWS Lambda.
