@@ -1,0 +1,220 @@
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnInit,
+  Output,
+  SimpleChanges,
+  inject,
+  signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+
+import { apiUrl } from 'app/core/api-url';
+import { errorMessage as message } from 'app/core/http-error';
+import {
+  FieldSchema,
+  isArrayFieldSchema,
+  isCompositeFieldSchema,
+  isEnumFieldSchema,
+} from 'app/models/schema/fields';
+import { FieldValue, imageIdOf } from 'app/models/values/fields';
+import { ImagesService } from 'app/services/media/images.service';
+
+type FieldKind =
+  | 'Text'
+  | 'Markdown'
+  | 'Number'
+  | 'Boolean'
+  | 'Date'
+  | 'DateTime'
+  | 'Image'
+  | 'TextEnum'
+  | 'Array'
+  | 'CompositeField'
+  | 'Unknown';
+
+/**
+ * Renders the input for one schema field and edits its value.
+ *
+ * The schema decides which widget appears, and values are held **without type tags**
+ * (the schema is what gives them meaning). Kept as a separate component so the content
+ * editor and the schema editor's preview render the same thing from one implementation.
+ */
+@Component({
+  selector: 'app-value-field',
+  imports: [
+    FormsModule,
+    MatCheckboxModule,
+    MatFormFieldModule,
+    MatIconModule,
+    MatInputModule,
+    MatSelectModule,
+  ],
+  templateUrl: './value-field.html',
+  styleUrl: './value-field.scss',
+})
+export class ValueField implements OnInit, OnChanges {
+  @Input({ required: true }) field!: FieldSchema;
+  @Input() value: FieldValue = null;
+  /** Renders the widget read-only, for the schema editor's preview. */
+  @Input() disabled = false;
+  @Output() valueChange = new EventEmitter<FieldValue>();
+  /**
+   * Non-null while the field holds input that cannot be turned into a value (an array
+   * edited as JSON that does not parse, or a failed upload). The parent refuses to save
+   * while any field reports one, so bad input is never quietly dropped or replaced by a
+   * stale value.
+   */
+  @Output() errorChange = new EventEmitter<string | null>();
+
+  private images = inject(ImagesService);
+
+  public uploading = signal(false);
+  /** JSON buffer for Array fields, which are edited as raw JSON. */
+  public arrayText = '';
+  public imageUrl = apiUrl;
+
+  /** The last value this component emitted, so its own output is not mistaken for new
+   * input (which would reset the JSON buffer mid-typing). */
+  private lastEmitted: FieldValue = null;
+
+  ngOnInit() {
+    this.syncArrayBuffer();
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['value']) {
+      this.syncArrayBuffer();
+    }
+  }
+
+  /** Which input to render. */
+  kind(): FieldKind {
+    const type = this.field.field_type;
+    if (typeof type === 'string') {
+      return type as FieldKind;
+    }
+    if ('Text' in type) return 'Text';
+    if ('Markdown' in type) return 'Markdown';
+    if ('TextEnum' in type) return 'TextEnum';
+    if ('Array' in type) return 'Array';
+    if ('CompositeField' in type) return 'CompositeField';
+    return 'Unknown';
+  }
+
+  enumOptions(): string[] {
+    return isEnumFieldSchema(this.field.field_type) ? this.field.field_type.TextEnum : [];
+  }
+
+  isComposite(): boolean {
+    return isCompositeFieldSchema(this.field.field_type);
+  }
+
+  imageId(): number | null {
+    return imageIdOf(this.value);
+  }
+
+  imagePreviewUrl(): string {
+    const value = this.value;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const url = (value as { url?: unknown }).url;
+      if (typeof url === 'string') {
+        return url;
+      }
+    }
+    return '';
+  }
+
+  update(value: FieldValue) {
+    this.value = value;
+    this.lastEmitted = value;
+    this.valueChange.emit(value);
+  }
+
+  /** `datetime-local` inputs want local wall time without a timezone. */
+  toDateTimeLocal(): string {
+    if (typeof this.value !== 'string' || this.value === '') {
+      return '';
+    }
+    const date = new Date(this.value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return (
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+      `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    );
+  }
+
+  setDateTime(local: string) {
+    if (!local) {
+      this.update(null);
+      return;
+    }
+    const date = new Date(local);
+    this.update(Number.isNaN(date.getTime()) ? null : date.toISOString());
+  }
+
+  onArrayTextChange(text: string) {
+    this.arrayText = text;
+    const trimmed = text.trim();
+    if (trimmed === '') {
+      this.errorChange.emit(null);
+      this.update([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!Array.isArray(parsed)) {
+        this.errorChange.emit(`Field '${this.field.name}': expected a JSON array`);
+        return;
+      }
+      this.errorChange.emit(null);
+      this.update(parsed as FieldValue);
+    } catch {
+      this.errorChange.emit(`Field '${this.field.name}': invalid JSON`);
+    }
+  }
+
+  onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    this.uploading.set(true);
+    this.errorChange.emit(null);
+    this.images.uploadImage(file).subscribe({
+      next: (info) => {
+        this.uploading.set(false);
+        // Mirror the shape the API returns for an image value.
+        this.update({ id: info.id, url: info.upload_url.split('?')[0] });
+        input.value = '';
+      },
+      error: (e) => {
+        this.uploading.set(false);
+        this.errorChange.emit(`Upload failed: ${message(e)}`);
+      },
+    });
+  }
+
+  private syncArrayBuffer() {
+    if (!isArrayFieldSchema(this.field.field_type)) {
+      return;
+    }
+    // Our own emission comes straight back as `value`; re-seeding then would fight the
+    // user's typing.
+    if (this.value === this.lastEmitted) {
+      return;
+    }
+    this.arrayText = JSON.stringify(this.value ?? []);
+  }
+}

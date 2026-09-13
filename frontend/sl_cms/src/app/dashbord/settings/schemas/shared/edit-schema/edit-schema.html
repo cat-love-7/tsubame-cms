@@ -43,7 +43,13 @@
           <mat-icon>delete</mat-icon>
         </button>
       </div>
-      <app-field [(field)]="Schema[$index]" />
+      @if (preview()) {
+        <!-- The same component the content editor uses, so the preview cannot drift from
+             the real form. -->
+        <app-value-field [field]="field" [value]="previewValue(field)" [disabled]="true" />
+      } @else {
+        <app-field [(field)]="Schema[$index]" />
+      }
 
       <!-- Drag either edge to resize. The numeric inputs in the field editor remain the
            keyboard-accessible way to do the same thing. -->
@@ -77,5 +83,14 @@
   <button matButton type="button" color="primary" (click)="requestSave()">
     <mat-icon>save</mat-icon>
     Save schema
+  </button>
+  <button
+    matButton
+    type="button"
+    (click)="togglePreview()"
+    [attr.aria-pressed]="preview()"
+  >
+    <mat-icon>{{ preview() ? 'edit' : 'preview' }}</mat-icon>
+    {{ preview() ? 'Edit fields' : 'Preview layout' }}
   </button>
 </div>

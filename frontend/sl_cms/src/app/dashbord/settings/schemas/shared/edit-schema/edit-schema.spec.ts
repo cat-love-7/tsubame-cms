@@ -1,4 +1,6 @@
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { DefaultFieldLayout, FieldSchema } from 'app/models/schema/fields';
@@ -19,7 +21,9 @@ describe('EditSchema', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [EditSchema]
+      imports: [EditSchema],
+      // The layout preview renders `ValueField`, which uploads images.
+      providers: [provideHttpClient(), provideHttpClientTesting()],
     })
     .compileComponents();
 
@@ -159,5 +163,21 @@ describe('EditSchema', () => {
     right.dispatchEvent(pointer('pointerup', 100));
 
     expect(emitted).toHaveLength(1);
+  });
+
+  it('previews the layout with the same widgets the content editor uses', () => {
+    const fresh = TestBed.createComponent(EditSchema);
+    fresh.componentInstance.Schema = [field('a')];
+    fresh.detectChanges();
+
+    // Editing mode shows the field editor.
+    expect(fresh.nativeElement.querySelector('app-field')).toBeTruthy();
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeFalsy();
+
+    fresh.componentInstance.togglePreview();
+    fresh.detectChanges();
+
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeTruthy();
+    expect(fresh.nativeElement.querySelector('app-field')).toBeFalsy();
   });
 });

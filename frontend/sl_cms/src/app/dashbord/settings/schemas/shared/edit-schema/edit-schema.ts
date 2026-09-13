@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import {
   CdkDrag,
   CdkDragDrop,
@@ -18,6 +18,8 @@ import {
   resizeWidth,
 } from 'app/core/field-layout';
 import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
+import { FieldValue, defaultValueForField } from 'app/models/values/fields';
+import { ValueField } from 'app/shared/value-field/value-field';
 import { Field } from '../field/field';
 
 /** Which edge of a tile is being dragged. */
@@ -48,6 +50,7 @@ interface ResizeState {
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
+    ValueField,
   ],
   templateUrl: './edit-schema.html',
   styleUrl: './edit-schema.scss',
@@ -66,6 +69,30 @@ export class EditSchema {
   public cellStyle = fieldCellStyle;
 
   private resizeState: ResizeState | null = null;
+
+  /** When on, tiles show the content input instead of the field editor. */
+  public preview = signal(false);
+
+  /**
+   * Preview values, computed once when preview mode is entered.
+   *
+   * They have to be stable: recomputing on every change detection would hand the value
+   * fields a fresh array each pass and reset the array editor's buffer continuously.
+   */
+  private previewValues = new Map<string, FieldValue>();
+
+  togglePreview() {
+    if (!this.preview()) {
+      this.previewValues = new Map(
+        this.Schema.map((field) => [field.name, defaultValueForField(field)]),
+      );
+    }
+    this.preview.set(!this.preview());
+  }
+
+  previewValue(field: FieldSchema): FieldValue {
+    return this.previewValues.get(field.name) ?? null;
+  }
 
   addField() {
     this.Schema.push({

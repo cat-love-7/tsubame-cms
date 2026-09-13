@@ -44,4 +44,19 @@ describe('Edit', () => {
     expect(cells[0].style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 2)');
     expect(cells[1].style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 1)');
   });
+
+  // Bad input used to be caught by normalising the JSON buffers at save time; now the
+  // value fields own their input and report problems, so the refusal lives here.
+  it('refuses to save while a field reports a problem', () => {
+    const fresh = TestBed.createComponent(Edit);
+    const component = fresh.componentInstance;
+    component.setFieldError(
+      { name: 'numbers', field_type: 'Number', required: false, width: 12, height: 1 },
+      "Field 'numbers': invalid JSON",
+    );
+
+    component.save();
+
+    expect(component.error()).toContain('invalid JSON');
+  });
 });

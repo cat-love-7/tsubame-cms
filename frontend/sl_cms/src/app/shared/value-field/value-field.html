@@ -1,0 +1,130 @@
+<span class="field-label">
+  {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
+</span>
+
+@switch (kind()) {
+  @case ('Text') {
+    <mat-form-field appearance="fill" class="full-width">
+      <input
+        matInput
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+      />
+    </mat-form-field>
+  }
+  @case ('Markdown') {
+    <mat-form-field appearance="fill" class="full-width">
+      <textarea
+        matInput
+        rows="6"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+      ></textarea>
+    </mat-form-field>
+  }
+  @case ('Number') {
+    <mat-form-field appearance="fill" class="full-width">
+      <input
+        matInput
+        type="number"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+      />
+    </mat-form-field>
+  }
+  @case ('Boolean') {
+    <mat-checkbox
+      [name]="field.name"
+      [disabled]="disabled"
+      [ngModel]="value"
+      (ngModelChange)="update($event)"
+    >
+      Yes
+    </mat-checkbox>
+  }
+  @case ('Date') {
+    <mat-form-field appearance="fill" class="full-width">
+      <input
+        matInput
+        type="date"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+      />
+    </mat-form-field>
+  }
+  @case ('DateTime') {
+    <mat-form-field appearance="fill" class="full-width">
+      <input
+        matInput
+        type="datetime-local"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="toDateTimeLocal()"
+        (ngModelChange)="setDateTime($event)"
+      />
+    </mat-form-field>
+  }
+  @case ('TextEnum') {
+    <mat-form-field appearance="fill" class="full-width">
+      <mat-select
+        multiple
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+      >
+        @for (option of enumOptions(); track option) {
+          <mat-option [value]="option">{{ option }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  }
+  @case ('Array') {
+    <mat-form-field appearance="fill" class="full-width">
+      <textarea
+        matInput
+        rows="3"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="arrayText"
+        (ngModelChange)="onArrayTextChange($event)"
+        placeholder="JSON array, e.g. [1, 2]"
+      ></textarea>
+      <mat-hint>Array values are edited as JSON.</mat-hint>
+    </mat-form-field>
+  }
+  @case ('Image') {
+    <div class="image-field">
+      @if (imagePreviewUrl()) {
+        <img [src]="imageUrl(imagePreviewUrl())" alt="" class="preview" />
+      }
+      <span class="image-id">id: {{ imageId() ?? '—' }}</span>
+      @if (!disabled) {
+        <input
+          type="file"
+          accept="image/*"
+          [disabled]="uploading()"
+          (change)="onFileSelected($event)"
+        />
+      }
+      @if (uploading()) {
+        <span>Uploading…</span>
+      }
+    </div>
+  }
+  @default {
+    @if (isComposite()) {
+      <p class="note">Composite fields are not editable here yet; the existing value is kept.</p>
+    } @else {
+      <p class="note">Unsupported field type.</p>
+    }
+  }
+}

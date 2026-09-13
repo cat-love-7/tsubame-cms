@@ -8,49 +8,12 @@
   flex: 1 1 auto;
 }
 
-.field {
-  // Spacing comes from the grid gap.
-}
-
-.field-label {
-  display: block;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.required {
-  color: #b3261e;
-  margin-left: 2px;
-}
-
-.full-width {
-  width: 100%;
-}
-
 .error {
   color: #b3261e;
 }
 
 .note {
   color: #666;
-}
-
-.image-field {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.preview {
-  max-height: 96px;
-  max-width: 160px;
-  object-fit: contain;
-}
-
-.image-id {
-  color: #666;
-  font-size: 0.875rem;
 }
 
 .actions {
