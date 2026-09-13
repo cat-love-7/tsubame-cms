@@ -370,6 +370,26 @@ describe('ValueField', () => {
     expect(component.uploading()).toBe(false);
   });
 
+  it('stores the URL the server reports, not one derived from the upload URL', () => {
+    // On AWS the upload URL is a presigned request to S3: it names a signature and an
+    // expiry, and trimming its query string yields nothing that can be read later. The
+    // server answers with the stable address as well, and that is what content keeps.
+    const presigned =
+      'https://cms-images.s3.eu-west-1.amazonaws.com/9f3c.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=deadbeef';
+    const stable = 'https://images.example.com/9f3c.png';
+    images.uploadImage = () => of({ id: 7, upload_url: presigned, url: stable });
+
+    const component = create(field('cover', { Array: ['Image'] }), []);
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    component.onFilesSelected(filesChosen(['cover.png']));
+    fixture.detectChanges();
+
+    expect(changes).toEqual([[{ id: 7, url: stable }]]);
+    expect(JSON.stringify(changes)).not.toContain('X-Amz-Signature');
+  });
+
   it('edits an image array that lives inside a composite', () => {
     const component = create(
       field('block', { CompositeField: { id: 'gallery' } }),
