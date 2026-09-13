@@ -81,27 +81,94 @@ GET /content/single-pages/{name}        → スキーマ + 単一ページの値
 
 ビルド時にこれらを取得し、Gatsby のノードとして `createPages` する薄い source plugin を
 書くのが素直な形。`schema` が同梱されているので、値の解釈に追加リクエストは要らない。
+再ビルドの起動は Webhook(第 5 節)に任せる。CMS は「何か変わった」ことだけを通知し、
+サイト側はいつもの手順でビルドする、という分担にしている。
 
 `/content/collections` を起点にすると「公開アイテムが1つも無いコレクション」は列挙されない。
 空のコレクションもページにしたい場合は `/models/collections` (要トークン)を使うか、
 サイト側で一覧を固定する。
 
-## 5. まだ無いもの(サイト運用の前に必要になる)
+## 5. Webhook(公開・非公開の通知)
+
+サイトの再ビルドを起動するために、`publish` / `unpublish` のたびに設定した URL へ JSON を POST する。
+
+### 設定(環境変数)
+
+| 変数 | 意味 |
+|---|---|
+| `WEBHOOK_URLS` | 通知先(カンマ区切り)。未設定または空なら webhook は無効。`http` / `https` のみ受け付け、URL の誤りは**起動時**にエラーになる |
+| `WEBHOOK_SECRET` | 本文の HMAC-SHA256 署名鍵(任意)。未設定なら署名せずに送る |
+
+### リクエスト
+
+```http
+POST /hook HTTP/1.1
+Content-Type: application/json
+X-CMS-Event: collection_item.published
+X-CMS-Delivery: c8876228-2f03-4b39-801d-f19f60131969
+X-CMS-Signature: sha256=...
+```
+
+```json
+{
+  "event": "collection_item.published",
+  "collection": "blog",
+  "id": 1,
+  "status": "published",
+  "published_at": "2026-09-13T07:26:21.005941238Z",
+  "occurred_at": "2026-09-13T07:26:21.006176750Z"
+}
+```
+
+| `event` | 意味 |
+|---|---|
+| `collection_item.published` / `collection_item.unpublished` | アイテムの公開状態が変わった(`collection` と `id`) |
+| `single_page.published` / `single_page.unpublished` | 単一ページの公開状態が変わった(`page`) |
+
+- 本文に**値は含まない**。受け取った側が必要な `/content/*` を取りに行く(全件を送ると本文が
+  肥大し、直後の再取得と二重管理になるため)。
+- `published_at` は publish の時刻、unpublish では `null`。`occurred_at` はイベント発生時刻。
+- `X-CMS-Delivery` は配信ごとの UUID で、受信側の重複排除に使える。
+
+### 署名の検証(HMAC-SHA256)
+
+`X-CMS-Signature` は `sha256=` + **生のリクエストボディ**に対する HMAC-SHA256(16 進小文字)。
+JSON をパースして再シリアライズするとバイト列が変わるので、必ず生ボディで検証すること。
+
+```python
+expected = "sha256=" + hmac.new(SECRET, raw_body, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
+    return 401
+```
+
+### 配信の性質(重要)
+
+- 配信は**リクエストを待たせない**。publish は状態を保存した時点で応答し、送信はバックグラウンドで行う。
+- 失敗時は 500ms → 1s の間隔で最大 3 回試行する。`4xx` は再試行しない(受信側が理解して拒否しているため)。
+- 受信先が落ちていても publish は成功する(200)。失敗した配信はサーバログの
+  `webhook delivery failed` に出る。
+- 複数の URL は独立して配信される。1 つが落ちても他は受け取る。
+- `publish` が 404 になるなど**状態が保存されなかった場合は送らない**。
+- **outbox は無い**: 配信前にプロセスが落ちるとそのイベントは失われる。
+- **AWS Lambda では応答後に実行環境が凍結され得る**ため、バックグラウンド送信が完了しない可能性がある。
+  Lambda に載せる際は SQS / EventBridge 経由にするか、配信を同期化する必要がある。
+- 順序は保証しない。受信側は「再ビルドを起動する」程度の使い方を想定している。
+
+## 6. まだ無いもの(サイト運用の前に必要になる)
 
 - **ページネーション**: `/content/collections/{name}` は現状**全件**返す。
-- **変更通知 (Webhook)**: 今はビルド時に全件取得する pull 型。publish/unpublish を契機に
-  再ビルドを起動する仕組みは未実装。
 - **`updated_at`**: 更新日時を記録していない。サイトマップや差分ビルドには必要。
 - **プレビュー**: 下書きの確認は管理画面のみ。トークン付きプレビュー URL は未実装。
+- **Webhook の永続化(outbox)**: 配信前にプロセスが落ちるとイベントは失われる(上記参照)。
 - **`doc/swagger.yaml`**: 実装済みルートの一部しか載っていない古い記述のまま。
 
-## 6. CMS 側に GraphQL を持たせない方針
+## 7. CMS 側に GraphQL を持たせない方針
 
 Gatsby の GraphQL は**ビルド時のデータ層**であり、CMS が GraphQL を喋る必要はない。
 `gatsby-source-graphql` は事実上非推奨で、Gatsby 自体も活発ではない。
 そのため、まずは REST の公開 API を整え、必要になったら次の順で進める。
 
 1. `/content/*`(本ドキュメント。実装済み)
-2. publish / unpublish を契機にした Webhook
+2. publish / unpublish を契機にした Webhook(本ドキュメント。実装済み)
 3. Gatsby の source plugin(REST → GraphQL ノード)
 4. 消費側が増えて GraphQL が本当に必要になったときだけ、GraphQL 層を検討する

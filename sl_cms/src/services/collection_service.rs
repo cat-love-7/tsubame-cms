@@ -8,20 +8,24 @@ use crate::models::schema::{validate_composite_references, validate_schema, Comp
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::webhook::{ContentEvent, Notifier};
 
 pub struct CollectionService<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepository> {
     collection_repository: Arc<CR>,
     composite_field_repository: Arc<CFR>,
     image_repository: Arc<IR>,
+    /// Told about every publish/unpublish so a site build can be triggered.
+    notifier: Arc<dyn Notifier>,
 }
 
 
 impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepository> CollectionService<CR, CFR, IR> {
-    pub fn new(collection_repository: Arc<CR>, composite_field_repository: Arc<CFR>, image_repository: Arc<IR>) -> Self {
+    pub fn new(collection_repository: Arc<CR>, composite_field_repository: Arc<CFR>, image_repository: Arc<IR>, notifier: Arc<dyn Notifier>) -> Self {
         CollectionService {
             collection_repository,
             composite_field_repository,
             image_repository,
+            notifier,
         }
     }
     pub fn get_collection_schema(
@@ -397,6 +401,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.collection_repository
             .set_item_metadata(collection_name, &item_id, &metadata)
             .map_err(map_internal_error)?;
+        // Only after the status is stored: a receiver that reacts by reading the delivery
+        // API must not see the previous state.
+        self.notifier
+            .notify(ContentEvent::collection_item(collection_name, item_id, &metadata));
         Ok(metadata)
     }
 
@@ -498,6 +506,7 @@ mod tests {
     use crate::repositories::image_repository::ImageRepository;
 
     use super::*;
+    use crate::webhook::NoopNotifier;
 
     struct MockCollectionRepository {
         schemas: Arc<RwLock<HashMap<CollectionName, CollectionSchema>>>,
@@ -705,6 +714,71 @@ mod tests {
         }
     }
 
+    /// Records the events a service emits, so the notification contract can be asserted
+    /// without standing up an HTTP receiver.
+    #[derive(Default)]
+    struct RecordingNotifier {
+        events: std::sync::Mutex<Vec<ContentEvent>>,
+    }
+
+    impl Notifier for RecordingNotifier {
+        fn notify(&self, event: ContentEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    #[test]
+    fn a_status_change_notifies_once_and_a_missing_item_notifies_nothing() {
+        let notifier = Arc::new(RecordingNotifier::default());
+        let mut schemas = HashMap::new();
+        schemas.insert("blog".into(), create_test_schema());
+        let collection_repository = MockCollectionRepository {
+            schemas: Arc::new(RwLock::new(schemas)),
+            items: Arc::new(RwLock::new(HashMap::new())),
+            item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let composite_field_repository = MockCompositeFieldRepository {
+            schemas: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let image_repository = MockImageRepository {};
+        let service = CollectionService::new(
+            Arc::new(collection_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            notifier.clone(),
+        );
+
+        let item_id = service
+            .create_collection_item(&"blog".into(), &create_test_item("Hello", 1.0))
+            .unwrap();
+
+        service
+            .set_item_status(
+                &"blog".into(),
+                CollectionItemId::from_u64(item_id),
+                ItemStatus::Published,
+            )
+            .unwrap();
+        {
+            let events = notifier.events.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].name(), "collection_item.published");
+            assert_eq!(events[0].collection.as_ref().unwrap().as_str(), "blog");
+            assert_eq!(*events[0].item_id.unwrap(), item_id);
+        }
+
+        // A publish that fails (unknown item) must not claim that anything changed.
+        assert!(service
+            .set_item_status(
+                &"blog".into(),
+                CollectionItemId::from_u64(99),
+                ItemStatus::Published
+            )
+            .is_err());
+        assert_eq!(notifier.events.lock().unwrap().len(), 1);
+    }
+
     // Test helper functions
     fn create_test_service() -> CollectionService<MockCollectionRepository, MockCompositeFieldRepository, MockImageRepository> {
         let collection_repository = MockCollectionRepository {
@@ -717,7 +791,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository))
+        CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier))
     }
 
     fn create_test_schema() -> CollectionSchema {
@@ -909,7 +983,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.create_collection_item(
             &"test_composite".into(),
@@ -941,7 +1015,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.create_collection_item(
             &"test_composite".into(),
@@ -969,7 +1043,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1));
         assert!(result.is_ok());
@@ -990,7 +1064,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999));
         assert!(result.is_err());
@@ -1023,7 +1097,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
             &"test_composite".into(),
@@ -1050,7 +1124,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
             &"test_composite".into(),
@@ -1091,7 +1165,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
             &"test_composite".into(),
@@ -1121,7 +1195,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_items(&"test_composite".into());
         assert!(result.is_ok());
@@ -1157,7 +1231,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1));
         assert!(result.is_ok());
@@ -1181,7 +1255,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999));
         assert!(result.is_err());

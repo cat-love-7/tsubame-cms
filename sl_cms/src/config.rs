@@ -46,6 +46,12 @@ pub struct Config {
     /// Only consulted when the user store is still empty.
     pub admin_email: Option<String>,
     pub admin_password: Option<String>,
+    /// Webhook receivers notified when content is published or unpublished
+    /// (`WEBHOOK_URLS`, comma separated). Empty disables webhooks entirely.
+    pub webhook_urls: Vec<String>,
+    /// HMAC-SHA256 secret used to sign webhook bodies (`WEBHOOK_SECRET`). Optional: without
+    /// it, payloads are delivered unsigned.
+    pub webhook_secret: Option<Vec<u8>>,
 }
 
 impl Default for Config {
@@ -60,6 +66,8 @@ impl Default for Config {
             token_ttl_hours: DEFAULT_TOKEN_TTL_HOURS,
             admin_email: None,
             admin_password: None,
+            webhook_urls: Vec::new(),
+            webhook_secret: None,
         }
     }
 }
@@ -122,6 +130,10 @@ impl Config {
         }
         config.admin_email = non_empty_env("ADMIN_EMAIL");
         config.admin_password = non_empty_env("ADMIN_PASSWORD");
+        if let Ok(urls) = std::env::var("WEBHOOK_URLS") {
+            config.webhook_urls = parse_webhook_urls(&urls)?;
+        }
+        config.webhook_secret = non_empty_env("WEBHOOK_SECRET").map(String::into_bytes);
         Ok(config)
     }
 
@@ -167,6 +179,30 @@ fn parse_origins(raw: &str) -> Vec<String> {
         .collect()
 }
 
+/// Parse the webhook receiver list, rejecting anything that could not be delivered to.
+///
+/// A typo in a URL is a startup error rather than a surprise at the first publish, which
+/// may be days later.
+fn parse_webhook_urls(raw: &str) -> Result<Vec<String>, String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .map(|url| {
+            let parsed = reqwest::Url::parse(url)
+                .map_err(|e| format!("invalid WEBHOOK_URLS entry {url:?}: {e}"))?;
+            if !matches!(parsed.scheme(), "http" | "https") {
+                return Err(format!(
+                    "invalid WEBHOOK_URLS entry {url:?}: only http and https are supported"
+                ));
+            }
+            if parsed.host_str().is_none() {
+                return Err(format!("invalid WEBHOOK_URLS entry {url:?}: no host"));
+            }
+            Ok(parsed.to_string())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,8 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn derives_storage_paths_from_data_root() {
-        let config = Config {
+    fn derives_storage_paths_from_data_root() {        let config = Config {
             data_root: PathBuf::from("/tmp/cms"),
             ..Config::default()
         };
@@ -216,5 +251,31 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(config.socket_addr().unwrap().to_string(), "0.0.0.0:9000");
+    }
+
+    #[test]
+    fn webhooks_are_disabled_by_default() {
+        let config = Config::default();
+        assert!(config.webhook_urls.is_empty());
+        assert!(config.webhook_secret.is_none());
+    }
+
+    #[test]
+    fn parses_comma_separated_webhook_urls_and_trims_whitespace() {
+        assert_eq!(
+            parse_webhook_urls(" https://a.example/hook , http://b.example:9000/hook ,").unwrap(),
+            vec![
+                "https://a.example/hook".to_string(),
+                "http://b.example:9000/hook".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_webhook_urls_that_could_not_be_delivered_to() {
+        // A typo has to be a startup error, not a silent no-op at publish time.
+        assert!(parse_webhook_urls("not-a-url").is_err());
+        assert!(parse_webhook_urls("ftp://example.com/hook").is_err());
+        assert!(parse_webhook_urls("file:///etc/passwd").is_err());
     }
 }

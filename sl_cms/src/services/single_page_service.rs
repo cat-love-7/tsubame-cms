@@ -8,20 +8,24 @@ use crate::models::single_page::{SinglePageItem, SinglePageItemResponse, SingleP
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::single_page_repository::SinglePageRepository;
+use crate::webhook::{ContentEvent, Notifier};
 
 pub struct SinglePageService<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepository> {
     single_page_repository: Arc<SR>,
     composite_field_repository: Arc<CFR>,
     image_repository: Arc<IR>,
+    /// Told about every publish/unpublish so a site build can be triggered.
+    notifier: Arc<dyn Notifier>,
 }
 
 
 impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepository> SinglePageService<SR, CFR, IR> {
-    pub fn new(single_page_repository: Arc<SR>, composite_field_repository: Arc<CFR>, image_repository: Arc<IR>) -> Self {
+    pub fn new(single_page_repository: Arc<SR>, composite_field_repository: Arc<CFR>, image_repository: Arc<IR>, notifier: Arc<dyn Notifier>) -> Self {
         SinglePageService {
             single_page_repository,
             composite_field_repository,
             image_repository,
+            notifier,
         }
     }
     pub fn get_single_page_schema(
@@ -237,6 +241,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.single_page_repository
             .set_page_metadata(name, &metadata)
             .map_err(map_internal_error)?;
+        // Only after the status is stored (see `CollectionService::set_item_status`).
+        self.notifier
+            .notify(ContentEvent::single_page(name, &metadata));
         Ok(metadata)
     }
 
@@ -284,6 +291,7 @@ mod tests {
     use crate::models::schema::CompositeFieldId;
 
     use super::*;
+    use crate::webhook::NoopNotifier;
 
     struct MockSinglePageRepository {
         schemas: Arc<RwLock<HashMap<SinglePageName, SinglePageSchema>>>,
@@ -433,7 +441,57 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository))
+        SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier))
+    }
+
+    /// Records the events a service emits (see the collection service tests).
+    #[derive(Default)]
+    struct RecordingNotifier {
+        events: std::sync::Mutex<Vec<ContentEvent>>,
+    }
+
+    impl Notifier for RecordingNotifier {
+        fn notify(&self, event: ContentEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    #[test]
+    fn a_status_change_notifies_once_and_an_unknown_page_notifies_nothing() {
+        let notifier = Arc::new(RecordingNotifier::default());
+        let mut schemas = HashMap::new();
+        schemas.insert("home".into(), create_test_schema());
+        let single_page_repository = MockSinglePageRepository {
+            schemas: Arc::new(RwLock::new(schemas)),
+            items: Arc::new(RwLock::new(HashMap::new())),
+            page_metadata: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let composite_field_repository = MockCompositeFieldRepository {
+            schemas: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let image_repository = MockImageRepository {};
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            notifier.clone(),
+        );
+
+        service
+            .set_page_status(&"home".into(), ItemStatus::Published)
+            .unwrap();
+        {
+            let events = notifier.events.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].name(), "single_page.published");
+            assert_eq!(events[0].page.as_ref().unwrap().as_str(), "home");
+        }
+
+        // An unknown page is a 404 and must not look like a change.
+        assert!(service
+            .set_page_status(&"missing".into(), ItemStatus::Published)
+            .is_err());
+        assert_eq!(notifier.events.lock().unwrap().len(), 1);
     }
 
     fn create_test_schema() -> SinglePageSchema {
@@ -644,7 +702,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_single_page_item(
             &"test_composite".into(),
@@ -674,7 +732,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_single_page_item(
             &"test_composite".into(),
@@ -699,7 +757,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository {};
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_single_page_item(&"test_schema".into());
         assert!(result.is_ok());
@@ -718,7 +776,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}), Arc::new(NoopNotifier));
         let result = service.get_single_page_item(&"test_schema".into());
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), HashMap::from([
@@ -749,7 +807,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}), Arc::new(NoopNotifier));
 
         let result = service.update_single_page_item(
             &"test_page".into(),
@@ -773,7 +831,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}), Arc::new(NoopNotifier));
         let result = service.update_single_page_item(
             &"test_page".into(),
             &create_test_item("Updated Title", 100.0),
@@ -809,7 +867,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}), Arc::new(NoopNotifier));
 
         let result = service.update_single_page_item(
             &"test_page".into(),
@@ -835,7 +893,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}), Arc::new(NoopNotifier));
 
         let result = service.get_single_page_item(&"test_page".into());
         assert!(result.is_ok());

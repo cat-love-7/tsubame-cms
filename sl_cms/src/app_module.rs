@@ -11,6 +11,7 @@ use crate::services::collection_service::CollectionService;
 use crate::services::composite_field_service::CompositeFieldService;
 use crate::services::image_service::ImageService;
 use crate::services::single_page_service::SinglePageService;
+use crate::webhook::Notifier;
 
 /// The full set of storage capabilities the HTTP layer requires.
 ///
@@ -50,17 +51,19 @@ pub struct AppModule<R: Storage> {
 }
 
 impl<R: Storage> AppModule<R> {
-    pub fn new(repository: Arc<R>, token_issuer: TokenIssuer) -> Self {
+    pub fn new(repository: Arc<R>, token_issuer: TokenIssuer, notifier: Arc<dyn Notifier>) -> Self {
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
                 repository.clone(),
                 repository.clone(),
+                notifier.clone(),
             ),
             single_page_service: SinglePageService::new(
                 repository.clone(),
                 repository.clone(),
                 repository.clone(),
+                notifier,
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),
             image_service: ImageService::new(repository.clone()),

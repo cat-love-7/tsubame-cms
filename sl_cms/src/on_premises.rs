@@ -48,5 +48,9 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
 
     let repository = Arc::new(repository::Repository::new(env, config.images_dir()));
     let token_issuer = TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours);
-    AppModule::new(repository, token_issuer)
+    let notifier = crate::webhook::build_notifier(
+        config.webhook_urls.clone(),
+        config.webhook_secret.clone(),
+    );
+    AppModule::new(repository, token_issuer, notifier)
 }

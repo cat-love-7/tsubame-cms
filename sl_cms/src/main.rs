@@ -24,6 +24,7 @@ mod http;
 mod models;
 mod repositories;
 mod services;
+mod webhook;
 
 #[cfg(feature = "on-premises")]
 mod on_premises;

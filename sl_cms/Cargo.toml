@@ -26,6 +26,12 @@ uuid = { version = "1.20.0", features = ["v4", "serde"] }
 # pure-Rust crypto so the build needs no C toolchain for ring/aws-lc-rs.
 argon2 = { version = "0.6", features = ["password-hash", "rand_core", "getrandom"] }
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
+# Outbound webhooks (content events). `ring` rather than the default `aws-lc-rs`
+# provider: aws-lc-rs needs CMake, ring only needs a C compiler.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+# HMAC-SHA256 for the webhook signature.
+hmac = "0.12"
+sha2 = "0.10"
 
 [dev-dependencies]
 strum = "0.27.2"

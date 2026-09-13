@@ -21,6 +21,7 @@ use crate::app_module::AppModule;
 use crate::auth::token::TokenIssuer;
 use crate::http;
 use crate::on_premises::repository::Repository;
+use crate::webhook::{NoopNotifier, Notifier, WebhookNotifier};
 
 const ADMIN_EMAIL: &str = "admin@example.com";
 const ADMIN_PASSWORD: &str = "admin-password";
@@ -106,6 +107,11 @@ fn sample_schema() -> Value {
 }
 
 async fn test_app() -> TestApp {
+    test_app_with_notifier(Arc::new(NoopNotifier)).await
+}
+
+/// Same app, but with webhooks wired to `notifier`.
+async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     let dir = PathBuf::from(format!("./data/on_premises/test_http_{id}"));
@@ -121,6 +127,7 @@ async fn test_app() -> TestApp {
     let module = Arc::new(AppModule::new(
         repository,
         TokenIssuer::new(b"integration-test-secret", 1),
+        notifier,
     ));
 
     module
@@ -1359,6 +1366,249 @@ async fn publishing_requires_edit_permission() {
         &app.router,
         Method::GET,
         "/content/collections/blog",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+// ------------------------------------------------------------------------------- webhooks
+
+/// One delivery the CMS posted to the test receiver.
+#[derive(Debug, Clone)]
+struct ReceivedWebhook {
+    event: Option<String>,
+    delivery: Option<String>,
+    signature: Option<String>,
+    body: Vec<u8>,
+}
+
+/// A local receiver for webhook deliveries, answering `status` to everything.
+async fn start_webhook_receiver(
+    status: StatusCode,
+) -> (String, Arc<tokio::sync::Mutex<Vec<ReceivedWebhook>>>) {
+    let received = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let sink = received.clone();
+
+    let app = Router::new().route(
+        "/hook",
+        axum::routing::post(
+            move |headers: axum::http::HeaderMap, body: axum::body::Bytes| {
+                let sink = sink.clone();
+                async move {
+                    let header = |name: &str| {
+                        headers
+                            .get(name)
+                            .and_then(|value| value.to_str().ok())
+                            .map(str::to_string)
+                    };
+                    sink.lock().await.push(ReceivedWebhook {
+                        event: header("x-cms-event"),
+                        delivery: header("x-cms-delivery"),
+                        signature: header("x-cms-signature"),
+                        body: body.to_vec(),
+                    });
+                    status
+                }
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    (format!("http://{addr}/hook"), received)
+}
+
+/// Wait for `count` deliveries. Delivery is asynchronous by design, so the test polls.
+async fn wait_for_webhooks(
+    received: &Arc<tokio::sync::Mutex<Vec<ReceivedWebhook>>>,
+    count: usize,
+) -> Vec<ReceivedWebhook> {
+    for _ in 0..300 {
+        {
+            let received = received.lock().await;
+            if received.len() >= count {
+                return received.clone();
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let received = received.lock().await;
+    panic!(
+        "expected {count} webhook deliveries, got {}",
+        received.len()
+    );
+}
+
+/// Create `collection` with one item and return the new item's id.
+async fn create_sample_item(app: &TestApp, collection: &str) -> u64 {
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/{collection}/schema"),
+        Some(&app.admin_token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/{collection}/item"),
+        Some(&app.admin_token),
+        Some(json!({ "title": "Hello", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    body.as_u64().expect("the item id")
+}
+
+#[tokio::test]
+async fn publishing_notifies_the_configured_webhook() {
+    let (url, received) = start_webhook_receiver(StatusCode::OK).await;
+    let secret = b"webhook-secret".to_vec();
+    let app = test_app_with_notifier(Arc::new(
+        WebhookNotifier::new(vec![url], Some(secret.clone())).unwrap(),
+    ))
+    .await;
+
+    let item_id = create_sample_item(&app, "blog").await;
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/publish"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let deliveries = wait_for_webhooks(&received, 1).await;
+    let first = &deliveries[0];
+    assert_eq!(first.event.as_deref(), Some("collection_item.published"));
+    assert!(
+        first.delivery.is_some(),
+        "a delivery id lets a receiver ignore a duplicate"
+    );
+
+    let body: Value = serde_json::from_slice(&first.body).unwrap();
+    assert_eq!(body["event"], "collection_item.published");
+    assert_eq!(body["collection"], "blog");
+    assert_eq!(body["id"], item_id);
+    assert_eq!(body["status"], "published");
+    assert!(body["published_at"].is_string());
+    // A collection event says nothing about single pages.
+    assert!(body.get("page").is_none());
+
+    // The signature has to verify over the exact bytes that were sent.
+    let expected = format!("sha256={}", crate::webhook::sign(&secret, &first.body));
+    assert_eq!(first.signature.as_deref(), Some(expected.as_str()));
+
+    // Unpublishing is an event too: the site has to be rebuilt without the page.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/unpublish"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let deliveries = wait_for_webhooks(&received, 2).await;
+    assert_eq!(
+        deliveries[1].event.as_deref(),
+        Some("collection_item.unpublished")
+    );
+    let body: Value = serde_json::from_slice(&deliveries[1].body).unwrap();
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body["published_at"], Value::Null);
+}
+
+#[tokio::test]
+async fn publishing_a_single_page_notifies_the_webhook() {
+    let (url, received) = start_webhook_receiver(StatusCode::OK).await;
+    let app =
+        test_app_with_notifier(Arc::new(WebhookNotifier::new(vec![url], None).unwrap())).await;
+
+    send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/schema",
+        Some(&app.admin_token),
+        Some(sample_schema()),
+    )
+    .await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(&app.admin_token),
+        Some(json!({ "title": "Home", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/publish",
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let deliveries = wait_for_webhooks(&received, 1).await;
+    let body: Value = serde_json::from_slice(&deliveries[0].body).unwrap();
+    assert_eq!(body["event"], "single_page.published");
+    assert_eq!(body["page"], "home");
+    assert!(body.get("collection").is_none());
+    // Without a configured secret the payload is delivered unsigned.
+    assert!(deliveries[0].signature.is_none());
+}
+
+#[tokio::test]
+async fn an_unreachable_webhook_receiver_does_not_break_publishing() {
+    // Nothing listens on this port, so delivery fails at connect time.
+    let url = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{addr}/hook")
+    };
+    let app =
+        test_app_with_notifier(Arc::new(WebhookNotifier::new(vec![url], None).unwrap())).await;
+    let item_id = create_sample_item(&app, "blog").await;
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/publish"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "publishing must not depend on a receiver being up"
+    );
+    assert_eq!(body["status"], "published");
+
+    // The content is public even though the webhook could not be delivered.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog/items/{item_id}"),
         None,
         None,
     )
