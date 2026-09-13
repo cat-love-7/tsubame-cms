@@ -17,6 +17,14 @@ pub struct User {
     /// when the identifier *was* an email address still be read.
     #[serde(default)]
     pub username: String,
+    /// The identifier an identity provider knows this account by (Cognito's `sub`).
+    ///
+    /// `None` for an account this deployment authenticates itself, or for a record written
+    /// before the deployment moved to a provider. It is what a provider's token is resolved
+    /// through, and it is set the first time someone signs in (see
+    /// `AuthService::user_from_token`).
+    #[serde(default)]
+    pub external_id: Option<String>,
     /// Contact address, if the operator recorded one. Never used to sign in, so it may be
     /// absent; a future Cognito deployment keeps it as an attribute, not an identity.
     #[serde(default)]
@@ -58,6 +66,7 @@ impl User {
         User {
             id: UserId::from(uuid::Uuid::new_v4().to_string().as_str()),
             username: normalize_username(username),
+            external_id: None,
             email: None,
             is_active: true,
             is_admin,

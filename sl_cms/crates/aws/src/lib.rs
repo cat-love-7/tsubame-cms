@@ -175,13 +175,9 @@ pub async fn run_local(config: &Config) -> Result<(), Box<dyn std::error::Error 
     if repository.ensure_table().await? {
         tracing::info!(table = %settings.table, "created the table for this local run");
     }
-    let module = std::sync::Arc::new(AppModule::new(
-        repository.clone(),
-        TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours),
-        sl_cms_core::webhook::build_notifier(config.webhook_urls.clone(), config.webhook_secret.clone()),
-        PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes),
-        PasswordResetIssuer::new(&config.jwt_secret, config.password_reset_ttl_minutes),
-    ));
+    // The same composition as the Lambda entry point, so what a developer drives locally is what
+    // runs on AWS — including which verifier decides who the caller is.
+    let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
     warn_about_the_environment(config, &settings);
 
     let router = build_router(
@@ -244,6 +240,7 @@ pub async fn open_test_repository(
         table: table.clone(),
         bucket: format!("cms-test-{}", uuid::Uuid::new_v4().simple()),
         user_pool_id: "unused_pool".to_string(),
+        client_id: "unused_client".to_string(),
         endpoint_url: Some(test_endpoint()),
         s3_endpoint_url: Some(test_s3_endpoint()),
         image_base_url: None,

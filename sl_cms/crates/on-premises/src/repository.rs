@@ -29,6 +29,12 @@ pub(crate) const DRAFT_STORE: &str = "item_draft";
 /// print (see `crate::credentials`).
 pub(crate) const CREDENTIAL_STORE: &str = "credential";
 
+/// Store holding the provider-identifier index: an identity provider's `sub` to our user id.
+///
+/// A lookup by provider identity happens on every request that arrives with a provider's
+/// token, so it is an index rather than a scan.
+pub(crate) const IDENTITY_STORE: &str = "identity";
+
 /// The side stores (metadata, draft) key an item as `collection:<name>:<id>`, so
 /// everything belonging to one collection can be scanned and purged by prefix.
 fn collection_prefix(collection_name: &str) -> String {

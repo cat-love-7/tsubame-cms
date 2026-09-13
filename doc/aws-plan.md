@@ -295,11 +295,25 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       1 分生き残る)。
       **まだ配線していない**: `AuthService::user_from_token` は今も自前トークンだけを見る
       (次の `external_id` の項目でつなぐ)。
-- [ ] `User` に `external_id`(`sub`)を追加(`#[serde(default)]`、既存レコードは `None`)
-      → **完了条件**: Cognito の `sub` から権限レコードを解決するテスト。
-- [ ] 未プロビジョニングの扱いと初回ブートストラップ(§1「初回起動」)を実装
-      → **完了条件**: `BOOTSTRAP_ADMIN_USERNAMES` の 1 人が初回ログインで管理者になり、リスト外の
-      未プロビジョニングは 403。2 回目以降は `external_id` で解決する。
+- [x] `User` に `external_id`(Cognito の `sub`)を追加した(`#[serde(default)]`)。
+      `UserRepository::get_user_from_external_id` を足し、on-prem は `identity` という専用 DB
+      (`credential` と同じ形)、AWS は `username#` と同じ予約レコード(`external_id#<sub>`)で
+      引く。追加・変更・削除はどちらも**索引をレコードと同じトランザクションで**維持し、
+      外れた識別子は解放する(古い `sub` がいつまでも誰かに解決してはいけない)。
+      `AuthService::user_from_token` は `TokenVerifier` の返す `Identity` で分岐するように
+      なった(自前トークン = 世代検査、プロバイダ = `external_id` で解決)。
+      → **完了条件**: `sub` から権限レコードを解決するテスト
+      → **達成**(`a_provider_identity_is_resolved_through_external_id`)。
+- [x] 未プロビジョニングの扱いと初回ブートストラップを実装した。
+      `BOOTSTRAP_ADMIN_USERNAMES` の誰かが初回サインインすると、その `sub` に結びついた管理者
+      レコードを作る。リスト外は **403**(「組織の誰でもプールにサインインできる = 誰でもサイトを
+      編集できる、にはしない」)。2 回目以降は `external_id` で解決する。無効化されたアカウントは
+      解決しても 403。
+      AWS 側は `COGNITO_CLIENT_ID` を設定に足し、`build_app_module` が
+      `CognitoVerifier`(+ `HttpJwks`)を据える。ローカル起動も同じ合成を通る。
+      → **完了条件**: リスト内の 1 人が初回ログインで管理者、リスト外は 403、2 回目は
+      `external_id` で解決
+      → **達成**(同じテストで、作成・再解決・無効化・部外者の 4 点を確認)。
 - [x] ローカルのパスワード系を **配備ごとの能力**にした(2026-09)。
       - 資格情報は `User` レコードから出て、**on-prem のアダプタが持つ**
         (`repositories::local_credentials::LocalCredentials` を `crates/on-premises` が実装。

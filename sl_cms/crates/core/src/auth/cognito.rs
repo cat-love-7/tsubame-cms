@@ -19,7 +19,7 @@ use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 
-use crate::auth::identity::{Identity, TokenVerifier};
+use crate::auth::identity::{Identity, TokenVerifier, VerifyFuture};
 use crate::models::error::HttpError;
 
 /// What a deployment has to tell the verifier about its pool.
@@ -135,7 +135,13 @@ struct CognitoClaims {
 }
 
 impl<J: JwksSource> TokenVerifier for CognitoVerifier<J> {
-    async fn verify(&self, token: &str) -> Result<Identity, HttpError> {
+    fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a> {
+        Box::pin(self.verify_token(token))
+    }
+}
+
+impl<J: JwksSource> CognitoVerifier<J> {
+    async fn verify_token(&self, token: &str) -> Result<Identity, HttpError> {
         let header = decode_header(token).map_err(|_| unauthorized())?;
         // The algorithm is fixed here, which is what stops a token that claims `none` — or one
         // signed with the public key as an HMAC secret — from being taken seriously.

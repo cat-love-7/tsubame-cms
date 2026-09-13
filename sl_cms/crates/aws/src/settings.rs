@@ -12,6 +12,8 @@ pub struct AwsSettings {
     pub table: String,
     pub bucket: String,
     pub user_pool_id: String,
+    /// The app client the browser signs in with; the audience of the ID token it gets back.
+    pub client_id: String,
     /// Where the DynamoDB endpoint is, for a local emulator. `None` means the real AWS
     /// endpoint, which is what a deployment uses.
     pub endpoint_url: Option<String>,
@@ -88,6 +90,7 @@ impl AwsSettings {
             // Cognito is not wired up yet (doc/aws-plan.md P4), but a deployment that names its
             // pool now does not have to change its environment later.
             user_pool_id: required(non_empty_env("COGNITO_USER_POOL_ID"), "COGNITO_USER_POOL_ID")?,
+            client_id: required(non_empty_env("COGNITO_CLIENT_ID"), "COGNITO_CLIENT_ID")?,
             endpoint_url: non_empty_env("AWS_ENDPOINT_URL"),
             s3_endpoint_url: non_empty_env("AWS_ENDPOINT_URL_S3"),
             image_base_url: non_empty_env("AWS_IMAGE_BASE_URL"),
@@ -126,6 +129,7 @@ mod tests {
             table: "cms".to_string(),
             bucket: "cms-images".to_string(),
             user_pool_id: "eu-west-1_abc".to_string(),
+            client_id: "client-1".to_string(),
             endpoint_url: None,
             s3_endpoint_url: None,
             image_base_url: None,

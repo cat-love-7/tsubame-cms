@@ -8,6 +8,7 @@
 //! everything below it is the deployment's business.
 
 use std::future::Future;
+use std::pin::Pin;
 
 use crate::models::error::HttpError;
 use crate::models::user::UserId;
@@ -40,6 +41,12 @@ pub enum Identity {
 ///
 /// Errors are [`HttpError::Unauthorized`] with a message that says nothing about *why*: which
 /// part of a token was wrong is not something a caller should be able to probe.
+/// Boxed rather than `impl Future` because the service holds one of these behind a `dyn` — a
+/// deployment picks its verifier at composition time, not at compile time. Same shape as
+/// [`Notifier`](crate::webhook::Notifier), for the same reason.
+pub type VerifyFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Identity, HttpError>> + Send + 'a>>;
+
 pub trait TokenVerifier: Send + Sync + 'static {
-    fn verify(&self, token: &str) -> impl Future<Output = Result<Identity, HttpError>> + Send;
+    fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a>;
 }

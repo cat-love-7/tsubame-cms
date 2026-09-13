@@ -399,6 +399,10 @@ pub mod key {
     pub fn username(username: &str) -> String {
         format!("username#{}", username)
     }
+    /// The same reservation, for the identifier an identity provider knows an account by.
+    pub fn external_id(external_id: &str) -> String {
+        format!("external_id#{external_id}")
+    }
 
     // Composite field schemas, listed in one query.
     pub fn composite_field(id: &CompositeFieldId) -> String {

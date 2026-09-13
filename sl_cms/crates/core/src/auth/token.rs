@@ -8,7 +8,9 @@ use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
-use crate::models::user::User;
+use crate::auth::identity::{Identity, TokenVerifier, VerifyFuture};
+use crate::models::error::HttpError;
+use crate::models::user::{User, UserId};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Claims {
@@ -82,6 +84,7 @@ mod tests {
         User {
             id: StringId::from("u-1"),
             username: "a@example.com".to_string(),
+            external_id: None,
             email: None,
             is_active: true,
             is_admin: true,
@@ -144,5 +147,21 @@ mod tests {
         let issuer = TokenIssuer::new(b"secret", 0);
         let (token, _) = issuer.issue(&user()).unwrap();
         assert!(issuer.verify(&token).is_ok());
+    }
+}
+
+impl TokenVerifier for TokenIssuer {
+    fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a> {
+        Box::pin(async move {
+            let claims = TokenIssuer::verify(self, token).map_err(|e| {
+                // Do not echo the verifier's reason to the client.
+                tracing::debug!("rejected token: {e}");
+                HttpError::Unauthorized("invalid or expired token")
+            })?;
+            Ok(Identity::Local {
+                user_id: UserId::from(claims.sub.as_str()),
+                token_version: claims.ver,
+            })
+        })
     }
 }

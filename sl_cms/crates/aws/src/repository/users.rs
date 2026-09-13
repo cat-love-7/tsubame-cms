@@ -76,6 +76,55 @@ async fn release_username(inner: &Inner, username: &str, id: &UserId) -> Result<
     }
 }
 
+/// Claim `external_id` for `id`, the same way a username is claimed: an identity provider
+/// identifier resolves to exactly one account.
+async fn reserve_external_id(inner: &Inner, external_id: &str, id: &UserId) -> Result<(), BoxError> {
+    inner
+        .client
+        .put_item()
+        .table_name(&inner.table)
+        .item("pk", AttributeValue::S(key::USER_INDEX.to_string()))
+        .item("sk", AttributeValue::S(key::external_id(external_id)))
+        .item("data", AttributeValue::S(id.as_str().to_string()))
+        .condition_expression("attribute_not_exists(pk)")
+        .send()
+        .await
+        .map_err(|e| -> BoxError {
+            if e.as_service_error().and_then(|e| e.code()) == Some("ConditionalCheckFailedException")
+            {
+                format!("the provider identity {external_id:?} already belongs to an account").into()
+            } else {
+                format!("dynamodb put_item failed: {}", describe(&e)).into()
+            }
+        })?;
+    Ok(())
+}
+
+/// Give up an identifier, but only if it is still ours.
+async fn release_external_id(inner: &Inner, external_id: &str, id: &UserId) -> Result<(), BoxError> {
+    let answer = inner
+        .client
+        .delete_item()
+        .table_name(&inner.table)
+        .key("pk", AttributeValue::S(key::USER_INDEX.to_string()))
+        .key("sk", AttributeValue::S(key::external_id(external_id)))
+        .condition_expression("attribute_not_exists(pk) OR #data = :id")
+        .expression_attribute_names("#data", "data")
+        .expression_attribute_values(":id", AttributeValue::S(id.as_str().to_string()))
+        .send()
+        .await;
+    match answer {
+        Ok(_) => Ok(()),
+        Err(e)
+            if e.as_service_error().and_then(|e| e.code())
+                == Some("ConditionalCheckFailedException") =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(format!("dynamodb delete_item failed: {}", describe(&e)).into()),
+    }
+}
+
 impl UserRepository for AwsRepository {
     async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
         let inner = self.inner.clone();
@@ -84,6 +133,31 @@ impl UserRepository for AwsRepository {
             Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
             None => Ok(None),
         }
+    }
+
+    async fn get_user_from_external_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<User>, BoxError> {
+        let inner = self.inner.clone();
+        let external_id = external_id.to_string();
+        async move {
+            let Some(id) = read(
+                &inner,
+                key::USER_INDEX,
+                &key::external_id(&external_id),
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+            let id = UserId::from(id.as_str());
+            match read(&inner, &key::user(&id), key::RECORD).await? {
+                Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
+                None => Ok(None),
+            }
+        }
+        .await
     }
 
     async fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
@@ -106,6 +180,11 @@ impl UserRepository for AwsRepository {
         let inner = self.inner.clone();
         let user = user.clone();
         reserve_username(&inner, &user.username, &user.id).await?;
+        // The provider identifier is claimed the same way, so a lookup by it is a point read
+        // and two accounts cannot answer to one `sub`.
+        if let Some(external_id) = &user.external_id {
+            reserve_external_id(&inner, external_id, &user.id).await?;
+        }
         write(
             &inner,
             &key::user(&user.id),
@@ -120,14 +199,25 @@ impl UserRepository for AwsRepository {
         let inner = self.inner.clone();
         let id = user_id.clone();
         let user = user.clone();
-        let previous = match read(&inner, &key::user(&id), key::RECORD).await? {
-            Some(data) => Some(AwsRepository::decode_user(&data)?.username),
+        let stored = match read(&inner, &key::user(&id), key::RECORD).await? {
+            Some(data) => Some(AwsRepository::decode_user(&data)?),
             None => None,
         };
+        let previous = stored.as_ref().map(|user| user.username.clone());
         if previous.as_deref() != Some(user.username.as_str()) {
             reserve_username(&inner, &user.username, &id).await?;
             if let Some(previous) = previous {
                 release_username(&inner, &previous, &id).await?;
+            }
+        }
+        // A provider identifier the account no longer answers to must not keep resolving to it.
+        let previous_external = stored.and_then(|user| user.external_id);
+        if previous_external != user.external_id {
+            if let Some(external_id) = &user.external_id {
+                reserve_external_id(&inner, external_id, &id).await?;
+            }
+            if let Some(previous) = previous_external {
+                release_external_id(&inner, &previous, &id).await?;
             }
         }
         write(
@@ -160,6 +250,9 @@ impl UserRepository for AwsRepository {
         if let Some(data) = read(&inner, &key::user(&id), key::RECORD).await? {
             let user = AwsRepository::decode_user(&data)?;
             release_username(&inner, &user.username, &id).await?;
+            if let Some(external_id) = &user.external_id {
+                release_external_id(&inner, external_id, &id).await?;
+            }
         }
         // Deleting an absent key is not an error in DynamoDB, which is the behaviour the
         // on-premises adapter goes out of its way to reproduce.

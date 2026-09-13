@@ -63,6 +63,36 @@ impl<R: Storage> AppModule<R> {
         preview_links: PreviewLinkIssuer,
         password_resets: PasswordResetIssuer,
     ) -> Self {
+        let auth_service =
+            AuthService::new(repository.clone(), token_issuer, password_resets.clone());
+        AppModule::assemble(repository, notifier, preview_links, auth_service)
+    }
+
+    /// The same, for a deployment whose tokens an identity provider issues.
+    ///
+    /// `verifier` replaces the CMS's own token check, and `bootstrap_admins` are the names an
+    /// operator allowed to become the first administrators by signing in.
+    pub fn new_with_verifier(
+        repository: Arc<R>,
+        token_issuer: TokenIssuer,
+        notifier: Arc<dyn Notifier>,
+        preview_links: PreviewLinkIssuer,
+        password_resets: PasswordResetIssuer,
+        verifier: Arc<dyn crate::auth::identity::TokenVerifier>,
+        bootstrap_admins: Vec<String>,
+    ) -> Self {
+        let auth_service = AuthService::new(repository.clone(), token_issuer, password_resets)
+            .with_external_verifier(verifier)
+            .with_bootstrap_admins(bootstrap_admins);
+        AppModule::assemble(repository, notifier, preview_links, auth_service)
+    }
+
+    fn assemble(
+        repository: Arc<R>,
+        notifier: Arc<dyn Notifier>,
+        preview_links: PreviewLinkIssuer,
+        auth_service: AuthService<R>,
+    ) -> Self {
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
@@ -78,7 +108,7 @@ impl<R: Storage> AppModule<R> {
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),
             image_service: ImageService::new(repository.clone()),
-            auth_service: AuthService::new(repository, token_issuer, password_resets.clone()),
+            auth_service,
             preview_links,
         }
     }

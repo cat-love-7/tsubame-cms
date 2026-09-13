@@ -8,6 +8,7 @@ pub mod token;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::auth::identity::{Identity, TokenVerifier};
 use crate::models::error::HttpError;
 use crate::models::user::{
     is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewUserRequest,
@@ -29,6 +30,13 @@ const BAD_CREDENTIALS: &str = "invalid username or password";
 pub struct AuthService<R: UserRepository> {
     repository: Arc<R>,
     issuer: TokenIssuer,
+    /// Who a bearer token belongs to. On-premises this is the issuer; a deployment that uses an
+    /// identity provider installs that provider's verifier instead.
+    verifier: Arc<dyn TokenVerifier>,
+    /// Usernames (or addresses) an operator named in advance, allowed to become the first
+    /// administrators by signing in. Empty where the deployment creates its first account with
+    /// `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+    bootstrap_admins: Vec<String>,
     /// Mints the links an administrator hands out for an account to set its own password.
     password_resets: PasswordResetIssuer,
     /// Counts failed sign-ins per account, so guessing a password is not free.
@@ -42,6 +50,8 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     ) -> Self {
         AuthService {
             repository,
+            verifier: Arc::new(issuer.clone()) as Arc<dyn TokenVerifier>,
+            bootstrap_admins: Vec::new(),
             issuer,
             password_resets,
             throttle: LoginThrottle::new(),
@@ -56,32 +66,98 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             .is_empty())
     }
     /// Resolve a bearer token to the (active) user it belongs to.
-    pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
-        let claims = self.issuer.verify(token).map_err(|e| {
-            // Do not echo the verifier's reason to the client.
-            tracing::debug!("rejected token: {e}");
-            HttpError::Unauthorized("invalid or expired token")
-        })?;
-        let user_id = UserId::from(claims.sub.as_str());
+    /// Install the verifier for a deployment whose tokens are not this CMS's.
+    pub fn with_external_verifier(mut self, verifier: Arc<dyn TokenVerifier>) -> Self {
+        self.verifier = verifier;
+        self
+    }
 
-        let user = self
+    /// The people an operator named in advance, who may become administrators by signing in.
+    pub fn with_bootstrap_admins(mut self, usernames: Vec<String>) -> Self {
+        self.bootstrap_admins = usernames;
+        self
+    }
+
+    pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
+        match self.verifier.verify(token).await? {
+            Identity::Local {
+                user_id,
+                token_version,
+            } => {
+                let user = self
+                    .repository
+                    .get_user_from_id(&user_id)
+                    .await
+                    .map_err(internal)?
+                    .ok_or_else(|| HttpError::Unauthorized("invalid or expired token"))?;
+
+                // A password change ends every session that was issued before it. The check is
+                // against the stored account, so it holds however long the token has left.
+                if token_version != user.token_version {
+                    return Err(HttpError::Unauthorized(
+                        "this session ended when the password changed",
+                    ));
+                }
+                if !user.is_active {
+                    return Err(HttpError::Forbidden("account is disabled"));
+                }
+                Ok(user)
+            }
+            Identity::External {
+                external_id,
+                username,
+                email,
+            } => {
+                self.user_from_external_identity(external_id, username, email)
+                    .await
+            }
+        }
+    }
+
+    /// Resolve an identity provider's account to a local one, creating it when an operator
+    /// named this person in advance.
+    ///
+    /// The provider says who someone is; it has no idea what they may do here. So the first
+    /// sign-in of a name on the bootstrap list creates an administrator record bound to that
+    /// provider identifier, and every sign-in after that resolves through it. Anyone else is
+    /// refused until an administrator creates their account — a provider that anyone in the
+    /// organisation can sign in to must not mean anyone can edit the site.
+    async fn user_from_external_identity(
+        &self,
+        external_id: String,
+        username: String,
+        email: Option<String>,
+    ) -> Result<User, HttpError> {
+        if let Some(user) = self
             .repository
-            .get_user_from_id(&user_id)
+            .get_user_from_external_id(&external_id)
             .await
             .map_err(internal)?
-            .ok_or_else(|| HttpError::Unauthorized("invalid or expired token"))?;
+        {
+            if !user.is_active {
+                return Err(HttpError::Forbidden("account is disabled"));
+            }
+            return Ok(user);
+        }
 
-        // A password change ends every session that was issued before it. The check is
-        // against the stored account, so it holds however long the token has left to run.
-        if claims.ver != user.token_version {
-            return Err(HttpError::Unauthorized(
-                "this session ended when the password changed",
+        let wanted = normalize_username(&username);
+        let address = email.as_deref().map(normalize_username);
+        let allowed = self
+            .bootstrap_admins
+            .iter()
+            .any(|name| *name == wanted || Some(name) == address.as_ref());
+        if !allowed {
+            return Err(HttpError::Forbidden(
+                "this account has not been given access to the CMS; an administrator has to \
+                 create it first",
             ));
         }
 
-        if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled"));
-        }
+        let mut user = User::new(&username, true, Permission::admin());
+        user.external_id = Some(external_id);
+        user.email = email;
+        self.repository.add_user(&user).await.map_err(internal)?;
+        tracing::info!("provisioned an administrator on first sign-in: {username}");
         Ok(user)
     }
     /// Change an account's role, or whether it may sign in at all.
@@ -446,6 +522,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use super::*;
+    use crate::auth::identity::VerifyFuture;
     use crate::repositories::user_repository::BoxError;
 
     #[derive(Default)]
@@ -454,6 +531,8 @@ mod tests {
         /// Passwords in the clear: this is a test double, and the adapter that does the real
         /// hashing has its own tests.
         passwords: RwLock<HashMap<String, String>>,
+        /// The same for the provider-identifier index.
+        external_ids: RwLock<HashMap<String, String>>,
     }
 
     impl LocalCredentials for InMemoryUsers {
@@ -482,6 +561,16 @@ mod tests {
         async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
             Ok(self.users.read().unwrap().get(&user_id.to_string()).cloned())
         }
+        async fn get_user_from_external_id(
+            &self,
+            external_id: &str,
+        ) -> Result<Option<User>, BoxError> {
+            let id = self.external_ids.read().unwrap().get(external_id).cloned();
+            match id {
+                Some(id) => self.get_user_from_id(&UserId::from(id.as_str())).await,
+                None => Ok(None),
+            }
+        }
         async fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
             let username = normalize_username(username);
             Ok(self
@@ -497,6 +586,12 @@ mod tests {
                 .write()
                 .unwrap()
                 .insert(user.id.to_string(), user.clone());
+            if let Some(external_id) = &user.external_id {
+                self.external_ids
+                    .write()
+                    .unwrap()
+                    .insert(external_id.clone(), user.id.to_string());
+            }
             Ok(user.id.clone())
         }
         async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
@@ -901,6 +996,78 @@ mod tests {
         // A change to an account that does not exist is a 404.
         let missing = UserId::from("00000000-0000-0000-0000-000000000000");
         assert_eq!(auth.set_password(&missing, "supersecret").await.unwrap_err().status_code, 404);
+    }
+
+    /// A verifier that always says the same thing, so the *resolution* is what is under test.
+    struct FixedVerifier(Identity);
+
+    impl TokenVerifier for FixedVerifier {
+        fn verify<'a>(&'a self, _token: &'a str) -> VerifyFuture<'a> {
+            let identity = self.0.clone();
+            Box::pin(async move { Ok(identity) })
+        }
+    }
+
+    fn external(external_id: &str, username: &str) -> Arc<FixedVerifier> {
+        Arc::new(FixedVerifier(Identity::External {
+            external_id: external_id.to_string(),
+            username: username.to_string(),
+            email: None,
+        }))
+    }
+
+    /// What an identity provider's token means here: an account resolved by its identifier, or
+    /// created when an operator named the person in advance — and nothing else.
+    #[tokio::test]
+    async fn a_provider_identity_is_resolved_through_external_id() {
+        // Two services over one store: neither can be cloned, and both have to see the same
+        // accounts for the assertions to mean anything.
+        let repository = Arc::new(InMemoryUsers::default());
+        let build = |repository: Arc<InMemoryUsers>| {
+            AuthService::new(
+                repository,
+                TokenIssuer::new(b"test-secret", 1),
+                PasswordResetIssuer::new(b"test-secret", 30),
+            )
+        };
+        let stranger = build(repository.clone())
+            .with_external_verifier(external("sub-2", "stranger@example.com"));
+
+        // Unknown and not named in advance: refused, not created. A pool anyone in the
+        // organisation can sign in to must not mean anyone can edit the site.
+        assert_eq!(
+            stranger.user_from_token("token").await.unwrap_err(),
+            HttpError::Forbidden(
+                "this account has not been given access to the CMS; an administrator has to \
+                 create it first"
+            )
+        );
+        assert!(repository.users.read().unwrap().is_empty());
+
+        // Named in advance: the first sign-in creates the administrator, bound to the
+        // provider's identifier.
+        let allowed = build(repository.clone())
+            .with_external_verifier(external("sub-1", "ops@example.com"))
+            .with_bootstrap_admins(vec!["ops@example.com".to_string()]);
+        let user = allowed.user_from_token("token").await.unwrap();
+        assert!(user.is_admin && user.is_active);
+        assert_eq!(user.external_id.as_deref(), Some("sub-1"));
+        assert_eq!(user.username, "ops@example.com");
+        assert_eq!(repository.users.read().unwrap().len(), 1);
+
+        // The second sign-in resolves through the index rather than creating another account.
+        let again = allowed.user_from_token("token").await.unwrap();
+        assert_eq!(again.id, user.id);
+        assert_eq!(repository.users.read().unwrap().len(), 1);
+
+        // A disabled account is refused even though its identity resolves.
+        let mut disabled = user.clone();
+        disabled.is_active = false;
+        repository.update_user(&user.id, &disabled).await.unwrap();
+        assert!(allowed.user_from_token("token").await.is_err());
+
+        // And somebody else entirely still gets nowhere, even with the list in place.
+        assert!(stranger.user_from_token("token").await.is_err());
     }
 
     #[tokio::test]

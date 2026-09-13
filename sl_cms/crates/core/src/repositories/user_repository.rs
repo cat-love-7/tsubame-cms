@@ -19,6 +19,12 @@ pub trait UserRepository: Send + Sync + 'static {
         user_id: &UserId,
     ) -> impl Future<Output = Result<Option<User>, BoxError>> + Send;
 
+    /// The account an identity provider's identifier belongs to, if any.
+    fn get_user_from_external_id(
+        &self,
+        external_id: &str,
+    ) -> impl Future<Output = Result<Option<User>, BoxError>> + Send;
+
     fn get_user_from_username(
         &self,
         username: &str,

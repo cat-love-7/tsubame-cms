@@ -1,7 +1,7 @@
 use rkv::{StoreOptions, Value};
 
 use sl_cms_core::models::user::{normalize_username, User, UserId};
-use crate::repository::Repository;
+use crate::repository::{Repository, IDENTITY_STORE};
 use sl_cms_core::repositories::user_repository::{BoxError, UserRepository};
 
 impl Repository {
@@ -31,6 +31,21 @@ impl UserRepository for Repository {
         self.user_from_id(user_id)
     }
 
+    async fn get_user_from_external_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<User>, BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let id = match store.get(&reader, external_id.as_bytes())? {
+            Some(Value::Str(id)) => id.to_string(),
+            _ => return Ok(None),
+        };
+        self.user_from_id(&UserId::from(id.as_str()))
+    }
+
     async fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
         // A linear scan is fine at the scale of a CMS's accounts, and it avoids a second
         // record that would have to be kept in sync with the primary one.
@@ -47,12 +62,23 @@ impl UserRepository for Repository {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
+        // Opened before the transaction, for the reason given in `delete_collection`.
+        let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.put(
             &mut writer,
             user.id.as_bytes(),
             &Value::Str(&serde_json::to_string(user)?),
         )?;
+        // One transaction with the record: an index that disagreed with it would be a lookup
+        // that resolves to the wrong account, or to none.
+        if let Some(external_id) = &user.external_id {
+            identities.put(
+                &mut writer,
+                external_id.as_bytes(),
+                &Value::Str(user.id.as_str()),
+            )?;
+        }
         writer.commit()?;
         Ok(user.id.clone())
     }
@@ -61,12 +87,29 @@ impl UserRepository for Repository {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
+        let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let previous = match store.get(&reader, user_id.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?.external_id,
+            _ => None,
+        };
         let mut writer = env.write()?;
         store.put(
             &mut writer,
             user_id.as_bytes(),
             &Value::Str(&serde_json::to_string(user)?),
         )?;
+        if let Some(external_id) = &user.external_id {
+            identities.put(
+                &mut writer,
+                external_id.as_bytes(),
+                &Value::Str(user.id.as_str()),
+            )?;
+        }
+        // A provider identity the account no longer answers to must not keep resolving to it.
+        if let Some(previous) = previous.filter(|id| Some(id) != user.external_id.as_ref()) {
+            identities.delete(&mut writer, previous.as_bytes())?;
+        }
         writer.commit()?;
         Ok(())
     }
@@ -96,8 +139,17 @@ impl UserRepository for Repository {
         }
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
+        let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let external_id = match store.get(&reader, user_id.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?.external_id,
+            _ => None,
+        };
         let mut writer = env.write()?;
         store.delete(&mut writer, user_id.as_bytes())?;
+        if let Some(external_id) = external_id {
+            identities.delete(&mut writer, external_id.as_bytes())?;
+        }
         writer.commit()?;
         Ok(())
     }
