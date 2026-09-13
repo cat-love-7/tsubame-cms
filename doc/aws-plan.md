@@ -136,12 +136,16 @@ true/false, "password_reset_links": true/false}`。
         挙動と同じ結果にする)。
       → **完了条件**: **共有の契約スイートが DynamoDB Local に対して全部通る**
       → **達成**(HTTP 統合テスト 43 件を含む 226 件 + 画像の往復 1 件)。
-- [ ] サイズと上限の検証: 1 レコード 400KB を超えないこと(特に複合フィールドを含む値)、
-      クエリ 1MB のページ境界
-      → **完了条件**: 大きめの値を入れる専用テスト。
-- [ ] on-prem 固有テスト(例: `concurrent_requests_do_not_break_the_storage_environment`)を
-      AWS 側の同等テスト(原子採番、トランザクションの原子性)に置き換える
-      → **完了条件**: 並行作成・並行公開のテストが両バックエンドに存在する。
+- [x] サイズの検証: 300KB の値は往復し、400KB を超える値は**拒否される**
+      (`a_large_value_round_trips_and_an_oversized_one_is_refused`)。画像のバイトを S3 に
+      出したことが、1 レコード 400KB に収まる根拠になっている。
+- [x] 並行作成の検証: 8 スレッド × 5 件で **id が 1..=40 で重複しない**
+      (`concurrent_creates_do_not_share_an_id`)。`UpdateItem ADD` の原子性そのもの。
+- [ ] クエリ 1MB のページ境界(現状は全件取得してからページング。`Limit` /
+      `ExclusiveStartKey` への押し下げは §「一覧のページング」のまま残っている)
+      → **完了条件**: 1MB を超える一覧で欠けが出ないテスト。
+- [ ] 並行**公開**の原子性(`TransactWriteItems`): 公開は 3 レコードの書き込みなので、
+      途中で失敗したときに半端な状態が残らないことを AWS 側でも確認する。
 
 ### P2. S3(画像)
 

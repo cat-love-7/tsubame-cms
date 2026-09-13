@@ -693,4 +693,83 @@ mod tests {
 
         repository.delete_table().await.unwrap();
     }
+
+    /// The id counter is an atomic `ADD`, which is the whole reason it is not a read-modify-write
+    /// against the item records: two items can be created at the same moment in different
+    /// requests, and neither may lose.
+    #[tokio::test]
+    async fn concurrent_creates_do_not_share_an_id() {
+        let endpoint = crate::aws::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::aws::open_test_repository("cms_concurrent").await;
+        let name = CollectionName::from("blog");
+        repository.add_collection_schema(&name, &schema()).unwrap();
+
+        let writers = 8;
+        let each = 5;
+        let mut handles = Vec::new();
+        for _ in 0..writers {
+            let repository = repository.clone();
+            let name = name.clone();
+            handles.push(std::thread::spawn(move || {
+                (0..each)
+                    .map(|_| repository.add_collection_item(&name, &values("x")).unwrap())
+                    .collect::<Vec<u64>>()
+            }));
+        }
+        let mut ids: Vec<u64> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("a writer thread panicked"))
+            .collect();
+        ids.sort_unstable();
+
+        assert_eq!(
+            ids,
+            (1..=(writers * each)).collect::<Vec<u64>>(),
+            "an id was handed out twice, or one was skipped"
+        );
+        assert_eq!(
+            repository.list_collection_items(&name).unwrap().len(),
+            (writers * each) as usize
+        );
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// A record is one DynamoDB item, and DynamoDB refuses anything over 400KB, so the CMS has to
+    /// stay under it. Image bytes are in S3, which is what keeps that reachable: a value that is
+    /// merely large is fine, one that is over the limit is refused rather than silently truncated.
+    #[tokio::test]
+    async fn a_large_value_round_trips_and_an_oversized_one_is_refused() {
+        let endpoint = crate::aws::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::aws::open_test_repository("cms_size").await;
+        let name = CollectionName::from("blog");
+        repository.add_collection_schema(&name, &schema()).unwrap();
+
+        let large = "a".repeat(300_000);
+        let id = repository.add_collection_item(&name, &values(&large)).unwrap();
+        assert_eq!(
+            repository
+                .get_collection_item(&name, &CollectionItemId::from_u64(id))
+                .unwrap(),
+            Some(values(&large)),
+            "a 300KB value should survive the round trip"
+        );
+
+        let oversized = "a".repeat(500_000);
+        assert!(
+            repository.add_collection_item(&name, &values(&oversized)).is_err(),
+            "a record over DynamoDB's 400KB limit has to be refused"
+        );
+
+        repository.delete_table().await.unwrap();
+    }
 }
+
