@@ -47,8 +47,11 @@ pub struct Config {
     pub token_ttl_hours: i64,
     /// How long a signed preview link stays valid (`PREVIEW_LINK_TTL_MINUTES`).
     pub preview_link_ttl_minutes: i64,
-    /// Credentials for the initial administrator (`ADMIN_EMAIL` / `ADMIN_PASSWORD`).
-    /// Only consulted when the user store is still empty.
+    /// Sign-in identifier for the initial administrator (`ADMIN_USERNAME`, or `ADMIN_EMAIL`
+    /// as the older name of the same setting). Only consulted when the user store is still
+    /// empty.
+    pub admin_username: Option<String>,
+    /// Contact address for the initial administrator (`ADMIN_EMAIL`), if one is wanted.
     pub admin_email: Option<String>,
     pub admin_password: Option<String>,
     /// Webhook receivers notified when content is published or unpublished
@@ -70,6 +73,7 @@ impl Default for Config {
             jwt_secret_is_ephemeral: true,
             token_ttl_hours: DEFAULT_TOKEN_TTL_HOURS,
             preview_link_ttl_minutes: DEFAULT_PREVIEW_LINK_TTL_MINUTES,
+            admin_username: None,
             admin_email: None,
             admin_password: None,
             webhook_urls: Vec::new(),
@@ -148,6 +152,10 @@ impl Config {
                 config.preview_link_ttl_minutes = minutes;
             }
         }
+        // An identifier can be anything (see `is_plausible_username`), so the old name of this
+        // setting is only a fallback: `ADMIN_EMAIL` alone still bootstraps the same account.
+        config.admin_username =
+            non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
         config.admin_email = non_empty_env("ADMIN_EMAIL");
         config.admin_password = non_empty_env("ADMIN_PASSWORD");
         if let Ok(urls) = std::env::var("WEBHOOK_URLS") {

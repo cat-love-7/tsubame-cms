@@ -13,7 +13,11 @@
 
 <div class="create">
   <mat-form-field appearance="fill">
-    <mat-label>Email</mat-label>
+    <mat-label>ID</mat-label>
+    <input matInput type="text" name="username" [(ngModel)]="newUsername" />
+  </mat-form-field>
+  <mat-form-field appearance="fill">
+    <mat-label>Email (任意)</mat-label>
     <input matInput type="email" name="email" [(ngModel)]="newEmail" />
   </mat-form-field>
   <mat-form-field appearance="fill">
@@ -41,7 +45,7 @@
 <table class="accounts">
   <thead>
     <tr>
-      <th>Email</th>
+      <th>ID</th>
       <th>Role</th>
       <th>Administrator</th>
       <th>Active</th>
@@ -53,9 +57,12 @@
     @for (user of accounts(); track user.id) {
       <tr>
         <td>
-          {{ user.email }}
+          {{ user.username }}
           @if (isMe(user)) {
             <span class="you">you</span>
+          }
+          @if (user.email) {
+            <span class="contact" title="連絡先(サインインには使いません)">{{ user.email }}</span>
           }
         </td>
         <td>
@@ -63,7 +70,7 @@
             [value]="roleOf(user)"
             [disabled]="user.is_admin"
             (selectionChange)="setRole(user, $event.value)"
-            [attr.aria-label]="'role of ' + user.email"
+            [attr.aria-label]="'role of ' + user.username"
           >
             @for (role of roles; track role.value) {
               <mat-option [value]="role.value">{{ role.label }}</mat-option>
@@ -76,14 +83,14 @@
           <mat-checkbox
             [checked]="user.is_admin"
             (change)="setAdmin(user, $event.checked)"
-            [attr.aria-label]="'administrator ' + user.email"
+            [attr.aria-label]="'administrator ' + user.username"
           />
         </td>
         <td>
           <mat-checkbox
             [checked]="user.is_active"
             (change)="setActive(user, $event.checked)"
-            [attr.aria-label]="'active ' + user.email"
+            [attr.aria-label]="'active ' + user.username"
           />
         </td>
         <td>{{ user.last_login ? user.last_login : '—' }}</td>
@@ -91,21 +98,21 @@
           <button
             matIconButton
             (click)="openResources(user)"
-            [attr.aria-label]="'resource permissions of ' + user.email"
+            [attr.aria-label]="'resource permissions of ' + user.username"
           >
             <mat-icon>tune</mat-icon>
           </button>
           <button
             matIconButton
             (click)="resetPassword(user)"
-            [attr.aria-label]="'reset password of ' + user.email"
+            [attr.aria-label]="'reset password of ' + user.username"
           >
             <mat-icon>key</mat-icon>
           </button>
           <button
             matIconButton
             (click)="remove(user)"
-            [attr.aria-label]="'delete account ' + user.email"
+            [attr.aria-label]="'delete account ' + user.username"
           >
             <mat-icon>delete</mat-icon>
           </button>

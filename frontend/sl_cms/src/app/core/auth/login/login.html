@@ -8,13 +8,14 @@
         <p class="error" role="alert">{{ error() }}</p>
       }
       <mat-form-field appearance="fill" class="full-width">
-        <mat-label>Email</mat-label>
+        <!-- The identifier, which may or may not be an address: hence a plain text field. -->
+        <mat-label>ID</mat-label>
         <input
           matInput
-          type="email"
-          name="email"
+          type="text"
+          name="username"
           autocomplete="username"
-          [(ngModel)]="email"
+          [(ngModel)]="username"
           (keyup.enter)="submit()"
         />
       </mat-form-field>

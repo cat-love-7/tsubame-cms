@@ -55,7 +55,7 @@ async fn login(router: &Router, email: &str, password: &str) -> (StatusCode, Val
         Method::POST,
         "/auth/login",
         None,
-        Some(json!({ "email": email, "password": password })),
+        Some(json!({ "username": email, "password": password })),
     )
     .await;
     (status, body)
@@ -177,9 +177,9 @@ async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
 
     module
         .auth_service
-        .bootstrap_admin(Some(ADMIN_EMAIL), Some(ADMIN_PASSWORD))
-        .unwrap()
-        .expect("bootstrap admin");
+        .bootstrap_admin(Some(ADMIN_EMAIL), Some(ADMIN_PASSWORD), None)
+        .unwrap_or_else(|e| panic!("bootstrap admin: {e}"))
+        .expect("the store was empty, so an administrator is created");
 
     let router = http::router(
         module.clone(),
@@ -203,7 +203,7 @@ async fn create_user(app: &TestApp, email: &str, password: &str, is_admin: bool)
         Method::POST,
         "/auth/users",
         Some(&app.admin_token),
-        Some(json!({ "email": email, "password": password, "is_admin": is_admin })),
+        Some(json!({ "username": email, "password": password, "is_admin": is_admin })),
     )
     .await;
     status
@@ -283,7 +283,7 @@ async fn me_returns_the_current_user_without_the_password_hash() {
     .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["email"], ADMIN_EMAIL);
+    assert_eq!(body["username"], ADMIN_EMAIL);
     assert_eq!(body["is_admin"], true);
     assert!(body.get("password_hash").is_none(), "leaked hash: {body}");
 }
@@ -1975,7 +1975,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
         "/auth/users",
         Some(&admin),
         Some(json!({
-            "email": "scoped@example.com",
+            "username": "scoped@example.com",
             "password": "scoped-password",
             "is_admin": false,
             "permission": Permission::viewer(),
@@ -2136,7 +2136,7 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
         "/auth/users",
         Some(&admin),
         Some(json!({
-            "email": "typo@example.com",
+            "username": "typo@example.com",
             "password": "typo-password",
             "is_admin": false,
             "permission": Permission::viewer(),
@@ -2199,7 +2199,7 @@ async fn a_throttled_sign_in_answers_429_with_retry_after() {
         .uri("/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
-            json!({ "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD }).to_string(),
+            json!({ "username": ADMIN_EMAIL, "password": ADMIN_PASSWORD }).to_string(),
         ))
         .unwrap();
     let response = app.router.clone().oneshot(request).await.unwrap();
@@ -2234,7 +2234,7 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
         "/auth/users",
         Some(&admin),
         Some(json!({
-            "email": "editor@example.com",
+            "username": "editor@example.com",
             "password": "editor-password",
             "is_admin": false,
             "permission": Permission::editor(),
@@ -2300,7 +2300,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
         "/auth/users",
         Some(&app.admin_token),
         Some(json!({
-            "email": "publisher@example.com",
+            "username": "publisher@example.com",
             "password": "publisher-password",
             "is_admin": false,
             "permission": Permission { can_view: true, can_edit: true, can_publish: true },
@@ -2314,7 +2314,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let publish = format!("/models/collections/blog/items/{item_id}/publish");
     let (status, body) = send(&app.router, Method::POST, &publish, Some(&publisher), None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["published_by"]["email"], "publisher@example.com");
+    assert_eq!(body["published_by"]["username"], "publisher@example.com");
     assert!(body["published_by"]["id"].is_string(), "the account id travels too: {body}");
 
     // The admin metadata endpoint reports it as well: that is what the UI reads.
@@ -2327,7 +2327,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["published_by"]["email"], "publisher@example.com");
+    assert_eq!(body["published_by"]["username"], "publisher@example.com");
 
     // The delivery API says when it was published, never who did it: the operator's
     // address is not something a public site should be able to read.
@@ -2942,7 +2942,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
             "/auth/users",
             Some(&admin),
             Some(json!({
-                "email": email,
+                "username": email,
                 "password": "role-password",
                 "is_admin": false,
                 "permission": permission,
@@ -3180,7 +3180,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
         Method::POST,
         "/auth/users",
         Some(&admin),
-        Some(json!({ "email": "user@example.com", "password": "user-password" })),
+        Some(json!({ "username": "user@example.com", "password": "user-password" })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -3194,7 +3194,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|user| user["email"] == "user@example.com"));
+        .any(|user| user["username"] == "user@example.com"));
 
     // Promote to publisher, disable, and enable again.
     let (status, body) = send(

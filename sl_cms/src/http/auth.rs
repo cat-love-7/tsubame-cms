@@ -40,7 +40,7 @@ async fn login<R: Storage>(
     Ok(Json(
         module
             .auth_service
-            .login(&request.email, &request.password)?,
+            .login(&request.username, &request.password)?,
     ))
 }
 

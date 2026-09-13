@@ -28,7 +28,7 @@ import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:4200';
 const API = `${BASE}/api`;
-const EMAIL = process.env.ADMIN_EMAIL ?? 'admin@example.com';
+const USERNAME = process.env.ADMIN_USERNAME ?? process.env.ADMIN_EMAIL ?? 'admin@example.com';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin-password';
 /** Enough items for several pages, and for a 50-row page. */
 const COLLECTION = process.env.COLLECTION ?? 'e2e_blog';
@@ -136,7 +136,7 @@ async function seedComposite(token) {
 }
 
 async function seed() {
-  const login = await api('POST', '/auth/login', { email: EMAIL, password: PASSWORD });
+  const login = await api('POST', '/auth/login', { username: USERNAME, password: PASSWORD });
   await seedComposite(login.token);
   await seedCollection(COLLECTION, TOTAL, login.token);
   await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
@@ -184,16 +184,16 @@ const firstRow = () => dataRows().first();
 const badgeOf = (row) => row.locator('app-item-status .badge');
 
 /** Sign in on a fresh context, so a second role can be looked at beside the admin one. */
-async function openAs(email, password) {
+async function openAs(username, password) {
   const roleContext = await browser.newContext();
   const rolePage = await roleContext.newPage();
-  rolePage.on('pageerror', (error) => consoleErrors.push(`${email}: ${error}`));
+  rolePage.on('pageerror', (error) => consoleErrors.push(`${username}: ${error}`));
   rolePage.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(`${email}: ${message.text()}`);
+    if (message.type() === 'error') consoleErrors.push(`${username}: ${message.text()}`);
   });
 
   await rolePage.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
-  await rolePage.fill('input[name=email]', email);
+  await rolePage.fill('input[name=username]', username);
   await rolePage.fill('input[name=password]', password);
   await rolePage.click('button:has-text("Sign in")');
   await rolePage
@@ -233,7 +233,7 @@ async function waitForRows(count) {
 try {
   // -------------------------------------------------------------- sign in through the form
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
-  await page.fill('input[name=email]', EMAIL);
+  await page.fill('input[name=username]', USERNAME);
   await page.fill('input[name=password]', PASSWORD);
   await page.click('button:has-text("Sign in")');
   await page
@@ -302,7 +302,7 @@ try {
 
   // The audit trail: the row now names the account that published it.
   const publisherNote = (await rowById(draftId).locator('.publisher').textContent())?.trim();
-  check('誰が公開したかが一覧に出る', publisherNote === EMAIL, `${publisherNote}`);
+  check('誰が公開したかが一覧に出る', publisherNote === USERNAME, `${publisherNote}`);
 
   // -------------------------------------------------------------- delete the last page's only row
   await page.goto(`${BASE}/collections/${LAST_PAGE_COLLECTION}`, { waitUntil: 'networkidle' });
@@ -557,17 +557,17 @@ try {
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
   const roleAccounts = [
     {
-      email: 'e2e-editor@example.com',
+      username: 'e2e-editor@example.com',
       permission: { can_view: true, can_edit: true, can_publish: false },
     },
     {
-      email: 'e2e-viewer@example.com',
+      username: 'e2e-viewer@example.com',
       permission: { can_view: true, can_edit: false, can_publish: false },
     },
   ];
   const existing = await api('GET', '/auth/users', undefined, token);
   for (const account of roleAccounts) {
-    const already = existing.find((user) => user.email === account.email);
+    const already = existing.find((user) => user.username === account.username);
     if (already) {
       await api('DELETE', `/auth/users/${already.id}`, undefined, token);
     }
@@ -675,7 +675,7 @@ try {
   // ------------------------------------ per-resource permissions, granted from the screen
   const scopedEmail = 'e2e-scoped@example.com';
   for (const account of await api('GET', '/auth/users', undefined, token)) {
-    if (account.email === scopedEmail) {
+    if (account.username === scopedEmail) {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
@@ -683,7 +683,7 @@ try {
     'POST',
     '/auth/users',
     {
-      email: scopedEmail,
+      username: scopedEmail,
       password: 'scoped-password',
       is_admin: false,
       permission: { can_view: true, can_edit: false, can_publish: false },
@@ -718,7 +718,7 @@ try {
   await page.click('button:has-text("Save permissions")');
   await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
   const scopedAfterSave = (await api('GET', '/auth/users', undefined, token)).find(
-    (account) => account.email === scopedEmail,
+    (account) => account.username === scopedEmail,
   );
   check(
     '保存した権限がサーバに届く',
@@ -730,7 +730,7 @@ try {
   // one it was denied.
   const scopedLogin = await request.fetch(`${API}/auth/login`, {
     method: 'POST',
-    data: { email: scopedEmail, password: 'scoped-password' },
+    data: { username: scopedEmail, password: 'scoped-password' },
   });
   const scopedToken = (await scopedLogin.json()).token;
   const offered = await api('GET', '/models/collections', undefined, scopedToken);
@@ -768,7 +768,7 @@ try {
   // fail. Older ones from previous runs are cleaned up here.
   const throttleEmail = `e2e-throttle-${Date.now()}@example.com`;
   for (const account of await api('GET', '/auth/users', undefined, token)) {
-    if (account.email.startsWith('e2e-throttle-')) {
+    if (account.username.startsWith('e2e-throttle-')) {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
@@ -776,7 +776,7 @@ try {
     'POST',
     '/auth/users',
     {
-      email: throttleEmail,
+      username: throttleEmail,
       password: 'throttle-password',
       is_admin: false,
       permission: { can_view: true, can_edit: false, can_publish: false },
@@ -786,7 +786,7 @@ try {
 
   const attempt = (password) =>
     request
-      .fetch(`${API}/auth/login`, { method: 'POST', data: { email: throttleEmail, password } })
+      .fetch(`${API}/auth/login`, { method: 'POST', data: { username: throttleEmail, password } })
       .then((response) => response.status());
 
   const statuses = [];
@@ -802,7 +802,7 @@ try {
   // While the lock is in force, even the right password waits.
   const locked = await request.fetch(`${API}/auth/login`, {
     method: 'POST',
-    data: { email: throttleEmail, password: 'throttle-password' },
+    data: { username: throttleEmail, password: 'throttle-password' },
   });
   check('ロック中は正しいパスワードでも 429', locked.status() === 429, `status=${locked.status()}`);
   const retryAfter = Number(locked.headers()['retry-after']);
@@ -815,7 +815,7 @@ try {
   // Someone else's failures do not lock anybody else out.
   const otherAccount = await request.fetch(`${API}/auth/login`, {
     method: 'POST',
-    data: { email: EMAIL, password: PASSWORD },
+    data: { username: USERNAME, password: PASSWORD },
   });
   check('他のアカウントは影響を受けない', otherAccount.status() === 200, `status=${otherAccount.status()}`);
 

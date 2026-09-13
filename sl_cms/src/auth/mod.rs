@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use crate::models::error::HttpError;
 use crate::models::user::{
-    is_plausible_email, normalize_email, LoginResponse, NewUserRequest, PasswordChangedResponse,
-    Permission, UpdateUserRequest, User, UserId, UserResponse,
+    is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewUserRequest,
+    PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::repositories::user_repository::UserRepository;
 use throttle::LoginThrottle;
@@ -19,9 +19,9 @@ use token::TokenIssuer;
 /// Shortest password accepted when creating a user.
 pub const MIN_PASSWORD_LENGTH: usize = 8;
 
-/// Message returned for both "unknown email" and "wrong password" so that the endpoint
+/// Message returned for both "unknown account" and "wrong password" so that the endpoint
 /// cannot be used to enumerate accounts.
-const BAD_CREDENTIALS: &str = "invalid email or password";
+const BAD_CREDENTIALS: &str = "invalid username or password";
 
 pub struct AuthService<R: UserRepository> {
     repository: Arc<R>,
@@ -48,38 +48,38 @@ impl<R: UserRepository> AuthService<R> {
     }
 
     /// Verify credentials and issue a token.
-    pub fn login(&self, email: &str, password: &str) -> Result<LoginResponse, HttpError> {
-        let email = normalize_email(email);
-        // Checked before the password is even looked at, and for unknown addresses too, so
+    pub fn login(&self, username: &str, password: &str) -> Result<LoginResponse, HttpError> {
+        let username = normalize_username(username);
+        // Checked before the password is even looked at, and for unknown identifiers too, so
         // the limiter cannot be used to find out which accounts exist.
-        if let Some(wait) = self.throttle.retry_after(&email, Instant::now()) {
+        if let Some(wait) = self.throttle.retry_after(&username, Instant::now()) {
             return Err(HttpError::TooManyRequests(wait));
         }
 
         let user = self
             .repository
-            .get_user_from_email(&email)
+            .get_user_from_username(&username)
             .map_err(internal)?;
 
         let Some(mut user) = user else {
-            self.throttle.record_failure(&email, Instant::now());
+            self.throttle.record_failure(&username, Instant::now());
             return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         };
 
         if !password::verify_password(password, &user.password_hash) {
-            self.throttle.record_failure(&email, Instant::now());
+            self.throttle.record_failure(&username, Instant::now());
             return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         }
         if !user.is_active {
             return Err(HttpError::Forbidden("account is disabled"));
         }
-        self.throttle.record_success(&email);
+        self.throttle.record_success(&username);
 
         // Recording the login is a side effect; a failure here must not deny a valid
         // login, so it is logged and swallowed.
         user.last_login = Some(chrono::Utc::now());
         if let Err(e) = self.repository.update_user(&user.id, &user) {
-            tracing::warn!("failed to record last_login for {}: {e}", user.email);
+            tracing::warn!("failed to record last_login for {}: {e}", user.username);
         }
 
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
@@ -120,18 +120,34 @@ impl<R: UserRepository> AuthService<R> {
     }
 
     pub fn create_user(&self, request: NewUserRequest) -> Result<UserResponse, HttpError> {
-        let email = normalize_email(&request.email);
-        if !is_plausible_email(&email) {
-            return Err(HttpError::BadRequest("a valid email address is required"));
+        let username = normalize_username(&request.username);
+        if !is_plausible_username(&username) {
+            return Err(HttpError::BadRequest(
+                "a username of up to 128 letters, digits or + = , . @ _ - is required",
+            ));
         }
+        // The address is optional; when it is given it has to look like one.
+        let email = request
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|email| !email.is_empty())
+            .map(|email| {
+                if is_plausible_email(email) {
+                    Ok(email.to_ascii_lowercase())
+                } else {
+                    Err(HttpError::BadRequest("that is not a plausible email address"))
+                }
+            })
+            .transpose()?;
         validate_password(&request.password)?;
         if self
             .repository
-            .get_user_from_email(&email)
+            .get_user_from_username(&username)
             .map_err(internal)?
             .is_some()
         {
-            return Err(HttpError::Conflict("a user with that email already exists"));
+            return Err(HttpError::Conflict("a user with that username already exists"));
         }
 
         let hash = password::hash_password(&request.password).map_err(internal)?;
@@ -140,7 +156,8 @@ impl<R: UserRepository> AuthService<R> {
         } else {
             request.permission
         };
-        let user = User::new(&email, hash, request.is_admin, permission);
+        let mut user = User::new(&username, hash, request.is_admin, permission);
+        user.email = email;
         self.repository.add_user(&user).map_err(internal)?;
         Ok(user.to_response())
     }
@@ -222,15 +239,15 @@ impl<R: UserRepository> AuthService<R> {
         let mut user = self.require_user(id)?;
         // The current password is guessed the same way a login is, so it is counted the
         // same way too.
-        if let Some(wait) = self.throttle.retry_after(&user.email, Instant::now()) {
+        if let Some(wait) = self.throttle.retry_after(&user.username, Instant::now()) {
             return Err(HttpError::TooManyRequests(wait));
         }
         if !password::verify_password(current, &user.password_hash) {
-            self.throttle.record_failure(&user.email, Instant::now());
+            self.throttle.record_failure(&user.username, Instant::now());
             return Err(HttpError::Forbidden("current password is incorrect"));
         }
         validate_password(new)?;
-        self.throttle.record_success(&user.email);
+        self.throttle.record_success(&user.username);
         user.password_hash = password::hash_password(new).map_err(internal)?;
         user.end_existing_sessions();
         self.repository.update_user(id, &user).map_err(internal)?;
@@ -282,20 +299,22 @@ impl<R: UserRepository> AuthService<R> {
     /// is exposing an unauthenticated CMS.
     pub fn bootstrap_admin(
         &self,
-        email: Option<&str>,
+        username: Option<&str>,
         password: Option<&str>,
+        email: Option<&str>,
     ) -> Result<Option<UserResponse>, HttpError> {
         if self.has_any_user()? {
             return Ok(None);
         }
         let missing = || {
             HttpError::InternalServerError(
-                "no users exist yet: set ADMIN_EMAIL and ADMIN_PASSWORD to create the initial administrator",
+                "no users exist yet: set ADMIN_USERNAME and ADMIN_PASSWORD to create the initial administrator",
             )
         };
         let request = NewUserRequest {
-            email: email.ok_or_else(missing)?.to_string(),
+            username: username.ok_or_else(missing)?.to_string(),
             password: password.ok_or_else(missing)?.to_string(),
+            email: email.map(str::to_string),
             is_admin: true,
             permission: Permission::admin(),
         };
@@ -333,14 +352,14 @@ mod tests {
         fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
             Ok(self.users.read().unwrap().get(&user_id.to_string()).cloned())
         }
-        fn get_user_from_email(&self, email: &str) -> Result<Option<User>, BoxError> {
-            let email = normalize_email(email);
+        fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
+            let username = normalize_username(username);
             Ok(self
                 .users
                 .read()
                 .unwrap()
                 .values()
-                .find(|u| u.email == email)
+                .find(|u| u.username == username)
                 .cloned())
         }
         fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
@@ -379,8 +398,9 @@ mod tests {
 
     fn new_user(email: &str, password: &str, is_admin: bool) -> NewUserRequest {
         NewUserRequest {
-            email: email.to_string(),
+            username: email.to_string(),
             password: password.to_string(),
+            email: None,
             is_admin,
             permission: Permission::default(),
         }
@@ -393,13 +413,14 @@ mod tests {
             .unwrap();
 
         let response = auth.login("alice@example.com", "supersecret").unwrap();
-        assert_eq!(response.user.email, "alice@example.com");
+        assert_eq!(response.user.username, "alice@example.com");
+        assert!(response.user.email.is_none(), "メールは必須ではない");
         assert!(response.user.is_admin);
         assert!(response.expires_at > chrono::Utc::now());
 
         // The issued token resolves back to the same user.
         let user = auth.user_from_token(&response.token).unwrap();
-        assert_eq!(user.email, "alice@example.com");
+        assert_eq!(user.username, "alice@example.com");
     }
 
     /// Guessing a password is not free: after a few failures the account waits - even when
@@ -512,24 +533,33 @@ mod tests {
     }
 
     #[test]
-    fn rejects_short_passwords_and_bad_emails() {
+    fn rejects_short_passwords_and_unusable_usernames() {
         let (auth, _) = service();
         assert_eq!(
-            auth.create_user(new_user("a@example.com", "short", false))
+            auth.create_user(new_user("ops", "short", false))
                 .unwrap_err()
                 .status_code,
             400
         );
-        assert_eq!(
-            auth.create_user(new_user("not-an-email", "supersecret", false))
-                .unwrap_err()
-                .status_code,
-            400
-        );
+        // A name without an address is fine now; one that cannot be typed as an identifier is
+        // not.
+        for username in ["", "with space", "with:colon"] {
+            assert_eq!(
+                auth.create_user(new_user(username, "supersecret", false))
+                    .unwrap_err()
+                    .status_code,
+                400,
+                "{username:?}"
+            );
+        }
+        // An address, when one is given, still has to look like one.
+        let mut request = new_user("ops", "supersecret", false);
+        request.email = Some("not-an-email".to_string());
+        assert_eq!(auth.create_user(request).unwrap_err().status_code, 400);
     }
 
     #[test]
-    fn rejects_duplicate_email_regardless_of_case() {
+    fn rejects_duplicate_usernames_regardless_of_case() {
         let (auth, _) = service();
         auth.create_user(new_user("a@example.com", "supersecret", false))
             .unwrap();
@@ -568,8 +598,9 @@ mod tests {
         let (auth, _) = service();
         let admin = auth
             .create_user(NewUserRequest {
-                email: "admin@example.com".to_string(),
+                username: "admin@example.com".to_string(),
                 password: "supersecret".to_string(),
+                email: Some("admin@example.com".to_string()),
                 is_admin: true,
                 permission: Permission::admin(),
             })
@@ -594,8 +625,9 @@ mod tests {
         // With a second administrator the demotion is allowed...
         let second = auth
             .create_user(NewUserRequest {
-                email: "second@example.com".to_string(),
+                username: "second@example.com".to_string(),
                 password: "supersecret".to_string(),
+                email: None,
                 is_admin: true,
                 permission: Permission::admin(),
             })
@@ -661,15 +693,20 @@ mod tests {
     fn bootstrap_requires_credentials_only_when_the_store_is_empty() {
         let (auth, _) = service();
         // Empty store and no credentials -> refuse.
-        assert_eq!(auth.bootstrap_admin(None, None).unwrap_err().status_code, 500);
+        assert_eq!(
+            auth.bootstrap_admin(None, None, None).unwrap_err().status_code,
+            500
+        );
 
         let created = auth
-            .bootstrap_admin(Some("admin@example.com"), Some("supersecret"))
+            .bootstrap_admin(Some("ops"), Some("supersecret"), Some("ops@example.com"))
             .unwrap()
             .expect("admin should have been created");
         assert!(created.is_admin);
+        assert_eq!(created.username, "ops");
+        assert_eq!(created.email.as_deref(), Some("ops@example.com"));
 
         // Once seeded, bootstrap is a no-op even without credentials.
-        assert!(auth.bootstrap_admin(None, None).unwrap().is_none());
+        assert!(auth.bootstrap_admin(None, None, None).unwrap().is_none());
     }
 }

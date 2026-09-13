@@ -4,9 +4,9 @@
 //! account and refuses further attempts for a while once they pile up. Two properties are
 //! deliberate:
 //!
-//! * **Every address is counted, known or not.** Throttling only real accounts would turn
+//! * **Every identifier is counted, known or not.** Throttling only real accounts would turn
 //!   the limiter itself into the account-enumeration oracle that the identical
-//!   `invalid email or password` answer exists to prevent.
+//!   `invalid username or password` answer exists to prevent.
 //! * **The lock has a fixed end.** Further attempts while locked do not push it out, so
 //!   someone cannot keep an account locked by hammering it.
 //!
@@ -26,8 +26,8 @@ pub const WINDOW: Duration = Duration::from_secs(15 * 60);
 /// How long an account stays locked, counted from the failure that tripped the limit.
 pub const LOCKOUT: Duration = Duration::from_secs(15 * 60);
 
-/// Addresses tracked at once. Reached only by someone cycling through made-up addresses,
-/// which is what the pruning below is for.
+/// Accounts tracked at once. Reached only by someone cycling through made-up names, which is
+/// what the pruning below is for.
 const MAX_TRACKED_ACCOUNTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy)]
@@ -53,7 +53,7 @@ impl LoginThrottle {
         LoginThrottle::default()
     }
 
-    /// How long this address has to wait, or `None` when it may try now.
+    /// How long this account has to wait, or `None` when it may try now.
     ///
     /// `now` is passed in rather than read here so the tests can move time without sleeping.
     pub fn retry_after(&self, email: &str, now: Instant) -> Option<Duration> {
@@ -62,7 +62,7 @@ impl LoginThrottle {
         (ends > now).then(|| ends - now)
     }
 
-    /// Count one failed attempt for this address.
+    /// Count one failed attempt for this account.
     pub fn record_failure(&self, email: &str, now: Instant) {
         let Ok(mut attempts) = self.attempts.lock() else {
             // A poisoned lock only means some other thread panicked; failing open keeps
@@ -71,7 +71,7 @@ impl LoginThrottle {
         };
 
         if attempts.len() >= MAX_TRACKED_ACCOUNTS && !attempts.contains_key(email) {
-            // Someone is cycling through addresses; drop what has expired before growing.
+            // Someone is cycling through names; drop what has expired before growing.
             attempts.retain(|_, record| now.duration_since(record.last_failure) < WINDOW);
         }
 
@@ -93,14 +93,14 @@ impl LoginThrottle {
         record.last_failure = now;
     }
 
-    /// Forget the failures for this address, which is what a successful sign-in means.
+    /// Forget the failures for this account, which is what a successful sign-in means.
     pub fn record_success(&self, email: &str) {
         if let Ok(mut attempts) = self.attempts.lock() {
             attempts.remove(email);
         }
     }
 
-    /// How many addresses are being tracked; the pruning above is what bounds it.
+    /// How many accounts are being tracked; the pruning above is what bounds it.
     #[cfg(test)]
     fn tracked_accounts(&self) -> usize {
         self.attempts.lock().map(|a| a.len()).unwrap_or(0)
@@ -128,7 +128,7 @@ mod tests {
         let wait = throttle.retry_after("a@example.com", at(10)).expect("locked");
         assert!(wait <= LOCKOUT);
 
-        // One address being locked says nothing about another.
+        // One account being locked says nothing about another.
         assert_eq!(throttle.retry_after("b@example.com", at(10)), None);
     }
 
@@ -173,12 +173,12 @@ mod tests {
         assert_eq!(throttle.retry_after("a@example.com", at(MAX_FAILURES as u64 * window)), None);
     }
 
-    /// Made-up addresses must not grow the map without bound.
+    /// Made-up names must not grow the map without bound.
     #[test]
-    fn tracking_many_addresses_is_bounded() {
+    fn tracking_many_accounts_is_bounded() {
         let throttle = LoginThrottle::new();
         for index in 0..MAX_TRACKED_ACCOUNTS + 100 {
-            throttle.record_failure(&format!("nobody-{index}@example.com"), at(index as u64));
+            throttle.record_failure(&format!("nobody-{index}"), at(index as u64));
         }
         assert!(
             throttle.tracked_accounts() <= MAX_TRACKED_ACCOUNTS,

@@ -109,7 +109,7 @@ export class List {
 
   /** Who published the item, or an empty string while nobody has. */
   publishedBy(id: number): string {
-    return this.metadata()[String(id)]?.published_by?.email ?? '';
+    return this.metadata()[String(id)]?.published_by?.username ?? '';
   }
 
   /** When the item's values were last saved, or a dash when that was never recorded. */

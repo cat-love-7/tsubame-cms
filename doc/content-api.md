@@ -145,7 +145,7 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 | `created_at` | 管理 API | 値が最初に保存された時刻 |
 | `updated_at` | 管理 API | **作業コピー**が最後に保存された時刻 |
 | `published_at` | 両方 | 最後に公開された時刻(unpublish で `null` に戻る) |
-| `published_by` | 管理 API | 最後に公開した**アカウント**(`{ id, email }`)。unpublish で `null` に戻る |
+| `published_by` | 管理 API | 最後に公開した**アカウント**(`{ id, username }`)。unpublish で `null` に戻る |
 
 公開 API に `updated_at` は**出しません**。2 コピーでは「編集した時刻」と「公開物が変わった
 時刻」が別で、未公開の編集を `lastmod` として見せてしまうためです。公開物の最終更新は
@@ -158,8 +158,8 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 - この機能より前に保存された内容は `created_at` / `updated_at` が `null` になる(移行不要)。
   タイムスタンプを持たない古いメタデータレコードもそのまま読める。
 - 管理 API のメタデータは `has_draft` も返すので、公開済み + 未公開の変更、を見分けられる。
-- `published_by` は**監査用**: 公開した時点のメールと id を記録する。メールはその時の値なので、
-  アカウントが後で改名・削除されても記録は読める。`published_at` と同じく unpublish で消える
+- `published_by` は**監査用**: 公開した時点の識別子(username)と id を記録する。名前はその時の
+  値なので、アカウントが後で改名・削除されても記録は読める。`published_at` と同じく unpublish で消える
   (サイトから下りたものに「誰が公開したか」は残らない)。**公開 API には出しません**。
 
 
@@ -168,13 +168,13 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 ```bash
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"..."}' | jq -r .token)
+  -d '{"username":"admin@example.com","password":"..."}' | jq -r .token)
 
 # 公開する
 curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/publish \
   -H "Authorization: Bearer $TOKEN"
 # => {"status":"published","published_at":"2026-09-13T07:19:42.672723691Z",
-#     "published_by":{"id":"...","email":"admin@example.com"},"created_at":"...","updated_at":"..."}
+#     "published_by":{"id":"...","username":"admin@example.com"},"created_at":"...","updated_at":"..."}
 
 # 誰でも読める
 curl http://127.0.0.1:8000/content/collections/blog
@@ -302,7 +302,7 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/auth/users` | 一覧 |
-| POST | `/auth/users` | 作成(`email` / `password` / `is_admin` / `permission`) |
+| POST | `/auth/users` | 作成(`username` / `password` / 任意の `email` / `is_admin` / `permission`) |
 | PATCH | `/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
 | DELETE | `/auth/users/{id}` | 削除 |
 | POST | `/auth/users/{id}/password` | パスワード再設定(現在のパスワード不要) |
@@ -310,6 +310,22 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 
 `/auth/users*` は管理者のみ。`/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
 アカウントでも使える**(閲覧のみの人がパスワードを変えられない、という状態を避けるため)。
+
+#### アカウントの識別子
+
+- サインインに使うのは **`username`** で、`email` は**任意の連絡先**。メールアドレスを持たない
+  運用(`ops`、`team-editor` など)がそのまま成立する。
+- `username` は 1〜128 文字、`A-Z a-z 0-9 + = , . @ _ -` のみ。この文字集合は Cognito が受け付ける
+  ものに合わせてあるので、そのままプールへ持ち込める(`ops@example.com` のようなアドレスも
+  username として有効)。
+- 大文字小文字と前後の空白は同一視する(`Ops.User` と `ops.user` は同じアカウント)。
+- `email` を指定する場合は形だけ検証する(空文字は「未設定」として扱う)。**サインインには
+  使わない**ので、到達できないアドレスでも構わない。
+- `username` は識別子なので作成後は変更しない(変更が必要なら作り直す)。Cognito の username も
+  不変なので、この前提はそのまま移行できる。
+- 初期管理者は `ADMIN_USERNAME` と `ADMIN_PASSWORD`。`ADMIN_USERNAME` が無い場合は
+  `ADMIN_EMAIL` を識別子として使う(以前の設定名のままでも起動する)。`ADMIN_EMAIL` は同時に
+  連絡先としても記録される。
 
 - **有効な管理者が 0 人になる変更は拒否する**(最後の管理者の降格・無効化・削除は 409)。
   自分自身を降格してロックアウトすることもできない。

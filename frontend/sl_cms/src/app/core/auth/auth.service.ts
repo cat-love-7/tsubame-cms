@@ -11,7 +11,10 @@ export interface Permission {
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  /** The sign-in identifier, and the only name the CMS requires. */
+  username: string;
+  /** Contact address, when the operator recorded one. */
+  email: string | null;
   is_admin: boolean;
   /** False for an account that has been disabled; it also cannot sign in. */
   is_active: boolean;
@@ -158,8 +161,8 @@ export class AuthService {
     return allows(overrides?.[name] ?? user.permission);
   }
 
-  login(email: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/auth/login', { email, password }).pipe(
+  login(username: string, password: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>('/api/auth/login', { username, password }).pipe(
       tap((response) => {
         this.tokenSignal.set(response.token);
         this.userSignal.set(response.user);

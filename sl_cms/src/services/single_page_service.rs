@@ -590,7 +590,7 @@ mod tests {
             .set_page_status(&"home".into(), ItemStatus::Published, publisher())
             .unwrap();
         assert_eq!(
-            metadata.published_by.as_ref().map(|by| by.email.as_str()),
+            metadata.published_by.as_ref().map(|by| by.username.as_str()),
             Some("admin@example.com")
         );
         {

@@ -173,7 +173,7 @@ describe('List', () => {
       '1': metadata({
         status: 'published',
         published_at: '2024-05-06T07:08:09Z',
-        published_by: { id: 'u1', email: 'publisher@example.com' },
+        published_by: { id: 'u1', username: 'publisher@example.com' },
       }),
     };
     const fresh = TestBed.createComponent(List);

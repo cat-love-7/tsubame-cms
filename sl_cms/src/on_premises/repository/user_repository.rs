@@ -1,6 +1,6 @@
 use rkv::{StoreOptions, Value};
 
-use crate::models::user::{normalize_email, User, UserId};
+use crate::models::user::{normalize_username, User, UserId};
 use crate::on_premises::repository::Repository;
 use crate::repositories::user_repository::{BoxError, UserRepository};
 
@@ -14,7 +14,12 @@ impl Repository {
         let store = env.open_single("user", StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, user_id.as_bytes())? {
-            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            Some(Value::Str(s)) => {
+                let mut user: User = serde_json::from_str(&s)?;
+                // A record written when the identifier was the email address still signs in.
+                user.adopt_legacy_identifier();
+                Ok(Some(user))
+            }
             _ => Ok(None),
         }
     }
@@ -26,15 +31,15 @@ impl UserRepository for Repository {
         self.user_from_id(user_id)
     }
 
-    fn get_user_from_email(&self, email: &str) -> Result<Option<User>, BoxError> {
+    fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
         // A linear scan is fine at the scale of a CMS's accounts, and it avoids a second
         // record that would have to be kept in sync with the primary one.
-        let wanted = normalize_email(email);
+        let wanted = normalize_username(username);
         Ok(self
             .get_all_users()?
             .into_iter()
             .map(|(_, user)| user)
-            .find(|user| user.email == wanted))
+            .find(|user| user.username == wanted))
     }
 
     fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
@@ -74,7 +79,8 @@ impl UserRepository for Repository {
         for result in store.iter_start(&reader)? {
             if let Ok((key, Value::Str(s))) = result {
                 let id = UserId::from(str::from_utf8(&key)?);
-                let user: User = serde_json::from_str(&s)?;
+                let mut user: User = serde_json::from_str(&s)?;
+                user.adopt_legacy_identifier();
                 users.push((id, user));
             }
         }

@@ -4,20 +4,20 @@ use crate::models::user::{User, UserId};
 
 /// Who published an item, captured at the moment it was published.
 ///
-/// The id links back to the account while it exists; the email is kept as it was, so the
+/// The id links back to the account while it exists; the username is kept as it was, so the
 /// record still reads after the account has been renamed or deleted. That is what makes it
 /// usable as an audit trail rather than just a foreign key.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PublishedBy {
     pub id: UserId,
-    pub email: String,
+    pub username: String,
 }
 
 impl From<&User> for PublishedBy {
     fn from(user: &User) -> Self {
         PublishedBy {
             id: user.id.clone(),
-            email: user.email.clone(),
+            username: user.username.clone(),
         }
     }
 }
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn publishing_records_who_did_it_and_unpublishing_forgets_that_too() {
         let admin = User::new(
-            "Admin@Example.com",
+            "Admin",
             "hash".to_string(),
             true,
             crate::models::user::Permission::admin(),
@@ -141,7 +141,7 @@ mod tests {
             .with_status(ItemStatus::Published, Some(PublishedBy::from(&admin)));
 
         let publisher = published.published_by.clone().expect("記録されている");
-        assert_eq!(publisher.email, "admin@example.com");
+        assert_eq!(publisher.username, "admin");
         assert_eq!(publisher.id, admin.id);
 
         let unpublished = published.with_status(ItemStatus::Draft, None);

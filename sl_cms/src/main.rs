@@ -82,10 +82,14 @@ fn bootstrap_admin(
     config: &config::Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(user) = module.auth_service.bootstrap_admin(
-        config.admin_email.as_deref(),
+        config.admin_username.as_deref(),
         config.admin_password.as_deref(),
+        config.admin_email.as_deref(),
     )? {
-        tracing::info!("created the initial administrator account: {}", user.email);
+        tracing::info!(
+            "created the initial administrator account: {}",
+            user.username
+        );
     }
     Ok(())
 }

@@ -39,7 +39,7 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 | 変数 | 既定値 | 意味 |
 |---|---|---|
 | `BASE_URL` | `http://localhost:4200` | 開発サーバ |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@example.com` / `admin-password` | データ投入とログインに使う管理者 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin@example.com` / `admin-password` | データ投入とログインに使う管理者の ID(サーバ側は `ADMIN_EMAIL` でも可) |
 | `COLLECTION` | `e2e_blog` | ページングを見るコレクション |
 | `TOTAL` | `60` | その件数(50 件ページの確認があるため 51 以上が必要) |
 | `LAST_PAGE_COLLECTION` | `e2e_small` | 最終ページの削除を見るコレクション |

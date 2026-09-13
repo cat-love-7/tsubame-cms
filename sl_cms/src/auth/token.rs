@@ -81,7 +81,8 @@ mod tests {
     fn user() -> User {
         User {
             id: StringId::from("u-1"),
-            email: "a@example.com".to_string(),
+            username: "a@example.com".to_string(),
+            email: None,
             password_hash: "x".to_string(),
             is_active: true,
             is_admin: true,

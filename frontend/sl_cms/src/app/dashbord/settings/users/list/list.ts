@@ -63,6 +63,8 @@ export class List {
   /** The signed-in administrator, so the screen can refuse to lock itself out. */
   public me = computed(() => this.auth.user());
 
+  public newUsername = '';
+  /** Optional: the CMS works without an address, but an operator may want one on file. */
   public newEmail = '';
   public newPassword = '';
   public newRole: Role = 'viewer';
@@ -184,13 +186,16 @@ export class List {
     this.status.set('');
     this.users
       .create({
-        email: this.newEmail,
+        username: this.newUsername,
         password: this.newPassword,
+        // Blank means "no address on file" rather than an empty one.
+        email: this.newEmail.trim() === '' ? null : this.newEmail.trim(),
         is_admin: this.newIsAdmin,
         permission: this.newIsAdmin ? permissionFor('publisher') : permissionFor(this.newRole),
       })
       .subscribe({
         next: () => {
+          this.newUsername = '';
           this.newEmail = '';
           this.newPassword = '';
           this.newRole = 'viewer';

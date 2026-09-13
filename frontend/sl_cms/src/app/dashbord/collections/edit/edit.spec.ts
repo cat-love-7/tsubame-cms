@@ -199,7 +199,7 @@ describe('Edit', () => {
     stub.metadata = {
       status: 'published',
       published_at: '2024-01-01T00:00:00Z',
-      published_by: { id: 'u1', email: 'admin@example.com' },
+      published_by: { id: 'u1', username: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,

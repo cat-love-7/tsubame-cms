@@ -5,8 +5,11 @@ import { Observable } from 'rxjs';
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
 
 export interface NewUser {
-  email: string;
+  /** The sign-in identifier; the CMS does not require an email address. */
+  username: string;
   password: string;
+  /** Optional contact address. */
+  email: string | null;
   is_admin: boolean;
   permission: Permission;
 }

@@ -1007,7 +1007,7 @@ mod tests {
             .unwrap();
         // Publishing leaves an audit trail: who did it, alongside when.
         assert_eq!(
-            metadata.published_by.as_ref().map(|by| by.email.as_str()),
+            metadata.published_by.as_ref().map(|by| by.username.as_str()),
             Some("admin@example.com")
         );
         {

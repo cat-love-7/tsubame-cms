@@ -9,12 +9,13 @@ export type ItemStatus = 'draft' | 'published';
 /**
  * Who published an item, as recorded at the moment it was published.
  *
- * The id links back to the account while it still exists; the email is the address as it
+ * The id links back to the account while it still exists; the username is the name as it
  * was then, so the record still reads after a rename or a deletion.
  */
 export interface PublishedBy {
   id: string;
-  email: string;
+  /** The identifier of the account that published it, as it was then. */
+  username: string;
 }
 
 /**

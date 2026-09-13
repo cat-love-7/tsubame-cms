@@ -7,7 +7,7 @@
     }
     <!-- The audit trail: who put this version on the site. -->
     @if (meta.published_by; as publisher) {
-      <span class="publisher" title="公開したアカウント">{{ publisher.email }}</span>
+      <span class="publisher" title="公開したアカウント">{{ publisher.username }}</span>
     }
     @if (canPublish()) {
       <button matButton (click)="togglePublished()">

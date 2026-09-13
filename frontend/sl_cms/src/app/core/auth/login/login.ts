@@ -24,7 +24,7 @@ export class Login {
   private auth = inject(AuthService);
   private router = inject(Router);
 
-  public email = '';
+  public username = '';
   public password = '';
   public error = signal('');
   public busy = signal(false);
@@ -36,7 +36,7 @@ export class Login {
     this.error.set('');
     this.busy.set(true);
 
-    this.auth.login(this.email.trim(), this.password).subscribe({
+    this.auth.login(this.username.trim(), this.password).subscribe({
       next: () => {
         this.busy.set(false);
         this.router.navigate(['/']);

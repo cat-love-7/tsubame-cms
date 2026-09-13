@@ -13,7 +13,8 @@ import { List } from './list';
 function account(overrides: Partial<CurrentUser> = {}): CurrentUser {
   return {
     id: 'user-1',
-    email: 'editor@example.com',
+    username: 'editor@example.com',
+    email: null,
     is_admin: false,
     is_active: true,
     permission: { can_view: true, can_edit: true, can_publish: false },
@@ -132,19 +133,31 @@ describe('Accounts', () => {
   });
 
   it('creates an account with the chosen role', () => {
-    fixture.componentInstance.newEmail = 'new@example.com';
+    fixture.componentInstance.newUsername = 'new-ops';
     fixture.componentInstance.newPassword = 'user-password';
     fixture.componentInstance.newRole = 'viewer';
     fixture.componentInstance.create();
 
+    // No address: the CMS does not need one.
     expect(stub.created).toEqual([
       {
-        email: 'new@example.com',
+        username: 'new-ops',
+        email: null,
         password: 'user-password',
         is_admin: false,
         permission: { can_view: true, can_edit: false, can_publish: false },
       },
     ]);
+  });
+
+  /** An address, when the operator records one, is passed on as contact data. */
+  it('records an optional contact address when one is given', () => {
+    fixture.componentInstance.newUsername = 'new-ops';
+    fixture.componentInstance.newPassword = 'user-password';
+    fixture.componentInstance.newEmail = ' ops@example.com ';
+    fixture.componentInstance.create();
+
+    expect((stub.created[0] as { email: string | null }).email).toBe('ops@example.com');
   });
 
   it('disables an account rather than deleting it', () => {

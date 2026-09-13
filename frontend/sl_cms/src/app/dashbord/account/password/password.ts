@@ -24,7 +24,7 @@ export class Password {
   private users = inject(UsersService);
   private auth = inject(AuthService);
 
-  public email = this.auth.user()?.email ?? '';
+  public username = this.auth.user()?.username ?? '';
   public current = '';
   public next = '';
   public repeated = '';

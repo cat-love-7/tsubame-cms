@@ -9,7 +9,18 @@ pub type UserId = StringId<User>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct User {
     pub id: UserId,
-    pub email: String,
+    /// The sign-in identifier, and the only name the CMS needs: an account can be operated
+    /// without an email address.
+    ///
+    /// Stored in its normalized form (trimmed, lower case) and unique across accounts.
+    /// `serde(default)` plus [`User::adopt_legacy_identifier`] is what lets a record written
+    /// when the identifier *was* an email address still be read.
+    #[serde(default)]
+    pub username: String,
+    /// Contact address, if the operator recorded one. Never used to sign in, so it may be
+    /// absent; a future Cognito deployment keeps it as an attribute, not an identity.
+    #[serde(default)]
+    pub email: Option<String>,
     /// Argon2 PHC string. It has to be serialised (the record is stored as JSON), so
     /// never hand a `User` to a client — use [`User::to_response`].
     pub password_hash: String,
@@ -41,10 +52,16 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(email: &str, password_hash: String, is_admin: bool, permission: Permission) -> Self {
+    pub fn new(
+        username: &str,
+        password_hash: String,
+        is_admin: bool,
+        permission: Permission,
+    ) -> Self {
         User {
             id: UserId::from(uuid::Uuid::new_v4().to_string().as_str()),
-            email: normalize_email(email),
+            username: normalize_username(username),
+            email: None,
             password_hash,
             is_active: true,
             is_admin,
@@ -54,6 +71,24 @@ impl User {
             token_version: 0,
             collection_permissions: HashMap::new(),
             single_page_permissions: HashMap::new(),
+        }
+    }
+
+    /// The name to show for this account: the identifier, which is all that is guaranteed.
+    pub fn display_name(&self) -> &str {
+        &self.username
+    }
+
+    /// Fill in `username` for a record written before the field existed, where the sign-in
+    /// identifier was the email address.
+    ///
+    /// The storage adapters call this on the way out, so an existing installation can be
+    /// upgraded without anyone being locked out.
+    pub fn adopt_legacy_identifier(&mut self) {
+        if self.username.trim().is_empty() {
+            if let Some(email) = self.email.as_deref() {
+                self.username = normalize_username(email);
+            }
         }
     }
 
@@ -105,6 +140,7 @@ impl User {
     pub fn to_response(&self) -> UserResponse {
         UserResponse {
             id: self.id.clone(),
+            username: self.username.clone(),
             email: self.email.clone(),
             is_admin: self.is_admin,
             is_active: self.is_active,
@@ -117,13 +153,33 @@ impl User {
     }
 }
 
-/// Case- and whitespace-insensitive form used for storage and lookup, so
-/// `Alice@Example.com` and `alice@example.com` are the same account.
-pub fn normalize_email(email: &str) -> String {
-    email.trim().to_ascii_lowercase()
+/// Longest identifier accepted. Cognito allows 128, and staying inside its limit keeps a
+/// later import from having to rename anybody.
+pub const MAX_USERNAME_LEN: usize = 128;
+
+/// Case- and whitespace-insensitive form used for storage and lookup, so `Alice` and `alice`
+/// are the same account.
+pub fn normalize_username(username: &str) -> String {
+    username.trim().to_ascii_lowercase()
 }
 
-/// Very small sanity check — deliberately not a full RFC 5322 validator.
+/// Whether `username` can be a sign-in identifier.
+///
+/// An address is *allowed* (`ops@example.com`), it is simply not required: the identifier is
+/// whatever the operator calls the account. The character set is deliberately the one Cognito
+/// accepts (`A-Z a-z 0-9 + = , . @ _ -`), so an account created here can be carried over to a
+/// Cognito pool without being renamed.
+pub fn is_plausible_username(username: &str) -> bool {
+    let username = username.trim();
+    !username.is_empty()
+        && username.len() <= MAX_USERNAME_LEN
+        && username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+=,.@_-".contains(c))
+}
+
+/// Very small sanity check for the *optional* contact address — deliberately not a full
+/// RFC 5322 validator.
 pub fn is_plausible_email(email: &str) -> bool {
     let email = email.trim();
     !email.is_empty()
@@ -163,7 +219,10 @@ impl Default for Permission {
 #[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct UserResponse {
     pub id: UserId,
-    pub email: String,
+    /// The sign-in identifier; this is what an account is called everywhere in the UI.
+    pub username: String,
+    /// Contact address, when one was recorded.
+    pub email: Option<String>,
     pub is_admin: bool,
     /// Whether the account may sign in at all; a disabled account keeps its history.
     pub is_active: bool,
@@ -177,7 +236,7 @@ pub struct UserResponse {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
-    pub email: String,
+    pub username: String,
     pub password: String,
 }
 
@@ -200,8 +259,11 @@ pub struct PasswordChangedResponse {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct NewUserRequest {
-    pub email: String,
+    pub username: String,
     pub password: String,
+    /// Contact address, if the operator has one to record.
+    #[serde(default)]
+    pub email: Option<String>,
     #[serde(default)]
     pub is_admin: bool,
     #[serde(default)]
@@ -246,8 +308,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalizes_and_validates_email() {
-        assert_eq!(normalize_email("  Alice@Example.COM "), "alice@example.com");
+    fn normalizes_and_validates_a_username() {
+        assert_eq!(normalize_username("  Ops.User "), "ops.user");
+        // A name is enough; an address is allowed but not required.
+        for username in ["ops", "ops.user", "ops@example.com", "team+editor", "a-b_c"] {
+            assert!(is_plausible_username(username), "{username}");
+        }
+        for username in [
+            "",
+            "   ",
+            "with space",
+            "with:colon",
+            "with/slash",
+            "quote\"",
+        ] {
+            assert!(!is_plausible_username(username), "{username:?}");
+        }
+        assert!(!is_plausible_username(&"x".repeat(MAX_USERNAME_LEN + 1)));
+        assert!(is_plausible_username(&"x".repeat(MAX_USERNAME_LEN)));
+
+        // The contact address keeps its own, looser check.
         assert!(is_plausible_email("a@b.co"));
         assert!(!is_plausible_email(""));
         assert!(!is_plausible_email("no-at-sign"));
@@ -258,13 +338,43 @@ mod tests {
 
     #[test]
     fn new_user_is_a_viewer_with_no_write_access() {
-        let user = User::new("A@Example.com", "hash".to_string(), false, Permission::default());
-        assert_eq!(user.email, "a@example.com");
+        let user = User::new("Ops.User", "hash".to_string(), false, Permission::default());
+        assert_eq!(user.username, "ops.user");
+        assert_eq!(user.display_name(), "ops.user");
+        assert!(user.email.is_none(), "メールアドレスは任意");
         assert!(!user.can_write(user.permission));
         assert!(user.is_active);
         // The response projection must not leak the hash.
         let json = serde_json::to_string(&user.to_response()).unwrap();
         assert!(!json.contains("hash"), "response leaked the password hash: {json}");
+    }
+
+    /// A record written when the identifier *was* the email address still signs in: the
+    /// storage adapters fill `username` in from `email` on the way out.
+    #[test]
+    fn an_account_from_before_usernames_existed_falls_back_to_its_email() {
+        let mut legacy: User = serde_json::from_str(
+            r#"{"id":"u-1","email":"ops@example.com","password_hash":"h","is_active":true,
+                "is_admin":false,"permission":{"can_publish":false,"can_edit":false,"can_view":true},
+                "created_at":"2024-01-01T00:00:00Z","last_login":null}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.username, "", "古いレコードには username が無い");
+        assert_eq!(legacy.email.as_deref(), Some("ops@example.com"));
+
+        legacy.adopt_legacy_identifier();
+        assert_eq!(legacy.username, "ops@example.com", "メールを識別子として引き継ぐ");
+        // The address stays as the contact address.
+        assert_eq!(legacy.email.as_deref(), Some("ops@example.com"));
+    }
+
+    /// A record that already has a username keeps it, even if an address is recorded too.
+    #[test]
+    fn adopting_a_legacy_identifier_does_not_overwrite_a_username() {
+        let mut user = User::new("ops", "hash".to_string(), false, Permission::default());
+        user.email = Some("ops@example.com".to_string());
+        user.adopt_legacy_identifier();
+        assert_eq!(user.username, "ops");
     }
 
     /// An account written before `token_version` existed still reads, at generation 0 -
@@ -279,6 +389,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(legacy.token_version, 0);
+        // The identifier is empty here; the adapters fill it in from the address.
+        assert_eq!(legacy.email.as_deref(), Some("a@example.com"));
         // No resource overrides either: the account-wide permission applies everywhere.
         assert!(legacy.collection_permissions.is_empty());
         assert!(legacy.single_page_permissions.is_empty());
