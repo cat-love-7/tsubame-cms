@@ -50,7 +50,12 @@ impl CollectionRepository for Repository {
                 item_store.delete(&mut writer, &key)?;
             }
         }
-        self.counter_store.delete(&mut writer, collection_name.as_bytes())?;
+        // The per-collection item counter only exists once an item has been added, and
+        // rkv reports deleting an absent key as an error ("key/value pair not found"),
+        // which would turn DELETE on an empty collection into a 500.
+        if self.counter_store.get(&reader, collection_name.as_bytes())?.is_some() {
+            self.counter_store.delete(&mut writer, collection_name.as_bytes())?;
+        }
         writer.commit()?;
         Ok(())
     }
@@ -88,8 +93,11 @@ impl CollectionRepository for Repository {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
         let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
-        let reader = env.read()?;
+        // Acquire the write transaction BEFORE the read snapshot used to read the
+        // counter. Two concurrent writers would otherwise both read the same counter
+        // value and then write the same item id, silently overwriting each other.
         let mut writer = env.write()?;
+        let reader = env.read()?;
 
         let current_id = match self.counter_store.get(&reader, collection_name.as_bytes())? {
             Some(Value::U64(id)) => id,

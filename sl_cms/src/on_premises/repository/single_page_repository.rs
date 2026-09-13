@@ -46,7 +46,9 @@ impl SinglePageRepository for Repository {
         store.delete(&mut writer, page_name.as_bytes())?;
         let item_store = env.open_single("single_page_item", StoreOptions::create())?;
         item_store.delete(&mut writer, &page_name.as_bytes())?;
-        self.counter_store.delete(&mut writer, page_name.as_bytes())?;
+        // Single pages have no id counter (no item-creation path exists), so there is
+        // deliberately nothing to remove from `counter_store` here. Deleting an absent
+        // key would fail with "key/value pair not found" and surface as a 500.
         writer.commit()?;
         Ok(())
     }

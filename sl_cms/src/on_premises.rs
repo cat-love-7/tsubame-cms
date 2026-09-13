@@ -1,65 +1,50 @@
+//! On-premises storage adapter: rkv (LMDB) for structured data, local filesystem for
+//! uploaded image bytes.
+//!
+//! The HTTP layer is shared (see [`crate::http`]); this module only provides the
+//! composition root for the `on-premises` feature.
+
 use std::sync::Arc;
 
-use crate::services::{collection_service::CollectionService, composite_field_service::CompositeFieldService, image_service::ImageService, single_page_service::SinglePageService};
+use rkv::backend::{SafeMode, SafeModeEnvironment};
+use rkv::{Manager, Rkv};
+
+use crate::app_module::AppModule;
+use crate::config::Config;
 
 pub mod repository;
-pub mod server;
-pub mod page_scopes;
 
+/// Number of named LMDB databases the environment is allowed to open.
+///
+/// rkv's default ([`rkv::env::DEFAULT_MAX_DBS`]) is only 5, but this adapter needs one
+/// fixed database per concern (`id_counter`, `collection_schema`,
+/// `composite_field_schema`, `single_page_schema`, `single_page_item`, `image`) *plus*
+/// one named database per collection (`collection_<name>`). With the default the
+/// environment fails with "environment maxdbs reached" almost immediately.
+///
+/// LMDB never releases a named-database slot once used, so this remains a real ceiling on
+/// the number of collections until the per-collection database layout is replaced by
+/// composite keys inside a single database.
+pub const MAX_NAMED_DATABASES: std::os::raw::c_uint = 512;
 
-pub struct AppModule{
-    static_collection_service: CollectionService<
-        repository::Repository,
-        repository::Repository,
-        repository::Repository,
-    >,
-    static_single_page_service: SinglePageService<
-        repository::Repository,
-        repository::Repository,
-    >,
-    static_composite_field_service: CompositeFieldService<
-        repository::Repository,
-    >,
-    static_image_service: ImageService<
-        repository::Repository,
-    >,
-    repository: Arc<repository::Repository>,
-}
+/// Build the on-premises composition root described by `config`.
+pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
+    let rkv_dir = config.rkv_dir();
+    std::fs::create_dir_all(&rkv_dir).expect("failed to create the rkv data directory");
 
-impl AppModule {
-    pub fn new() -> Self {
-        use std::fs;
-        use std::sync::Arc;
-        use rkv::{Manager, Rkv};
-        use rkv::backend::{SafeMode, SafeModeEnvironment};
+    let env = {
+        let mut manager = Manager::<SafeModeEnvironment>::singleton()
+            .write()
+            .expect("rkv manager lock poisoned");
+        manager
+            .get_or_create_with_capacity(
+                rkv_dir.as_path(),
+                MAX_NAMED_DATABASES,
+                Rkv::with_capacity::<SafeMode>,
+            )
+            .expect("failed to open the rkv environment")
+    };
 
-        let path = std::path::Path::new("./data/on_premises/rkv_data");
-        fs::create_dir_all(path).unwrap();
-        let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
-        let created_arc = manager.get_or_create(path, Rkv::new::<SafeMode>).unwrap();
-        let repository = Arc::new(repository::Repository::new(created_arc));
-        let static_collection_service =
-            CollectionService::new(
-                repository.clone(),
-                repository.clone(),
-                repository.clone()
-            );
-        let static_single_page_service =
-            SinglePageService::new(
-                repository.clone(),
-                repository.clone()
-            );
-        let static_composite_field_service =
-            CompositeFieldService::new(repository.clone());
-        let static_image_service =
-            ImageService::new(repository.clone());
-        return AppModule {
-            static_collection_service,
-            static_single_page_service,
-            static_composite_field_service,
-            static_image_service,
-            repository,
-        }
-    }
-    
+    let repository = Arc::new(repository::Repository::new(env, config.images_dir()));
+    AppModule::new(repository)
 }

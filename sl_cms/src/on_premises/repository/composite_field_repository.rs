@@ -83,7 +83,7 @@ mod tests {
         fs::create_dir_all(path).unwrap();
         let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
         let created_arc = manager.get_or_create(path, Rkv::new::<SafeMode>).unwrap();
-        Repository::new(Arc::clone(&created_arc))
+        Repository::new(Arc::clone(&created_arc), path.join("images"))
     }
     fn teardown_repository() {
         let id = THREAD_ID.with(|p| {

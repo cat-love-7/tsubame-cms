@@ -167,7 +167,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
-    use crate::models::field::{FieldSchema, FieldType, FieldValue, FieldValueMap};
+    use crate::models::field::{FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse};
     use crate::models::image::{Image, ImageID, NewImageInfo, NewImageRequest};
     use crate::models::schema::CompositeFieldId;
 
@@ -283,6 +283,15 @@ mod tests {
         fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
+        fn take_upload_key(&self, _key: &str) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(None)
+        }
+        fn read_image_bytes(&self, _file_name: &str) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(None)
+        }
+        fn write_image_bytes(&self, _file_name: &str, _data: &[u8]) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
     }
 
     // Test helper functions
@@ -322,6 +331,14 @@ mod tests {
             ("title".to_string(), FieldValue::Text(title.to_string())),
             ("count".to_string(), FieldValue::Number(Some(count))),
         ]), PhantomData)
+    }
+
+    /// `get_single_page_item` returns the API response form, not the stored item form.
+    fn create_test_item_response(title: &str, count: f64) -> SinglePageItemResponse {
+        HashMap::from([
+            ("title".to_string(), FieldValueResponse::Text(title.to_string())),
+            ("count".to_string(), FieldValueResponse::Number(Some(count))),
+        ])
     }
 
     #[test]
@@ -554,7 +571,7 @@ mod tests {
 
         let result = service.get_single_page_item(&"test_schema".into());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), create_test_item("Sample Title", 10.0));
+        assert_eq!(result.unwrap(), create_test_item_response("Sample Title", 10.0));
     }
 
     #[test]
@@ -568,13 +585,13 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
         let result = service.get_single_page_item(&"test_schema".into());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), FieldValueMap(HashMap::from_iter(vec![
-            ("title".to_string(), FieldValue::Text("".to_string())),
-            ("count".to_string(), FieldValue::Number(None)),
-        ]), PhantomData));
+        assert_eq!(result.unwrap(), HashMap::from([
+            ("title".to_string(), FieldValueResponse::Text("".to_string())),
+            ("count".to_string(), FieldValueResponse::Number(None)),
+        ]));
     }
 
     #[test]
@@ -598,7 +615,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
 
         let result = service.update_single_page_item(
             &"test_page".into(),
@@ -607,7 +624,7 @@ mod tests {
         assert!(result.is_ok());
 
         let item = service.get_single_page_item(&"test_page".into()).unwrap();
-        assert_eq!(item, create_test_item("Updated Title", 100.0));
+        assert_eq!(item, create_test_item_response("Updated Title", 100.0));
     }
 
     #[test]
@@ -621,7 +638,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
         let result = service.update_single_page_item(
             &"test_page".into(),
             &create_test_item("Updated Title", 100.0),
@@ -629,7 +646,7 @@ mod tests {
         assert!(result.is_ok());
 
         let item = service.get_single_page_item(&"test_page".into()).unwrap();
-        assert_eq!(item, create_test_item("Updated Title", 100.0));
+        assert_eq!(item, create_test_item_response("Updated Title", 100.0));
     }
 
     #[test]
@@ -656,7 +673,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
 
         let result = service.update_single_page_item(
             &"test_page".into(),
@@ -681,11 +698,11 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository));
+        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository {}));
 
         let result = service.get_single_page_item(&"test_page".into());
         assert!(result.is_ok());
         let items = result.unwrap();
-        assert_eq!(items, create_test_item("Sample Title", 10.0));
+        assert_eq!(items, create_test_item_response("Sample Title", 10.0));
     }
 }
