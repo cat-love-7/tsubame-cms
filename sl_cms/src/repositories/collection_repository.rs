@@ -30,4 +30,20 @@ pub trait CollectionRepository:Send + Sync + 'static {
     fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, BoxError>;
     fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), BoxError>;
     fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>;
+
+    /// Publish or unpublish one item as a single step.
+    ///
+    /// Publishing touches three records — the published copy, the working copy that replaces
+    /// it, and the status — and a reader that catches it half-applied sees a CMS that
+    /// contradicts itself: content without the status that says it is live, or a status
+    /// naming content that is still the old one. So this is one operation, not three calls
+    /// that happen to be made together. `draft` is the working copy to promote, or `None`
+    /// when there is nothing pending and only the status changes.
+    fn apply_item_status(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        draft: Option<&CollectionItem>,
+        metadata: &ItemMetadata,
+    ) -> Result<(), BoxError>;
 }

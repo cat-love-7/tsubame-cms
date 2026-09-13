@@ -143,6 +143,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
+
     fn set_page_metadata(
         &self,
         page_name: &SinglePageName,
@@ -153,5 +154,35 @@ impl SinglePageRepository for AwsRepository {
         let data = AwsRepository::encode(metadata)?;
         self.runtime
             .block_on(async move { write(&inner, &key::page(&name), key::META, &data).await })
+    }
+
+    fn apply_page_status(
+        &self,
+        page_name: &SinglePageName,
+        draft: Option<&SinglePageItem>,
+        metadata: &ItemMetadata,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = page_name.clone();
+        let draft = draft.cloned();
+        let data = AwsRepository::encode(metadata)?;
+        self.runtime.block_on(async move {
+            let partition = key::page(&name);
+            let Some(draft) = draft else {
+                // Nothing pending: only the status changes.
+                return write(&inner, &partition, key::META, &data).await;
+            };
+            let draft_data = AwsRepository::encode(&draft)?;
+            // One transaction, for the reason in `CollectionRepository::apply_item_status`.
+            transact(
+                &inner,
+                vec![
+                    put_in_transaction(&inner, &partition, key::ITEM, &draft_data)?,
+                    delete_in_transaction(&inner, &partition, key::DRAFT)?,
+                    put_in_transaction(&inner, &partition, key::META, &data)?,
+                ],
+            )
+            .await
+        })
     }
 }

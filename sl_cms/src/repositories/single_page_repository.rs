@@ -21,4 +21,8 @@ pub trait SinglePageRepository:Send + Sync + 'static {
     // Draft/published metadata. Absent metadata means "draft".
     fn get_page_metadata(&self, page_name: &SinglePageName) -> Result<Option<ItemMetadata>, BoxError>;
     fn set_page_metadata(&self, page_name: &SinglePageName, metadata: &ItemMetadata) -> Result<(), BoxError>;
+    /// Publish or unpublish a page as a single step; see
+    /// [`CollectionRepository::apply_item_status`](crate::repositories::collection_repository::CollectionRepository::apply_item_status)
+    /// for why this is one call and not three.
+    fn apply_page_status(&self, page_name: &SinglePageName, draft: Option<&SinglePageItem>, metadata: &ItemMetadata) -> Result<(), BoxError>;
 }

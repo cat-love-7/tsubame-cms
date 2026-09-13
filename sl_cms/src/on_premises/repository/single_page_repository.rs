@@ -78,6 +78,39 @@ impl SinglePageRepository for Repository {
         Ok(())
     }
 
+    fn apply_page_status(
+        &self,
+        page_name: &SinglePageName,
+        draft: Option<&SinglePageItem>,
+        metadata: &ItemMetadata,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let item_store = env.open_single("single_page_item", StoreOptions::create())?;
+        // Opened before the transaction begins (see `delete_single_page`).
+        let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+
+        let metadata_key = page_metadata_key(page_name.as_str());
+        // One write transaction, as for collection items.
+        let mut writer = env.write()?;
+        if let Some(draft) = draft {
+            item_store.put(
+                &mut writer,
+                page_name.as_bytes(),
+                &Value::Str(&serde_json::to_string(draft)?),
+            )?;
+            draft_store.delete(&mut writer, page_draft_key(page_name.as_str()).as_bytes())?;
+        }
+        metadata_store.put(
+            &mut writer,
+            metadata_key.as_bytes(),
+            &Value::Str(&serde_json::to_string(metadata)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
     fn get_page_metadata(&self, page_name: &SinglePageName) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;

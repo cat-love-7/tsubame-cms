@@ -13,7 +13,7 @@ use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 
 use crate::aws::bridge::BlockingRuntime;
 use crate::config::AwsSettings;
-use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
+use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::item_status::ItemMetadata;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::image_repository::BoxError;
@@ -265,6 +265,54 @@ pub fn emulator_reachable(endpoint: &str) -> bool {
         return false;
     };
     std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(500)).is_ok()
+}
+
+/// One `Put` inside a `TransactWriteItems`, which is how a status change stays all-or-nothing.
+fn put_in_transaction(
+    inner: &Inner,
+    pk: &str,
+    sk: &str,
+    data: &str,
+) -> Result<aws_sdk_dynamodb::types::TransactWriteItem, BoxError> {
+    Ok(aws_sdk_dynamodb::types::TransactWriteItem::builder()
+        .put(
+            aws_sdk_dynamodb::types::Put::builder()
+                .table_name(&inner.table)
+                .item("pk", AttributeValue::S(pk.to_string()))
+                .item("sk", AttributeValue::S(sk.to_string()))
+                .item("data", AttributeValue::S(data.to_string()))
+                .build()?,
+        )
+        .build())
+}
+
+/// One `Delete` inside a `TransactWriteItems`.
+fn delete_in_transaction(
+    inner: &Inner,
+    pk: &str,
+    sk: &str,
+) -> Result<aws_sdk_dynamodb::types::TransactWriteItem, BoxError> {
+    Ok(aws_sdk_dynamodb::types::TransactWriteItem::builder()
+        .delete(
+            aws_sdk_dynamodb::types::Delete::builder()
+                .table_name(&inner.table)
+                .key("pk", AttributeValue::S(pk.to_string()))
+                .key("sk", AttributeValue::S(sk.to_string()))
+                .build()?,
+        )
+        .build())
+}
+
+/// Apply `writes` as one transaction: all of them, or none.
+async fn transact(inner: &Inner, writes: Vec<aws_sdk_dynamodb::types::TransactWriteItem>) -> Result<(), BoxError> {
+    inner
+        .client
+        .transact_write_items()
+        .set_transact_items(Some(writes))
+        .send()
+        .await
+        .map_err(|e| format!("dynamodb transact_write_items failed: {}", describe(&e)))?;
+    Ok(())
 }
 
 /// Drop the table behind a repository.
@@ -593,6 +641,43 @@ impl CollectionRepository for AwsRepository {
         })
     }
 
+    fn apply_item_status(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        draft: Option<&CollectionItem>,
+        metadata: &ItemMetadata,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        let id = item_id.clone();
+        let draft = draft.cloned();
+        let data = AwsRepository::encode(metadata)?;
+        self.runtime.block_on(async move {
+            let partition = key::collection(&name);
+            let metadata_key = key::metadata(*id);
+            let Some(draft) = draft else {
+                // Nothing pending: only the status changes, and one write is already atomic.
+                return write(&inner, &partition, &metadata_key, &data).await;
+            };
+            let draft_data = AwsRepository::encode(&draft)?;
+            // One transaction. A published copy that exists while its working copy is still
+            // there, or a status naming content that has not landed, is a CMS that disagrees
+            // with itself — the delivery API reads the copy and the admin list reads the
+            // status. DynamoDB's transaction costs two writes per item, which is the price of
+            // never showing that state.
+            transact(
+                &inner,
+                vec![
+                    put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
+                    delete_in_transaction(&inner, &partition, &key::draft(*id))?,
+                    put_in_transaction(&inner, &partition, &metadata_key, &data)?,
+                ],
+            )
+            .await
+        })
+    }
+
     fn list_item_metadata(
         &self,
         collection_name: &CollectionName,
@@ -768,6 +853,78 @@ mod tests {
             repository.add_collection_item(&name, &values(&oversized)).is_err(),
             "a record over DynamoDB's 400KB limit has to be refused"
         );
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// Publishing touches three records, and a failure has to leave all three as they were.
+    ///
+    /// DynamoDB refuses an item over 400KB, so an oversized working copy is a transaction that
+    /// cannot commit — and a version of this that wrote the records one by one would leave the
+    /// working copy deleted and the old content published behind it, which is exactly the
+    /// half-applied state the transaction is there to prevent.
+    #[tokio::test]
+    async fn a_failed_publish_leaves_every_record_alone() {
+        let endpoint = crate::aws::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::aws::open_test_repository("cms_publish").await;
+        let name = CollectionName::from("blog");
+        repository.add_collection_schema(&name, &schema()).unwrap();
+        let id = CollectionItemId::from_u64(
+            repository.add_collection_item(&name, &values("Published text")).unwrap(),
+        );
+        repository
+            .set_collection_item_draft(&name, &id, &values("Draft text"))
+            .unwrap();
+        assert!(
+            !repository.get_item_metadata(&name, &id).unwrap().unwrap_or_default().is_published(),
+            "the item starts unpublished, so publishing has something to change"
+        );
+
+        let published = ItemMetadata {
+            status: ItemStatus::Published,
+            published_at: Some(chrono::Utc::now()),
+            ..ItemMetadata::default()
+        };
+        let oversized = "a".repeat(500_000);
+        let refused = repository.apply_item_status(
+            &name,
+            &id,
+            Some(&values(&oversized)),
+            &published,
+        );
+        assert!(refused.is_err(), "a working copy over 400KB cannot be published");
+
+        // Nothing moved: not the published copy, not the working copy, not the status.
+        assert_eq!(
+            repository.get_collection_item(&name, &id).unwrap(),
+            Some(values("Published text")),
+            "the published copy changed even though the publish failed"
+        );
+        assert_eq!(
+            repository.get_collection_item_draft(&name, &id).unwrap(),
+            Some(values("Draft text")),
+            "the working copy was consumed by a publish that failed"
+        );
+        assert!(
+            !repository.get_item_metadata(&name, &id).unwrap().unwrap_or_default().is_published(),
+            "the status says published although nothing was"
+        );
+
+        // And the same call with a working copy that fits does all three at once.
+        repository
+            .apply_item_status(&name, &id, Some(&values("Draft text")), &published)
+            .expect("a publish that fits");
+        assert_eq!(
+            repository.get_collection_item(&name, &id).unwrap(),
+            Some(values("Draft text")),
+            "the working copy should have replaced the published one"
+        );
+        assert!(repository.get_collection_item_draft(&name, &id).unwrap().is_none());
+        assert!(repository.get_item_metadata(&name, &id).unwrap().unwrap().is_published());
 
         repository.delete_table().await.unwrap();
     }

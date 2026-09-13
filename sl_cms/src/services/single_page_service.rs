@@ -302,24 +302,17 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default()
             .with_status(status, Some(actor));
 
-        if metadata.is_published() {
-            // Publishing is the copy (see `CollectionService::set_item_status`).
-            if let Some(draft) = self
-                .single_page_repository
+        // Publishing is the copy, handed over in one call (see
+        // `CollectionService::set_item_status`).
+        let pending = if metadata.is_published() {
+            self.single_page_repository
                 .get_single_page_item_draft(name)
                 .map_err(map_internal_error)?
-            {
-                self.single_page_repository
-                    .update_single_page_item(name, &draft)
-                    .map_err(map_internal_error)?;
-                self.single_page_repository
-                    .delete_single_page_item_draft(name)
-                    .map_err(map_internal_error)?;
-            }
-        }
-
+        } else {
+            None
+        };
         self.single_page_repository
-            .set_page_metadata(name, &metadata)
+            .apply_page_status(name, pending.as_ref(), &metadata)
             .map_err(map_internal_error)?;
         // Only after the status is stored (see `CollectionService::set_item_status`).
         self.notifier
@@ -465,6 +458,24 @@ mod tests {
             metadata: &ItemMetadata,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             self.page_metadata.write().unwrap().insert(page_name.clone(), metadata.clone());
+            Ok(())
+        }
+        fn apply_page_status(
+            &self,
+            page_name: &SinglePageName,
+            draft: Option<&SinglePageItem>,
+            metadata: &ItemMetadata,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // Nothing here can fail half-way, so the steps the real adapters combine are done
+            // in a row (see `CollectionRepository::apply_item_status`).
+            if let Some(draft) = draft {
+                self.items.write().unwrap().insert(page_name.clone(), draft.clone());
+                self.drafts.write().unwrap().remove(page_name);
+            }
+            self.page_metadata
+                .write()
+                .unwrap()
+                .insert(page_name.clone(), metadata.clone());
             Ok(())
         }
     }

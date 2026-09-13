@@ -544,26 +544,22 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default()
             .with_status(status, Some(actor));
 
-        if metadata.is_published() {
-            // Publishing *is* the copy: whatever the editor has been working on replaces
-            // the published item and stops being a separate draft. With nothing pending,
-            // publishing only refreshes the timestamp.
-            if let Some(draft) = self
-                .collection_repository
+        // Publishing *is* the copy: whatever the editor has been working on replaces the
+        // published item and stops being a separate draft. With nothing pending, publishing
+        // only refreshes the timestamp.
+        //
+        // Read first, then hand the whole change over in one call: the storage adapter applies
+        // the copy, the removal and the status as one step, so no reader catches the item
+        // between them (see `CollectionRepository::apply_item_status`).
+        let pending = if metadata.is_published() {
+            self.collection_repository
                 .get_collection_item_draft(collection_name, &item_id)
                 .map_err(map_internal_error)?
-            {
-                self.collection_repository
-                    .update_collection_item(collection_name, &item_id, &draft)
-                    .map_err(map_internal_error)?;
-                self.collection_repository
-                    .delete_collection_item_draft(collection_name, &item_id)
-                    .map_err(map_internal_error)?;
-            }
-        }
-
+        } else {
+            None
+        };
         self.collection_repository
-            .set_item_metadata(collection_name, &item_id, &metadata)
+            .apply_item_status(collection_name, &item_id, pending.as_ref(), &metadata)
             .map_err(map_internal_error)?;
         // Only after the status is stored: a receiver that reacts by reading the delivery
         // API must not see the previous state.
@@ -872,6 +868,33 @@ mod tests {
                 .filter(|((name, _), _)| name == collection_name)
                 .map(|((_, id), item)| (id.clone(), item.clone()))
                 .collect())
+        }
+        fn apply_item_status(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            draft: Option<&CollectionItem>,
+            metadata: &ItemMetadata,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // The mock has no transaction to offer, and nothing here can fail half-way, so it
+            // does in a row what the real adapters do as one step.
+            if let Some(draft) = draft {
+                self.items
+                    .write()
+                    .unwrap()
+                    .entry(collection_name.clone())
+                    .or_default()
+                    .insert(item_id.clone(), draft.clone());
+                self.drafts
+                    .write()
+                    .unwrap()
+                    .remove(&(collection_name.clone(), item_id.clone()));
+            }
+            self.item_metadata
+                .write()
+                .unwrap()
+                .insert((collection_name.clone(), item_id.clone()), metadata.clone());
+            Ok(())
         }
         fn list_item_metadata(
             &self,

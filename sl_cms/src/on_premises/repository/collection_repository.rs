@@ -219,6 +219,42 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
+    fn apply_item_status(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        draft: Option<&CollectionItem>,
+        metadata: &ItemMetadata,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store_name = format!("collection_{}", collection_name);
+        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        // Opened before the transaction begins: LMDB rejects a handle created after it.
+        let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+
+        let metadata_key = collection_item_metadata_key(collection_name.as_str(), **item_id);
+        // One write transaction: the published copy, the working copy it replaces and the
+        // status land together, so no reader can see a half-applied publish.
+        let mut writer = env.write()?;
+        if let Some(draft) = draft {
+            collection_store.put(
+                &mut writer,
+                &item_id.to_le_bytes(),
+                &Value::Str(&serde_json::to_string(draft)?),
+            )?;
+            draft_store.delete(&mut writer, collection_item_draft_key(collection_name.as_str(), **item_id).as_bytes())?;
+        }
+        metadata_store.put(
+            &mut writer,
+            metadata_key.as_bytes(),
+            &Value::Str(&serde_json::to_string(metadata)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
     fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
