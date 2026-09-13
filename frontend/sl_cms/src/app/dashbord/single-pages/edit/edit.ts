@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { errorMessage as message } from 'app/core/http-error';
 import { ItemMetadata } from 'app/models/item-status';
@@ -30,6 +31,8 @@ export class Edit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private pages = inject(SinglePagesService);
+  /** A read-only account sees the form but cannot change it. */
+  public auth = inject(AuthService);
 
   public pageName: string = this.route.snapshot.params['name'];
   /** Signals, for the reason given in the collection item editor: both arrive from

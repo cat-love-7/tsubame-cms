@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { errorMessage as message } from 'app/core/http-error';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
@@ -25,6 +26,8 @@ const DEFAULT_PAGE_SIZE = 25;
 export class List {
   private route = inject(ActivatedRoute);
   private collectionsService = inject(CollectionsService);
+  /** What the signed-in account may do; the server enforces the same rules. */
+  public auth = inject(AuthService);
 
   public collectionName: string = this.route.snapshot.params['name'];
   public schema = signal<CollectionSchema>([]);

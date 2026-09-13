@@ -1,0 +1,111 @@
+<div class="toolbar">
+  <h2>Accounts</h2>
+  <span class="spacer"></span>
+  <span class="count">{{ accounts().length }} account{{ accounts().length === 1 ? '' : 's' }}</span>
+</div>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+@if (status()) {
+  <p class="status" role="status">{{ status() }}</p>
+}
+
+<div class="create">
+  <mat-form-field appearance="fill">
+    <mat-label>Email</mat-label>
+    <input matInput type="email" name="email" [(ngModel)]="newEmail" />
+  </mat-form-field>
+  <mat-form-field appearance="fill">
+    <mat-label>Password</mat-label>
+    <input matInput type="password" name="password" [(ngModel)]="newPassword" />
+  </mat-form-field>
+  <mat-form-field appearance="fill">
+    <mat-label>Role</mat-label>
+    <mat-select name="role" [(ngModel)]="newRole" [disabled]="newIsAdmin">
+      @for (role of roles; track role.value) {
+        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+  <mat-checkbox name="isAdmin" [(ngModel)]="newIsAdmin">管理者</mat-checkbox>
+  <button matButton color="primary" (click)="create()">Add account</button>
+</div>
+
+<p class="hint">
+  @for (role of roles; track role.value) {
+    <span class="role-hint"><strong>{{ role.label }}</strong>: {{ role.hint }}</span>
+  }
+</p>
+
+<table class="accounts">
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Role</th>
+      <th>Administrator</th>
+      <th>Active</th>
+      <th>Last sign-in</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (user of accounts(); track user.id) {
+      <tr>
+        <td>
+          {{ user.email }}
+          @if (isMe(user)) {
+            <span class="you">you</span>
+          }
+        </td>
+        <td>
+          <mat-select
+            [value]="roleOf(user)"
+            [disabled]="user.is_admin"
+            (selectionChange)="setRole(user, $event.value)"
+            [attr.aria-label]="'role of ' + user.email"
+          >
+            @for (role of roles; track role.value) {
+              <mat-option [value]="role.value">{{ role.label }}</mat-option>
+            }
+          </mat-select>
+        </td>
+        <td>
+          <mat-checkbox
+            [checked]="user.is_admin"
+            (change)="setAdmin(user, $event.checked)"
+            [attr.aria-label]="'administrator ' + user.email"
+          />
+        </td>
+        <td>
+          <mat-checkbox
+            [checked]="user.is_active"
+            (change)="setActive(user, $event.checked)"
+            [attr.aria-label]="'active ' + user.email"
+          />
+        </td>
+        <td>{{ user.last_login ? user.last_login : '—' }}</td>
+        <td class="actions">
+          <button
+            matIconButton
+            (click)="resetPassword(user)"
+            [attr.aria-label]="'reset password of ' + user.email"
+          >
+            <mat-icon>key</mat-icon>
+          </button>
+          <button
+            matIconButton
+            (click)="remove(user)"
+            [attr.aria-label]="'delete account ' + user.email"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </td>
+      </tr>
+    } @empty {
+      <tr>
+        <td colspan="6" class="empty">No accounts yet.</td>
+      </tr>
+    }
+  </tbody>
+</table>

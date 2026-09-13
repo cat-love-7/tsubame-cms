@@ -183,6 +183,42 @@ const dataRows = () => page.locator('table.items tbody tr:has(app-item-status)')
 const firstRow = () => dataRows().first();
 const badgeOf = (row) => row.locator('app-item-status .badge');
 
+/** Sign in on a fresh context, so a second role can be looked at beside the admin one. */
+async function openAs(email, password) {
+  const roleContext = await browser.newContext();
+  const rolePage = await roleContext.newPage();
+  rolePage.on('pageerror', (error) => consoleErrors.push(`${email}: ${error}`));
+  rolePage.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(`${email}: ${message.text()}`);
+  });
+
+  await rolePage.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
+  await rolePage.fill('input[name=email]', email);
+  await rolePage.fill('input[name=password]', password);
+  await rolePage.click('button:has-text("Sign in")');
+  await rolePage
+    .waitForFunction(() => !location.pathname.startsWith('/login'), null, { timeout: 15000 })
+    .catch(() => {});
+
+  return { context: roleContext, page: rolePage };
+}
+
+/**
+ * Open the Settings branch of the sidebar.
+ *
+ * The tree is collapsed by default, so its links are not in the DOM until it is expanded —
+ * a count of zero would otherwise prove nothing.
+ */
+async function expandSettings(rolePage) {
+  for (const label of ['toggle Settings', 'toggle Schemas']) {
+    await rolePage
+      .locator(`button[aria-label="${label}"]`)
+      .click({ force: true })
+      .catch(() => {});
+    await rolePage.waitForTimeout(250);
+  }
+}
+
 async function waitForRows(count) {
   await page
     .waitForFunction(
@@ -466,6 +502,91 @@ try {
   }
   const imagesAfterDelete = await page.locator('.library .image').count();
   check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
+
+  // -------------------------------------------------------------- roles decide what is offered
+  // Two extra accounts, recreated each run, so the screens can be looked at as each role.
+  const roleAccounts = [
+    {
+      email: 'e2e-editor@example.com',
+      permission: { can_view: true, can_edit: true, can_publish: false },
+    },
+    {
+      email: 'e2e-viewer@example.com',
+      permission: { can_view: true, can_edit: false, can_publish: false },
+    },
+  ];
+  const existing = await api('GET', '/auth/users', undefined, token);
+  for (const account of roleAccounts) {
+    const already = existing.find((user) => user.email === account.email);
+    if (already) {
+      await api('DELETE', `/auth/users/${already.id}`, undefined, token);
+    }
+    await api(
+      'POST',
+      '/auth/users',
+      { ...account, password: 'role-password', is_admin: false },
+      token,
+    );
+  }
+
+  await expandSettings(page);
+  check(
+    '管理者にはアカウント管理が見える',
+    (await page.locator('a[href="/settings/users"]').count()) === 1,
+  );
+
+  const editor = await openAs('e2e-editor@example.com', 'role-password');
+  await editor.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await editor.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  check(
+    '編集ロール: 新規作成はできる',
+    (await editor.page.locator('button:has-text("New item")').count()) === 1,
+  );
+  check(
+    '編集ロール: 公開も削除も出ない',
+    (await editor.page.locator('button[aria-label^="publish item"]').count()) === 0 &&
+      (await editor.page.locator('button[aria-label^="delete item"]').count()) === 0,
+  );
+  await expandSettings(editor.page);
+  check(
+    '編集ロール: 画像は見えるがアカウント管理は出ない',
+    (await editor.page.locator('a[href="/settings/images"]').count()) === 1 &&
+      (await editor.page.locator('a[href="/settings/users"]').count()) === 0,
+  );
+
+  await editor.page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await editor.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
+  check(
+    '編集ロール: 保存はできるが公開はできない',
+    (await editor.page.locator('button:has-text("Save")').count()) === 1 &&
+      (await editor.page.locator('button:has-text("Publish")').count()) === 0,
+  );
+
+  const viewer = await openAs('e2e-viewer@example.com', 'role-password');
+  await viewer.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await viewer.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  check(
+    '閲覧ロール: 新規作成も出ない',
+    (await viewer.page.locator('button:has-text("New item")').count()) === 0,
+  );
+  await viewer.page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await viewer.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
+  check(
+    '閲覧ロール: 保存も公開も出ない',
+    (await viewer.page.locator('button:has-text("Save")').count()) === 0 &&
+      (await viewer.page.locator('button:has-text("Publish")').count()) === 0,
+  );
+  check(
+    '閲覧ロール: 閲覧のみと案内される',
+    (await viewer.page.locator('.note', { hasText: '権限がありません' }).count()) === 1,
+  );
+  check(
+    '閲覧ロール: 自分のパスワードは変更できる',
+    (await viewer.page.locator('a[href="/account"], button[aria-label="Change password"]').count()) === 1,
+  );
+
+  await editor.context.close();
+  await viewer.context.close();
 
   check('ブラウザのコンソールエラーがない', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 } catch (error) {

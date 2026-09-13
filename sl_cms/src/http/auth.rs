@@ -1,15 +1,18 @@
 //! Authentication endpoints.
 
-use axum::extract::{Extension, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
 use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
-use crate::models::user::{LoginRequest, NewUserRequest};
+use crate::models::user::{
+    ChangePasswordRequest, LoginRequest, NewUserRequest, ResetPasswordRequest,
+    UpdateUserRequest, UserId,
+};
 
 /// Routes reachable without a token. Only login qualifies.
 pub fn public_routes<R: Storage>() -> Router<AppState<R>> {
@@ -21,6 +24,13 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
         .route("/auth/me", get(me))
         .route("/auth/users", get(list_users::<R>).post(create_user::<R>))
+        .route(
+            "/auth/users/{id}",
+            patch(update_user::<R>).delete(delete_user::<R>),
+        )
+        .route("/auth/users/{id}/password", post(reset_password::<R>))
+        // Self-service: any authenticated account may change its own password.
+        .route("/auth/me/password", post(change_own_password::<R>))
 }
 
 async fn login<R: Storage>(
@@ -54,4 +64,55 @@ async fn create_user<R: Storage>(
     require_admin(&user)?;
     let created = module.auth_service.create_user(request)?;
     Ok((StatusCode::CREATED, Json(created)))
+}
+
+async fn update_user<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdateUserRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    Ok(Json(
+        module
+            .auth_service
+            .update_user(&UserId::from(id.as_str()), request)?,
+    ))
+}
+
+async fn delete_user<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    module.auth_service.delete_user(&UserId::from(id.as_str()))?;
+    // Empty body, like the other mutations.
+    Ok(StatusCode::OK)
+}
+
+async fn reset_password<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+    Json(request): Json<ResetPasswordRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    module
+        .auth_service
+        .set_password(&UserId::from(id.as_str()), &request.password)?;
+    Ok(StatusCode::OK)
+}
+
+async fn change_own_password<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Json(request): Json<ChangePasswordRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    module.auth_service.change_own_password(
+        &user.id,
+        &request.current_password,
+        &request.new_password,
+    )?;
+    Ok(StatusCode::OK)
 }

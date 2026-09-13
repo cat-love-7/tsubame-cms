@@ -3,6 +3,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatToolbarModule } from '@angular/material/toolbar';
 
+import { RouterLink } from '@angular/router';
+
 import { AuthService } from '../../core/auth/auth.service';
 
 @Component({
@@ -12,7 +14,8 @@ import { AuthService } from '../../core/auth/auth.service';
   imports: [
     MatButtonModule,
     MatIconModule,
-    MatToolbarModule
+    MatToolbarModule,
+    RouterLink
   ],
 })
 export class Header {

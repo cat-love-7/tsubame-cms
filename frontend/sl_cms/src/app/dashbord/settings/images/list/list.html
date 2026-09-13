@@ -4,10 +4,12 @@
   <span class="count">
     {{ library().length }} image{{ library().length === 1 ? '' : 's' }}
   </span>
-  <button matButton (click)="uploadInput.click()" [disabled]="uploading()">
-    <mat-icon>add_photo_alternate</mat-icon>
-    {{ uploading() ? 'Uploading…' : 'Upload image' }}
-  </button>
+  @if (auth.canEdit()) {
+    <button matButton (click)="uploadInput.click()" [disabled]="uploading()">
+      <mat-icon>add_photo_alternate</mat-icon>
+      {{ uploading() ? 'Uploading…' : 'Upload image' }}
+    </button>
+  }
   <!-- Hidden: the button above is what a user clicks. -->
   <input #uploadInput type="file" accept="image/*" hidden (change)="onFileSelected($event)" />
 </div>
@@ -30,14 +32,16 @@
         <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
         <span class="meta">id {{ image.id }} · {{ uploadedAt(image) }}</span>
       </figcaption>
-      <button
-        matIconButton
-        class="remove"
-        (click)="delete(image)"
-        [attr.aria-label]="'delete image ' + image.id"
-      >
-        <mat-icon>delete</mat-icon>
-      </button>
+      @if (auth.canEdit()) {
+        <button
+          matIconButton
+          class="remove"
+          (click)="delete(image)"
+          [attr.aria-label]="'delete image ' + image.id"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+      }
     </figure>
   }
 </div>

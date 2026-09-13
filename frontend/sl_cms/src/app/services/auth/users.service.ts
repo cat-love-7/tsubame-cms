@@ -1,0 +1,36 @@
+import { Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
+
+import { CurrentUser } from 'app/core/auth/auth.service';
+import { NewUser, UserChange, UsersRepository } from 'app/repositories/auth/users.repository';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class UsersService {
+  constructor(private users: UsersRepository) {}
+
+  list(): Observable<CurrentUser[]> {
+    return this.users.list();
+  }
+
+  create(user: NewUser): Observable<CurrentUser> {
+    return this.users.create(user);
+  }
+
+  update(id: string, change: UserChange): Observable<CurrentUser> {
+    return this.users.update(id, change);
+  }
+
+  remove(id: string): Observable<void> {
+    return this.users.remove(id);
+  }
+
+  resetPassword(id: string, password: string): Observable<void> {
+    return this.users.resetPassword(id, password);
+  }
+
+  changeOwnPassword(currentPassword: string, newPassword: string): Observable<void> {
+    return this.users.changeOwnPassword(currentPassword, newPassword);
+  }
+}

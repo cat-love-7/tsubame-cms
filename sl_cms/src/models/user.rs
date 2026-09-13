@@ -56,6 +56,7 @@ impl User {
             id: self.id.clone(),
             email: self.email.clone(),
             is_admin: self.is_admin,
+            is_active: self.is_active,
             permission: self.permission,
             created_at: self.created_at,
             last_login: self.last_login,
@@ -111,6 +112,8 @@ pub struct UserResponse {
     pub id: UserId,
     pub email: String,
     pub is_admin: bool,
+    /// Whether the account may sign in at all; a disabled account keeps its history.
+    pub is_active: bool,
     pub permission: Permission,
     pub created_at: DateTime<Utc>,
     pub last_login: Option<DateTime<Utc>>,
@@ -137,6 +140,32 @@ pub struct NewUserRequest {
     pub is_admin: bool,
     #[serde(default)]
     pub permission: Permission,
+}
+
+/// A partial change to one account. Absent fields are left alone, so a client that only
+/// knows about roles cannot accidentally reset the others.
+#[derive(serde::Deserialize, Debug, Default)]
+pub struct UpdateUserRequest {
+    #[serde(default)]
+    pub is_admin: Option<bool>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
+    #[serde(default)]
+    pub permission: Option<Permission>,
+}
+
+/// An administrator setting someone else's password.
+#[derive(serde::Deserialize, Debug)]
+pub struct ResetPasswordRequest {
+    pub password: String,
+}
+
+/// Changing your own password: the current one is required, because a stolen session
+/// should not be enough to lock the owner out.
+#[derive(serde::Deserialize, Debug)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
 }
 
 #[cfg(test)]

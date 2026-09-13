@@ -3,6 +3,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { ImageEntry, NewImageInfo } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
 
@@ -41,6 +42,19 @@ function fileChosen(name: string): Event {
   return { target: input } as unknown as Event;
 }
 
+/** Permissions are the server's business; the screens are only told what to offer. */
+function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
+  return {
+    provide: AuthService,
+    useValue: {
+      user: () => null,
+      canEdit: () => canEdit,
+      canPublish: () => canPublish,
+      isAdmin: () => isAdmin,
+    },
+  };
+}
+
 describe('Image library', () => {
   let fixture: ComponentFixture<List>;
   let stub: StubImagesService;
@@ -53,6 +67,7 @@ describe('Image library', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: ImagesService, useValue: stub },
+        stubAuth(),
       ],
     }).compileComponents();
 

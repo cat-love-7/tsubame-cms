@@ -5,6 +5,7 @@ import { ActivatedRoute } from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { Observable, of } from 'rxjs';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
@@ -54,6 +55,19 @@ function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+/** Permissions are the server's business; the screens are only told what to offer. */
+function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
+  return {
+    provide: AuthService,
+    useValue: {
+      user: () => null,
+      canEdit: () => canEdit,
+      canPublish: () => canPublish,
+      isAdmin: () => isAdmin,
+    },
+  };
+}
+
 describe('Edit', () => {
   let stub: StubCollectionsService;
 
@@ -68,6 +82,7 @@ describe('Edit', () => {
         // Editing item 7 of the `blog` collection.
         { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'blog', id: '7' } } } },
         { provide: CollectionsService, useValue: stub },
+        stubAuth(),
       ],
     }).compileComponents();
   });

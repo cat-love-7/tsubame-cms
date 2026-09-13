@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::models::error::HttpError;
 use crate::models::user::{
-    is_plausible_email, normalize_email, LoginResponse, NewUserRequest, Permission, User, UserId,
-    UserResponse,
+    is_plausible_email, normalize_email, LoginResponse, NewUserRequest, Permission, UpdateUserRequest,
+    User, UserId, UserResponse,
 };
 use crate::repositories::user_repository::UserRepository;
 use token::TokenIssuer;
@@ -97,11 +97,7 @@ impl<R: UserRepository> AuthService<R> {
         if !is_plausible_email(&email) {
             return Err(HttpError::BadRequest("a valid email address is required"));
         }
-        if request.password.len() < MIN_PASSWORD_LENGTH {
-            return Err(HttpError::BadRequest(&format!(
-                "password must be at least {MIN_PASSWORD_LENGTH} characters"
-            )));
-        }
+        validate_password(&request.password)?;
         if self
             .repository
             .get_user_from_email(&email)
@@ -120,6 +116,97 @@ impl<R: UserRepository> AuthService<R> {
         let user = User::new(&email, hash, request.is_admin, permission);
         self.repository.add_user(&user).map_err(internal)?;
         Ok(user.to_response())
+    }
+
+    /// Change an account's role, or whether it may sign in at all.
+    ///
+    /// Refuses to leave the CMS without an active administrator, so the last one cannot be
+    /// demoted or disabled — by another administrator or by themselves.
+    pub fn update_user(
+        &self,
+        id: &UserId,
+        request: UpdateUserRequest,
+    ) -> Result<UserResponse, HttpError> {
+        let mut user = self.require_user(id)?;
+        // Only losing an administrator has to be guarded; a viewer staying a viewer is not
+        // what would leave the CMS without one.
+        let was_active_admin = user.is_admin && user.is_active;
+
+        if let Some(is_admin) = request.is_admin {
+            user.is_admin = is_admin;
+        }
+        if let Some(is_active) = request.is_active {
+            user.is_active = is_active;
+        }
+        if let Some(permission) = request.permission {
+            user.permission = permission;
+        }
+
+        if was_active_admin && !(user.is_admin && user.is_active) {
+            self.ensure_another_active_admin(id)?;
+        }
+
+        self.repository.update_user(id, &user).map_err(internal)?;
+        Ok(user.to_response())
+    }
+
+    /// Delete an account, refusing to remove the last active administrator.
+    pub fn delete_user(&self, id: &UserId) -> Result<(), HttpError> {
+        let user = self.require_user(id)?;
+        if user.is_admin && user.is_active {
+            self.ensure_another_active_admin(id)?;
+        }
+        self.repository.delete_user(id).map_err(internal)
+    }
+
+    /// Set someone else's password (an administrator resetting an account).
+    pub fn set_password(&self, id: &UserId, password: &str) -> Result<(), HttpError> {
+        let mut user = self.require_user(id)?;
+        validate_password(password)?;
+        user.password_hash = password::hash_password(password).map_err(internal)?;
+        self.repository.update_user(id, &user).map_err(internal)
+    }
+
+    /// Change your own password, proving you know the current one so that a stolen session
+    /// is not enough to lock the owner out.
+    pub fn change_own_password(
+        &self,
+        id: &UserId,
+        current: &str,
+        new: &str,
+    ) -> Result<(), HttpError> {
+        let mut user = self.require_user(id)?;
+        if !password::verify_password(current, &user.password_hash) {
+            return Err(HttpError::Forbidden("current password is incorrect"));
+        }
+        validate_password(new)?;
+        user.password_hash = password::hash_password(new).map_err(internal)?;
+        self.repository.update_user(id, &user).map_err(internal)
+    }
+
+    fn require_user(&self, id: &UserId) -> Result<User, HttpError> {
+        self.repository
+            .get_user_from_id(id)
+            .map_err(internal)?
+            .ok_or_else(|| HttpError::NotFound(&format!("user '{id}' does not exist")))
+    }
+
+    /// At least one active administrator has to remain, or nobody could manage accounts or
+    /// change the shape of the site again.
+    fn ensure_another_active_admin(&self, excluding: &UserId) -> Result<(), HttpError> {
+        let others = self
+            .repository
+            .get_all_users()
+            .map_err(internal)?
+            .into_iter()
+            .filter(|(id, user)| id != excluding && user.is_admin && user.is_active)
+            .count();
+        if others == 0 {
+            return Err(HttpError::Conflict(
+                "the last administrator cannot be demoted, disabled or deleted",
+            ));
+        }
+        Ok(())
     }
 
     pub fn list_users(&self) -> Result<Vec<UserResponse>, HttpError> {
@@ -164,6 +251,15 @@ impl<R: UserRepository> AuthService<R> {
     pub fn find_user(&self, id: &UserId) -> Result<Option<User>, HttpError> {
         self.repository.get_user_from_id(id).map_err(internal)
     }
+}
+
+fn validate_password(password: &str) -> Result<(), HttpError> {
+    if password.len() < MIN_PASSWORD_LENGTH {
+        return Err(HttpError::BadRequest(&format!(
+            "password must be at least {MIN_PASSWORD_LENGTH} characters"
+        )));
+    }
+    Ok(())
 }
 
 fn internal<E: std::fmt::Display>(e: E) -> HttpError {
@@ -341,6 +437,100 @@ mod tests {
 
         assert_eq!(auth.login("a@example.com", "supersecret").unwrap_err().status_code, 403);
         assert_eq!(auth.user_from_token(&token).unwrap_err().status_code, 403);
+    }
+
+    #[test]
+    fn the_last_administrator_cannot_lock_the_cms_out() {
+        let (auth, _) = service();
+        let admin = auth
+            .create_user(NewUserRequest {
+                email: "admin@example.com".to_string(),
+                password: "supersecret".to_string(),
+                is_admin: true,
+                permission: Permission::admin(),
+            })
+            .unwrap();
+        let editor = auth.create_user(new_user("editor@example.com", "supersecret", false)).unwrap();
+
+        // The only administrator cannot stop being one, stop being active, or be deleted.
+        assert_eq!(
+            auth.update_user(&admin.id, UpdateUserRequest { is_admin: Some(false), ..Default::default() })
+                .unwrap_err()
+                .status_code,
+            409
+        );
+        assert_eq!(
+            auth.update_user(&admin.id, UpdateUserRequest { is_active: Some(false), ..Default::default() })
+                .unwrap_err()
+                .status_code,
+            409
+        );
+        assert_eq!(auth.delete_user(&admin.id).unwrap_err().status_code, 409);
+
+        // With a second administrator the demotion is allowed...
+        let second = auth
+            .create_user(NewUserRequest {
+                email: "second@example.com".to_string(),
+                password: "supersecret".to_string(),
+                is_admin: true,
+                permission: Permission::admin(),
+            })
+            .unwrap();
+        assert!(!auth
+            .update_user(&admin.id, UpdateUserRequest { is_admin: Some(false), ..Default::default() })
+            .unwrap()
+            .is_admin);
+
+        // ...and then the remaining administrator is the protected one.
+        assert_eq!(auth.delete_user(&second.id).unwrap_err().status_code, 409);
+        // The demoted account and a plain editor can be removed.
+        auth.delete_user(&admin.id).unwrap();
+        auth.delete_user(&editor.id).unwrap();
+        assert_eq!(auth.list_users().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn roles_and_passwords_can_be_changed() {
+        let (auth, _) = service();
+        let viewer = auth.create_user(new_user("viewer@example.com", "supersecret", false)).unwrap();
+
+        // A role change is exactly what the new permission says.
+        let updated = auth
+            .update_user(
+                &viewer.id,
+                UpdateUserRequest { permission: Some(Permission::editor()), ..Default::default() },
+            )
+            .unwrap();
+        assert!(updated.permission.can_edit);
+        assert!(!updated.permission.can_publish);
+        assert!(updated.is_active);
+
+        // Disabling keeps the account but stops it signing in.
+        auth.update_user(&viewer.id, UpdateUserRequest { is_active: Some(false), ..Default::default() })
+            .unwrap();
+        assert_eq!(
+            auth.login("viewer@example.com", "supersecret").unwrap_err().status_code,
+            403
+        );
+        auth.update_user(&viewer.id, UpdateUserRequest { is_active: Some(true), ..Default::default() })
+            .unwrap();
+
+        // Your own password needs the current one.
+        assert_eq!(
+            auth.change_own_password(&viewer.id, "wrong", "newsupersecret").unwrap_err().status_code,
+            403
+        );
+        auth.change_own_password(&viewer.id, "supersecret", "newsupersecret").unwrap();
+        assert!(auth.login("viewer@example.com", "newsupersecret").is_ok());
+
+        // An administrator reset does not, but the minimum length still applies.
+        assert_eq!(auth.set_password(&viewer.id, "short").unwrap_err().status_code, 400);
+        auth.set_password(&viewer.id, "resetpassword").unwrap();
+        assert!(auth.login("viewer@example.com", "resetpassword").is_ok());
+
+        // A change to an account that does not exist is a 404.
+        let missing = UserId::from("00000000-0000-0000-0000-000000000000");
+        assert_eq!(auth.set_password(&missing, "supersecret").unwrap_err().status_code, 404);
     }
 
     #[test]

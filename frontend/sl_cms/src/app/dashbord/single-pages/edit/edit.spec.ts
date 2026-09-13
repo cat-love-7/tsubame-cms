@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { Observable, of } from 'rxjs';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
@@ -53,6 +54,19 @@ function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+/** Permissions are the server's business; the screens are only told what to offer. */
+function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
+  return {
+    provide: AuthService,
+    useValue: {
+      user: () => null,
+      canEdit: () => canEdit,
+      canPublish: () => canPublish,
+      isAdmin: () => isAdmin,
+    },
+  };
+}
+
 describe('Edit', () => {
   let component: Edit;
   let fixture: ComponentFixture<Edit>;
@@ -68,6 +82,7 @@ describe('Edit', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'home' } } } },
         { provide: SinglePagesService, useValue: stub },
+        stubAuth(),
       ],
     }).compileComponents();
 

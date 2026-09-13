@@ -3,6 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIcon, MatIconModule } from '@angular/material/icon';
 import { MatTreeModule } from '@angular/material/tree';
 import { RouterLink } from '@angular/router';
+import { AuthService } from 'app/core/auth/auth.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 import { map, Observable, combineLatest} from 'rxjs';
@@ -26,6 +27,7 @@ interface SidebarItem {
 export class Sidebar {
   private collectionsService = inject(CollectionsService);
   private singlePagesService = inject(SinglePagesService);
+  private auth = inject(AuthService);
   dataSource!: Observable<SidebarItem[]>;
   childrenAccessor = (node: SidebarItem) => node.children || [];
   hasChild = (_: number, node: SidebarItem) => !!node.children && node.children.length > 0;
@@ -33,11 +35,14 @@ export class Sidebar {
     let list = combineLatest([
       this.collectionsService.getAllCollectionNames(),
       this.singlePagesService.listPageNames(),
-    ]).pipe(map(this.toTreeNodes));
+    ]).pipe(map((names) => this.toTreeNodes(names)));
     this.dataSource = list;
   }
   toTreeNodes(obs: [string[], string[]]): SidebarItem[] {
     const [collectionNames, singlePageNames] = obs;
+    // Only administrators may change schemas or accounts, so the links are not offered to
+    // anyone else (the server refuses them regardless).
+    const isAdmin = this.auth.isAdmin();
     // An empty "Single Documents" has no children, so point it at the screen where one
     // can be created rather than rendering a dead link.
     const singlePageLinks: SidebarItem[] = singlePageNames.map((name) => ({
@@ -83,7 +88,15 @@ export class Sidebar {
               {
                 name: 'Images',
                 link: '/settings/images',
-              }
+              },
+              ...(isAdmin
+                ? [
+                    {
+                      name: 'Accounts',
+                      link: '/settings/users',
+                    },
+                  ]
+                : []),
             ],
           },
         ],

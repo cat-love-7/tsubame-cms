@@ -7,9 +7,11 @@
     @if (meta.status === 'published' && meta.has_draft) {
       <span class="draft-note">未公開の変更あり</span>
     }
-    <button matButton (click)="togglePublished()">
-      {{ published() ? 'Unpublish' : 'Publish' }}
-    </button>
+    @if (auth.canPublish()) {
+      <button matButton (click)="togglePublished()">
+        {{ published() ? 'Unpublish' : 'Publish' }}
+      </button>
+    }
   }
   <span class="spacer"></span>
   <button matButton [routerLink]="['/collections', collectionName]">Cancel</button>
@@ -37,6 +39,7 @@
       <app-value-field
         [field]="field"
         [value]="values()[field.name]"
+        [disabled]="!auth.canEdit()"
         (valueChange)="setValue(field, $event)"
         (errorChange)="setFieldError(field, $event)"
       />
@@ -44,6 +47,10 @@
   }
 </div>
 
-<div class="actions">
-  <button matButton color="primary" (click)="save()">Save</button>
-</div>
+@if (auth.canEdit()) {
+  <div class="actions">
+    <button matButton color="primary" (click)="save()">Save</button>
+  </div>
+} @else {
+  <p class="note">この内容を編集する権限がありません(閲覧のみ)。</p>
+}

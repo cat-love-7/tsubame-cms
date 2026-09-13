@@ -12,6 +12,8 @@ import { Edit as SinglePageEdit } from "./single-pages/edit/edit";
 import { List as CompositeFieldList } from "./settings/composite-fields/list/list";
 import { Schema as CompositeFieldSchema } from "./settings/composite-fields/schema/schema";
 import { List as ImageLibrary } from "./settings/images/list/list";
+import { List as UsersList } from "./settings/users/list/list";
+import { Password } from "./account/password/password";
 
 
 const dashbordRoutes: Routes = [
@@ -73,6 +75,16 @@ const dashbordRoutes: Routes = [
     {
         path: 'settings/images',
         component: ImageLibrary
+    },
+    // Accounts, for administrators. The server enforces the same rule.
+    {
+        path: 'settings/users',
+        component: UsersList
+    },
+    // Open to every signed-in account, read-only ones included.
+    {
+        path: 'account',
+        component: Password
     }
 ];
 

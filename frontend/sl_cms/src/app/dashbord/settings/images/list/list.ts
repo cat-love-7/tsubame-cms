@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { apiUrl } from 'app/core/api-url';
 import { errorMessage as message } from 'app/core/http-error';
 import { ImageEntry } from 'app/repositories/media/images.repository';
@@ -22,6 +23,8 @@ import { ImagesService } from 'app/services/media/images.service';
 })
 export class List {
   private images = inject(ImagesService);
+  /** Uploading and deleting images is an editing action. */
+  public auth = inject(AuthService);
 
   public library = signal<ImageEntry[]>([]);
   public error = signal('');

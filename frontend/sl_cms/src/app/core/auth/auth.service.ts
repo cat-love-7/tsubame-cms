@@ -13,9 +13,30 @@ export interface CurrentUser {
   id: string;
   email: string;
   is_admin: boolean;
+  /** False for an account that has been disabled; it also cannot sign in. */
+  is_active: boolean;
   permission: Permission;
   created_at: string;
   last_login: string | null;
+}
+
+/** The three capabilities, presented as roles on the account screens. */
+export type Role = 'viewer' | 'editor' | 'publisher';
+
+export function roleOf(user: CurrentUser): Role {
+  if (!user.permission.can_edit) {
+    return 'viewer';
+  }
+  return user.permission.can_publish ? 'publisher' : 'editor';
+}
+
+export function permissionFor(role: Role): Permission {
+  return {
+    can_view: true,
+    // A viewer reads; an editor prepares; a publisher also releases.
+    can_edit: role !== 'viewer',
+    can_publish: role === 'publisher',
+  };
 }
 
 interface LoginResponse {
@@ -46,6 +67,19 @@ export class AuthService {
 
   readonly user = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.tokenSignal() !== null);
+
+  // What the signed-in account may do. The server is what enforces them; these only decide
+  // which controls the screens offer, so a viewer is not invited to press a button that
+  // would be refused.
+  readonly canEdit = computed(() => {
+    const user = this.userSignal();
+    return user !== null && (user.is_admin || user.permission.can_edit);
+  });
+  readonly canPublish = computed(() => {
+    const user = this.userSignal();
+    return user !== null && (user.is_admin || user.permission.can_publish);
+  });
+  readonly isAdmin = computed(() => this.userSignal()?.is_admin ?? false);
 
   token(): string | null {
     return this.tokenSignal();

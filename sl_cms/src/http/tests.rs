@@ -2524,3 +2524,186 @@ async fn edits_wait_in_the_working_copy_until_they_are_published() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Edited");
 }
+
+// ------------------------------------------------------------------- account management
+
+/// Managing accounts over HTTP: administrators only, except that anyone may change their
+/// own password, and the CMS can never be left without an active administrator.
+#[tokio::test]
+async fn accounts_can_be_managed_without_locking_the_cms_out() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&admin),
+        Some(json!({ "email": "user@example.com", "password": "user-password" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = created["id"].as_str().unwrap().to_string();
+    assert_eq!(created["is_active"], true, "the response says whether the account is usable");
+    assert_eq!(created["permission"]["can_edit"], false, "new accounts are viewers");
+
+    let (status, users) = send(&app.router, Method::GET, "/auth/users", Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(users
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|user| user["email"] == "user@example.com"));
+
+    // Promote to publisher, disable, and enable again.
+    let (status, body) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "permission": { "can_view": true, "can_edit": true, "can_publish": true } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["permission"]["can_publish"], true);
+
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "is_active": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        login(&app.router, "user@example.com", "user-password").await.0,
+        StatusCode::FORBIDDEN,
+        "a disabled account cannot sign in"
+    );
+
+    // Back to a read-only account, enabled.
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({
+            "is_active": true,
+            "permission": { "can_view": true, "can_edit": false, "can_publish": false },
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = login(&app.router, "user@example.com", "user-password").await;
+    assert_eq!(status, StatusCode::OK);
+    let user_token = body["token"].as_str().unwrap().to_string();
+
+    // A read-only account cannot manage anyone, including itself.
+    for method in [Method::PATCH, Method::DELETE] {
+        let (status, _) = send(
+            &app.router,
+            method.clone(),
+            &format!("/auth/users/{id}"),
+            Some(&user_token),
+            (method == Method::PATCH).then(|| json!({ "is_active": false })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} /auth/users/{{id}}");
+    }
+    let (status, _) = send(&app.router, Method::GET, "/auth/users", Some(&user_token), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "a read-only account cannot list accounts");
+
+    // ...but it can change its own password, which is self-service rather than a write.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/auth/me/password",
+        Some(&user_token),
+        Some(json!({ "current_password": "wrong-password", "new_password": "another-password" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the current password is required");
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/auth/me/password",
+        Some(&user_token),
+        Some(json!({ "current_password": "user-password", "new_password": "another-password" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        login(&app.router, "user@example.com", "another-password").await.0,
+        StatusCode::OK
+    );
+
+    // An administrator can reset it without knowing the old one.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password"),
+        Some(&admin),
+        Some(json!({ "password": "reset-password" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        login(&app.router, "user@example.com", "reset-password").await.0,
+        StatusCode::OK
+    );
+
+    // The last administrator cannot be demoted, disabled or deleted...
+    let (status, me) = send(&app.router, Method::GET, "/auth/me", Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_id = me["id"].as_str().unwrap().to_string();
+    for change in [json!({ "is_admin": false }), json!({ "is_active": false })] {
+        let (status, _) = send(
+            &app.router,
+            Method::PATCH,
+            &format!("/auth/users/{admin_id}"),
+            Some(&admin),
+            Some(change.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{change}");
+    }
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/auth/users/{admin_id}"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // ...but anyone else can be removed, and then cannot sign in.
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        login(&app.router, "user@example.com", "reset-password").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Deleting an account that is already gone is a 404.
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+

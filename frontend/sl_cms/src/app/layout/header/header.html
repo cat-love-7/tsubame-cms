@@ -7,6 +7,9 @@
   @if (auth.user(); as user) {
     <span class="user-email">{{ user.email }}</span>
   }
+  <button matIconButton routerLink="/account" aria-label="Change password">
+    <mat-icon>key</mat-icon>
+  </button>
   <button matIconButton (click)="logout()" aria-label="Sign out">
     <mat-icon>logout</mat-icon>
   </button>

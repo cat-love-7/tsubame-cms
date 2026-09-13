@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { errorMessage as message } from 'app/core/http-error';
 import { ItemMetadata } from 'app/models/item-status';
@@ -34,6 +35,8 @@ export class Edit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private collectionsService = inject(CollectionsService);
+  /** A read-only account sees the form but cannot change it. */
+  public auth = inject(AuthService);
 
   public collectionName: string = this.route.snapshot.params['name'];
   private readonly itemId: number | null =

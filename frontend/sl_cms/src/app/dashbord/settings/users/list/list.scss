@@ -1,0 +1,72 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.count,
+.hint {
+  color: #666;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.status {
+  color: #1e6b32;
+}
+
+.create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 8px;
+}
+
+.role-hint {
+  display: block;
+  font-size: 0.8rem;
+}
+
+table.accounts {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+table.accounts th,
+table.accounts td {
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+table.accounts th {
+  font-weight: 500;
+}
+
+.you {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  background: var(--mat-sys-surface-variant, #eee);
+  color: #555;
+}
+
+.actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.empty {
+  text-align: center;
+  color: #666;
+}

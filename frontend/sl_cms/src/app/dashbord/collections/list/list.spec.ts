@@ -5,6 +5,7 @@ import { PageEvent } from '@angular/material/paginator';
 import { provideRouter } from '@angular/router';
 import { Observable, of } from 'rxjs';
 
+import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
 import { CollectionItemEntry, CollectionItemPage } from 'app/models/values/collection';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -82,6 +83,19 @@ function rows(fixture: ComponentFixture<List>): number {
   return fixture.nativeElement.querySelectorAll('tbody tr').length;
 }
 
+/** Permissions are the server's business; the screens are only told what to offer. */
+function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
+  return {
+    provide: AuthService,
+    useValue: {
+      user: () => null,
+      canEdit: () => canEdit,
+      canPublish: () => canPublish,
+      isAdmin: () => isAdmin,
+    },
+  };
+}
+
 describe('List', () => {
   let component: List;
   let fixture: ComponentFixture<List>;
@@ -96,6 +110,7 @@ describe('List', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: CollectionsService, useValue: stub },
+        stubAuth(),
       ],
     }).compileComponents();
 
@@ -247,3 +262,30 @@ describe('List', () => {
     expect(rows(fresh)).toBe(25);
   });
 });
+
+describe('List (read-only account)', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [List],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        stubAuth(false, false, false),
+        { provide: CollectionsService, useValue: new StubCollectionsService() },
+      ],
+    }).compileComponents();
+  });
+
+  it('offers nothing the server would refuse', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    expect(fresh.nativeElement.querySelector('button[aria-label^="publish item"]')).toBeNull();
+    expect(fresh.nativeElement.querySelector('button[aria-label^="delete item"]')).toBeNull();
+    expect(fresh.nativeElement.textContent).not.toContain('New item');
+    // The rows themselves are still readable.
+    expect(fresh.nativeElement.querySelectorAll('tbody tr').length).toBe(1);
+  });
+});
+

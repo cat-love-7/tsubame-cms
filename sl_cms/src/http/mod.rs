@@ -103,11 +103,15 @@ async fn require_auth<R: Storage>(
         *request.method(),
         Method::GET | Method::HEAD | Method::OPTIONS
     );
-    if is_write {
+    // `/auth/me` is self-service: everything under it acts on the caller's own account, so
+    // it needs authentication but not permission to edit content. A read-only account must
+    // still be able to change its password.
+    let is_self_service = request.uri().path().starts_with("/auth/me");
+    if is_write && !is_self_service {
         if !user.can_write() {
             return Err(HttpError::Forbidden("edit permission required"));
         }
-    } else if !user.can_read() {
+    } else if !is_write && !user.can_read() {
         return Err(HttpError::Forbidden("view permission required"));
     }
 
