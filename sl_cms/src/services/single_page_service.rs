@@ -287,7 +287,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     /// Publish or unpublish a single page, recording when it happened and who did it
     /// (see [`CollectionService::set_item_status`] for why `actor` is required).
-    pub fn set_page_status(
+    pub async fn set_page_status(
         &self,
         name: &SinglePageName,
         status: ItemStatus,
@@ -323,7 +323,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?;
         // Only after the status is stored (see `CollectionService::set_item_status`).
         self.notifier
-            .notify(ContentEvent::single_page(name, &metadata));
+            .notify(ContentEvent::single_page(name, &metadata))
+            .await;
         Ok(metadata)
     }
 
@@ -376,6 +377,7 @@ mod tests {
     use crate::models::schema::CompositeFieldId;
 
     use super::*;
+    use crate::webhook::NotifyFuture;
     use crate::webhook::NoopNotifier;
 
     struct MockSinglePageRepository {
@@ -550,13 +552,14 @@ mod tests {
     }
 
     impl Notifier for RecordingNotifier {
-        fn notify(&self, event: ContentEvent) {
+        fn notify(&self, event: ContentEvent) -> NotifyFuture<'_> {
             self.events.lock().unwrap().push(event);
+            Box::pin(async {})
         }
     }
 
-    #[test]
-    fn a_status_change_notifies_once_and_an_unknown_page_notifies_nothing() {
+    #[tokio::test]
+    async fn a_status_change_notifies_once_and_an_unknown_page_notifies_nothing() {
         let notifier = Arc::new(RecordingNotifier::default());
         let mut schemas = HashMap::new();
         schemas.insert("home".into(), create_test_schema());
@@ -579,6 +582,7 @@ mod tests {
 
         let metadata = service
             .set_page_status(&"home".into(), ItemStatus::Published, publisher())
+            .await
             .unwrap();
         assert_eq!(
             metadata.published_by.as_ref().map(|by| by.username.as_str()),
@@ -594,6 +598,7 @@ mod tests {
         // An unknown page is a 404 and must not look like a change.
         assert!(service
             .set_page_status(&"missing".into(), ItemStatus::Published, publisher())
+            .await
             .is_err());
         assert_eq!(notifier.events.lock().unwrap().len(), 1);
     }

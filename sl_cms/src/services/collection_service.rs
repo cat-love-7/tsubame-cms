@@ -528,7 +528,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ///
     /// `actor` is required rather than optional: an audit trail with holes in it is worse
     /// than none, and every caller in the HTTP layer already has the authenticated user.
-    pub fn set_item_status(
+    pub async fn set_item_status(
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
@@ -568,7 +568,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // Only after the status is stored: a receiver that reacts by reading the delivery
         // API must not see the previous state.
         self.notifier
-            .notify(ContentEvent::collection_item(collection_name, item_id, &metadata));
+            .notify(ContentEvent::collection_item(collection_name, item_id, &metadata))
+            .await;
         Ok(metadata)
     }
 
@@ -699,6 +700,7 @@ mod tests {
     use crate::repositories::image_repository::ImageRepository;
 
     use super::*;
+    use crate::webhook::NotifyFuture;
     use crate::webhook::NoopNotifier;
 
     struct MockCollectionRepository {
@@ -956,13 +958,14 @@ mod tests {
     }
 
     impl Notifier for RecordingNotifier {
-        fn notify(&self, event: ContentEvent) {
+        fn notify(&self, event: ContentEvent) -> NotifyFuture<'_> {
             self.events.lock().unwrap().push(event);
+            Box::pin(async {})
         }
     }
 
-    #[test]
-    fn a_status_change_notifies_once_and_a_missing_item_notifies_nothing() {
+    #[tokio::test]
+    async fn a_status_change_notifies_once_and_a_missing_item_notifies_nothing() {
         let notifier = Arc::new(RecordingNotifier::default());
         let mut schemas = HashMap::new();
         schemas.insert("blog".into(), create_test_schema());
@@ -995,6 +998,7 @@ mod tests {
                 ItemStatus::Published,
                 publisher(),
             )
+            .await
             .unwrap();
         // Publishing leaves an audit trail: who did it, alongside when.
         assert_eq!(
@@ -1017,6 +1021,7 @@ mod tests {
                 ItemStatus::Published,
                 publisher()
             )
+            .await
             .is_err());
         assert_eq!(notifier.events.lock().unwrap().len(), 1);
     }

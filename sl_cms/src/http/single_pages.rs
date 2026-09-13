@@ -167,9 +167,12 @@ async fn set_single_page_status<R: Storage>(
     actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    Ok(Json(module.single_page_service.set_page_status(
-        &name, status, actor,
-    )?))
+    Ok(Json(
+        module
+            .single_page_service
+            .set_page_status(&name, status, actor)
+            .await?,
+    ))
 }
 
 async fn get_single_pages<R: Storage>(

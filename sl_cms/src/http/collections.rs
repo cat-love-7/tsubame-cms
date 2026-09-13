@@ -220,12 +220,12 @@ async fn set_collection_item_status<R: Storage>(
     actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(module.collection_service.set_item_status(
-        &name,
-        CollectionItemId::from_u64(id),
-        status,
-        actor,
-    )?))
+    Ok(Json(
+        module
+            .collection_service
+            .set_item_status(&name, CollectionItemId::from_u64(id), status, actor)
+            .await?,
+    ))
 }
 
 async fn get_collections<R: Storage>(

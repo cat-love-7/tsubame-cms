@@ -37,7 +37,9 @@ pub struct Config {
     pub host: String,
     /// TCP port to listen on (`PORT`).
     pub port: u16,
-    /// Root directory for on-premises storage (`DATA_ROOT`).
+    /// Root directory for on-premises storage (`DATA_ROOT`). Only that backend reads it;
+    /// where its files live under this root is the adapter's own business
+    /// (`on_premises::storage_dir`).
     pub data_root: PathBuf,
     /// Allowed CORS origins (`CORS_ALLOWED_ORIGINS`, comma separated).
     /// A single `*` entry allows any origin.
@@ -55,7 +57,8 @@ pub struct Config {
     pub password_reset_ttl_minutes: i64,
     /// Sign-in identifier for the initial administrator (`ADMIN_USERNAME`, or `ADMIN_EMAIL`
     /// as the older name of the same setting). Only consulted when the user store is still
-    /// empty.
+    /// empty, and only by the on-premises backend: an `aws` deployment authenticates with
+    /// Cognito and bootstraps its first administrator through `BOOTSTRAP_ADMIN_USERNAMES`.
     pub admin_username: Option<String>,
     /// Contact address for the initial administrator (`ADMIN_EMAIL`), if one is wanted.
     pub admin_email: Option<String>,
@@ -66,6 +69,48 @@ pub struct Config {
     /// HMAC-SHA256 secret used to sign webhook bodies (`WEBHOOK_SECRET`). Optional: without
     /// it, payloads are delivered unsigned.
     pub webhook_secret: Option<Vec<u8>>,
+    /// AWS region (`AWS_REGION`). The `aws` backend only.
+    pub aws_region: Option<String>,
+    /// DynamoDB table holding everything structured (`DYNAMODB_TABLE`).
+    pub dynamodb_table: Option<String>,
+    /// S3 bucket holding uploaded image bytes (`S3_BUCKET`).
+    pub s3_bucket: Option<String>,
+    /// Cognito user pool whose tokens are accepted (`COGNITO_USER_POOL_ID`).
+    pub cognito_user_pool_id: Option<String>,
+    /// Identities allowed to provision themselves as the first administrator
+    /// (`BOOTSTRAP_ADMIN_USERNAMES`, comma separated). See `doc/aws-plan.md`.
+    pub bootstrap_admin_usernames: Vec<String>,
+}
+
+/// What the `aws` backend needs, once the environment has been read and checked.
+///
+/// Behind the feature flag because the on-premises build has no use for it - the fields above
+/// are still read here so a deployment's environment is described in one place.
+///
+/// Checked here rather than at first use so a misconfigured deployment fails at startup with a
+/// sentence, which is also what the on-premises backend does when it cannot open its storage.
+#[cfg(feature = "aws")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsSettings {
+    pub region: String,
+    pub table: String,
+    pub bucket: String,
+    pub user_pool_id: String,
+    /// May be empty: then nobody can provision themselves and an administrator has to create
+    /// the first account record another way.
+    pub bootstrap_admin_usernames: Vec<String>,
+}
+
+#[cfg(feature = "aws")]
+impl AwsSettings {
+    /// Where Cognito publishes the signing keys for this pool. Derived rather than configured,
+    /// so a pool id and a region cannot disagree.
+    pub fn jwks_url(&self) -> String {
+        format!(
+            "https://cognito-idp.{}.amazonaws.com/{}/.well-known/jwks.json",
+            self.region, self.user_pool_id
+        )
+    }
 }
 
 impl Default for Config {
@@ -85,6 +130,11 @@ impl Default for Config {
             admin_password: None,
             webhook_urls: Vec::new(),
             webhook_secret: None,
+            aws_region: None,
+            dynamodb_table: None,
+            s3_bucket: None,
+            cognito_user_pool_id: None,
+            bootstrap_admin_usernames: Vec::new(),
         }
     }
 }
@@ -177,6 +227,13 @@ impl Config {
         }
         config.admin_username =
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
+        config.aws_region = non_empty_env("AWS_REGION");
+        config.dynamodb_table = non_empty_env("DYNAMODB_TABLE");
+        config.s3_bucket = non_empty_env("S3_BUCKET");
+        config.cognito_user_pool_id = non_empty_env("COGNITO_USER_POOL_ID");
+        if let Ok(names) = std::env::var("BOOTSTRAP_ADMIN_USERNAMES") {
+            config.bootstrap_admin_usernames = parse_usernames(&names);
+        }
         config.admin_email = non_empty_env("ADMIN_EMAIL");
         config.admin_password = non_empty_env("ADMIN_PASSWORD");
         if let Ok(urls) = std::env::var("WEBHOOK_URLS") {
@@ -186,12 +243,40 @@ impl Config {
         Ok(config)
     }
 
+    /// The settings the `aws` backend cannot start without, or the first thing that is
+    /// missing.
+    #[cfg(feature = "aws")]
+    pub fn aws_settings(&self) -> Result<AwsSettings, String> {
+        let required = |value: &Option<String>, name: &str| {
+            value
+                .clone()
+                .ok_or_else(|| format!("{name} must be set for the `aws` backend"))
+        };
+        Ok(AwsSettings {
+            region: required(&self.aws_region, "AWS_REGION")?,
+            table: required(&self.dynamodb_table, "DYNAMODB_TABLE")?,
+            bucket: required(&self.s3_bucket, "S3_BUCKET")?,
+            user_pool_id: required(&self.cognito_user_pool_id, "COGNITO_USER_POOL_ID")?,
+            bootstrap_admin_usernames: self.bootstrap_admin_usernames.clone(),
+        })
+    }
+
     pub fn socket_addr(&self) -> Result<SocketAddr, String> {
         let raw = format!("{}:{}", self.host, self.port);
         raw.parse()
             .map_err(|e| format!("invalid listen address {raw:?}: {e}"))
     }
 
+}
+
+/// `BOOTSTRAP_ADMIN_USERNAMES` as a list, normalized the way accounts are stored so the
+/// comparison at sign-in is a plain equality check.
+fn parse_usernames(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(crate::models::user::normalize_username)
+        .filter(|name| !name.is_empty())
+        .collect()
 }
 
 fn non_empty_env(name: &str) -> Option<String> {
@@ -268,6 +353,43 @@ mod tests {
     #[test]
     fn ephemeral_secrets_differ_between_configs() {
         assert_ne!(Config::default().jwt_secret, Config::default().jwt_secret);
+    }
+
+    #[test]
+    fn parses_bootstrap_usernames_the_way_accounts_are_stored() {
+        assert_eq!(
+            parse_usernames(" Ops , Alice@Example.com ,, "),
+            vec!["ops".to_string(), "alice@example.com".to_string()]
+        );
+        assert_eq!(parse_usernames(""), Vec::<String>::new());
+        assert_eq!(parse_usernames(" , "), Vec::<String>::new());
+    }
+
+    /// The `aws` backend refuses to start without these, and says which one is missing.
+    #[cfg(feature = "aws")]
+    #[test]
+    fn aws_settings_report_the_first_missing_value_and_derive_the_jwks_url() {
+        let empty = Config::default();
+        assert!(empty.aws_settings().unwrap_err().contains("AWS_REGION"));
+
+        let partial = Config { aws_region: Some("eu-west-1".to_string()), ..Config::default() };
+        assert!(partial.aws_settings().unwrap_err().contains("DYNAMODB_TABLE"));
+
+        let full = Config {
+            aws_region: Some("eu-west-1".to_string()),
+            dynamodb_table: Some("cms".to_string()),
+            s3_bucket: Some("cms-images".to_string()),
+            cognito_user_pool_id: Some("eu-west-1_abc".to_string()),
+            bootstrap_admin_usernames: parse_usernames("Ops"),
+            ..Config::default()
+        };
+        let settings = full.aws_settings().unwrap();
+        assert_eq!(settings.table, "cms");
+        assert_eq!(settings.bootstrap_admin_usernames, vec!["ops".to_string()]);
+        assert_eq!(
+            settings.jwks_url(),
+            "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_abc/.well-known/jwks.json"
+        );
     }
 
     #[test]

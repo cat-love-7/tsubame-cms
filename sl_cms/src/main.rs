@@ -45,15 +45,31 @@ mod on_premises;
 async fn main() {
     init_tracing();
 
-    // One arm per backend feature; `aws` has none yet (selecting it is refused in `aws.rs`).
+    // One arm per backend feature. Selecting `aws` is refused at compile time for now (see
+    // `aws.rs`), so this arm is only here to keep the shape of the entry point honest.
     #[cfg(feature = "on-premises")]
     if let Err(error) = run_on_premises().await {
-        // `eprintln!` as well as the log: a bind failure must be visible even when the
-        // log filter is set to something quiet.
-        tracing::error!("fatal: {error}");
-        eprintln!("fatal: {error}");
-        std::process::exit(1);
+        fatal(error);
     }
+
+    #[cfg(feature = "aws")]
+    if let Err(error) = run_aws().await {
+        fatal(error);
+    }
+}
+
+/// A startup failure has to be visible even when the log filter is set to something quiet.
+fn fatal(error: Box<dyn std::error::Error>) {
+    tracing::error!("fatal: {error}");
+    eprintln!("fatal: {error}");
+    std::process::exit(1);
+}
+
+/// Serve the CMS on AWS (DynamoDB + S3) through a Lambda entry point.
+#[cfg(feature = "aws")]
+async fn run_aws() -> Result<(), Box<dyn std::error::Error>> {
+    let config = config::Config::from_env()?;
+    aws::run(&config).await
 }
 
 /// Serve the CMS over HTTP with on-premises storage.

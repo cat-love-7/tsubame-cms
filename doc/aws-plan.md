@@ -96,11 +96,20 @@ true/false, "password_reset_links": true/false}`。
       「0 個は駄目」のガードは `main.rs` のまま)
       → 確認: 既定ビルドは通り、`--no-default-features` / `--no-default-features --features aws`
       はそれぞれ想定のメッセージで拒否される。
-- [ ] AWS 用の設定を整理(`AWS_REGION`、テーブル名、バケット名、プール ID / JWKS URL、`BOOTSTRAP_ADMIN_USERNAMES`)。
-      `DATA_ROOT` は on-premises 専用であることを明示
-      → **完了条件**: `Config` のテストで既定値と必須項目の欠落時エラーを確認。
-- [ ] Webhook の `Notifier` を async にし、on-prem は spawn / AWS は await にできるようにする
-      → **完了条件**: 既存の Webhook テストが両方の挙動で通る。
+- [x] AWS 用の設定を整理した。`Config` が `AWS_REGION` / `DYNAMODB_TABLE` / `S3_BUCKET` /
+      `COGNITO_USER_POOL_ID` / `BOOTSTRAP_ADMIN_USERNAMES` を読み、`aws_settings()` が
+      「起動に必要なもの」を検証して最初の不足を名指しする。JWKS の URL は region とプール ID から
+      **導出**する(食い違えない)。`DATA_ROOT` と `ADMIN_*` は on-premises 専用であることを
+      コメントで明示(AWS で `ADMIN_*` を設定していれば起動時に警告する)
+      → 確認: `parse_usernames` のテスト + `aws_settings()` のテスト(不足項目のエラーと JWKS URL)。
+- [x] `Notifier::notify` を **await する**形にした(オブジェクト安全を保つため boxed future)。
+      on-prem の実装は従来どおり裏で spawn して即座に完了し、AWS 側は await できる
+      → 確認: 既存の Webhook テスト(配信・再試行・切断時の挙動)がすべて通る。
+- [x] `aws.rs` に起動点の形(`aws::run`)を書き、`main.rs` の AWS 側の腕から呼ぶようにした。
+      設定検証と「`ADMIN_*` は無視される」「`BOOTSTRAP_ADMIN_USERNAMES` が空」の警告まで
+      → 確認: ガードを一時的に外して `cargo test --no-default-features --features aws` を実行し、
+      **AWS 側のコードがコンパイルでき 181 件が通る**ことと、`aws_settings` のテストが動くことを
+      確認した(その後ガードは戻し、`--no-default-features --features aws` が拒否されることも再確認)。
 
 ### P1. DynamoDB アダプタ(本丸)
 

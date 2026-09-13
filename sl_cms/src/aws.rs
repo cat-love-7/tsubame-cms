@@ -18,3 +18,39 @@ compile_error!(
     "the `aws` backend (DynamoDB + S3) is not implemented yet; build with the default \
      `on-premises` feature"
 );
+
+use crate::config::Config;
+
+/// Start the CMS on AWS.
+///
+/// Unreachable today - the `compile_error!` above refuses the build - but it is the shape the
+/// rest of the work fills in: check the settings, build the DynamoDB + S3 composition root, and
+/// hand the shared router to `lambda_http`. Writing it down here keeps the "what is missing"
+/// honest and gives the configuration somewhere real to be used from.
+#[allow(dead_code)]
+pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = config.aws_settings()?;
+    tracing::info!(
+        region = %settings.region,
+        table = %settings.table,
+        bucket = %settings.bucket,
+        jwks = %settings.jwks_url(),
+        "aws backend starting"
+    );
+
+    // The on-premises administrator settings have no effect here, which is worth saying out
+    // loud rather than leaving an operator to wonder why the account never appears.
+    if config.admin_username.is_some() || config.admin_password.is_some() {
+        tracing::warn!(
+            "ADMIN_USERNAME / ADMIN_PASSWORD are ignored by the aws backend; set \
+             BOOTSTRAP_ADMIN_USERNAMES instead"
+        );
+    }
+    if settings.bootstrap_admin_usernames.is_empty() {
+        tracing::warn!(
+            "BOOTSTRAP_ADMIN_USERNAMES is empty: nobody can provision the first administrator"
+        );
+    }
+
+    Err("the aws backend is not implemented yet".into())
+}

@@ -6,8 +6,10 @@
 //!
 //! Two properties matter:
 //!
-//! * **Publishing must not depend on a receiver being up.** [`Notifier::notify`] only
-//!   spawns a task, so the publish request returns as soon as the status is stored.
+//! * **Publishing must not depend on a receiver being up.** [`Notifier::notify`] is awaited,
+//!   but this implementation hands the deliveries to background tasks, so a publish returns as
+//!   soon as the status is stored. A deployment whose process is frozen after the response
+//!   (a Lambda) awaits the delivery instead - the trait lets each decide.
 //! * **The receiver can trust the call.** With `WEBHOOK_SECRET` set, the raw request body
 //!   is signed with HMAC-SHA256 and the digest travels in `X-CMS-Signature`.
 //!
@@ -132,10 +134,21 @@ struct Payload {
     occurred_at: DateTime<Utc>,
 }
 
-/// Reports content events. Implementations must return promptly: they are called on the
-/// request path, right after the status has been stored.
+/// What [`Notifier::notify`] answers with.
+///
+/// Boxed rather than a bare `async fn` so the trait stays object safe (`Arc<dyn Notifier>`
+/// is what the services hold) and so the future can be required to be `Send`.
+pub type NotifyFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>;
+
+/// Reports content events. Called on the request path, right after the status has been stored.
+///
+/// Delivery is *awaited*, because whether that may outlive the response is the deployment's
+/// business: a long-running server can hand the work to a background task (which is what
+/// on-premises does, so publishing never waits for a receiver), while a Lambda is frozen once
+/// it answers and has to deliver before it returns. An implementation decides, the caller just
+/// awaits.
 pub trait Notifier: Send + Sync + 'static {
-    fn notify(&self, event: ContentEvent);
+    fn notify(&self, event: ContentEvent) -> NotifyFuture<'_>;
 }
 
 /// Does nothing. Used when no webhook is configured, and by tests.
@@ -143,7 +156,9 @@ pub trait Notifier: Send + Sync + 'static {
 pub struct NoopNotifier;
 
 impl Notifier for NoopNotifier {
-    fn notify(&self, _event: ContentEvent) {}
+    fn notify(&self, _event: ContentEvent) -> NotifyFuture<'_> {
+        Box::pin(async {})
+    }
 }
 
 /// Posts every event to each configured URL.
@@ -181,7 +196,7 @@ impl WebhookNotifier {
 }
 
 impl Notifier for WebhookNotifier {
-    fn notify(&self, event: ContentEvent) {
+    fn notify(&self, event: ContentEvent) -> NotifyFuture<'_> {
         let body = event.body();
         let event_name = event.name();
         let signature = self.secret.as_deref().map(|secret| sign(secret, body.as_bytes()));
@@ -194,11 +209,15 @@ impl Notifier for WebhookNotifier {
             let signature = signature.clone();
             let delivery = uuid::Uuid::new_v4().to_string();
 
-            // Spawned and never awaited: a slow receiver must not slow down publishing.
+            // Spawned, and the caller is not made to wait: this deployment is a long-running
+            // server, so a slow receiver must not slow down publishing. The returned future is
+            // already complete - a Lambda deployment would instead await `deliver` here, since
+            // its execution environment is frozen once the response is sent.
             tokio::spawn(async move {
                 deliver(&client, &target, &event_name, &delivery, &body, signature.as_deref()).await;
             });
         }
+        Box::pin(async {})
     }
 }
 
