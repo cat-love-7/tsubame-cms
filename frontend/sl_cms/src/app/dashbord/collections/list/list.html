@@ -63,3 +63,17 @@
     }
   </tbody>
 </table>
+
+<!-- Server-side paging: the component asks for one window at a time, so a collection with
+     thousands of items never arrives in a single response. -->
+@if (total() > 0) {
+  <mat-paginator
+    [length]="total()"
+    [pageSize]="pageSize()"
+    [pageIndex]="pageIndex()"
+    [pageSizeOptions]="pageSizeOptions"
+    showFirstLastButtons
+    (page)="onPage($event)"
+    aria-label="Select page of items"
+  />
+}

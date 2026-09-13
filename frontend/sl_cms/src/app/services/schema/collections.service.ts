@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { CollectionItemEntry, CollectionValue } from 'app/models/values/collection';
+import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
 import { Observable } from 'rxjs';
 
@@ -28,8 +28,12 @@ export class CollectionsService {
 
   // ---- items ---------------------------------------------------------------
 
-  listCollectionItems(name: string): Observable<CollectionItemEntry[]> {
-    return this.collectionRepository.listCollectionItems(name);
+  /** One page of items, with the total the server reports for the collection. */
+  listCollectionItemsPage(
+    name: string,
+    page: { limit: number; offset: number },
+  ): Observable<CollectionItemPage> {
+    return this.collectionRepository.listCollectionItemsPage(name, page.limit, page.offset);
   }
 
   getCollectionItem(name: string, id: number): Observable<CollectionValue> {

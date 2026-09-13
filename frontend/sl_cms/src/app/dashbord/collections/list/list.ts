@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 
 import { errorMessage as message } from 'app/core/http-error';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
@@ -12,9 +13,12 @@ import { formatFieldValue } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 
+/** Rows per page. Small enough to read, large enough to scan. */
+const DEFAULT_PAGE_SIZE = 25;
+
 @Component({
   selector: 'app-collection-items',
-  imports: [MatButtonModule, MatIconModule, RouterLink, ItemStatusBadge],
+  imports: [MatButtonModule, MatIconModule, MatPaginatorModule, RouterLink, ItemStatusBadge],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
@@ -24,15 +28,21 @@ export class List {
 
   public collectionName: string = this.route.snapshot.params['name'];
   public schema: CollectionSchema = [];
+  /** The rows on screen. The server does the slicing; see `onPage`. */
   public items: CollectionItemEntry[] = [];
   public error = signal('');
   /** Draft/published state per item id; the server sends drafts for untouched items. */
   public metadata: ItemMetadataMap = {};
+  /** Items in the collection, not just on this page. Drives the paginator. */
+  public total = signal(0);
+  public pageIndex = signal(0);
+  public pageSize = signal(DEFAULT_PAGE_SIZE);
+  public readonly pageSizeOptions = [10, 25, 50, 100];
   /** Exposed for the template. */
   public format = formatFieldValue;
 
-  /** Re-issues the list request after a delete. */
-  private refresh = new BehaviorSubject<void>(undefined);
+  /** Re-issues the page request after a delete or a page change. */
+  private reload = new BehaviorSubject<void>(undefined);
 
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
@@ -40,23 +50,34 @@ export class List {
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
     });
 
-    // Items and their status are fetched together: the table shows both in the same row.
-    this.refresh
+    // Rows, their status and the total are fetched together: the table and the pager both
+    // need them, and a collection can be too long to send in one response.
+    this.reload
       .pipe(
         switchMap(() =>
           forkJoin({
-            items: this.collectionsService.listCollectionItems(this.collectionName),
+            page: this.collectionsService.listCollectionItemsPage(this.collectionName, {
+              limit: this.pageSize(),
+              offset: this.pageIndex() * this.pageSize(),
+            }),
             metadata: this.collectionsService.listItemMetadata(this.collectionName),
           }),
         ),
       )
       .subscribe({
-        next: ({ items, metadata }) => {
-          this.items = items;
+        next: ({ page, metadata }) => {
+          this.items = page.items;
+          this.total.set(page.total);
           this.metadata = metadata;
         },
         error: (e) => this.error.set(`Failed to load the items: ${message(e)}`),
       });
+  }
+
+  onPage(event: PageEvent) {
+    this.pageIndex.set(event.pageIndex);
+    this.pageSize.set(event.pageSize);
+    this.reload.next();
   }
 
   statusOf(id: number): ItemStatus {
@@ -92,9 +113,24 @@ export class List {
     this.collectionsService.deleteCollectionItem(this.collectionName, id).subscribe({
       next: () => {
         this.error.set('');
-        this.refresh.next();
+        this.stepBackIfPageIsGone();
       },
       error: (e) => this.error.set(`Delete failed: ${message(e)}`),
     });
+  }
+
+  /**
+   * Reload, falling back a page when the deletion emptied the last one.
+   *
+   * Without this, deleting the only row of the final page would leave the table empty with
+   * content still on the previous page.
+   */
+  private stepBackIfPageIsGone() {
+    const remaining = Math.max(0, this.total() - 1);
+    const lastPage = Math.max(0, Math.ceil(remaining / this.pageSize()) - 1);
+    if (this.pageIndex() > lastPage) {
+      this.pageIndex.set(lastPage);
+    }
+    this.reload.next();
   }
 }

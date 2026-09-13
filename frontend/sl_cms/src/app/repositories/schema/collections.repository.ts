@@ -1,9 +1,9 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
-import { CollectionItemEntry, CollectionValue } from 'app/models/values/collection';
+import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 
 /**
  * `providedIn: 'root'` so every consumer (and every TestBed) gets the same instance
@@ -33,9 +33,24 @@ export class CollectionRepository {
   // ---- items ---------------------------------------------------------------
   // Item values travel without type tags; the collection schema gives them meaning.
 
-  /** Returns `[id, values]` pairs. */
-  listCollectionItems(name: string): Observable<CollectionItemEntry[]> {
-    return this.http.get<CollectionItemEntry[]>(`/api/models/collections/${name}/items`);
+  /**
+   * One page of items.
+   *
+   * The total is not part of the body — it comes back in `X-Total-Count` — so the whole
+   * response is read here and reduced to a page the caller can use directly.
+   */
+  listCollectionItemsPage(name: string, limit: number, offset: number): Observable<CollectionItemPage> {
+    return this.http
+      .get<CollectionItemEntry[]>(`/api/models/collections/${name}/items`, {
+        params: { limit, offset },
+        observe: 'response',
+      })
+      .pipe(
+        map((response) => ({
+          items: response.body ?? [],
+          total: Number(response.headers.get('X-Total-Count') ?? 0),
+        })),
+      );
   }
 
   getCollectionItem(name: string, id: number): Observable<CollectionValue> {
