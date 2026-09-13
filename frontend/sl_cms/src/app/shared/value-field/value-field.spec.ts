@@ -18,6 +18,7 @@ function field(name: string, field_type: FieldType): FieldSchema {
 /** The composite definitions the component reads, keyed by id. */
 const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
   seo: [field('description', { Text: {} })],
+  gallery: [field('images', { Array: ['Image'] })],
 };
 
 const LIBRARY: ImageEntry[] = [
@@ -38,12 +39,26 @@ const LIBRARY: ImageEntry[] = [
 /** Counts library reads, so the picker can be checked for loading lazily. */
 class StubImagesService {
   public listCalls = 0;
+  /** Names of the files handed to `uploadImage`, in order. */
+  public uploaded: string[] = [];
   listImages = () => {
     this.listCalls += 1;
     return of(LIBRARY);
   };
-  uploadImage = () => of({ id: 9, upload_url: '/images/new.png?key=k' });
+  uploadImage = (file: File) => {
+    const index = this.uploaded.push(file.name);
+    return of({ id: 100 + index, upload_url: `/images/${file.name}?key=k` });
+  };
   deleteImage = () => of(void 0);
+}
+
+/** A change event for a file input that was given several files. */
+function filesChosen(names: string[]): Event {
+  const input = {
+    files: names.map((name) => new File(['x'], name, { type: 'image/png' })),
+    value: '',
+  };
+  return { target: input } as unknown as Event;
 }
 
 describe('ValueField', () => {
@@ -334,5 +349,50 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     expect(component.arrayText).toBe('[{"id":3,"url":"/images/logo.png"}]');
+  });
+
+  it('uploads files straight into an image array, in the order they were chosen', () => {
+    const component = create(field('covers', { Array: ['Image'] }), []);
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    component.onFilesSelected(filesChosen(['first.png', 'second.png']));
+    fixture.detectChanges();
+
+    expect(images.uploaded).toEqual(['first.png', 'second.png']);
+    expect(changes).toEqual([
+      [
+        { id: 101, url: '/images/first.png' },
+        { id: 102, url: '/images/second.png' },
+      ],
+    ]);
+    expect(fixture.nativeElement.querySelectorAll('.array-item').length).toBe(2);
+    expect(component.uploading()).toBe(false);
+  });
+
+  it('edits an image array that lives inside a composite', () => {
+    const component = create(
+      field('block', { CompositeField: { id: 'gallery' } }),
+      { images: [{ id: 3, url: '/images/logo.png' }] } as unknown as FieldValue,
+    );
+    fixture.detectChanges();
+
+    // Sub-fields are edited by this same component, so the nested array gets the same UI.
+    const nested = fixture.nativeElement.querySelectorAll('fieldset.composite .array-item');
+    expect(nested.length).toBe(1);
+
+    (query('fieldset.composite button.array-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelectorAll('fieldset.composite .thumb')[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (query('fieldset.composite button.array-add-selected') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(component.value).toEqual({
+      images: [
+        { id: 3, url: '/images/logo.png' },
+        { id: 4, url: '/images/photo.png' },
+      ],
+    });
   });
 });

@@ -156,14 +156,26 @@
 
         @if (!disabled) {
           <div class="array-actions">
+            <!-- Uploading straight into the array saves a detour through the library. -->
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              class="array-upload"
+              [disabled]="uploading()"
+              (change)="onFilesSelected($event)"
+            />
             <button matButton type="button" class="array-add" (click)="openLibrary(true)">
-              <mat-icon>add_photo_alternate</mat-icon>
+              <mat-icon>photo_library</mat-icon>
               Add images
             </button>
             <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
               {{ jsonMode() ? 'Hide JSON' : 'Edit as JSON' }}
             </button>
           </div>
+          @if (uploading()) {
+            <span class="note">Uploading…</span>
+          }
         }
 
         @if (jsonMode()) {

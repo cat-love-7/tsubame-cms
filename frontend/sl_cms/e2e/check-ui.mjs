@@ -14,12 +14,13 @@
  *   - deleting the only row of the last page, which has to fall back a page
  *   - the image library: uploading, serving and deleting an image
  *   - picking that image from the library while editing content, and saving it
- *   - adding several images to an image array at once, and saving them in order
+ *   - adding several images to an image array at once, and uploading one straight into it
+ *   - the same array, inside a composite field
  *   - no console errors while all of that happens
  *
- * It seeds its own data (`e2e_blog`, `e2e_small`, `e2e_images`) and recreates those
- * collections on every run, so it neither depends on nor disturbs whatever else is in the
- * dev database.
+ * It seeds its own data (`e2e_blog`, `e2e_small`, `e2e_images`, `e2e_composite` and a
+ * composite definition) and recreates those on every run, so it neither depends on nor
+ * disturbs whatever else is in the dev database.
  *
  * Prerequisites and usage: see e2e/README.md.
  */
@@ -37,6 +38,9 @@ const LAST_PAGE_COLLECTION = process.env.LAST_PAGE_COLLECTION ?? 'e2e_small';
 const LAST_PAGE_TOTAL = Number(process.env.LAST_PAGE_TOTAL ?? 26);
 /** One item whose only field is an image, for the library picker. */
 const IMAGE_COLLECTION = process.env.IMAGE_COLLECTION ?? 'e2e_images';
+/** One item whose field is a composite that itself holds an image array. */
+const COMPOSITE_COLLECTION = process.env.COMPOSITE_COLLECTION ?? 'e2e_composite';
+const COMPOSITE_ID = process.env.COMPOSITE_ID ?? 'e2e_gallery_block';
 
 /** A 1x1 PNG: enough for the upload path to be exercised for real. */
 const PNG_BASE64 =
@@ -49,6 +53,22 @@ const TEXT_SCHEMA = [
 const IMAGE_SCHEMA = [
   { name: 'photo', field_type: 'Image', required: false, width: 12, height: 1 },
   { name: 'gallery', field_type: { Array: ['Image'] }, required: false, width: 12, height: 1 },
+];
+const IMAGE_ARRAY_FIELD = {
+  name: 'images',
+  field_type: { Array: ['Image'] },
+  required: false,
+  width: 12,
+  height: 1,
+};
+const COMPOSITE_SCHEMA = [
+  {
+    name: 'block',
+    field_type: { CompositeField: { id: COMPOSITE_ID } },
+    required: false,
+    width: 12,
+    height: 1,
+  },
 ];
 
 const results = [];
@@ -78,16 +98,20 @@ async function api(method, path, body, token) {
   return text ? JSON.parse(text) : null;
 }
 
-/** Replace `name` with a fresh collection holding `count` items. */
-async function seedCollection(name, count, token, schema = TEXT_SCHEMA, item = null) {
-  const reset = await request.fetch(`${API}/models/collections/${name}`, {
+/** Delete `path` if it is there; a 404 is as good as a deletion. */
+async function deleteIfPresent(path, token) {
+  const response = await request.fetch(`${API}${path}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  // A missing collection is as good as a deleted one.
-  if (!reset.ok() && reset.status() !== 404) {
-    throw new Error(`could not reset ${name}: ${reset.status()}`);
+  if (!response.ok() && response.status() !== 404) {
+    throw new Error(`could not delete ${path}: ${response.status()}`);
   }
+}
+
+/** Replace `name` with a fresh collection holding `count` items. */
+async function seedCollection(name, count, token, schema = TEXT_SCHEMA, item = null) {
+  await deleteIfPresent(`/models/collections/${name}`, token);
 
   await api('POST', `/models/collections/${name}/schema`, schema, token);
   for (let index = 1; index <= count; index += 1) {
@@ -96,8 +120,24 @@ async function seedCollection(name, count, token, schema = TEXT_SCHEMA, item = n
   }
 }
 
+/**
+ * A collection whose field is a composite holding an image array.
+ *
+ * Order matters: the definition has to exist before a schema may reference it, and the
+ * collection referencing it has to be gone before the definition can be replaced.
+ */
+async function seedComposite(token) {
+  await deleteIfPresent(`/models/collections/${COMPOSITE_COLLECTION}`, token);
+  await deleteIfPresent(`/models/composite_fields/${COMPOSITE_ID}`, token);
+  await api('POST', `/models/composite_fields/${COMPOSITE_ID}`, [IMAGE_ARRAY_FIELD], token);
+  await seedCollection(COMPOSITE_COLLECTION, 1, token, COMPOSITE_SCHEMA, () => ({
+    block: { images: [] },
+  }));
+}
+
 async function seed() {
   const login = await api('POST', '/auth/login', { email: EMAIL, password: PASSWORD });
+  await seedComposite(login.token);
   await seedCollection(COLLECTION, TOTAL, login.token);
   await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
   await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({
@@ -307,6 +347,20 @@ try {
   const arrayItems = await page.locator('.array-item').count();
   check('画像配列に複数まとめて追加できる', arrayItems === 2, `${arrayItems} 件`);
 
+  // ...and takes an upload directly, without a detour through the library.
+  await page.setInputFiles('.array-actions input[type=file]', {
+    name: 'e2e-array.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(PNG_BASE64, 'base64'),
+  });
+  await page
+    .waitForFunction(() => document.querySelectorAll('.array-item').length === 3, null, {
+      timeout: 15000,
+    })
+    .catch(() => {});
+  const arrayAfterUpload = await page.locator('.array-item').count();
+  check('画像配列にその場でアップロードできる', arrayAfterUpload === 3, `${arrayItems} → ${arrayAfterUpload}`);
+
   await page.click('button:has-text("Save")');
   await page.waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
 
@@ -322,27 +376,67 @@ try {
     JSON.stringify(saved?.photo),
   );
   check(
-    '画像配列が複数まとめて保存される',
+    '画像配列がまとめて保存される',
     Array.isArray(saved?.gallery) &&
-      saved.gallery.length === 2 &&
+      saved.gallery.length === 3 &&
       saved.gallery.every((image) => image?.url?.startsWith('/images/')),
     JSON.stringify(saved?.gallery),
   );
 
+  // -------------------------------------------------------------- an image array inside a composite
+  await page.goto(`${BASE}/collections/${COMPOSITE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  const composite = page.locator('fieldset.composite');
+  await composite.locator('button.array-add').click();
+  await thumbs.first().waitFor({ timeout: 15000 });
+  await thumbs.nth(0).click();
+  await thumbs.nth(1).click();
+  await page.locator('button.array-add-selected').click();
+  await page
+    .waitForFunction(
+      () => document.querySelectorAll('fieldset.composite .array-item').length === 2,
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const compositeItems = await composite.locator('.array-item').count();
+  check('複合フィールド内の画像配列にも追加できる', compositeItems === 2, `${compositeItems} 件`);
+
+  await page.click('button:has-text("Save")');
+  await page.waitForURL(`${BASE}/collections/${COMPOSITE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  const compositeSaved = await api(
+    'GET',
+    `/models/collections/${COMPOSITE_COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  // A composite is read back wrapped as `{id, values}`.
+  const compositeImages = compositeSaved?.block?.values?.images ?? compositeSaved?.block?.images;
+  check(
+    '複合フィールド内の画像配列が保存される',
+    Array.isArray(compositeImages) && compositeImages.length === 2,
+    JSON.stringify(compositeImages),
+  );
+
   // -------------------------------------------------------------- delete them again
+  // Everything uploaded during this run goes, whether it came from the library screen or
+  // straight into an array, so the next run starts from the same place.
   await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
-  for (let remaining = imagesAfterUpload - 1; remaining >= imagesBefore; remaining -= 1) {
+  for (let guard = 0; guard < 10; guard += 1) {
+    const count = await page.locator('.library .image').count();
+    if (count <= imagesBefore) {
+      break;
+    }
     await page.locator('.library .image').first().locator('.remove').click();
     await page
       .waitForFunction(
         (expected) => document.querySelectorAll('.library .image').length === expected,
-        remaining,
+        count - 1,
         { timeout: 15000 },
       )
       .catch(() => {});
   }
   const imagesAfterDelete = await page.locator('.library .image').count();
-  check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesAfterUpload} → ${imagesAfterDelete}`);
+  check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
 
   check('ブラウザのコンソールエラーがない', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 } catch (error) {

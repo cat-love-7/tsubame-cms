@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
 import { errorMessage as message } from 'app/core/http-error';
@@ -296,6 +297,44 @@ export class ValueField implements OnInit, OnChanges {
     this.updateArray([...this.arrayItems(), ...images]);
     this.closePicker();
     this.errorChange.emit(null);
+  }
+
+  /**
+   * Upload files straight into an image array, without a detour through the library.
+   *
+   * They are uploaded one after another so the array keeps the order the files were
+   * chosen in. A failure part-way appends nothing (the files that did upload stay in the
+   * library, so they can be picked from there); retrying is the editor's decision.
+   */
+  onFilesSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    this.uploading.set(true);
+    this.errorChange.emit(null);
+    from(files)
+      .pipe(
+        concatMap((file) => this.images.uploadImage(file)),
+        toArray(),
+      )
+      .subscribe({
+        next: (uploaded) => {
+          this.uploading.set(false);
+          input.value = '';
+          this.updateArray([
+            ...this.arrayItems(),
+            // Mirror the shape an image value has.
+            ...uploaded.map((info) => ({ id: info.id, url: info.upload_url.split('?')[0] })),
+          ]);
+        },
+        error: (e) => {
+          this.uploading.set(false);
+          input.value = '';
+          this.errorChange.emit(`Upload failed: ${message(e)}`);
+        },
+      });
   }
 
   /** An array of images, which is edited with thumbnails instead of raw JSON. */
