@@ -3,6 +3,9 @@ root = true
 
 [*]
 charset = utf-8
+# LF everywhere, so the convention does not depend on the editor or the OS. See the
+# repository's .gitattributes for the same rule on the git side.
+end_of_line = lf
 indent_style = space
 indent_size = 2
 insert_final_newline = true

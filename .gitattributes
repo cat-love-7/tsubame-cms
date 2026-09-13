@@ -1,0 +1,19 @@
+# Line endings, pinned so they stop depending on who checks the repository out.
+#
+# Everything textual is stored as LF, in the working tree as well, which is what the
+# project's own files already use. Without this, a clone on Windows (core.autocrlf=true)
+# rewrites every file to CRLF and the next commit becomes a whole-repository diff.
+#
+# `text=auto` leaves anything git detects as binary alone; the patterns below make that
+# explicit for the types this project is likely to gain.
+* text=auto eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
