@@ -92,10 +92,10 @@ true/false, "password_reset_links": true/false}`。
       CI(`.github/workflows/ci.yml`: rust / frontend / e2e の 3 ジョブ)
       → 確認: スクリプトは手元で実行して確認済み。**ワークフロー自体はこの環境にランナーが
       無いため未検証**。
-- [x] `src/aws.rs` を追加し、「未実装」の `compile_error!` をそこへ移した(「1 つだけ選べ」
-      「0 個は駄目」のガードは `main.rs` のまま)
-      → 確認: 既定ビルドは通り、`--no-default-features` / `--no-default-features --features aws`
-      はそれぞれ想定のメッセージで拒否される。
+- [x] AWS アダプタの置き場を作った。**その後ワークスペース分割で形が変わった**(下記 P7):
+      バックエンドは feature ではなく **パッケージ**(`crates/aws`)になり、「1 つだけ選べ」
+      ガードも `compile_error!` も無くなった。選ぶのは `-p sl-cms-aws` / `-p sl-cms-on-premises`
+      という**ビルド対象の選択**そのものになる。
 - [x] AWS 用の設定を整理した。`Config` が `AWS_REGION` / `DYNAMODB_TABLE` / `S3_BUCKET` /
       `COGNITO_USER_POOL_ID` / `BOOTSTRAP_ADMIN_USERNAMES` を読み、`aws_settings()` が
       「起動に必要なもの」を検証して最初の不足を名指しする。JWKS の URL は region とプール ID から
@@ -107,9 +107,8 @@ true/false, "password_reset_links": true/false}`。
       → 確認: 既存の Webhook テスト(配信・再試行・切断時の挙動)がすべて通る。
 - [x] `aws.rs` に起動点の形(`aws::run`)を書き、`main.rs` の AWS 側の腕から呼ぶようにした。
       設定検証と「`ADMIN_*` は無視される」「`BOOTSTRAP_ADMIN_USERNAMES` が空」の警告まで
-      → 確認: ガードを一時的に外して `cargo test --no-default-features --features aws` を実行し、
-      **AWS 側のコードがコンパイルでき 181 件が通る**ことと、`aws_settings` のテストが動くことを
-      確認した(その後ガードは戻し、`--no-default-features --features aws` が拒否されることも再確認)。
+      → **完了**(設定は `crates/aws/src/settings.rs` に移り、`AwsSettings::from_env()` が
+      同じ検証をする。`the_jwks_url_is_derived_so_pool_and_region_cannot_disagree` など 4 件)。
 
 ### P1. DynamoDB アダプタ(本丸)
 
@@ -122,7 +121,7 @@ true/false, "password_reset_links": true/false}`。
       images 4 + S3)。実装は async で書き、同期トレイトへは `BlockingRuntime` で委譲する
       (経緯と順序は [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
       **HTTP の契約スイートが DynamoDB Local + MinIO に対して全部通る**
-      (`cargo test --no-default-features --features aws`、HTTP 統合テスト 43 件を含む 231 件)。
+      (`cargo test --workspace`、HTTP 契約スイート 43 件 × 2 バックエンドを含む 284 件)。
       実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから上記コマンド。
       エミュレータが無いときはエミュレータが要るテストだけ自分を飛ばす。
       押さえるべき点:
@@ -177,6 +176,30 @@ true/false, "password_reset_links": true/false}`。
       入れない**(ページに載った瞬間に期限切れになる)。署名が漏れていないこともテストで確認。
 - [ ] 配信は CloudFront にするか、バケットを公開読み取りにするか(Terraform 側で決める)
       → **完了条件**: staging で画像が表示され、E2E の画像チェックが通る。
+
+### P7. ワークスペース分割(2026-09、完了)
+
+feature での切り替えは「1 ビルド = 1 feature 集合」なので、共有層に `#[cfg]` が漏れる
+(`Storage` の二重定義、画像ルートの出し分け、テスト側の型エイリアスと `#![cfg]`)うえ、
+**1 コマンドで両バックエンドをテストできない**。境界をパッケージに移した:
+
+| パッケージ | 中身 | バイナリ |
+|---|---|---|
+| `crates/core` | models / repositories / services / http / auth / config / webhook | — |
+| `crates/on-premises` | rkv + ローカル画像 | `sl-cms` |
+| `crates/aws` | DynamoDB + S3(設定もここ) | `sl-cms-aws` |
+| `crates/tests` | 契約スイート(両アダプタに依存) | — |
+
+- **core に `cfg(feature = ...)` は 1 つも無い**。能力は feature ではなく**トレイト**と
+  **合成**で表す: `LocalImageBytes` は普通のトレイト、バイトを扱うルートは
+  `http::local_images` にあり、各バックエンドの `build_router` が載せるかどうかを決める。
+- 片側だけのビルドは `cargo build -p sl-cms-aws`(rkv をコンパイルしない。依存クレートは
+  519 ↔ 946)。`default-members` で素の `cargo build` / `cargo test` は on-premises のまま。
+- 契約スイートは `suite.rs` を 2 つのランナーが `include!` する形で、**1 コマンドで両方**に
+  対して走る(43 × 2)。バイトを扱う 3 件は `Backend::SERVES_IMAGE_BYTES` で自分を飛ばす。
+- AWS の契約スイートは**エミュレータが無ければ失敗する**(黙って通らない)。
+  `scripts/test-rust.sh` がポートを見てファイルごとスキップし、CI の `rust-aws` ジョブは
+  `docker-compose.yml` からエミュレータを起動して本気で走らせる。
 
 ### P3. Lambda 起動点
 

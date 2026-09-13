@@ -1,11 +1,10 @@
 # Continuous integration.
 #
-# The three suites are the same scripts a developer runs locally, so what passes here is what
-# passes on a laptop (and the other way round). The rust job also builds and tests the aws
-# adapter (`--no-default-features --features aws`). The contract suite runs against DynamoDB
-# Local and MinIO, and those tests skip themselves when nothing is listening, so the job needs
-# no services yet — a job that starts the emulators (and therefore actually exercises them on
-# every push) is worth adding, but it is not what makes the adapter correct locally.
+# Every job runs the same command a developer runs locally, so what passes here is what passes
+# on a laptop (and the other way round). There are two Rust jobs because the AWS adapter needs
+# emulators: the first runs the scripts/test-rust.sh suite (which skips the AWS half when
+# nothing is listening), and the second starts the emulators from the repository's own
+# docker-compose.yml and runs that half for real.
 name: CI
 
 on:
@@ -16,7 +15,7 @@ on:
 
 jobs:
   rust:
-    name: Rust (on-premises backend)
+    name: Rust (core, local adapter, binaries)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +23,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sl_cms
-      # Runs the suite and checks that a build with no backend (or with the unimplemented
-      # aws backend) is still refused.
       - run: scripts/test-rust.sh
+
+  rust-aws:
+    name: Rust (aws adapter, emulators)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sl_cms
+      # The same emulators a developer starts, from the same file: DynamoDB Local and MinIO.
+      - name: Start the emulators
+        run: docker compose -f sl_cms/docker-compose.yml up -d
+      - name: Wait for them to listen
+        run: |
+          for _ in $(seq 1 60); do
+            if (exec 3<>/dev/tcp/127.0.0.1/8000) 2>/dev/null && \
+               (exec 3<>/dev/tcp/127.0.0.1/9000) 2>/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose -f sl_cms/docker-compose.yml logs
+          exit 1
+      - name: The adapter's own tests and the contract suite against it
+        working-directory: sl_cms
+        run: |
+          cargo test -p sl-cms-aws
+          cargo test -p sl-cms-tests --test aws
+      - name: Stop the emulators
+        if: always()
+        run: docker compose -f sl_cms/docker-compose.yml down -v
 
   frontend:
     name: Angular

@@ -12,7 +12,10 @@
 
 ## 前提
 
-1. バックエンド: `cargo run`(127.0.0.1:8080、データは `./data` に作られる)
+1. バックエンド: `cargo run --manifest-path sl_cms/Cargo.toml`(127.0.0.1:8080、データは
+   `DATA_ROOT` の下。未設定なら起動したディレクトリの `./data`)。`--manifest-path` が指すのは
+   ワークスペースなので、`default-members` の指定で on-premises のバイナリ(`sl-cms`)が起動する。
+   `scripts/test-e2e.sh` はこれに `DATA_ROOT` と `JWT_SECRET` を渡して起動する。
 2. 開発サーバ: `cd frontend/sl_cms && npm start`(localhost:4200、`/api` をバックエンドへ転送)
 3. Chromium(初回のみ): `npx playwright install chromium`
 
