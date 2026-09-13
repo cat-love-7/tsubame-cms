@@ -2,7 +2,7 @@ use rkv::{Rkv, SingleStore, StoreOptions};
 use rkv::backend::{SafeModeDatabase, SafeModeEnvironment};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 pub mod composite_field_repository;
 pub mod collection_repository;
@@ -35,6 +35,19 @@ pub struct Repository {
     pub rkv: Arc<RwLock<Rkv<SafeModeEnvironment>>>,
     pub counter_store: SingleStore<SafeModeDatabase>,
 
+    /// Held for the whole of every storage operation.
+    ///
+    /// LMDB refuses `mdb_dbi_open` — which rkv performs on every `open_single` — while a
+    /// transaction is active, and this adapter opens its stores per operation rather than
+    /// caching handles. Two requests in flight therefore used to make one of them fail with
+    /// "attempted to open DB during transaction"; the admin UI does exactly that, loading
+    /// the item window, the statuses and the navigation at once.
+    ///
+    /// Serialising costs nothing at this adapter's scale: the operations last microseconds
+    /// and LMDB takes a single writer regardless. The AWS adapter is the one meant to scale
+    /// out, and it does not share this constraint.
+    ops: Mutex<()>,
+
     /// One-shot upload tokens: `token -> authorised file name`.
     ///
     /// This deliberately no longer lives in the HTTP layer, and storing the file name
@@ -54,9 +67,18 @@ impl Repository {
         Repository {
             rkv,
             counter_store,
+            ops: Mutex::new(()),
             upload_keys: Arc::new(RwLock::new(HashMap::new())),
             images_dir,
         }
+    }
+
+    /// Take the storage lock for the duration of one operation.
+    ///
+    /// A panic while holding it poisons the mutex; recovering instead of propagating keeps
+    /// a single bad request from turning every later request into a 500.
+    pub(crate) fn begin(&self) -> MutexGuard<'_, ()> {
+        self.ops.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub(crate) fn images_dir(&self) -> &Path {

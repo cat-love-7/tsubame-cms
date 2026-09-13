@@ -2092,3 +2092,56 @@ async fn saving_a_single_page_records_when_it_changed() {
     assert_eq!(body["values"]["title"], "Home again");
     assert!(body["updated_at"].is_string());
 }
+
+// ------------------------------------------------------------------------- concurrency
+
+/// The admin UI loads a page with several requests in flight at once: the item window, the
+/// statuses, and the navigation. LMDB refuses to open a database while another transaction
+/// is active, so the adapter has to keep storage operations from overlapping. When it did
+/// not, a page load answered 500 ("attempted to open DB during transaction").
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_requests_do_not_break_the_storage_environment() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let created = create_published_items(&app, "blog", 3).await;
+
+    // The window the UI opens, split across the worker threads the way a browser's
+    // separate connections are.
+    let targets = [
+        "/models/collections/blog/items?limit=25&offset=0",
+        "/models/collections/blog/items/metadata",
+        "/models/collections/blog/items?limit=25&offset=0",
+        "/models/collections",
+        "/models/single_pages",
+        "/models/collections/blog/schema",
+    ];
+
+    // Several rounds: a race that misses in one may land in the next.
+    for round in 0..5 {
+        let mut handles = Vec::new();
+        for target in targets {
+            let router = app.router.clone();
+            let token = token.clone();
+            handles.push(tokio::spawn(async move {
+                send(&router, Method::GET, target, Some(&token), None).await
+            }));
+        }
+
+        for handle in handles {
+            let (status, body) = handle.await.expect("the request task panicked");
+            assert_eq!(status, StatusCode::OK, "round {round}: {body}");
+        }
+    }
+
+    // The items are still readable afterwards.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items?limit=25&offset=0",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body.as_array().unwrap().len(), created.len());
+}

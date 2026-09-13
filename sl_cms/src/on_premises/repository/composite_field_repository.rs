@@ -8,6 +8,7 @@ use std::error::Error;
 
 impl CompositeFieldRepository for Repository {
     fn list_composite_field_schemas(&self) -> Result<HashMap<CompositeFieldId,CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("composite_field_schema", StoreOptions::create())?;
         let reader = env.read()?;
@@ -22,6 +23,7 @@ impl CompositeFieldRepository for Repository {
         Ok(schemas)
     }
     fn get_composite_field_schema(&self, id: &CompositeFieldId) -> Result<Option<CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("composite_field_schema", StoreOptions::create())?;
         let reader = env.read()?;
@@ -34,6 +36,7 @@ impl CompositeFieldRepository for Repository {
         }
     }
     fn add_composite_field_schema(&self,id: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
         let store = env.open_single("composite_field_schema", StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
@@ -43,6 +46,7 @@ impl CompositeFieldRepository for Repository {
         Ok(())
     }
     fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("composite_field_schema", StoreOptions::create())?;
         let mut writer = env.write()?;

@@ -8,6 +8,7 @@ use std::error::Error;
 
 impl SinglePageRepository for Repository {
     fn get_single_page_schema(&self, page_name: &SinglePageName) -> Result<Option<SinglePageSchema>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("single_page_schema", StoreOptions::create())?;
         let reader = env.read()?;
@@ -20,6 +21,7 @@ impl SinglePageRepository for Repository {
         }
     }
     fn list_all_page_names(&self) -> Result<Vec<SinglePageName>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("single_page_schema", StoreOptions::create())?;
         let reader = env.read()?;
@@ -32,6 +34,7 @@ impl SinglePageRepository for Repository {
         Ok(pages)
     }
     fn add_single_page_schema(&self, page_name: &SinglePageName, schema: &SinglePageSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
         let store = env.open_single("single_page_schema", StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
@@ -41,6 +44,7 @@ impl SinglePageRepository for Repository {
         Ok(())
     }
     fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("single_page_schema", StoreOptions::create())?;
         let item_store = env.open_single("single_page_item", StoreOptions::create())?;
@@ -65,6 +69,7 @@ impl SinglePageRepository for Repository {
     }
 
     fn get_page_metadata(&self, page_name: &SinglePageName) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
@@ -76,6 +81,7 @@ impl SinglePageRepository for Repository {
     }
 
     fn set_page_metadata(&self, page_name: &SinglePageName, metadata: &ItemMetadata) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let key = page_metadata_key(page_name.as_str());
@@ -85,6 +91,7 @@ impl SinglePageRepository for Repository {
         Ok(())
     }
     fn get_single_page_item(&self, page_name: &SinglePageName) -> Result<Option<SinglePageItem>,Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let collection_store = env.open_single("single_page_item", StoreOptions::create())?;
         let reader = env.read()?;
@@ -97,6 +104,7 @@ impl SinglePageRepository for Repository {
         }
     }
     fn update_single_page_item(&self, page_name: &SinglePageName, item_data: &SinglePageItem) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let collection_store = env.open_single("single_page_item", StoreOptions::create())?;
         let mut writer = env.write()?;

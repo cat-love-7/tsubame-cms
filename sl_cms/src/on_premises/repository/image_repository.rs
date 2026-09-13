@@ -35,7 +35,9 @@ fn sanitize_ext(ext: &str) -> Option<String> {
 }
 
 impl Repository {
-    fn get_image_data(&self, id: &ImageID) -> Result<Option<ImageData>, BoxError> {
+    /// The lookup itself, without the storage lock: `delete_image` already holds it, and a
+    /// `std::sync::Mutex` is not reentrant.
+    fn image_data(&self, id: &ImageID) -> Result<Option<ImageData>, BoxError> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
         let reader = env.read()?;
@@ -46,6 +48,11 @@ impl Repository {
             }
             _ => Ok(None),
         }
+    }
+
+    fn get_image_data(&self, id: &ImageID) -> Result<Option<ImageData>, BoxError> {
+        let _guard = self.begin();
+        self.image_data(id)
     }
 
     /// Resolve `file_name` to a path inside the configured images directory.
@@ -73,6 +80,7 @@ impl ImageRepository for Repository {
     }
 
     fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
         let reader = env.read()?;
@@ -98,6 +106,7 @@ impl ImageRepository for Repository {
     }
 
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
+        let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
         // Write transaction first, then the read snapshot that reads the id counter,
@@ -136,7 +145,8 @@ impl ImageRepository for Repository {
     }
 
     fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
-        let image = self.get_image_data(id)?.ok_or("Image not found")?;
+        let _guard = self.begin();
+        let image = self.image_data(id)?.ok_or("Image not found")?;
         // Remove the stored bytes first; a missing file is not an error (the metadata
         // may exist without bytes if an upload never completed).
         if let Ok(path) = self.image_path(&image.file_name) {
