@@ -18,6 +18,7 @@ compile_error!(
 );
 
 mod app_module;
+mod auth;
 mod config;
 mod http;
 mod models;
@@ -45,7 +46,19 @@ async fn main() {
 #[cfg(feature = "on-premises")]
 async fn run_on_premises() -> Result<(), Box<dyn std::error::Error>> {
     let config = config::Config::from_env()?;
+
+    if config.jwt_secret_is_ephemeral {
+        tracing::warn!(
+            "JWT_SECRET is not set: using a random secret for this process only, so issued \
+             tokens stop working after a restart. Set JWT_SECRET (at least {} characters) \
+             to make them stable.",
+            config::MIN_JWT_SECRET_LEN
+        );
+    }
+
     let module = std::sync::Arc::new(on_premises::build_app_module(&config));
+    bootstrap_admin(&module, &config)?;
+
     let router = http::router(module, http::cors_layer(&config.cors_allowed_origins));
 
     let addr = config.socket_addr()?;
@@ -53,6 +66,24 @@ async fn run_on_premises() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("listening on http://{addr}");
 
     axum::serve(listener, router).await?;
+    Ok(())
+}
+
+/// Create the initial administrator when the user store is empty.
+///
+/// The server refuses to start in that state without credentials, rather than coming up
+/// with an unauthenticated CMS.
+#[cfg(feature = "on-premises")]
+fn bootstrap_admin(
+    module: &app_module::AppModule<on_premises::repository::Repository>,
+    config: &config::Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(user) = module.auth_service.bootstrap_admin(
+        config.admin_email.as_deref(),
+        config.admin_password.as_deref(),
+    )? {
+        tracing::info!("created the initial administrator account: {}", user.email);
+    }
     Ok(())
 }
 

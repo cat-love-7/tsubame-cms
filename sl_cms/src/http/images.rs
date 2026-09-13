@@ -10,16 +10,20 @@ use crate::http::AppState;
 use crate::models::error::HttpError;
 use crate::models::image::{is_safe_file_name, is_safe_image_ext, NewImageRequest};
 
-pub fn routes<R: Storage>() -> Router<AppState<R>> {
+/// Image bytes are served without a token: an `<img>` tag cannot send an
+/// `Authorization` header, and uploaded media is content rather than API data.
+pub fn public_routes<R: Storage>() -> Router<AppState<R>> {
+    Router::new().route("/images/{file_name}", get(get_image_file::<R>))
+}
+
+/// Uploading requires authentication (enforced by the auth middleware).
+pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
         .route(
             "/models/images/get_upload_url",
             post(generate_image_upload_url::<R>),
         )
-        .route(
-            "/images/{file_name}",
-            get(get_image_file::<R>).put(put_image_file::<R>),
-        )
+        .route("/images/{file_name}", axum::routing::put(put_image_file::<R>))
 }
 
 /// Ask for a place to upload an image to.

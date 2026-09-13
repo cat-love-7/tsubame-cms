@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use crate::auth::token::TokenIssuer;
+use crate::auth::AuthService;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::single_page_repository::SinglePageRepository;
+use crate::repositories::user_repository::UserRepository;
 use crate::services::collection_service::CollectionService;
 use crate::services::composite_field_service::CompositeFieldService;
 use crate::services::image_service::ImageService;
@@ -18,6 +21,7 @@ pub trait Storage:
     + CompositeFieldRepository
     + SinglePageRepository
     + ImageRepository
+    + UserRepository
     + Send
     + Sync
     + 'static
@@ -29,6 +33,7 @@ impl<T> Storage for T where
         + CompositeFieldRepository
         + SinglePageRepository
         + ImageRepository
+        + UserRepository
         + Send
         + Sync
         + 'static
@@ -41,10 +46,11 @@ pub struct AppModule<R: Storage> {
     pub single_page_service: SinglePageService<R, R, R>,
     pub composite_field_service: CompositeFieldService<R>,
     pub image_service: ImageService<R>,
+    pub auth_service: AuthService<R>,
 }
 
 impl<R: Storage> AppModule<R> {
-    pub fn new(repository: Arc<R>) -> Self {
+    pub fn new(repository: Arc<R>, token_issuer: TokenIssuer) -> Self {
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
@@ -57,7 +63,8 @@ impl<R: Storage> AppModule<R> {
                 repository.clone(),
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),
-            image_service: ImageService::new(repository),
+            image_service: ImageService::new(repository.clone()),
+            auth_service: AuthService::new(repository, token_issuer),
         }
     }
 }
