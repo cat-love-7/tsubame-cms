@@ -27,6 +27,12 @@ const LIBRARY: ImageEntry[] = [
     original_filename: 'logo.png',
     uploaded_at: '2024-01-01T00:00:00Z',
   },
+  {
+    id: 4,
+    url: '/images/photo.png',
+    original_filename: 'photo.png',
+    uploaded_at: '2024-01-02T00:00:00Z',
+  },
 ];
 
 /** Counts library reads, so the picker can be checked for loading lazily. */
@@ -202,12 +208,12 @@ describe('ValueField', () => {
     const component = create(field('photo', 'Image'));
     expect(images.listCalls).toBe(0);
 
-    component.togglePicker();
+    component.openLibrary(false);
     expect(images.listCalls).toBe(1);
 
     // Closing and reopening reuses what was already fetched.
-    component.togglePicker();
-    component.togglePicker();
+    component.closePicker();
+    component.openLibrary(false);
     expect(images.listCalls).toBe(1);
   });
 
@@ -216,11 +222,11 @@ describe('ValueField', () => {
     const changes: FieldValue[] = [];
     component.valueChange.subscribe((value) => changes.push(value));
 
-    component.togglePicker();
+    component.openLibrary(false);
     fixture.detectChanges();
 
     const thumbs = fixture.nativeElement.querySelectorAll('.thumb') as NodeListOf<HTMLButtonElement>;
-    expect(thumbs.length).toBe(1);
+    expect(thumbs.length).toBe(2);
 
     thumbs[0].click();
     fixture.detectChanges();
@@ -229,5 +235,104 @@ describe('ValueField', () => {
     expect(changes).toEqual([{ id: 3, url: '/images/logo.png' }]);
     expect(component.value).toEqual({ id: 3, url: '/images/logo.png' });
     expect(component.pickerOpen()).toBe(false);
+  });
+
+  it('shows an image array as thumbnails, not as JSON', () => {
+    const component = create(field('covers', { Array: ['Image'] }), [
+      { id: 3, url: '/images/logo.png' },
+    ]);
+
+    expect(component.isImageArray()).toBe(true);
+    const items = fixture.nativeElement.querySelectorAll('.array-item');
+    expect(items.length).toBe(1);
+    expect(items[0].querySelector('img')?.getAttribute('src')).toBe('/api/images/logo.png');
+    // The JSON editor is behind the toggle, not in the way.
+    expect(query('textarea')).toBeFalsy();
+  });
+
+  it('keeps the JSON editor for arrays that are not images', () => {
+    const component = create(field('numbers', { Array: ['Number'] }), [1, 2]);
+
+    expect(component.isImageArray()).toBe(false);
+    expect(query('textarea')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('.array-item').length).toBe(0);
+  });
+
+  it('adds several images from the library at once', () => {
+    const component = create(field('covers', { Array: ['Image'] }), []);
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    (query('button.array-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    // Multi mode: clicking ticks rather than choosing, until the add button is pressed.
+    const thumbs = fixture.nativeElement.querySelectorAll('.thumb') as NodeListOf<HTMLButtonElement>;
+    thumbs[0].click();
+    thumbs[1].click();
+    fixture.detectChanges();
+
+    expect(component.selected()).toEqual([3, 4]);
+    expect(changes).toEqual([]);
+
+    (query('button.array-add-selected') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(changes).toEqual([
+      [
+        { id: 3, url: '/images/logo.png' },
+        { id: 4, url: '/images/photo.png' },
+      ],
+    ]);
+    expect(fixture.nativeElement.querySelectorAll('.array-item').length).toBe(2);
+    expect(component.pickerOpen()).toBe(false);
+  });
+
+  it('appends to the images an array already holds', () => {
+    const component = create(field('covers', { Array: ['Image'] }), [
+      { id: 4, url: '/images/photo.png' },
+    ]);
+
+    (query('button.array-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (query('button.array-add-selected') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(component.value).toEqual([
+      { id: 4, url: '/images/photo.png' },
+      { id: 3, url: '/images/logo.png' },
+    ]);
+  });
+
+  it('reorders and removes images in an array', () => {
+    const component = create(field('covers', { Array: ['Image'] }), [
+      { id: 3, url: '/images/logo.png' },
+      { id: 4, url: '/images/photo.png' },
+    ]);
+
+    (query('button[aria-label="move image 1 earlier"]') as HTMLButtonElement).click();
+    expect(component.value).toEqual([
+      { id: 4, url: '/images/photo.png' },
+      { id: 3, url: '/images/logo.png' },
+    ]);
+
+    fixture.detectChanges();
+    (query('button[aria-label="remove image 0"]') as HTMLButtonElement).click();
+    expect(component.value).toEqual([{ id: 3, url: '/images/logo.png' }]);
+  });
+
+  it('keeps the JSON view in step with the thumbnails', () => {
+    const component = create(field('covers', { Array: ['Image'] }), []);
+
+    (query('button.array-add') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (query('button.array-add-selected') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(component.arrayText).toBe('[{"id":3,"url":"/images/logo.png"}]');
   });
 });

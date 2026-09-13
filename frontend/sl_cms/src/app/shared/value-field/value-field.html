@@ -2,6 +2,23 @@
   {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
 </span>
 
+<!-- Array values are edited as JSON: always for the plain array types, and for an image
+     array as a fallback next to the thumbnails. -->
+<ng-template #jsonArray>
+  <mat-form-field appearance="fill" class="full-width">
+    <textarea
+      matInput
+      rows="3"
+      [name]="field.name"
+      [disabled]="disabled"
+      [ngModel]="arrayText"
+      (ngModelChange)="onArrayTextChange($event)"
+      placeholder="JSON array, e.g. [1, 2]"
+    ></textarea>
+    <mat-hint>Array values are edited as JSON.</mat-hint>
+  </mat-form-field>
+</ng-template>
+
 @switch (kind()) {
   @case ('Text') {
     <mat-form-field appearance="fill" class="full-width">
@@ -88,18 +105,74 @@
     </mat-form-field>
   }
   @case ('Array') {
-    <mat-form-field appearance="fill" class="full-width">
-      <textarea
-        matInput
-        rows="3"
-        [name]="field.name"
-        [disabled]="disabled"
-        [ngModel]="arrayText"
-        (ngModelChange)="onArrayTextChange($event)"
-        placeholder="JSON array, e.g. [1, 2]"
-      ></textarea>
-      <mat-hint>Array values are edited as JSON.</mat-hint>
-    </mat-form-field>
+    @if (isImageArray()) {
+      <!-- An image array is edited with thumbnails and the library, since typing image
+           ids by hand is what the JSON editor was for and nobody should have to. -->
+      <div class="image-array">
+        <div class="array-items">
+          @for (image of arrayImages(); track $index) {
+            <figure class="array-item">
+              @if (image.url) {
+                <img [src]="imageUrl(image.url)" [alt]="'image ' + image.id" loading="lazy" />
+              } @else {
+                <!-- A bare id has no URL to show until the item is saved and read back. -->
+                <span class="placeholder">id {{ image.id ?? '?' }}</span>
+              }
+              @if (!disabled) {
+                <figcaption>
+                  <button
+                    matIconButton
+                    type="button"
+                    (click)="moveImage($index, -1)"
+                    [disabled]="$first"
+                    [attr.aria-label]="'move image ' + $index + ' earlier'"
+                  >
+                    <mat-icon>chevron_left</mat-icon>
+                  </button>
+                  <button
+                    matIconButton
+                    type="button"
+                    (click)="moveImage($index, 1)"
+                    [disabled]="$last"
+                    [attr.aria-label]="'move image ' + $index + ' later'"
+                  >
+                    <mat-icon>chevron_right</mat-icon>
+                  </button>
+                  <button
+                    matIconButton
+                    type="button"
+                    (click)="removeImageAt($index)"
+                    [attr.aria-label]="'remove image ' + $index"
+                  >
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </figcaption>
+              }
+            </figure>
+          } @empty {
+            <span class="note">No images yet.</span>
+          }
+        </div>
+
+        @if (!disabled) {
+          <div class="array-actions">
+            <button matButton type="button" class="array-add" (click)="openLibrary(true)">
+              <mat-icon>add_photo_alternate</mat-icon>
+              Add images
+            </button>
+            <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
+              {{ jsonMode() ? 'Hide JSON' : 'Edit as JSON' }}
+            </button>
+          </div>
+        }
+
+        @if (jsonMode()) {
+          <ng-container *ngTemplateOutlet="jsonArray" />
+        }
+      </div>
+    } @else {
+      <ng-container *ngTemplateOutlet="jsonArray" />
+    }
   }
   @case ('Image') {
     <div class="image-field">
@@ -115,31 +188,14 @@
             [disabled]="uploading()"
             (change)="onFileSelected($event)"
           />
-          <button matButton type="button" (click)="togglePicker()">
+          <button matButton type="button" (click)="openLibrary(false)">
             <mat-icon>photo_library</mat-icon>
-            {{ pickerOpen() ? 'Close library' : 'Choose existing' }}
+            Choose existing
           </button>
         </div>
       }
       @if (uploading()) {
         <span>Uploading…</span>
-      }
-      @if (pickerOpen()) {
-        <div class="library">
-          @for (image of library(); track image.id) {
-            <button
-              type="button"
-              class="thumb"
-              (click)="chooseImage(image)"
-              [attr.aria-label]="'use image ' + image.id"
-              [title]="image.original_filename"
-            >
-              <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
-            </button>
-          } @empty {
-            <span class="note">No images yet — upload one first.</span>
-          }
-        </div>
       }
     </div>
   }
@@ -166,5 +222,43 @@
   }
   @default {
     <p class="note">Unsupported field type.</p>
+  }
+}
+
+<!-- The library, shared by the single image field and the image array. -->
+@if (pickerOpen()) {
+  <div class="library" [class.multi]="pickerMulti()">
+    @for (image of library(); track image.id) {
+      <button
+        type="button"
+        class="thumb"
+        [class.selected]="isSelected(image.id)"
+        (click)="onThumbnail(image)"
+        [attr.aria-label]="(pickerMulti() ? 'select image ' : 'use image ') + image.id"
+        [title]="image.original_filename"
+      >
+        <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
+        @if (pickerMulti() && isSelected(image.id)) {
+          <mat-icon class="tick">check_circle</mat-icon>
+        }
+      </button>
+    } @empty {
+      <span class="note">No images yet — upload one first.</span>
+    }
+  </div>
+
+  @if (pickerMulti()) {
+    <div class="picker-actions">
+      <button
+        matButton
+        type="button"
+        class="array-add-selected"
+        [disabled]="selected().length === 0"
+        (click)="addSelectedImages()"
+      >
+        Add {{ selected().length }} image{{ selected().length === 1 ? '' : 's' }}
+      </button>
+      <button matButton type="button" (click)="closePicker()">Cancel</button>
+    </div>
   }
 }

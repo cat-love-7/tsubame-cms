@@ -1,14 +1,5 @@
-import {
-  Component,
-  EventEmitter,
-  Input,
-  OnChanges,
-  OnInit,
-  Output,
-  SimpleChanges,
-  inject,
-  signal,
-} from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -65,6 +56,7 @@ type FieldKind =
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    NgTemplateOutlet,
     ValueField,
   ],
   templateUrl: './value-field.html',
@@ -95,8 +87,14 @@ export class ValueField implements OnInit, OnChanges {
   /** Images already uploaded, so one can be reused instead of uploaded again. */
   public library = signal<ImageEntry[]>([]);
   public pickerOpen = signal(false);
+  /** True when the open picker collects several images (for an image array). */
+  public pickerMulti = signal(false);
+  /** Ids ticked in the multi-image picker. */
+  public selected = signal<number[]>([]);
   /** The library is fetched when the picker is first opened, and not before. */
   private libraryLoaded = false;
+  /** An image array is shown as thumbnails unless the JSON view is asked for. */
+  public jsonMode = signal(false);
 
   /** The referenced composite's sub-schema, or null when it is not defined. */
   public compositeSchema = signal<FieldSchema[] | null>(null);
@@ -247,11 +245,12 @@ export class ValueField implements OnInit, OnChanges {
     });
   }
 
-  /** Show the library so an already uploaded image can be picked. */
-  togglePicker() {
-    const opening = !this.pickerOpen();
-    this.pickerOpen.set(opening);
-    if (!opening || this.libraryLoaded) {
+  /** Show the library: `multi` collects several images at once (an image array). */
+  openLibrary(multi: boolean) {
+    this.pickerMulti.set(multi);
+    this.selected.set([]);
+    this.pickerOpen.set(true);
+    if (this.libraryLoaded) {
       return;
     }
     this.images.listImages().subscribe({
@@ -263,11 +262,96 @@ export class ValueField implements OnInit, OnChanges {
     });
   }
 
+  closePicker() {
+    this.pickerOpen.set(false);
+    this.selected.set([]);
+  }
+
+  /** A thumbnail click: single mode uses it, multi mode ticks it. */
+  onThumbnail(image: ImageEntry) {
+    if (!this.pickerMulti()) {
+      this.chooseImage(image);
+      return;
+    }
+    this.selected.update((ids) =>
+      ids.includes(image.id) ? ids.filter((id) => id !== image.id) : [...ids, image.id],
+    );
+  }
+
+  isSelected(id: number): boolean {
+    return this.selected().includes(id);
+  }
+
   /** Use a library image; the value keeps the same shape an upload produces. */
   chooseImage(image: ImageEntry) {
     this.update({ id: image.id, url: image.url });
-    this.pickerOpen.set(false);
+    this.closePicker();
     this.errorChange.emit(null);
+  }
+
+  /** Append the ticked images, keeping the order the library lists them in. */
+  addSelectedImages() {
+    const chosen = this.library().filter((image) => this.selected().includes(image.id));
+    const images = chosen.map((image) => ({ id: image.id, url: image.url }));
+    this.updateArray([...this.arrayItems(), ...images]);
+    this.closePicker();
+    this.errorChange.emit(null);
+  }
+
+  /** An array of images, which is edited with thumbnails instead of raw JSON. */
+  isImageArray(): boolean {
+    const type = this.field.field_type;
+    return (
+      isArrayFieldSchema(type) && type.Array.length > 0 && type.Array.every((item) => item === 'Image')
+    );
+  }
+
+  /**
+   * The current array value as images.
+   *
+   * A bare id (which the JSON view accepts, since an image id is a number) has no URL to
+   * show until the item is saved and read back, so it renders as a placeholder.
+   */
+  arrayImages(): { id: number | null; url: string }[] {
+    return this.arrayItems().map((element) => {
+      if (typeof element === 'number') {
+        return { id: element, url: '' };
+      }
+      if (element !== null && typeof element === 'object') {
+        const record = element as { id?: unknown; url?: unknown };
+        return {
+          id: typeof record.id === 'number' ? record.id : null,
+          url: typeof record.url === 'string' ? record.url : '',
+        };
+      }
+      return { id: null, url: '' };
+    });
+  }
+
+  removeImageAt(index: number) {
+    const items = this.arrayItems();
+    items.splice(index, 1);
+    this.updateArray(items);
+  }
+
+  moveImage(index: number, delta: number) {
+    const items = this.arrayItems();
+    const target = index + delta;
+    if (target < 0 || target >= items.length) {
+      return;
+    }
+    [items[index], items[target]] = [items[target], items[index]];
+    this.updateArray(items);
+  }
+
+  private arrayItems(): unknown[] {
+    return Array.isArray(this.value) ? [...(this.value as unknown[])] : [];
+  }
+
+  /** Replace the array value and keep the JSON view in step with it. */
+  private updateArray(items: unknown[]) {
+    this.arrayText = JSON.stringify(items);
+    this.update(items as FieldValue);
   }
 
   private loadCompositeSchema() {

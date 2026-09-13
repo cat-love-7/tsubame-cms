@@ -14,6 +14,7 @@
  *   - deleting the only row of the last page, which has to fall back a page
  *   - the image library: uploading, serving and deleting an image
  *   - picking that image from the library while editing content, and saving it
+ *   - adding several images to an image array at once, and saving them in order
  *   - no console errors while all of that happens
  *
  * It seeds its own data (`e2e_blog`, `e2e_small`, `e2e_images`) and recreates those
@@ -44,8 +45,10 @@ const PNG_BASE64 =
 const TEXT_SCHEMA = [
   { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1 },
 ];
+/** One single image, and one array of them: the two ways an image field is used. */
 const IMAGE_SCHEMA = [
   { name: 'photo', field_type: 'Image', required: false, width: 12, height: 1 },
+  { name: 'gallery', field_type: { Array: ['Image'] }, required: false, width: 12, height: 1 },
 ];
 
 const results = [];
@@ -97,7 +100,10 @@ async function seed() {
   const login = await api('POST', '/auth/login', { email: EMAIL, password: PASSWORD });
   await seedCollection(COLLECTION, TOTAL, login.token);
   await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
-  await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({ photo: null }));
+  await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({
+    photo: null,
+    gallery: [],
+  }));
   return login.token;
 }
 
@@ -240,32 +246,36 @@ try {
   await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
   const imagesBefore = await page.locator('.library .image').count();
 
-  // Upload through the same hidden file input the button drives.
-  await page.setInputFiles('input[type=file]', {
-    name: 'e2e.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from(PNG_BASE64, 'base64'),
-  });
-  await page
-    .waitForFunction(
-      (expected) => document.querySelectorAll('.library .image').length === expected + 1,
-      imagesBefore,
-      { timeout: 15000 },
-    )
-    .catch(() => {});
+  // Upload twice, so the image array has something to choose between. Each upload goes
+  // through the same hidden file input the button drives.
+  for (const name of ['e2e-1.png', 'e2e-2.png']) {
+    const expected = (await page.locator('.library .image').count()) + 1;
+    await page.setInputFiles('input[type=file]', {
+      name,
+      mimeType: 'image/png',
+      buffer: Buffer.from(PNG_BASE64, 'base64'),
+    });
+    await page
+      .waitForFunction(
+        (count) => document.querySelectorAll('.library .image').length === count,
+        expected,
+        { timeout: 15000 },
+      )
+      .catch(() => {});
+  }
   const imagesAfterUpload = await page.locator('.library .image').count();
   check(
     '画像をアップロードできる',
-    imagesAfterUpload === imagesBefore + 1,
+    imagesAfterUpload === imagesBefore + 2,
     `${imagesBefore} → ${imagesAfterUpload}`,
   );
 
-  // The library is newest first, so the upload is the first card.
+  // The library is newest first, so the last upload is the first card.
   const uploadedCard = page.locator('.library .image').first();
   const uploadedId = (await uploadedCard.locator('.meta').textContent())?.trim();
   check(
     'アップロードした画像が名前つきで並ぶ',
-    Boolean((await uploadedCard.locator('.name').textContent())?.includes('e2e.png')),
+    Boolean((await uploadedCard.locator('.name').textContent())?.includes('e2e-2.png')),
     uploadedId,
   );
 
@@ -273,15 +283,30 @@ try {
   const servedStatus = await page.evaluate(async (src) => (await fetch(src)).status, imageSource);
   check('画像の実体が配信される', servedStatus === 200, `${imageSource} → ${servedStatus}`);
 
-  // -------------------------------------------------------------- pick it while editing content
+  // -------------------------------------------------------------- pick images while editing
   await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Choose existing")').click();
   const thumbs = page.locator('.thumb');
   await thumbs.first().waitFor({ timeout: 15000 });
   const thumbCount = await thumbs.count();
-  check('編集中に既存画像を一覧できる', thumbCount >= 1, `${thumbCount} 件`);
+  check('編集中に既存画像を一覧できる', thumbCount >= 2, `${thumbCount} 件`);
 
   await thumbs.first().click();
+
+  // The image array takes several at once, through the same library.
+  await page.locator('button.array-add').click();
+  await thumbs.nth(0).click();
+  await thumbs.nth(1).click();
+  await page.locator('button.array-add-selected').click();
+  // Give the re-render a moment: `count()` does not wait for change detection.
+  await page
+    .waitForFunction(() => document.querySelectorAll('.array-item').length === 2, null, {
+      timeout: 10000,
+    })
+    .catch(() => {});
+  const arrayItems = await page.locator('.array-item').count();
+  check('画像配列に複数まとめて追加できる', arrayItems === 2, `${arrayItems} 件`);
+
   await page.click('button:has-text("Save")');
   await page.waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
 
@@ -296,17 +321,26 @@ try {
     typeof saved?.photo === 'object' && saved.photo !== null && saved.photo.url === imageSource?.replace('/api', ''),
     JSON.stringify(saved?.photo),
   );
+  check(
+    '画像配列が複数まとめて保存される',
+    Array.isArray(saved?.gallery) &&
+      saved.gallery.length === 2 &&
+      saved.gallery.every((image) => image?.url?.startsWith('/images/')),
+    JSON.stringify(saved?.gallery),
+  );
 
-  // -------------------------------------------------------------- delete it again
+  // -------------------------------------------------------------- delete them again
   await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
-  await page.locator('.library .image').first().locator('.remove').click();
-  await page
-    .waitForFunction(
-      (expected) => document.querySelectorAll('.library .image').length === expected,
-      imagesBefore,
-      { timeout: 15000 },
-    )
-    .catch(() => {});
+  for (let remaining = imagesAfterUpload - 1; remaining >= imagesBefore; remaining -= 1) {
+    await page.locator('.library .image').first().locator('.remove').click();
+    await page
+      .waitForFunction(
+        (expected) => document.querySelectorAll('.library .image').length === expected,
+        remaining,
+        { timeout: 15000 },
+      )
+      .catch(() => {});
+  }
   const imagesAfterDelete = await page.locator('.library .image').count();
   check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesAfterUpload} → ${imagesAfterDelete}`);
 
