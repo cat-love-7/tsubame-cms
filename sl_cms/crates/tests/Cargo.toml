@@ -1,0 +1,22 @@
+# The contract suite. It is not a library anyone depends on: it exists so that one command can
+# drive the same HTTP tests against *both* adapters, which is the thing a single crate with
+# features could not do.
+[package]
+name = "sl-cms-tests"
+description = "The HTTP contract suite, run against every storage adapter."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+sl-cms-core = { path = "../core" }
+sl-cms-on-premises = { path = "../on-premises" }
+sl-cms-aws = { path = "../aws" }
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+uuid.workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "sl-cms-aws"
+description = "The CMS on DynamoDB (single table) and S3."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "sl-cms-aws"
+path = "src/main.rs"
+
+[dependencies]
+sl-cms-core = { path = "../core" }
+aws-config.workspace = true
+aws-sdk-dynamodb.workspace = true
+aws-sdk-s3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+lambda_http.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# The images test exercises the presigned URL the way a browser would: over HTTP.
+reqwest.workspace = true

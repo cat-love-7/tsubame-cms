@@ -2699,20 +2699,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
-name = "sl_cms"
+name = "sl-cms-aws"
 version = "0.1.0"
 dependencies = [
- "argon2",
  "aws-config",
  "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "axum",
  "chrono",
- "hmac 0.13.0",
- "jsonwebtoken",
  "lambda_http",
  "reqwest",
- "rkv",
+ "serde",
+ "serde_json",
+ "sl-cms-core",
+ "tokio",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "sl-cms-core"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "chrono",
+ "hmac 0.13.0",
+ "jsonwebtoken",
+ "reqwest",
  "rustls 0.23.44",
  "serde",
  "serde_json",
@@ -2720,10 +2736,42 @@ dependencies = [
  "strum",
  "strum_macros",
  "tokio",
- "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sl-cms-on-premises"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "rkv",
+ "serde",
+ "serde_json",
+ "sl-cms-core",
+ "tokio",
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "sl-cms-tests"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde_json",
+ "sl-cms-aws",
+ "sl-cms-core",
+ "sl-cms-on-premises",
+ "tokio",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
  "uuid",
 ]
 

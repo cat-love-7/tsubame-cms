@@ -1,0 +1,22 @@
+[package]
+name = "sl-cms-on-premises"
+description = "The CMS with rkv (LMDB) storage and image files on local disk."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "sl-cms"
+path = "src/main.rs"
+
+[dependencies]
+sl-cms-core = { path = "../core" }
+rkv.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
