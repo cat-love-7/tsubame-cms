@@ -1,0 +1,35 @@
+
+<mat-form-field appearance="fill" class="full-width">
+  <mat-label>Field Name</mat-label>
+  <input matInput [(ngModel)]="field.name" name="fieldName" />
+</mat-form-field>
+<mat-checkbox [(ngModel)]="field.required" name="fieldRequired">Required</mat-checkbox>
+<mat-form-field appearance="fill" class="full-width">
+  <mat-label>Field Type</mat-label>
+  <mat-select name="fieldType" [value]="field.field_type | FieldTypeString" (selectionChange)="onFieldTypeChange($event.value)">
+    @for (typeOption of typeOptions; track typeOption) {
+      <mat-option [value]="typeOption">{{ typeOption }}</mat-option>
+    }
+  </mat-select>
+</mat-form-field>
+@if ((field.field_type | isTextFieldSchema)) {
+  <app-text-field [(fieldOptions)]="field.field_type.Text"></app-text-field>
+}
+@if ((field.field_type | isMarkdownFieldSchema)) {
+  <app-text-field [(fieldOptions)]="field.field_type.Markdown"></app-text-field>
+}
+@if (field.field_type | isCompositeFieldSchema) {
+  <app-composite-field [(field)]="field.field_type.CompositeField.id"></app-composite-field>
+}
+@if (field.field_type | isArrayFieldSchema) {
+  <mat-form-field appearance="fill" class="full-width">
+    <mat-label>Composite Field Type {{field.field_type.Array}}</mat-label>
+    <mat-select name="compositeFieldType" [(ngModel)]="field.field_type.Array" >
+      <mat-option value="Object">Object</mat-option>
+      <mat-option value="Array">Array</mat-option>
+    </mat-select>
+  </mat-form-field>
+}
+@if (field.field_type | isEnumFieldSchema) {
+  <app-enum-field [(field)]="field.field_type.TextEnum"></app-enum-field>
+}

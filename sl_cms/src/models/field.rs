@@ -1,0 +1,2410 @@
+use chrono::{DateTime, FixedOffset, NaiveDate};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, marker::PhantomData};
+
+#[cfg(test)]
+use strum_macros::EnumIter;
+
+use crate::models::{image::{ImageID, ImageResponse}, schema::CompositeFieldId};
+use crate::repositories::image_repository::ImageRepository;
+
+pub use super::schema::{
+    CompositeFieldReference, CompositeFieldSchema, FieldSchema, FieldType, TextFieldOptions,
+};
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct CompositeFieldValue {
+    pub id: CompositeFieldId,
+    pub values: FieldValueMap<CompositeFieldSchema>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FieldValueMap<T>(pub HashMap<String, FieldValue>,pub PhantomData<fn() -> T>);
+impl<T> FieldValueMap<T>
+where
+    for<'a> &'a T: IntoIterator<Item = &'a FieldSchema>,
+{
+    pub fn format_to_schema(
+        &self,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        schema: &T,
+    ) -> FieldValueMap<T> {
+        let mut ret = HashMap::new();
+        for field in schema {
+            if let Some(v) = self.0.get(&field.name) {
+                ret.insert(
+                    field.name.clone(),
+                    v.format_field_value(field, composite_schemas),
+                );
+            } else {
+                ret.insert(field.name.clone(), field.get_default_value());
+            }
+        }
+        FieldValueMap(ret, PhantomData)
+    }
+    
+    pub fn to_response<IR: ImageRepository>(
+        &self,
+        image_repository: &IR,
+    ) -> HashMap<String, FieldValueResponse> {
+        self.0.iter()
+            .map(|(k, v)| (k.clone(), v.to_response(image_repository)))
+            .collect()
+    }
+    
+    pub fn validate_to_schema(
+        &self,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        schema: &T,
+    ) -> Result<(), String> {
+        for field in schema {
+            if let Some(v) = self.0.get(&field.name) {
+                v.validate_field_value(field, composite_schemas)?;
+            } else if field.required {
+                return Err(format!("Field '{}' is missing", field.name));
+            }
+        }
+        Ok(())
+    }
+}
+impl<T> std::ops::Deref for FieldValueMap<T> {
+    type Target = HashMap<String, FieldValue>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T> Serialize for FieldValueMap<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+impl<'de, T> Deserialize<'de> for FieldValueMap<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let map = HashMap::<String, FieldValue>::deserialize(deserializer)?;
+        Ok(FieldValueMap(map, PhantomData))
+    }
+}
+impl<T> PartialEq for FieldValueMap<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(EnumIter))]
+pub enum FieldValue {
+    Text(String),
+    Markdown(String),
+    Number(Option<f64>),
+    Boolean(bool),
+    Date(Option<NaiveDate>),
+    DateTime(Option<DateTime<FixedOffset>>),
+    Image(Option<ImageID>),
+    CompositeField(Option<CompositeFieldValue>),
+    Array(Vec<FieldValue>),
+    TextEnum(Vec<String>),
+}
+
+// API レスポンス用の型
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum FieldValueResponse {
+    Text(String),
+    Markdown(String),
+    Number(Option<f64>),
+    Boolean(bool),
+    Date(Option<NaiveDate>),
+    DateTime(Option<DateTime<FixedOffset>>),
+    Image(Option<ImageResponse>),
+    CompositeField(Option<CompositeFieldValueResponse>),
+    Array(Vec<FieldValueResponse>),
+    TextEnum(Vec<String>),
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct CompositeFieldValueResponse {
+    pub id: CompositeFieldId,
+    pub values: HashMap<String, FieldValueResponse>,
+}
+impl Default for FieldValue {
+    fn default() -> Self {
+        FieldValue::Text(String::new())
+    }
+}
+impl FieldValue {
+    pub fn to_response<IR: ImageRepository>(
+        &self,
+        image_repository: &IR,
+    ) -> FieldValueResponse {
+        match self {
+            FieldValue::Text(s) => FieldValueResponse::Text(s.clone()),
+            FieldValue::Markdown(s) => FieldValueResponse::Markdown(s.clone()),
+            FieldValue::Number(n) => FieldValueResponse::Number(*n),
+            FieldValue::Boolean(b) => FieldValueResponse::Boolean(*b),
+            FieldValue::Date(d) => FieldValueResponse::Date(*d),
+            FieldValue::DateTime(dt) => FieldValueResponse::DateTime(*dt),
+            FieldValue::Image(img_id) => {
+                let img_response = img_id.as_ref().and_then(|id| {
+                    image_repository.get_image(id).ok()
+                        .and_then(|img_opt| img_opt.map(|img| ImageResponse {
+                            id: id.clone(),
+                            url: img.url,
+                        }))
+                });
+                FieldValueResponse::Image(img_response)
+            }
+            FieldValue::CompositeField(cv) => {
+                FieldValueResponse::CompositeField(cv.as_ref().map(|v| {
+                    CompositeFieldValueResponse {
+                        id: v.id.clone(),
+                        values: v.values.0.iter()
+                            .map(|(k, val)| (k.clone(), val.to_response(image_repository)))
+                            .collect(),
+                    }
+                }))
+            }
+            FieldValue::Array(arr) => {
+                FieldValueResponse::Array(arr.iter().map(|v| v.to_response(image_repository)).collect())
+            }
+            FieldValue::TextEnum(vals) => FieldValueResponse::TextEnum(vals.clone()),
+        }
+    }
+}
+
+impl FieldValue {
+    pub fn get_type(&self) -> FieldType {
+        match self {
+            FieldValue::Text(_) => FieldType::Text(TextFieldOptions::default()),
+            FieldValue::Markdown(_) => FieldType::Markdown(TextFieldOptions::default()),
+            FieldValue::Number(_) => FieldType::Number,
+            FieldValue::Boolean(_) => FieldType::Boolean,
+            FieldValue::Date(_) => FieldType::Date,
+            FieldValue::DateTime(_) => FieldType::DateTime,
+            FieldValue::Image(_) => FieldType::Image,
+            FieldValue::CompositeField(cv) => match cv {
+                Some(cv) => {
+                    FieldType::CompositeField(CompositeFieldReference { id: cv.id.clone() })
+                }
+                None => FieldType::CompositeField(CompositeFieldReference { id: CompositeFieldId::default() }),
+            },
+            FieldValue::Array(_values) => FieldType::Array(vec![]),
+            FieldValue::TextEnum(_vals) => FieldType::TextEnum(vec![]),
+        }
+    }
+    fn extract_text_options<F>(schemas: &[FieldType], matcher: F) -> Option<TextFieldOptions>
+    where
+        F: Fn(&FieldType) -> Option<&TextFieldOptions>,
+    {
+        schemas.iter().fold(None, |mut acc, ft| {
+            if let Some(options) = matcher(ft) {
+                match acc {
+                    None => acc = Some(options.clone()),
+                    Some(existing_options) => {
+                        let merged_options = TextFieldOptions {
+                            max_length: match (existing_options.max_length, options.max_length) {
+                                (Some(len1), Some(len2)) => Some(len1.max(len2)),
+                                (_, None) | (None, _) => None,
+                            },
+                            min_length: match (existing_options.min_length, options.min_length) {
+                                (Some(len1), Some(len2)) => Some(len1.min(len2)),
+                                (_, None) | (None, _) => None,
+                            },
+                        };
+                        acc = Some(merged_options);
+                    }
+                }
+            }
+            acc
+        })
+    }
+
+    pub fn validate_field_value(
+        &self,
+        schema: &FieldSchema,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+    ) -> Result<(), String> {
+        match (&schema.field_type, self) {
+            (FieldType::Text(field_params), FieldValue::Text(text))
+            | (FieldType::Markdown(field_params), FieldValue::Markdown(text)) => {
+                if schema.required && schema.field_type.test_required(self) == false {
+                    return Err(format!("field {} is required", schema.name));
+                }
+                schema.validate_text_length(text, &field_params, None)?;
+                Ok(())
+            }
+            (FieldType::Number, FieldValue::Number(_))
+            | (FieldType::Boolean, FieldValue::Boolean(_))
+            | (FieldType::Date, FieldValue::Date(_))
+            | (FieldType::DateTime, FieldValue::DateTime(_))
+            | (FieldType::Image, FieldValue::Image(_)) => {
+                if schema.required && schema.field_type.test_required(self) == false {
+                    return Err(format!("field {} is required", schema.name));
+                }
+                Ok(())
+            }
+            (FieldType::CompositeField(s), FieldValue::CompositeField(field_value)) => {
+                if schema.required && schema.field_type.test_required(self) == false {
+                    return Err(format!("field {} is required", schema.name));
+                }
+                if let Some(v) = field_value {
+                    if s.id != v.id {
+                        return Err(format!("Composite field id does not match schema id"));
+                    }
+                    let composite_schema = composite_schemas.get(&s.id).ok_or(format!(
+                        "Composite field schema not found for id: {}",
+                        &s.id
+                    ))?;
+                    v.values.validate_to_schema(&composite_schemas, &composite_schema)?;
+                    Ok(())
+                } else {
+                    Ok(())
+                }
+            }
+            (FieldType::Array(schemas), FieldValue::Array(values)) => {
+                if schema.required && schema.field_type.test_required(self) == false {
+                    return Err(format!("field {} is required", schema.name));
+                }
+                for (index, value) in values.iter().enumerate() {
+                    match value {
+                        FieldValue::Text(value) => {
+                            let option = Self::extract_text_options(&schemas, |ft| {
+                                if let FieldType::Text(options) = ft {
+                                    Some(options)
+                                } else {
+                                    None
+                                }
+                            });
+                            match option {
+                                Some(options) => {
+                                    schema.validate_text_length(value, &options, Some(index))?;
+                                }
+                                None => {
+                                    return Err(format!(
+                                        "field {}[{}] type does not match array item types",
+                                        schema.name, index
+                                    ));
+                                }
+                            }
+                        }
+                        FieldValue::Markdown(value) => {
+                            let option = Self::extract_text_options(&schemas, |ft| {
+                                if let FieldType::Markdown(options) = ft {
+                                    Some(options)
+                                } else {
+                                    None
+                                }
+                            });
+                            match option {
+                                Some(options) => {
+                                    schema.validate_text_length(value, &options, Some(index))?;
+                                }
+                                None => {
+                                    return Err(format!(
+                                        "field {}[{}] type does not match array item types",
+                                        schema.name, index
+                                    ));
+                                }
+                            }
+                        }
+                        FieldValue::Number(_)
+                        | FieldValue::Boolean(_)
+                        | FieldValue::Date(_)
+                        | FieldValue::DateTime(_)
+                        | FieldValue::Image(_) => {
+                            let value_type = value.get_type();
+                            if schemas.contains(&value_type) == false {
+                                return Err(format!(
+                                    "field {}[{}] type does not match array item types",
+                                    schema.name, index
+                                ));
+                            }
+                            if value_type.test_required(value) == false {
+                                return Err(format!("field {}[{}] is required", schema.name, index));
+                            }
+                        }
+                        FieldValue::CompositeField(cv) => match cv {
+                            Some(cv) => {
+                                let schema = schemas
+                                    .iter()
+                                    .find(|ft| match ft {
+                                        FieldType::CompositeField(s) => s.id == cv.id,
+                                        _ => false,
+                                    })
+                                    .and_then(|ft| match ft {
+                                        FieldType::CompositeField(s) => Some(s),
+                                        _ => None,
+                                    });
+                                match schema {
+                                    Some(s) => {
+                                        let composite_schema =
+                                            composite_schemas.get(&s.id).ok_or(format!(
+                                                "Composite field schema not found for id: {}",
+                                                &s.id
+                                            ))?;
+
+                                        cv.values.validate_to_schema(
+                                            composite_schemas,
+                                            &composite_schema,
+                                        )?;
+                                    }
+                                    None => {
+                                        return Err(format!(
+                                            "Array item composite field schema not found"
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                return Err(format!("field {}[{}] is required", schema.name, index));
+                            }
+                        },
+                        FieldValue::Array(_) => {
+                            return Err(format!("Nested arrays are not supported"));
+                        }
+                        FieldValue::TextEnum(vals) => {
+                            let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
+                                if let FieldType::TextEnum(options) = ft {
+                                    acc.extend(options.clone());
+                                }
+                                acc
+                            });
+                            for val in vals {
+                                if !option.contains(val) {
+                                    return Err(format!("Value '{}' not in enum options", val));
+                                }
+                            }
+                            if vals.is_empty() && schema.required {
+                                return Err(format!("Array item enum values cannot be empty"));
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            (FieldType::TextEnum(options), FieldValue::TextEnum(vals)) => {
+                for val in vals {
+                    if !options.contains(val) {
+                        return Err(format!("Value '{}' not in enum options", val));
+                    }
+                }
+                if vals.is_empty() && schema.required {
+                    return Err(format!("Enum values cannot be empty"));
+                }
+                Ok(())
+            }
+            _ => Err(format!("Field value type does not match field type")),
+        }
+    }
+    pub fn format_field_value(
+        &self,
+        schema: &FieldSchema,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+    ) -> FieldValue {
+        match (&schema.field_type, self) {
+            (FieldType::Text(_), FieldValue::Text(_))
+            | (FieldType::Markdown(_), FieldValue::Markdown(_))
+            | (FieldType::Number, FieldValue::Number(_))
+            | (FieldType::Boolean, FieldValue::Boolean(_))
+            | (FieldType::Date, FieldValue::Date(_))
+            | (FieldType::DateTime, FieldValue::DateTime(_))
+            | (FieldType::Image, FieldValue::Image(_)) => self.clone(),
+            (FieldType::CompositeField(s), FieldValue::CompositeField(value)) => match value {
+                Some(v) => {
+                    if s.id != v.id {
+                        schema.get_default_value()
+                    } else {
+                        let composite_schema = composite_schemas.get(&s.id);
+                        match composite_schema {
+                            None => schema.get_default_value(),
+                            Some(cs) => {
+                                let formatted_values =
+                                    v.values.format_to_schema(composite_schemas, &cs);
+                                FieldValue::CompositeField(Some(CompositeFieldValue {
+                                    id: s.id.clone(),
+                                    values: formatted_values,
+                                }))
+                            }
+                        }
+                    }
+                }
+                None => schema.get_default_value(),
+            },
+            (FieldType::Array(schemas), FieldValue::Array(values)) => {
+                let mut formatted_values = Vec::new();
+                for value in values {
+                    match value {
+                        FieldValue::Text(_)
+                        | FieldValue::Markdown(_)
+                        | FieldValue::Number(_)
+                        | FieldValue::Boolean(_)
+                        | FieldValue::Date(_)
+                        | FieldValue::DateTime(_)
+                        | FieldValue::Image(_) => {
+                            let item_type = value.get_type();
+                            if schemas.contains(&item_type) {
+                                formatted_values.push(value.clone());
+                            }
+                        }
+                        FieldValue::CompositeField(cv) => match cv {
+                            Some(cv) => {
+                                let s = schemas
+                                    .iter()
+                                    .find(|ft| match ft {
+                                        FieldType::CompositeField(s) => s.id == cv.id,
+                                        _ => false,
+                                    })
+                                    .and_then(|ft| match ft {
+                                        FieldType::CompositeField(s) => Some(s),
+                                        _ => None,
+                                    });
+                                match s {
+                                    Some(schema) => {
+                                        let composite_schema = composite_schemas.get(&schema.id);
+                                        match composite_schema {
+                                            None => continue,
+                                            Some(cs) => {
+                                                let formatted_values_map = cv.values.format_to_schema(
+                                                    composite_schemas,
+                                                    &cs,
+                                                );
+                                                formatted_values.push(FieldValue::CompositeField(
+                                                    Some(CompositeFieldValue {
+                                                        id: schema.id.clone(),
+                                                        values: formatted_values_map,
+                                                    }),
+                                                ));
+                                            }
+                                        };
+                                    }
+                                    None => continue,
+                                };
+                            }
+                            None => continue,
+                        },
+                        FieldValue::Array(_) => {
+                            continue;
+                        }
+                        FieldValue::TextEnum(vals) => {
+                            let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
+                                if let FieldType::TextEnum(options) = ft {
+                                    acc.extend(options.clone());
+                                }
+                                acc
+                            });
+                            let filtered_vals: Vec<String> = vals
+                                .iter()
+                                .filter(|v| option.contains(v))
+                                .cloned()
+                                .collect();
+                            formatted_values.push(FieldValue::TextEnum(filtered_vals));
+                        }
+                    };
+                }
+                FieldValue::Array(formatted_values)
+            }
+            (FieldType::TextEnum(options), FieldValue::TextEnum(vals)) => {
+                let filtered_vals: Vec<String> = vals
+                    .iter()
+                    .filter(|v| options.contains(v))
+                    .cloned()
+                    .collect();
+                FieldValue::TextEnum(filtered_vals)
+            }
+            _ => schema.get_default_value(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    // Test helper functions
+    fn create_composite_schema(field_name: &str, required: bool) -> CompositeFieldSchema {
+        vec![FieldSchema {
+            name: field_name.to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required,
+            width: 12,
+            height: 1,
+        }]
+    }
+
+    fn create_composite_value(id: &str, field_name: &str, value: &str) -> CompositeFieldValue {
+        CompositeFieldValue {
+            id: (id.into()),
+            values: FieldValueMap(HashMap::from([(field_name.to_string(), FieldValue::Text(value.to_string()))]), PhantomData),
+        }
+    }
+
+    fn create_composite_schemas_map() -> HashMap<CompositeFieldId, CompositeFieldSchema> {
+        HashMap::from([
+            (
+                "comp_1".into(),
+                create_composite_schema("sub_field", true),
+            ),
+            (
+                "comp_2".into(),
+                create_composite_schema("sub_field2", true),
+            ),
+        ])
+    }
+
+    #[test]
+    fn test_field_schema_array_validation() {
+        let composite_schemas = HashMap::new();
+        let field_schema = FieldSchema {
+            name: "test_array".to_string(),
+            field_type: FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+            required: true,
+            width: 12,
+            height: 1,
+        };
+        let valid_value = FieldValue::Array(vec![
+            FieldValue::Text("Hello".to_string()),
+            FieldValue::Number(Some(42.0)),
+        ]);
+        let invalid_value = FieldValue::Array(vec![FieldValue::Boolean(true)]);
+        assert!(
+            valid_value
+                .validate_field_value(&field_schema,&composite_schemas)
+                .is_ok()
+        );
+        assert!(
+            invalid_value
+                .validate_field_value(&field_schema, &composite_schemas)
+                .is_err()
+        );
+
+        let nested_array_value =
+            FieldValue::Array(vec![FieldValue::Array(vec![FieldValue::Text(
+                "Nested".to_string(),
+            )])]);
+        assert!(
+            nested_array_value
+                .validate_field_value(&field_schema, &composite_schemas)
+                .is_err()
+        );
+
+        let composite_schemas = create_composite_schemas_map();
+
+        let composite_field_schema = FieldSchema {
+            name: "test_array".to_string(),
+            field_type: FieldType::Array(vec![
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_2".into(),
+                }),
+            ]),
+            required: true,
+            width: 12,
+            height: 1,
+        };
+        let valid_composite_value = FieldValue::Array(vec![
+            FieldValue::CompositeField(Some(create_composite_value(
+                "comp_1",
+                "sub_field",
+                "Value1",
+            ))),
+            FieldValue::CompositeField(Some(create_composite_value(
+                "comp_2",
+                "sub_field2",
+                "Value2",
+            ))),
+        ]);
+        assert!(
+            valid_composite_value
+                .validate_field_value(&composite_field_schema, &composite_schemas)
+                .is_ok()
+        );
+
+        let text_enum_array_value =
+            FieldValue::Array(vec![FieldValue::TextEnum(vec!["Option".to_string()])]);
+        assert!(
+            text_enum_array_value
+                .validate_field_value(&composite_field_schema, &composite_schemas)
+                .is_err()
+        );
+    }
+    #[test]
+    fn test_format_array_type_field() {
+        let pattern = vec![
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+                HashMap::from_iter(vec![]),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Number(Some(10.0)),
+                    FieldValue::Boolean(true),
+                ]),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Number(Some(10.0)),
+                ]),
+            ),
+            (
+                FieldType::Array(vec![
+                    FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                    FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_2".into(),
+                    }),
+                    FieldType::Boolean,
+                ]),
+                HashMap::from_iter(vec![
+                    (
+                        "comp_1".into(),
+                        vec![FieldSchema {
+                            name: "sub_field".to_string(),
+                            field_type: FieldType::Text(TextFieldOptions::default()),
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        }],
+                    ),
+                    (
+                        "comp_2".into(),
+                        vec![
+                            FieldSchema {
+                                name: "sub_field2".to_string(),
+                                field_type: FieldType::Text(TextFieldOptions::default()),
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                            FieldSchema {
+                                name: "sub_field3".to_string(),
+                                field_type: FieldType::Number,
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                        ],
+                    ),
+                ]),
+                FieldValue::Array(vec![
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value1".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_2".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert("sub_field3".to_string(), FieldValue::Number(Some(10.0)));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field2".to_string(),
+                                FieldValue::Text("Value1".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_3".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field3".to_string(),
+                                FieldValue::Text("Value1".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::Number(Some(20.0)),
+                    FieldValue::Text("Invalid".to_string()),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_2".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert("sub_field2".to_string(), FieldValue::Number(Some(10.0)));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::Boolean(true),
+                ]),
+                FieldValue::Array(vec![
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value1".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_2".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert("sub_field2".to_string(), FieldValue::Text("".to_string()));
+                            v.insert("sub_field3".to_string(), FieldValue::Number(Some(10.0)));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert("sub_field".to_string(), FieldValue::Text("".to_string()));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_2".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert("sub_field2".to_string(), FieldValue::Text("".to_string()));
+                            v.insert("sub_field3".to_string(), FieldValue::Number(None));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::Boolean(true),
+                ]),
+            ),
+            (
+                FieldType::Array(vec![
+                    FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
+                    FieldType::TextEnum(vec!["Option2".to_string(), "Option3".to_string()]),
+                ]),
+                HashMap::from_iter(vec![]),
+                FieldValue::Array(vec![
+                    FieldValue::TextEnum(vec!["Option1".to_string(), "Invalid".to_string()]),
+                    FieldValue::TextEnum(vec!["Option3".to_string()]),
+                    FieldValue::TextEnum(vec!["Option3".to_string(), "Option1".to_string()]),
+                    FieldValue::TextEnum(vec!["InvalidOption".to_string()]),
+                ]),
+                FieldValue::Array(vec![
+                    FieldValue::TextEnum(vec!["Option1".to_string()]),
+                    FieldValue::TextEnum(vec!["Option3".to_string()]),
+                    FieldValue::TextEnum(vec!["Option3".to_string(), "Option1".to_string()]),
+                    FieldValue::TextEnum(vec![]),
+                ]),
+            ),
+            (
+                FieldType::Array(vec![FieldType::Array(vec![FieldType::Boolean])]),
+                HashMap::from_iter(vec![]),
+                FieldValue::Array(vec![FieldValue::Array(vec![
+                    FieldValue::Boolean(true),
+                    FieldValue::Boolean(false),
+                ])]),
+                FieldValue::Array(vec![]),
+            ),
+        ];
+        for (fields, composite_schema, field_value, expected_formatted_value) in pattern {
+            let scheme = FieldSchema {
+                name: "test_array".to_string(),
+                field_type: fields,
+                required: true,
+                width: 12,
+                height: 1,
+            };
+            let formatted_value = field_value.format_field_value(&scheme, &composite_schema);
+            assert_eq!(
+                formatted_value, expected_formatted_value,
+                "Failed on field type {:?}",
+                scheme
+            );
+        }
+    }
+    #[test]
+    fn test_schema_serialization() {
+        for field_type in FieldType::iter() {
+            let (field_schema, json_schema) = match field_type {
+                FieldType::Text(options) => {
+                    let field_schema = FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(options),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema = r#"{"name":"title","field_type":{"Text":{"max_length":null,"min_length":null}},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Markdown(options) => {
+                    let field_schema = FieldSchema {
+                        name: "description".to_string(),
+                        field_type: FieldType::Markdown(options),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema =
+                        r#"{"name":"description","field_type":{"Markdown":{"max_length":null,"min_length":null}},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Number => {
+                    let field_schema = FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema = r#"{"name":"age","field_type":"Number","required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Boolean => {
+                    let field_schema = FieldSchema {
+                        name: "is_active".to_string(),
+                        field_type: FieldType::Boolean,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema =
+                        r#"{"name":"is_active","field_type":"Boolean","required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Date => {
+                    let field_schema = FieldSchema {
+                        name: "create_date".to_string(),
+                        field_type: FieldType::Date,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema =
+                        r#"{"name":"create_date","field_type":"Date","required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::DateTime => {
+                    let field_schema = FieldSchema {
+                        name: "update_time".to_string(),
+                        field_type: FieldType::DateTime,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema =
+                        r#"{"name":"update_time","field_type":"DateTime","required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Image => {
+                    let field_schema = FieldSchema {
+                        name: "profile_image".to_string(),
+                        field_type: FieldType::Image,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema =
+                        r#"{"name":"profile_image","field_type":"Image","required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::CompositeField(_) => {
+                    let field_schema = FieldSchema {
+                        name: "address".to_string(),
+                        field_type: FieldType::CompositeField(CompositeFieldReference {
+                            id: "address_1".into(),
+                        }),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema = r#"{"name":"address","field_type":{"CompositeField":{"id":"address_1"}},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::Array(_) => {
+                    let field_schema = FieldSchema {
+                        name: "tags".to_string(),
+                        field_type: FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema = r#"{"name":"tags","field_type":{"Array":[{"Text":{"max_length":null,"min_length":null}},"Number"]},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+                FieldType::TextEnum(_) => {
+                    let field_schema = FieldSchema {
+                        name: "status".to_string(),
+                        field_type: FieldType::TextEnum(vec![
+                            "Active".to_string(),
+                            "Inactive".to_string(),
+                        ]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    };
+                    let json_schema = r#"{"name":"status","field_type":{"TextEnum":["Active","Inactive"]},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
+            };
+            let serialized_schema = serde_json::to_string(&field_schema).unwrap();
+            let deserialized_schema: FieldSchema =
+                serde_json::from_str(&serialized_schema).unwrap();
+            let deserialized_from_json_schema: FieldSchema =
+                serde_json::from_str(json_schema).unwrap();
+            assert_eq!(
+                field_schema, deserialized_schema,
+                "Failed on field type {:?}",
+                field_type
+            );
+            assert_eq!(
+                field_schema, deserialized_from_json_schema,
+                "Failed on field type {:?}",
+                field_type
+            );
+        }
+    }
+    #[test]
+    fn test_field_value_serialization() {
+        for field_type in FieldType::iter() {
+            let (field_value, field_value_json) = match field_type {
+                FieldType::Text(_) => (FieldValue::Text("Hello".to_string()), r#"{"Text":"Hello"}"#),
+                FieldType::Markdown(_) => (
+                    FieldValue::Markdown("**Bold Text**".to_string()),
+                    r#"{"Markdown":"**Bold Text**"}"#,
+                ),
+                FieldType::Number => (FieldValue::Number(Some(42.0)), r#"{"Number":42.0}"#),
+                FieldType::Boolean => (FieldValue::Boolean(true), r#"{"Boolean":true}"#),
+                FieldType::Date => (
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                    r#"{"Date":"2023-01-01"}"#,
+                ),
+                FieldType::DateTime => (
+                    FieldValue::DateTime(Some(
+                        DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                    )),
+                    r#"{"DateTime":"2023-01-01T12:00:00+00:00"}"#,
+                ),
+                FieldType::Image => (FieldValue::Image(Some(ImageID::from_u64(1))), r#"{"Image":1}"#),
+                FieldType::CompositeField(_) => (
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    r#"{"CompositeField":{"id":"comp_1","values":{"sub_field":{"Text":"Value"}}}}"#,
+                ),
+                FieldType::Array(_) => (
+                    FieldValue::Array(vec![
+                        FieldValue::Text("Item1".to_string()),
+                        FieldValue::Number(Some(10.0)),
+                    ]),
+                    r#"{"Array":[{"Text":"Item1"},{"Number":10.0}]}"#,
+                ),
+                FieldType::TextEnum(_) => (
+                    FieldValue::TextEnum(vec!["Option1".to_string()]),
+                    r#"{"TextEnum":["Option1"]}"#,
+                ),
+            };
+            let serialized_value = serde_json::to_string(&field_value).unwrap();
+            let deserialized_value: FieldValue = serde_json::from_str(&serialized_value).unwrap();
+            let deserialized_from_json_value: FieldValue =
+                serde_json::from_str(field_value_json).unwrap();
+            assert_eq!(
+                field_value, deserialized_value,
+                "Failed on field type {:?}",
+                field_type
+            );
+            assert_eq!(
+                field_value, deserialized_from_json_value,
+                "Failed on field type {:?}",
+                field_type
+            );
+        }
+        for field_type in FieldType::iter() {
+            let (field_value, field_value_json) = match field_type {
+                FieldType::Text(_) => (FieldValue::Text("".to_string()), r#"{"Text":""}"#),
+                FieldType::Number => (FieldValue::Number(None), r#"{"Number":null}"#),
+                FieldType::Date => (FieldValue::Date(None), r#"{"Date":null}"#),
+                FieldType::DateTime => (FieldValue::DateTime(None), r#"{"DateTime":null}"#),
+                FieldType::Image => (FieldValue::Image(None), r#"{"Image":null}"#),
+                FieldType::Array(_) => (FieldValue::Array(vec![]), r#"{"Array":[]}"#),
+                FieldType::TextEnum(_) => (FieldValue::TextEnum(vec![]), r#"{"TextEnum":[]}"#),
+                _ => continue,
+            };
+            let serialized_value = serde_json::to_string(&field_value).unwrap();
+            let deserialized_value: FieldValue = serde_json::from_str(&serialized_value).unwrap();
+            let deserialized_from_json_value: FieldValue =
+                serde_json::from_str(field_value_json).unwrap();
+            assert_eq!(
+                field_value, deserialized_value,
+                "Failed on field type {:?}",
+                field_type
+            );
+            assert_eq!(
+                field_value, deserialized_from_json_value,
+                "Failed on field type {:?}",
+                field_type
+            );
+        }
+    }
+    #[test]
+    fn test_default_values() {
+        for field_type in FieldType::iter() {
+            let test_schema = FieldSchema {
+                name: "test".to_string(),
+                field_type: field_type.clone(),
+                required: false,
+                width: 12,
+                height: 1,
+            };
+            let default_value = test_schema.get_default_value();
+            match field_type {
+                FieldType::Text(_) => assert_eq!(default_value, FieldValue::Text(String::new())),
+                FieldType::Markdown(_) => {
+                    assert_eq!(default_value, FieldValue::Markdown(String::new()))
+                }
+                FieldType::Number => assert_eq!(default_value, FieldValue::Number(None)),
+                FieldType::Boolean => assert_eq!(default_value, FieldValue::Boolean(false)),
+                FieldType::Date => assert_eq!(default_value, FieldValue::Date(None)),
+                FieldType::DateTime => assert_eq!(default_value, FieldValue::DateTime(None)),
+                FieldType::Image => assert_eq!(default_value, FieldValue::Image(None)),
+                FieldType::CompositeField(_) => {
+                    assert_eq!(default_value, FieldValue::CompositeField(None))
+                }
+                FieldType::Array(_) => assert_eq!(default_value, FieldValue::Array(vec![])),
+                FieldType::TextEnum(_) => assert_eq!(default_value, FieldValue::TextEnum(vec![])),
+            }
+        }
+        assert_eq!(FieldValue::default(), FieldValue::Text(String::new()));
+        assert_eq!(FieldType::default(), FieldType::Text(TextFieldOptions::default()));
+    }
+    #[test]
+    fn test_schema_validation_valid_values() {
+        for field_type in FieldType::iter() {
+            let (field_schema, composite_schemas, field_value) = match field_type {
+                FieldType::Text(options) => (
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(options),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Text("Hello".to_string()),
+                ),
+                FieldType::Markdown(options) => (
+                    FieldSchema {
+                        name: "description".to_string(),
+                        field_type: FieldType::Markdown(options),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Markdown("**Bold Text**".to_string()),
+                ),
+                FieldType::Number => (
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Number(Some(25.0)),
+                ),
+                FieldType::Boolean => (
+                    FieldSchema {
+                        name: "is_active".to_string(),
+                        field_type: FieldType::Boolean,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Boolean(true),
+                ),
+                FieldType::Date => (
+                    FieldSchema {
+                        name: "create_date".to_string(),
+                        field_type: FieldType::Date,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                ),
+                FieldType::DateTime => (
+                    FieldSchema {
+                        name: "update_time".to_string(),
+                        field_type: FieldType::DateTime,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::DateTime(Some(
+                        DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                    )),
+                ),
+                FieldType::Image => (
+                    FieldSchema {
+                        name: "profile_image".to_string(),
+                        field_type: FieldType::Image,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Image(Some(ImageID::from_u64(1))),
+                ),
+                FieldType::CompositeField(_) => (
+                    FieldSchema {
+                        name: "address".to_string(),
+                        field_type: FieldType::CompositeField(CompositeFieldReference {
+                            id: "address_1".into(),
+                        }),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::from([(
+                        "address_1".into(),
+                        vec![
+                            FieldSchema {
+                                name: "street".to_string(),
+                                field_type: FieldType::Text(TextFieldOptions::default()),
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                            FieldSchema {
+                                name: "city".to_string(),
+                                field_type: FieldType::Text(TextFieldOptions::default()),
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                            FieldSchema {
+                                name: "zip".to_string(),
+                                field_type: FieldType::Number,
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                        ],
+                    )]),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "address_1".into(),
+                        values: FieldValueMap(HashMap::from([
+                            (
+                                "street".to_string(),
+                                FieldValue::Text("123 Main St".to_string()),
+                            ),
+                            ("city".to_string(), FieldValue::Text("Anytown".to_string())),
+                            ("zip".to_string(), FieldValue::Number(Some(12345.0))),
+                        ]), PhantomData),
+                    })),
+                ),
+                FieldType::Array(_) => (
+                    FieldSchema {
+                        name: "tags".to_string(),
+                        field_type: FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::Array(vec![
+                        FieldValue::Text("tag1".to_string()),
+                        FieldValue::Number(Some(1.0)),
+                    ]),
+                ),
+                FieldType::TextEnum(_) => (
+                    FieldSchema {
+                        name: "status".to_string(),
+                        field_type: FieldType::TextEnum(vec![
+                            "Active".to_string(),
+                            "Inactive".to_string(),
+                        ]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    HashMap::new(),
+                    FieldValue::TextEnum(vec!["Active".to_string()]),
+                ),
+            };
+            let result = field_value.validate_field_value(&field_schema, &composite_schemas);
+            assert!(result.is_ok(), "Failed on field type {:?}", field_type);
+        }
+    }
+    #[test]
+    fn test_field_type_test_required() {
+        for field_type in FieldType::iter() {
+            let value = match field_type {
+                FieldType::Text(_) => FieldValue::Text("Sample".to_string()),
+                FieldType::Markdown(_) => FieldValue::Markdown("**Sample**".to_string()),
+                FieldType::Number => FieldValue::Number(Some(10.0)),
+                FieldType::Boolean => FieldValue::Boolean(true),
+                FieldType::Date => FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                FieldType::DateTime => FieldValue::DateTime(Some(
+                    DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                )),
+                FieldType::Image => FieldValue::Image(Some(ImageID::from_u64(1))),
+                FieldType::CompositeField(_) => FieldValue::CompositeField(Some(CompositeFieldValue::default())),
+                FieldType::Array(_) => FieldValue::Array(vec![FieldValue::Text("Item".to_string())]),
+                FieldType::TextEnum(_) => FieldValue::TextEnum(vec!["Option".to_string()]),
+            };
+            assert!(field_type.test_required(&value), "Failed on field type {:?}", field_type);
+        }
+        assert!(!FieldType::Text(TextFieldOptions::default()).test_required(&FieldValue::Boolean(true)));
+
+    }
+
+    #[test]
+    fn test_schema_validation_required_field_missing_value() {
+        for field_type in FieldType::iter() {
+            let (field_schema, field_value) = match field_type {
+                FieldType::Text(options) => (
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(options),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Text("".to_string()),
+                ),
+                FieldType::Number => (
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Number(None),
+                ),
+                FieldType::Date => (
+                    FieldSchema {
+                        name: "create_date".to_string(),
+                        field_type: FieldType::Date,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Date(None),
+                ),
+                FieldType::DateTime => (
+                    FieldSchema {
+                        name: "update_time".to_string(),
+                        field_type: FieldType::DateTime,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::DateTime(None),
+                ),
+                FieldType::Image => (
+                    FieldSchema {
+                        name: "profile_image".to_string(),
+                        field_type: FieldType::Image,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Image(None),
+                ),
+                FieldType::Array(_) => (
+                    FieldSchema {
+                        name: "tags".to_string(),
+                        field_type: FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Array(vec![]),
+                ),
+                FieldType::TextEnum(_) => (
+                    FieldSchema {
+                        name: "status".to_string(),
+                        field_type: FieldType::TextEnum(vec![
+                            "Active".to_string(),
+                            "Inactive".to_string(),
+                        ]),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::TextEnum(vec![]),
+                ),
+                _ => continue,
+            };
+            let result = field_value.validate_field_value(&field_schema, &HashMap::new());
+            assert!(result.is_err(), "Failed on field type {:?}", field_type);
+        }
+    }
+
+    #[test]
+    fn test_schema_validation_non_required_field_missing_value() {
+        for field_type in FieldType::iter() {
+            let (field_schema, field_value) = match field_type {
+                FieldType::Text(options) => (
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(options),
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Text("".to_string()),
+                ),
+                FieldType::Number => (
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Number(None),
+                ),
+                FieldType::Date => (
+                    FieldSchema {
+                        name: "create_date".to_string(),
+                        field_type: FieldType::Date,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Date(None),
+                ),
+                FieldType::DateTime => (
+                    FieldSchema {
+                        name: "update_time".to_string(),
+                        field_type: FieldType::DateTime,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::DateTime(None),
+                ),
+                FieldType::Image => (
+                    FieldSchema {
+                        name: "profile_image".to_string(),
+                        field_type: FieldType::Image,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Image(None),
+                ),
+                FieldType::Array(_) => (
+                    FieldSchema {
+                        name: "tags".to_string(),
+                        field_type: FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Number]),
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::Array(vec![]),
+                ),
+                FieldType::TextEnum(_) => (
+                    FieldSchema {
+                        name: "status".to_string(),
+                        field_type: FieldType::TextEnum(vec![
+                            "Active".to_string(),
+                            "Inactive".to_string(),
+                        ]),
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldValue::TextEnum(vec![]),
+                ),
+                _ => continue,
+            };
+            let result = field_value.validate_field_value(&field_schema, &HashMap::new());
+            assert!(result.is_ok(), "Failed on field type {:?}", field_type);
+        }
+    }
+
+    #[test]
+    fn test_schema_validation_composite_field_edge_cases() {
+        let pattern = vec![
+            (
+                FieldSchema {
+                    name: "composite_field".to_string(),
+                    field_type: FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                    required: true,
+                    width: 12,
+                    height: 1,
+                },
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![FieldSchema {
+                        name: "sub_field".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    }],
+                )]),
+                FieldValue::CompositeField(None),
+                false,
+            ),
+            (
+                FieldSchema {
+                    name: "composite_field".to_string(),
+                    field_type: FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                    required: true,
+                    width: 12,
+                    height: 1,
+                },
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![FieldSchema {
+                        name: "sub_field".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    }],
+                )]),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp_1".into(),
+                    values: FieldValueMap(HashMap::from_iter(vec![(
+                        "sub_field".to_string(),
+                        FieldValue::Text("test".to_string()),
+                    )]), PhantomData),
+                })),
+                true,
+            ),
+            (
+                FieldSchema {
+                    name: "composite_field".to_string(),
+                    field_type: FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                    required: true,
+                    width: 12,
+                    height: 1,
+                },
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![FieldSchema {
+                        name: "sub_field".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    }],
+                )]),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp_1".into(),
+                    values: FieldValueMap(HashMap::from_iter(vec![(
+                        "sub_field".to_string(),
+                        FieldValue::Text("".to_string()),
+                    )]), PhantomData),
+                })),
+                true,
+            ),
+        ];
+        for (field_schema, composite_schemas, field_value, should_be_valid) in pattern {
+            let result = field_value.validate_field_value(&field_schema, &composite_schemas);
+            if should_be_valid {
+                assert!(result.is_ok(), "Failed on field schema {:?}", field_schema);
+            } else {
+                assert!(result.is_err(), "Failed on field schema {:?}", field_schema);
+            }
+        }
+    }
+    #[test]
+    fn test_validate_field_value() {
+        for field_type in FieldType::iter() {
+            let (field_value, should_be_valid) = match field_type {
+                FieldType::Text(_) => (FieldValue::Text("Hello".to_string()), true),
+                FieldType::Markdown(_) => (FieldValue::Markdown("**Bold Text**".to_string()), true),
+                FieldType::Number => (FieldValue::Number(Some(42.0)), true),
+                FieldType::Boolean => (FieldValue::Boolean(true), true),
+                FieldType::Date => (
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                    true,
+                ),
+                FieldType::DateTime => (
+                    FieldValue::DateTime(Some(
+                        DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                    )),
+                    true,
+                ),
+                FieldType::Image => (FieldValue::Image(Some(ImageID::from_u64(1))), true),
+                FieldType::CompositeField(_) | FieldType::Array(_) | FieldType::TextEnum(_) => {
+                    continue;
+                }
+            };
+            let test_schema = FieldSchema {
+                name: "test".to_string(),
+                field_type: field_type.clone(),
+                required: true,
+                width: 12,
+                height: 1,
+            };
+            let result = field_value.validate_field_value(&test_schema, &HashMap::new());
+            assert_eq!(
+                result.is_ok(),
+                should_be_valid,
+                "Failed on field type {:?}",
+                field_type
+            );
+        }
+
+        let patterns = vec![
+            (
+                FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }),
+                HashMap::new(),
+                FieldValue::Text("Hello".to_string()),
+                true,
+                true,
+            ),
+            (
+                FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }),
+                HashMap::new(),
+                FieldValue::Text("Hi".to_string()),
+                true,
+                false,
+            ),
+            (
+                FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }),
+                HashMap::new(),
+                FieldValue::Text("Hello, World!".to_string()),
+                true,
+                false,
+            ),
+            (
+                FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }),
+                HashMap::new(),
+                FieldValue::Text("".to_string()),
+                true,
+                false,
+            ),
+            (
+                FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }),
+                HashMap::new(),
+                FieldValue::Text("".to_string()),
+                false,
+                true,
+            ),
+            (
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![
+                        FieldSchema {
+                            name: "sub_field".to_string(),
+                            field_type: FieldType::Text(TextFieldOptions::default()),
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        },
+                        FieldSchema {
+                            name: "extra_field".to_string(),
+                            field_type: FieldType::Number,
+                            required: false,
+                            width: 12,
+                            height: 1,
+                        },
+                    ],
+                )]),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp_1".into(),
+                    values: {
+                        let mut v = HashMap::new();
+                        v.insert(
+                            "sub_field".to_string(),
+                            FieldValue::Text("Value".to_string()),
+                        );
+                        FieldValueMap(v, PhantomData)
+                    },
+                })),
+                true,
+                true,
+            ),
+            (
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![
+                        FieldSchema {
+                            name: "sub_field".to_string(),
+                            field_type: FieldType::Text(TextFieldOptions::default()),
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        },
+                        FieldSchema {
+                            name: "sub_field2".to_string(),
+                            field_type: FieldType::Number,
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        },
+                    ],
+                )]),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp_2".into(),
+                    values: FieldValueMap(HashMap::new(), PhantomData),
+                })),
+                true,
+                false,
+            ),
+            (
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                HashMap::new(),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp_1".into(),
+                    values: FieldValueMap(HashMap::new(), PhantomData),
+                })),
+                true,
+                false,
+            ),
+            (
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![
+                        FieldSchema {
+                            name: "sub_field".to_string(),
+                            field_type: FieldType::Text(TextFieldOptions::default()),
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        },
+                        FieldSchema {
+                            name: "sub_field2".to_string(),
+                            field_type: FieldType::Number,
+                            required: true,
+                            width: 12,
+                            height: 1,
+                        },
+                    ],
+                )]),
+                FieldValue::CompositeField(None),
+                false,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![]),
+                false,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Boolean(true),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }), FieldType::Text(TextFieldOptions { max_length: Some(8), min_length: Some(3) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Text("length 9.".to_string()),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(5) }), FieldType::Text(TextFieldOptions { max_length: Some(15), min_length: Some(7) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Text("length is 12".to_string()),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: None, min_length: Some(5) }), FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(7) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Text("length is 12".to_string()),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: None }), FieldType::Text(TextFieldOptions { max_length: Some(10), min_length: Some(7) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Text("1".to_string()),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: Some(5), min_length: Some(3) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("1".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions { max_length: Some(5), min_length: Some(3) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("length is 12".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                    FieldValue::Number(Some(10.0)),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Number(Some(10.0)),
+                    FieldValue::Number(Some(20.0)),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Markdown(TextFieldOptions { max_length: Some(10), min_length: None }), FieldType::Markdown(TextFieldOptions { max_length: Some(10), min_length: Some(7) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Markdown("Item1".to_string()),
+                    FieldValue::Markdown("1".to_string()),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Markdown(TextFieldOptions { max_length: Some(5), min_length: Some(3) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Markdown("1".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Markdown(TextFieldOptions { max_length: Some(5), min_length: Some(3) })]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Markdown("length is 12".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Text("Item1".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Boolean]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::Markdown("Item1".to_string()),
+                ]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![FieldType::Array(vec![FieldType::Boolean])]),
+                HashMap::new(),
+                FieldValue::Array(vec![FieldValue::Array(vec![
+                    FieldValue::Boolean(true),
+                    FieldValue::Boolean(false),
+                ])]),
+                true,
+                false,
+            ),
+            (
+                FieldType::Array(vec![
+                    FieldType::Boolean,
+                    FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                ]),
+                HashMap::from_iter(vec![(
+                    "comp_1".into(),
+                    vec![FieldSchema {
+                        name: "sub_field".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    }],
+                )]),
+                FieldValue::Array(vec![
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value".to_string()),
+                            );
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::Boolean(true),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![
+                    FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
+                    FieldType::TextEnum(vec!["Option2".to_string(), "Option3".to_string()]),
+                ]),
+                HashMap::new(),
+                FieldValue::Array(vec![
+                    FieldValue::TextEnum(vec!["Option1".to_string(), "Option3".to_string()]),
+                    FieldValue::TextEnum(vec!["Option2".to_string()]),
+                ]),
+                true,
+                true,
+            ),
+            (
+                FieldType::Array(vec![FieldType::TextEnum(vec![
+                    "Option1".to_string(),
+                    "Option2".to_string(),
+                ])]),
+                HashMap::new(),
+                FieldValue::Array(vec![FieldValue::TextEnum(vec![])]),
+                true,
+                false,
+            ),
+            (
+                FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec!["Option1".to_string()]),
+                true,
+                true,
+            ),
+            (
+                FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec![]),
+                true,
+                false,
+            ),
+            (
+                FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec![]),
+                false,
+                true,
+            ),
+            (
+                FieldType::TextEnum(vec!["Option1".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec!["Option1".to_string(), "InvalidOption".to_string()]),
+                true,
+                false,
+            ),
+            (
+                FieldType::TextEnum(vec!["invalidTest".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec!["InvalidOption".to_string()]),
+                true,
+                false,
+            ),
+            (
+                FieldType::TextEnum(vec!["empty".to_string()]),
+                HashMap::new(),
+                FieldValue::TextEnum(vec![]),
+                true,
+                false,
+            ),
+            (
+                FieldType::TextEnum(vec!["boolean".to_string()]),
+                HashMap::new(),
+                FieldValue::Boolean(true),
+                true,
+                false,
+            ),
+        ];
+        for (field, composite_schemas, value, required, expected_validity) in patterns {
+            let schema = FieldSchema {
+                name: "test_field".to_string(),
+                field_type: field,
+                required,
+                width: 12,
+                height: 1,
+            };
+            let result = value.validate_field_value(&schema, &composite_schemas);
+            assert_eq!(
+                result.is_ok(),
+                expected_validity,
+                "Failed on field type {:?}, error: {:?}",
+                schema,
+                result.err()
+            );
+        }
+    }
+    #[test]
+    fn test_format_field_value() {
+        for field_type in FieldType::iter() {
+            let (field, composite_schemas, field_value, expected_formatted_value) = match field_type
+            {
+                FieldType::Text(_) => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Text("Hello".to_string()),
+                    FieldValue::Text("Hello".to_string()),
+                ),
+                FieldType::Markdown(_) => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Markdown("**Bold Text**".to_string()),
+                    FieldValue::Markdown("**Bold Text**".to_string()),
+                ),
+                FieldType::Number => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Number(Some(42.0)),
+                    FieldValue::Number(Some(42.0)),
+                ),
+                FieldType::Boolean => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Boolean(true),
+                    FieldValue::Boolean(true),
+                ),
+                FieldType::Date => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                ),
+                FieldType::DateTime => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::DateTime(Some(
+                        DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                    )),
+                    FieldValue::DateTime(Some(
+                        DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
+                    )),
+                ),
+                FieldType::Image => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Image(Some(ImageID::from_u64(1))),
+                    FieldValue::Image(Some(ImageID::from_u64(1))),
+                ),
+                FieldType::CompositeField(_) => (
+                    FieldType::CompositeField(CompositeFieldReference {
+                        id: "comp_1".into(),
+                    }),
+                    HashMap::from_iter(vec![(
+                        "comp_1".into(),
+                        vec![
+                            FieldSchema {
+                                name: "sub_field".to_string(),
+                                field_type: FieldType::Text(TextFieldOptions::default()),
+                                required: true,
+                                width: 12,
+                                height: 1,
+                            },
+                            FieldSchema {
+                                name: "extra_field".to_string(),
+                                field_type: FieldType::Number,
+                                required: false,
+                                width: 12,
+                                height: 1,
+                            },
+                        ],
+                    )]),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value".to_string()),
+                            );
+                            v.insert("unknown_field".to_string(), FieldValue::Boolean(true));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "comp_1".into(),
+                        values: {
+                            let mut v = HashMap::new();
+                            v.insert(
+                                "sub_field".to_string(),
+                                FieldValue::Text("Value".to_string()),
+                            );
+                            v.insert("extra_field".to_string(), FieldValue::Number(None));
+                            FieldValueMap(v, PhantomData)
+                        },
+                    })),
+                ),
+                FieldType::Array(_) => (
+                    FieldType::Array(vec![FieldType::Text(TextFieldOptions::default()), FieldType::Boolean]),
+                    HashMap::new(),
+                    FieldValue::Array(vec![
+                        FieldValue::Text("Item1".to_string()),
+                        FieldValue::Number(Some(10.0)),
+                    ]),
+                    FieldValue::Array(vec![FieldValue::Text("Item1".to_string())]),
+                ),
+                FieldType::TextEnum(_) => (
+                    FieldType::TextEnum(vec!["Option1".to_string()]),
+                    HashMap::new(),
+                    FieldValue::TextEnum(vec!["Option1".to_string(), "InvalidOption".to_string()]),
+                    FieldValue::TextEnum(vec!["Option1".to_string()]),
+                ),
+            };
+            let scheme = FieldSchema {
+                name: "test".to_string(),
+                field_type: field,
+                required: true,
+                width: 12,
+                height: 1,
+            };
+            let formatted_value = field_value.format_field_value(&scheme, &composite_schemas);
+            assert_eq!(
+                formatted_value, expected_formatted_value,
+                "Failed on field type {:?}",
+                scheme
+            );
+        }
+    }
+    #[test]
+    fn test_get_field_type() {
+        for value in FieldValue::iter() {
+            let field_type = value.get_type();
+            match value {
+                FieldValue::Text(_) => assert_eq!(field_type, FieldType::Text(TextFieldOptions::default())),
+                FieldValue::Markdown(_) => assert_eq!(field_type, FieldType::Markdown(TextFieldOptions::default())),
+                FieldValue::Number(_) => assert_eq!(field_type, FieldType::Number),
+                FieldValue::Boolean(_) => assert_eq!(field_type, FieldType::Boolean),
+                FieldValue::Date(_) => assert_eq!(field_type, FieldType::Date),
+                FieldValue::DateTime(_) => assert_eq!(field_type, FieldType::DateTime),
+                FieldValue::Image(_) => assert_eq!(field_type, FieldType::Image),
+                FieldValue::CompositeField(_) => {
+                    assert_eq!(
+                        field_type,
+                        FieldType::CompositeField(CompositeFieldReference { id: CompositeFieldId::default() })
+                    );
+                }
+                FieldValue::Array(_) => assert_eq!(field_type, FieldType::Array(vec![])),
+                FieldValue::TextEnum(_) => assert_eq!(field_type, FieldType::TextEnum(vec![])),
+            }
+        }
+    }
+    #[test]
+    fn test_format_to_schema() {
+        let schema = vec![
+            FieldSchema {
+                name: "title".to_string(),
+                field_type: FieldType::Text(TextFieldOptions::default()),
+                required: true,
+                width: 12,
+                height: 1,
+            },
+            FieldSchema {
+                name: "age".to_string(),
+                field_type: FieldType::Number,
+                required: false,
+                width: 12,
+                height: 1,
+            },
+            FieldSchema {
+                name: "profile".to_string(),
+                field_type: FieldType::CompositeField(CompositeFieldReference {
+                    id: "profile_1".into(),
+                }),
+                required: false,
+                width: 12,
+                height: 1,
+            },
+            FieldSchema {
+                name: "tags".to_string(),
+                field_type: FieldType::Array(vec![
+                    FieldType::CompositeField(CompositeFieldReference {
+                        id: "tag_1".into(),
+                    }),
+                    FieldType::Text(TextFieldOptions::default()),
+                ]),
+                required: false,
+                width: 12,
+                height: 1,
+            },
+        ];
+        let composite_schemas = HashMap::from([
+            (
+                "profile_1".into(),
+                vec![
+                    FieldSchema {
+                        name: "bio".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldSchema {
+                        name: "avatar".to_string(),
+                        field_type: FieldType::Image,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                ],
+            ),
+            (
+                "tag_1".into(),
+                vec![FieldSchema {
+                    name: "name".to_string(),
+                    field_type: FieldType::Text(TextFieldOptions::default()),
+                    required: true,
+                    width: 12,
+                    height: 1,
+                }],
+            ),
+        ]);
+        let values = FieldValueMap(HashMap::from([
+            ("title".to_string(), FieldValue::Text("Hello".to_string())),
+            (
+                "profile".to_string(),
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "profile_1".into(),
+                    values: FieldValueMap(HashMap::from([(
+                        "bio".to_string(),
+                        FieldValue::Text("This is my bio".to_string()),
+                    )]), PhantomData),
+                })),
+            ),
+            (
+                "tags".to_string(),
+                FieldValue::Array(vec![
+                    FieldValue::CompositeField(Some(CompositeFieldValue {
+                        id: "tag_1".into(),
+                        values: FieldValueMap(HashMap::from([(
+                            "name".to_string(),
+                            FieldValue::Text("rust".to_string()),
+                        )]), PhantomData),
+                    })),
+                    FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
+                    FieldValue::Text("programming".to_string()),
+                ]),
+            ),
+        ]), PhantomData);
+        let formatted = values.format_to_schema(&composite_schemas, &schema);
+        assert_eq!(
+            formatted.get("title"),
+            Some(&FieldValue::Text("Hello".to_string()))
+        );
+        assert_eq!(formatted.get("age"), Some(&FieldValue::Number(None)));
+        assert!(
+            formatted.get("profile").is_some(),
+            "Profile field should be present"
+        );
+        let fv = formatted.get("profile").unwrap();
+        match fv {
+            FieldValue::CompositeField(Some(cv)) => {
+                assert_eq!(cv.id, "profile_1".into());
+                assert_eq!(
+                    cv.values.get("bio"),
+                    Some(&FieldValue::Text("This is my bio".to_string()))
+                );
+                assert_eq!(cv.values.get("avatar"), Some(&FieldValue::Image(None)));
+            }
+            _ => panic!("Profile field should be a CompositeField with Some value"),
+        }
+
+        assert_eq!(
+            formatted.get("tags"),
+            Some(&FieldValue::Array(vec![
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "tag_1".into(),
+                    values: FieldValueMap(HashMap::from([(
+                        "name".to_string(),
+                        FieldValue::Text("rust".to_string())
+                    )]), PhantomData),
+                })),
+                FieldValue::Text("programming".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_validate_to_schema() {
+        let pattern = vec![
+            (
+                vec![
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                ],
+                FieldValueMap(HashMap::from([
+                    ("title".to_string(), FieldValue::Text("Hello".to_string())),
+                    ("age".to_string(), FieldValue::Number(Some(25.0))),
+                ]), PhantomData),
+                true,
+            ),
+            (
+                vec![
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: false,
+                        width: 12,
+                        height: 1,
+                    },
+                ],
+                FieldValueMap(HashMap::from([("title".to_string(), FieldValue::Text("Hello".to_string()))]), PhantomData),
+                true,
+            ),
+            (
+                vec![
+                    FieldSchema {
+                        name: "title".to_string(),
+                        field_type: FieldType::Text(TextFieldOptions::default()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                    FieldSchema {
+                        name: "age".to_string(),
+                        field_type: FieldType::Number,
+                        required: true,
+                        width: 12,
+                        height: 1,
+                    },
+                ],
+                FieldValueMap(HashMap::from([("title".to_string(), FieldValue::Text("Hello".to_string()))]), PhantomData),
+                false,
+            ),
+        ];
+        for (schema, values, expected_result) in pattern {
+            let result = values.validate_to_schema(&HashMap::new(), &schema);
+            assert_eq!(
+                result.is_ok(),
+                expected_result,
+                "Schema: {:?}, Values: {:?}",
+                schema,
+                values
+            );
+        }
+    }
+    #[test]
+    fn test_field_type_enum_validation() {
+        let field_type = FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]);
+        let schema = FieldSchema {
+            name: "status".to_string(),
+            field_type: field_type.clone(),
+            required: true,
+            width: 12,
+            height: 1,
+        };
+        let valid_value = FieldValue::TextEnum(vec!["Option1".to_string()]);
+        let invalid_value = FieldValue::TextEnum(vec!["InvalidOption".to_string()]);
+        assert!(
+            valid_value
+                .validate_field_value(&schema, &HashMap::new())
+                .is_ok()
+        );
+        assert!(
+            invalid_value
+                .validate_field_value(&schema, &HashMap::new())
+                .is_err()
+        );
+    }
+}

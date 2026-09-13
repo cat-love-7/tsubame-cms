@@ -1,0 +1,23 @@
+<p>edit-schema works!</p>
+<mat-grid-list cols="12" rowHeight="150px" gutterSize="16px">
+  
+  @for (field of Schema; track field.name) {
+    <mat-grid-tile colspan="12" rowspan="1" 
+  cdkDropList
+  cdkDropListOrientation="mixed">
+      <app-field [(field)]="Schema[$index]" />
+      <button matButton color="warn" (click)="Schema.splice($index,1); SchemaChange.emit(Schema)">
+        <mat-icon>delete</mat-icon>
+      </button>
+    </mat-grid-tile>
+  }
+</mat-grid-list>
+<button matButton (click)="addField()">
+  <mat-icon>add</mat-icon>
+</button>
+<button matButton color="primary">
+  <mat-icon>dashboard_customize</mat-icon>
+</button>
+<button matButton color="primary" (click)="saveSchema()">
+  <mat-icon>save</mat-icon>
+</button>

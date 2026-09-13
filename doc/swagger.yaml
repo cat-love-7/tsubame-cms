@@ -1,0 +1,231 @@
+openapi: 3.1.0
+info:
+  title: SL CMS API
+  description: |-
+    This is a sample Pet Store Server based on the OpenAPI 3.1 specification.  You can find out more about
+    Swagger at [https://swagger.io](https://swagger.io). In the third iteration of the pet store, we've switched to the design first approach!
+    You can now help us improve the API whether it's by making changes to the definition itself or to the code.
+    That way, with time, we can improve the API in general, and expose some of the new features in OAS3.
+
+    Some useful links:
+    - [The Pet Store repository](https://github.com/swagger-api/swagger-petstore)
+    - [The source API definition for the Pet Store](https://github.com/swagger-api/swagger-petstore/blob/master/src/main/resources/openapi.yaml)
+
+  termsOfService: 
+  contact:
+    email: 
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.0.12
+externalDocs:
+  description: Find out more about SL CMS API
+  url: https://swagger.io
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: collections
+    description: Operations about collections
+  - name: compositeFields
+    description: Operations about composite fields
+paths:
+  /models/collections:
+    get:
+      tags:
+        - collections
+      summary: collection names.
+      responses:
+        '200':
+          description: collection name list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /models/collections/{collectionName}/schema:
+    get:
+      tags:
+        - collections
+      summary: collection schema.
+      parameters:
+        - name: collectionName
+          in: path
+          description: name of the collection
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: collection schema
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldSchema"
+    post:
+      tags:
+        - collections
+      summary: add schema to collection.
+      parameters:
+        - name: collectionName
+          in: path
+          description: name of the collection
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: schema to add
+        content:
+          application/json:
+            schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldSchema"
+        required: true
+      responses:
+        '200':
+          description: added document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldMap"
+  
+  /models/composite_fields:
+    get:
+      tags:
+        - compositeFields
+      summary: composite field names.
+      responses:
+        '200':
+          description: composite field name list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/FieldSchema"
+  /models/composite_fields/{id}:
+    get:
+      tags:
+        - compositeFields
+      summary: composite field by id.
+      parameters:
+        - name: id
+          in: path
+          description: id of the composite field
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: composite field
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldSchema"
+    post:
+      tags:
+        - compositeFields
+      summary: add composite field.
+      parameters:
+        - name: id
+          in: path
+          description: id of the composite field
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: composite field to add
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/FieldSchema"
+        required: true
+      responses:
+        '200':
+          description: added composite field
+          content:
+            application/json:
+              schema:
+                type: string
+components:
+  schemas:
+    FieldSchema:
+      type: object
+      properties:
+        name:
+          type: string
+        field_type:
+          $ref: "#/components/schemas/FieldType"
+        required:
+          type: boolean
+      required:
+        - name
+        - field_type
+        - required
+    CompositeTypeSchema:
+      type: object
+      properties:
+        CompositeField:
+          type: object
+          properties:
+            id:
+              type: string
+      required:
+        - name
+        - fields
+    ArrayTypeSchema:
+      type: array
+      items:
+        $ref: "#/components/schemas/FieldType"
+    TextEnumTypeSchema:
+      type: array
+      items:
+        type: string
+    FieldType:
+      oneOf:
+        - type: string
+          enum:
+            - Text
+            - Markdown
+            - Number
+            - Boolean
+            - Date
+            - DateTime
+            - Image
+        - $ref: "#/components/schemas/CompositeTypeSchema"
+        - $ref: "#/components/schemas/ArrayTypeSchema"
+        - $ref: "#/components/schemas/TextEnumTypeSchema"
+    FieldValueText:
+      type: object
+      properties: 
+        Text:
+          type: string
+    FieldValueMarkdown:
+      type: object
+      properties: 
+        Markdown:
+          type: string
+    FieldValueNumber:
+      type: object
+      properties: 
+        Number:
+          type: number
+    FieldValue:
+      oneOf: 
+        - $ref: "#/components/schemas/FieldValueText"
+        - $ref: '#/components/schemas/FieldValueMarkdown'
+        - $ref: '#/components/schemas/FieldValueNumber'
+    FieldMap:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/FieldValue"
+    

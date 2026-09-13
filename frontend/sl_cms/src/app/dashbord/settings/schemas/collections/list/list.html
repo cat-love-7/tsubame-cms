@@ -1,0 +1,28 @@
+<button matIconButton [routerLink]="['/dashbord/settings/schemas/collections/create']">
+  <mat-icon>add</mat-icon>
+</button>
+<table mat-table [dataSource]="collectionNames" class="mat-elevation-z8">
+  <ng-container matColumnDef="name">
+      <th mat-header-cell *matHeaderCellDef> Collection Name </th>
+      <td mat-cell *matCellDef="let collection"> {{collection}} </td>
+  </ng-container>
+  <ng-container matColumnDef="edit">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let collection"> 
+      <button matIconButton [routerLink]="['/settings/schemas/collections/edit/', collection]">
+        <mat-icon>edit</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+  <ng-container matColumnDef="delete">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let collection"> 
+      <button matIconButton>
+        <mat-icon>delete</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+  
+  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+  <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+</table>
