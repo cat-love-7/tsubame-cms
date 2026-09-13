@@ -2,8 +2,11 @@
 //!
 //! These drive the real router with `tower::ServiceExt::oneshot`, so routing, extractors,
 //! the auth middleware, status codes and JSON shapes are all exercised — not just the
-//! services underneath. Storage is the real on-premises adapter on a throwaway directory,
-//! so the adapter is covered too.
+//! services underneath. Storage is a real adapter on a throwaway directory, so the adapter is
+//! covered too, which means a backend has to be selected: `on-premises` is the only one today
+//! and it provides [`crate::on_premises::open_test_repository`]. A second adapter would offer
+//! the same helper and this gate would widen to include it.
+#![cfg(feature = "on-premises")]
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -12,8 +15,6 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use axum::Router;
-use rkv::backend::{SafeMode, SafeModeEnvironment};
-use rkv::{Manager, Rkv};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
@@ -160,13 +161,7 @@ async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
     let dir = PathBuf::from(format!("./data/on_premises/test_http_{id}"));
     std::fs::create_dir_all(&dir).unwrap();
 
-    let env = {
-        let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
-        manager
-            .get_or_create_with_capacity(dir.as_path(), 512, Rkv::with_capacity::<SafeMode>)
-            .unwrap()
-    };
-    let repository = Arc::new(Repository::new(env, dir.join("images")));
+    let repository = crate::on_premises::open_test_repository(&dir);
     let module = Arc::new(AppModule::new(
         repository,
         TokenIssuer::new(b"integration-test-secret", 1),

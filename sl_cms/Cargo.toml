@@ -3,6 +3,11 @@ name = "sl_cms"
 version = "0.1.0"
 edition = "2024"
 
+# Exactly one storage backend is selected at compile time, and `main.rs` refuses to build with
+# none or with more than one. `gcp` / `azure` are reserved names, not implementations.
+#
+#   cargo build                                  # on-premises (rkv + local image files)
+#   cargo build --no-default-features --features aws   # DynamoDB + S3, not written yet
 [features]
 default = ["on-premises"]
 on-premises = ["dep:rkv"]

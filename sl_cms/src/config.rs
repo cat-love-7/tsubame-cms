@@ -192,18 +192,6 @@ impl Config {
             .map_err(|e| format!("invalid listen address {raw:?}: {e}"))
     }
 
-    /// On-premises storage root, e.g. `./data/on_premises`.
-    pub fn on_premises_dir(&self) -> PathBuf {
-        self.data_root.join("on_premises")
-    }
-
-    pub fn rkv_dir(&self) -> PathBuf {
-        self.on_premises_dir().join("rkv_data")
-    }
-
-    pub fn images_dir(&self) -> PathBuf {
-        self.on_premises_dir().join("images")
-    }
 }
 
 fn non_empty_env(name: &str) -> Option<String> {
@@ -289,15 +277,6 @@ mod tests {
             vec!["http://a.example".to_string(), "http://b.example".to_string()]
         );
         assert!(parse_origins(" * ").iter().any(|o| o == "*"));
-    }
-
-    #[test]
-    fn derives_storage_paths_from_data_root() {        let config = Config {
-            data_root: PathBuf::from("/tmp/cms"),
-            ..Config::default()
-        };
-        assert_eq!(config.rkv_dir(), PathBuf::from("/tmp/cms/on_premises/rkv_data"));
-        assert_eq!(config.images_dir(), PathBuf::from("/tmp/cms/on_premises/images"));
     }
 
     #[test]

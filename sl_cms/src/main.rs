@@ -1,3 +1,15 @@
+// A backend has to be chosen: without one there is nothing to build `AppModule` on, and the
+// binary would come up doing nothing at all.
+#[cfg(not(any(
+    feature = "on-premises",
+    feature = "aws",
+    feature = "gcp",
+    feature = "azure"
+)))]
+compile_error!(
+    "select a storage backend: build with `--features on-premises` (the default) or `--features aws`"
+);
+
 // Exactly one storage backend may be selected: both provide `AppModule` and the image
 // store, and they are not meant to be linked together.
 #[cfg(all(feature = "on-premises", any(feature = "aws", feature = "gcp", feature = "azure")))]
