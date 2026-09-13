@@ -96,6 +96,17 @@ export class AuthService {
     );
   }
 
+  /**
+   * Adopt a token issued in place of the current one.
+   *
+   * A password change ends every session, so the replacement the server returns has to
+   * take the old token's place or the next request would be refused.
+   */
+  replaceToken(token: string): void {
+    this.tokenSignal.set(token);
+    writeStorage(TOKEN_KEY, token);
+  }
+
   logout(): void {
     this.clear();
     this.router.navigate(['/login']);

@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::models::error::HttpError;
 use crate::models::user::{
-    is_plausible_email, normalize_email, LoginResponse, NewUserRequest, Permission, UpdateUserRequest,
-    User, UserId, UserResponse,
+    is_plausible_email, normalize_email, LoginResponse, NewUserRequest, PasswordChangedResponse,
+    Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::repositories::user_repository::UserRepository;
 use token::TokenIssuer;
@@ -74,17 +74,26 @@ impl<R: UserRepository> AuthService<R> {
 
     /// Resolve a bearer token to the (active) user it belongs to.
     pub fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
-        let user_id = self.issuer.verify_subject(token).map_err(|e| {
+        let claims = self.issuer.verify(token).map_err(|e| {
             // Do not echo the verifier's reason to the client.
             tracing::debug!("rejected token: {e}");
             HttpError::Unauthorized("invalid or expired token")
         })?;
+        let user_id = UserId::from(claims.sub.as_str());
 
         let user = self
             .repository
             .get_user_from_id(&user_id)
             .map_err(internal)?
             .ok_or_else(|| HttpError::Unauthorized("invalid or expired token"))?;
+
+        // A password change ends every session that was issued before it. The check is
+        // against the stored account, so it holds however long the token has left to run.
+        if claims.ver != user.token_version {
+            return Err(HttpError::Unauthorized(
+                "this session ended when the password changed",
+            ));
+        }
 
         if !user.is_active {
             return Err(HttpError::Forbidden("account is disabled"));
@@ -160,28 +169,41 @@ impl<R: UserRepository> AuthService<R> {
     }
 
     /// Set someone else's password (an administrator resetting an account).
+    /// Reset someone else's password, ending every session they have.
+    ///
+    /// The caller keeps their own session: the version belongs to the account whose
+    /// password changed, not to whoever changed it.
     pub fn set_password(&self, id: &UserId, password: &str) -> Result<(), HttpError> {
         let mut user = self.require_user(id)?;
         validate_password(password)?;
         user.password_hash = password::hash_password(password).map_err(internal)?;
+        user.end_existing_sessions();
         self.repository.update_user(id, &user).map_err(internal)
     }
 
     /// Change your own password, proving you know the current one so that a stolen session
     /// is not enough to lock the owner out.
+    ///
+    /// This ends every existing session, the caller's included - that is the point, since
+    /// a password change is how someone reacts to a leaked token. A token for the new
+    /// generation comes back so the caller is not thrown out of the screen they are on.
     pub fn change_own_password(
         &self,
         id: &UserId,
         current: &str,
         new: &str,
-    ) -> Result<(), HttpError> {
+    ) -> Result<PasswordChangedResponse, HttpError> {
         let mut user = self.require_user(id)?;
         if !password::verify_password(current, &user.password_hash) {
             return Err(HttpError::Forbidden("current password is incorrect"));
         }
         validate_password(new)?;
         user.password_hash = password::hash_password(new).map_err(internal)?;
-        self.repository.update_user(id, &user).map_err(internal)
+        user.end_existing_sessions();
+        self.repository.update_user(id, &user).map_err(internal)?;
+
+        let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
+        Ok(PasswordChangedResponse { token, expires_at })
     }
 
     fn require_user(&self, id: &UserId) -> Result<User, HttpError> {
@@ -372,6 +394,55 @@ mod tests {
         // The issued token resolves back to the same user.
         let user = auth.user_from_token(&response.token).unwrap();
         assert_eq!(user.email, "alice@example.com");
+    }
+
+    /// Changing your own password ends every session, including the one that asked for the
+    /// change - and hands that caller a token for the new generation so they stay signed in.
+    #[test]
+    fn changing_your_own_password_ends_the_sessions_that_came_before() {
+        let (auth, _) = service();
+        let created = auth
+            .create_user(new_user("a@example.com", "old-password", false))
+            .unwrap();
+
+        let stolen = auth.login("a@example.com", "old-password").unwrap().token;
+        assert!(auth.user_from_token(&stolen).is_ok());
+
+        let changed = auth
+            .change_own_password(&created.id, "old-password", "new-password")
+            .unwrap();
+
+        // The token that existed before the change is dead...
+        assert_eq!(auth.user_from_token(&stolen).unwrap_err().status_code, 401);
+        // ...the caller's replacement works...
+        assert!(auth.user_from_token(&changed.token).is_ok());
+        assert!(changed.expires_at > chrono::Utc::now());
+        // ...and the credentials are the new ones.
+        assert!(auth.login("a@example.com", "old-password").is_err());
+        assert!(auth.login("a@example.com", "new-password").is_ok());
+    }
+
+    /// An administrator resetting someone else's password ends that account's sessions and
+    /// leaves the administrator's own session alone.
+    #[test]
+    fn resetting_another_accounts_password_only_ends_that_accounts_sessions() {
+        let (auth, _) = service();
+        auth.create_user(new_user("admin@example.com", "admin-password", true))
+            .unwrap();
+        let target = auth
+            .create_user(new_user("editor@example.com", "editor-password", false))
+            .unwrap();
+
+        let admin_token = auth.login("admin@example.com", "admin-password").unwrap().token;
+        let editor_token = auth
+            .login("editor@example.com", "editor-password")
+            .unwrap()
+            .token;
+
+        auth.set_password(&target.id, "reset-password").unwrap();
+
+        assert_eq!(auth.user_from_token(&editor_token).unwrap_err().status_code, 401);
+        assert!(auth.user_from_token(&admin_token).is_ok(), "自分のセッションは残る");
     }
 
     #[test]

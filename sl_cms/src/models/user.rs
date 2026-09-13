@@ -16,6 +16,15 @@ pub struct User {
     pub permission: Permission,
     pub created_at: DateTime<Utc>,
     pub last_login: Option<DateTime<Utc>>,
+    /// Bumped whenever the credentials change, so every token issued before that stops
+    /// being accepted.
+    ///
+    /// A "reject tokens issued before X" timestamp would need the issuer and the verifier
+    /// to agree on the clock; a counter only has to be read from the stored account.
+    /// `serde(default)` keeps accounts written before this field readable: they start at
+    /// version 0, which is what their outstanding tokens carry.
+    #[serde(default)]
+    pub token_version: u64,
 }
 
 impl User {
@@ -29,7 +38,13 @@ impl User {
             permission,
             created_at: Utc::now(),
             last_login: None,
+            token_version: 0,
         }
+    }
+
+    /// End every session that exists now, and start a new generation of tokens.
+    pub fn end_existing_sessions(&mut self) {
+        self.token_version = self.token_version.saturating_add(1);
     }
 
     /// Whether this user may perform write operations.
@@ -132,6 +147,16 @@ pub struct LoginResponse {
     pub user: UserResponse,
 }
 
+/// What changing your *own* password answers with: a token for the new generation.
+///
+/// The change ends every session, including the caller's, so without this the person who
+/// just changed their password would be signed out of the screen they did it from.
+#[derive(serde::Serialize, Debug)]
+pub struct PasswordChangedResponse {
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+}
+
 #[derive(serde::Deserialize, Debug)]
 pub struct NewUserRequest {
     pub email: String,
@@ -192,6 +217,24 @@ mod tests {
         // The response projection must not leak the hash.
         let json = serde_json::to_string(&user.to_response()).unwrap();
         assert!(!json.contains("hash"), "response leaked the password hash: {json}");
+    }
+
+    /// An account written before `token_version` existed still reads, at generation 0 -
+    /// which is what the tokens outstanding for it carry, so nobody is signed out by the
+    /// upgrade itself.
+    #[test]
+    fn an_account_from_before_token_versions_existed_is_still_readable() {
+        let legacy: User = serde_json::from_str(
+            r#"{"id":"u-1","email":"a@example.com","password_hash":"h","is_active":true,
+                "is_admin":false,"permission":{"can_publish":false,"can_edit":false,"can_view":true},
+                "created_at":"2024-01-01T00:00:00Z","last_login":null}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.token_version, 0);
+
+        let mut changed = legacy.clone();
+        changed.end_existing_sessions();
+        assert_eq!(changed.token_version, 1);
     }
 
     #[test]

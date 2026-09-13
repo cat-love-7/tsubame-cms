@@ -46,7 +46,7 @@ class StubUsersService {
     this.reset.push(id);
     return of(void 0);
   };
-  changeOwnPassword = () => of(void 0);
+  changeOwnPassword = () => of({ token: 'replacement-token', expires_at: '2024-01-01T00:00:00Z' });
 }
 
 describe('Accounts', () => {

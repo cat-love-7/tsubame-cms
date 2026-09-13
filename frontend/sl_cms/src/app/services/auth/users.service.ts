@@ -2,7 +2,12 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser } from 'app/core/auth/auth.service';
-import { NewUser, UserChange, UsersRepository } from 'app/repositories/auth/users.repository';
+import {
+  NewUser,
+  PasswordChanged,
+  UserChange,
+  UsersRepository,
+} from 'app/repositories/auth/users.repository';
 
 @Injectable({
   providedIn: 'root',
@@ -30,7 +35,7 @@ export class UsersService {
     return this.users.resetPassword(id, password);
   }
 
-  changeOwnPassword(currentPassword: string, newPassword: string): Observable<void> {
+  changeOwnPassword(currentPassword: string, newPassword: string): Observable<PasswordChanged> {
     return this.users.changeOwnPassword(currentPassword, newPassword);
   }
 }

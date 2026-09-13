@@ -1720,6 +1720,72 @@ async fn publishing_notifies_the_configured_webhook() {
     assert_eq!(body["published_at"], Value::Null);
 }
 
+/// A password change ends the sessions that came before it. The account that asked for the
+/// change gets a token for the new generation, so the screen they are on keeps working.
+#[tokio::test]
+async fn changing_a_password_ends_the_tokens_that_came_before_it() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    // A second account, so the administrator's own session is not the one under test.
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&admin),
+        Some(json!({
+            "email": "editor@example.com",
+            "password": "editor-password",
+            "is_admin": false,
+            "permission": Permission::editor(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let editor_id = created["id"].as_str().unwrap().to_string();
+
+    let (_, body) = login(&app.router, "editor@example.com", "editor-password").await;
+    let editor = body["token"].as_str().unwrap().to_string();
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/auth/me/password",
+        Some(&editor),
+        Some(json!({ "current_password": "editor-password", "new_password": "editor-password-2" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let replacement = body["token"]
+        .as_str()
+        .expect("the caller gets a token for the new generation")
+        .to_string();
+
+    // The token that existed before the change is rejected...
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&editor), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // ...the replacement works...
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&replacement), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // ...and an administrator resetting the password ends that one too, while leaving the
+    // administrator's own session alone.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{editor_id}/password"),
+        Some(&admin),
+        Some(json!({ "password": "reset-by-an-admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&replacement), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK, "自分のセッションは終わらない");
+}
+
 /// Publishing leaves an audit trail: the account is recorded on the item, the admin side
 /// can read it back, and the public delivery API never sees it.
 #[tokio::test]

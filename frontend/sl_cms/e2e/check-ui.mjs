@@ -589,6 +589,40 @@ try {
     (await viewer.page.locator('a[href="/account"], button[aria-label="Change password"]').count()) === 1,
   );
 
+  // ------------------------------------------- a password change ends the old sessions
+  await viewer.page.goto(`${BASE}/account`, { waitUntil: 'networkidle' });
+  const stolenToken = await viewer.page.evaluate(() => localStorage.getItem('sl_cms.token'));
+  await viewer.page.fill('input[name=current]', 'role-password');
+  await viewer.page.fill('input[name=next]', 'role-password-2');
+  await viewer.page.fill('input[name=repeated]', 'role-password-2');
+  await viewer.page.click('button:has-text("Change password")');
+  await viewer.page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
+  check(
+    'パスワード変更が完了と表示される',
+    (await viewer.page.locator('.status').count()) === 1,
+  );
+
+  // The token from before the change is refused by the API. The call is made from here
+  // rather than from the page: a refused request is a console error in the browser, and the
+  // check at the end rightly treats those as failures.
+  const oldTokenStatus = (
+    await request.fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${stolenToken}` } })
+  ).status();
+  check('変更前のトークンは失効する', oldTokenStatus === 401, `status=${oldTokenStatus}`);
+
+  // ...while the session that changed it carries on, because the server handed back a
+  // token for the new generation and the screen adopted it.
+  await viewer.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await viewer.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  check('変更後も自分のセッションは続く', viewer.page.url().includes('/collections/'), viewer.page.url());
+
+  // And the new password is the one that works from a fresh browser.
+  const afterChange = await openAs('e2e-viewer@example.com', 'role-password-2');
+  await afterChange.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await afterChange.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  check('新しいパスワードでサインインできる', afterChange.page.url().includes('/collections/'));
+  await afterChange.context.close();
+
   await editor.context.close();
   await viewer.context.close();
 

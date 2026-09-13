@@ -11,6 +11,12 @@ export interface NewUser {
   permission: Permission;
 }
 
+/** The replacement token a password change answers with. */
+export interface PasswordChanged {
+  token: string;
+  expires_at: string;
+}
+
 /**
  * A partial change to one account: only the fields being changed are sent, so a screen
  * that knows about roles cannot accidentally reset anything else.
@@ -52,9 +58,14 @@ export class UsersRepository {
     return this.http.post<void>(`/api/auth/users/${id}/password`, { password });
   }
 
-  /** Changing your own password; the current one proves it is really you. */
-  changeOwnPassword(currentPassword: string, newPassword: string): Observable<void> {
-    return this.http.post<void>('/api/auth/me/password', {
+  /**
+   * Changing your own password; the current one proves it is really you.
+   *
+   * The answer carries a token for the new generation: the change ends every session,
+   * this one included, so the caller has to adopt the replacement to stay signed in.
+   */
+  changeOwnPassword(currentPassword: string, newPassword: string): Observable<PasswordChanged> {
+    return this.http.post<PasswordChanged>('/api/auth/me/password', {
       current_password: currentPassword,
       new_password: newPassword,
     });

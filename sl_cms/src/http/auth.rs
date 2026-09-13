@@ -109,10 +109,11 @@ async fn change_own_password<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Json(request): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.auth_service.change_own_password(
+    // Answers with a token for the new generation: the change ends this session along
+    // with every other one.
+    Ok(Json(module.auth_service.change_own_password(
         &user.id,
         &request.current_password,
         &request.new_password,
-    )?;
-    Ok(StatusCode::OK)
+    )?))
 }

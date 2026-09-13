@@ -8,8 +8,7 @@ use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
-use crate::models::identity::StringId;
-use crate::models::user::{User, UserId};
+use crate::models::user::User;
 
 /// Token lifetime in hours when `TOKEN_TTL_HOURS` is not set.
 pub const DEFAULT_TTL_HOURS: i64 = 12;
@@ -24,6 +23,11 @@ pub struct Claims {
     pub exp: i64,
     /// Whether the user is an administrator, so the common case needs no storage lookup.
     pub adm: bool,
+    /// The account's token generation, so a password change can end old sessions.
+    ///
+    /// Defaulted so tokens issued before this claim existed (version 0) still verify.
+    #[serde(default)]
+    pub ver: u64,
 }
 
 #[derive(Clone)]
@@ -51,6 +55,7 @@ impl TokenIssuer {
             iat: now.timestamp(),
             exp: expires_at.timestamp(),
             adm: user.is_admin,
+            ver: user.token_version,
         };
         let token = encode(&Header::new(Algorithm::HS256), &claims, &self.encoding)
             .map_err(|e| format!("failed to issue token: {e}"))?;
@@ -68,16 +73,12 @@ impl TokenIssuer {
             .map_err(|e| format!("invalid token: {e}"))
     }
 
-    /// The user id carried by a verified token.
-    pub fn verify_subject(&self, token: &str) -> Result<UserId, String> {
-        let claims = self.verify(token)?;
-        Ok(StringId::from(claims.sub.as_str()))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::identity::StringId;
     use crate::models::user::{Permission, User};
 
     fn user() -> User {
@@ -90,6 +91,7 @@ mod tests {
             permission: Permission::default(),
             created_at: Utc::now(),
             last_login: None,
+            token_version: 0,
         }
     }
 
@@ -102,7 +104,8 @@ mod tests {
         let claims = issuer.verify(&token).unwrap();
         assert_eq!(claims.sub, "u-1");
         assert!(claims.adm);
-        assert_eq!(issuer.verify_subject(&token).unwrap().to_string(), "u-1");
+        // The generation travels with the token, which is how a password change revokes it.
+        assert_eq!(claims.ver, 0);
     }
 
     #[test]
@@ -125,6 +128,7 @@ mod tests {
             iat: (now - Duration::hours(2)).timestamp(),
             exp: (now - Duration::hours(1)).timestamp(),
             adm: false,
+            ver: 0,
         };
         let token = encode(
             &Header::new(Algorithm::HS256),

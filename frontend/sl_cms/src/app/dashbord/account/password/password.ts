@@ -44,11 +44,14 @@ export class Password {
     this.error.set('');
     this.status.set('');
     this.users.changeOwnPassword(this.current, this.next).subscribe({
-      next: () => {
+      next: (changed) => {
+        // Every session from before the change is gone, this one included; the server hands
+        // back a replacement token so the screen the user is on keeps working.
+        this.auth.replaceToken(changed.token);
         this.current = '';
         this.next = '';
         this.repeated = '';
-        this.status.set('パスワードを変更しました');
+        this.status.set('パスワードを変更しました(他の端末のセッションは終了しました)');
       },
       error: (e) => this.error.set(`Could not change the password: ${message(e)}`),
     });
