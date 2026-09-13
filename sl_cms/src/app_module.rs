@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::auth::token::TokenIssuer;
 use crate::auth::AuthService;
+use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -48,10 +49,17 @@ pub struct AppModule<R: Storage> {
     pub composite_field_service: CompositeFieldService<R>,
     pub image_service: ImageService<R>,
     pub auth_service: AuthService<R>,
+    /// Mints the signed, expiring links that let someone without an account review a draft.
+    pub preview_links: PreviewLinkIssuer,
 }
 
 impl<R: Storage> AppModule<R> {
-    pub fn new(repository: Arc<R>, token_issuer: TokenIssuer, notifier: Arc<dyn Notifier>) -> Self {
+    pub fn new(
+        repository: Arc<R>,
+        token_issuer: TokenIssuer,
+        notifier: Arc<dyn Notifier>,
+        preview_links: PreviewLinkIssuer,
+    ) -> Self {
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
@@ -68,6 +76,7 @@ impl<R: Storage> AppModule<R> {
             composite_field_service: CompositeFieldService::new(repository.clone()),
             image_service: ImageService::new(repository.clone()),
             auth_service: AuthService::new(repository, token_issuer),
+            preview_links,
         }
     }
 }

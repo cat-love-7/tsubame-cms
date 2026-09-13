@@ -36,3 +36,13 @@
 .actions {
   margin-top: 16px;
 }
+
+/* The shareable link is long, so it wraps rather than stretching the toolbar. */
+.notice {
+  color: #1b5e20;
+}
+
+.preview-link {
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}

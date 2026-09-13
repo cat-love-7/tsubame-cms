@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { ItemMetadata } from 'app/models/item-status';
+import { ItemMetadata, PreviewLink } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
 import { SinglePageRepository } from 'app/repositories/schema/single_pages.repository';
@@ -52,5 +52,9 @@ export class SinglePagesService {
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     return this.pages.unpublishPage(name);
+  }
+
+  createPreviewLink(name: string): Observable<PreviewLink> {
+    return this.pages.createPreviewLink(name);
   }
 }

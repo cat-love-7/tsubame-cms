@@ -12,6 +12,7 @@ import { CollectionValue } from 'app/models/values/collection';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
+import { absolutePreviewUrl, copyToClipboard } from 'app/shared/preview-link';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /**
@@ -59,6 +60,10 @@ export class Edit {
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** The shareable preview link, once one has been minted. */
+  public previewUrl = signal('');
+  /** What happened to the preview link: copied, or made but not copied. */
+  public notice = signal('');
   /** Places each field on the shared 12-column grid, mirroring the schema editor. */
   public cellStyle = fieldCellStyle;
 
@@ -130,6 +135,34 @@ export class Edit {
     } else {
       delete this.fieldErrors[field.name];
     }
+  }
+
+  /**
+   * Mint a link that shows this working copy to someone without an account, and copy it.
+   *
+   * Saving first is not required: the link always shows what is stored, which is what a
+   * reviewer should be looking at anyway.
+   */
+  sharePreview() {
+    if (this.isNew) {
+      return;
+    }
+    this.error.set('');
+    this.notice.set('');
+    this.collectionsService.createPreviewLink(this.collectionName, this.itemId as number).subscribe({
+      next: async (link) => {
+        const url = absolutePreviewUrl(link.path);
+        this.previewUrl.set(url);
+        const copied = await copyToClipboard(url);
+        const expires = new Date(link.expires_at).toLocaleString();
+        this.notice.set(
+          copied
+            ? `プレビュー URL をコピーしました(有効期限: ${expires})`
+            : `プレビュー URL を作成しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+        );
+      },
+      error: (e) => this.error.set(`Could not create a preview link: ${message(e)}`),
+    });
   }
 
   save() {

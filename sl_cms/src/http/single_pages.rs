@@ -1,13 +1,17 @@
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
+use crate::http::{
+    preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
+    PreviewTokenQuery,
+};
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::preview_link::PreviewTarget;
 use crate::models::single_page::{
     SinglePageItemResponse, SinglePageName, SinglePageSchema,
 };
@@ -36,6 +40,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         .route(
             "/models/single_pages/{page_name}/preview",
             get(preview_single_page::<R>),
+        )
+        .route(
+            "/models/single_pages/{page_name}/preview-link",
+            post(create_single_page_preview_link::<R>),
         )
         .route(
             "/models/single_pages/{page_name}/publish",
@@ -84,6 +92,52 @@ async fn preview_single_page<R: Storage>(
 struct SinglePagePreview {
     schema: SinglePageSchema,
     values: SinglePageItemResponse,
+}
+
+/// Mint a signed, expiring link that shows this working copy to someone without an account
+/// (see the collection equivalent in `http::collections`).
+async fn create_single_page_preview_link<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    // A page that does not exist is a 404, not a link to nothing.
+    module.single_page_service.get_single_page_schema(&name)?;
+
+    Ok(Json(module.preview_links.issue(
+        &PreviewTarget::SinglePage {
+            page: name.as_str().to_string(),
+        },
+        chrono::Utc::now(),
+    )))
+}
+
+/// The route a single page's preview link opens. Public: the signature is the credential.
+pub fn preview_routes<R: Storage>() -> Router<AppState<R>> {
+    Router::new().route(
+        "/preview/single_pages/{page_name}",
+        get(open_single_page_preview::<R>),
+    )
+}
+
+async fn open_single_page_preview<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+    Query(query): Query<PreviewTokenQuery>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    let target = PreviewTarget::SinglePage {
+        page: name.as_str().to_string(),
+    };
+    module
+        .preview_links
+        .verify(&target, &query.token, chrono::Utc::now())
+        .map_err(preview_link_error)?;
+
+    Ok(Json(SinglePagePreview {
+        schema: module.single_page_service.get_single_page_schema(&name)?,
+        values: module.single_page_service.get_single_page_item(&name)?,
+    }))
 }
 
 async fn publish_single_page<R: Storage>(

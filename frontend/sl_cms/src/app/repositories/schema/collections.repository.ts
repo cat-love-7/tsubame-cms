@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
+import { ItemMetadata, ItemMetadataMap, PreviewLink } from 'app/models/item-status';
 import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 
 /**
@@ -90,6 +90,14 @@ export class CollectionRepository {
   unpublishItem(name: string, id: number): Observable<ItemMetadata> {
     return this.http.post<ItemMetadata>(
       `/api/models/collections/${name}/items/${id}/unpublish`,
+      null,
+    );
+  }
+
+  /** Mints a link that shows this working copy to someone without an account. */
+  createPreviewLink(name: string, id: number): Observable<PreviewLink> {
+    return this.http.post<PreviewLink>(
+      `/api/models/collections/${name}/items/${id}/preview-link`,
       null,
     );
   }

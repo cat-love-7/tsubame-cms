@@ -6,11 +6,15 @@ use axum::{Json, Router};
 use std::collections::HashMap;
 
 use crate::app_module::Storage;
-use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
+use crate::http::{
+    preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
+    PreviewTokenQuery,
+};
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{PageQuery, Pagination};
+use crate::preview_link::PreviewTarget;
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -51,6 +55,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         .route(
             "/models/collections/{collection_name}/items/{id}/preview",
             get(preview_collection_item::<R>),
+        )
+        .route(
+            "/models/collections/{collection_name}/items/{id}/preview-link",
+            post(create_collection_item_preview_link::<R>),
         )
         .route(
             "/models/collections/{collection_name}/items/{id}/publish",
@@ -126,6 +134,63 @@ struct ItemPreview {
     id: u64,
     values: crate::models::collection::CollectionItemResponse,
 }
+
+/// Mint a signed, expiring link that shows this working copy to someone without an account.
+///
+/// Asking for one needs `can_edit` (the write rule of the middleware) and no more: an editor
+/// can already read the draft, and reviewing it with a client is what the link is for.
+async fn create_collection_item_preview_link<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let item_id = CollectionItemId::from_u64(id);
+    // 404 for an item that is not there, rather than a link that opens nothing.
+    module.collection_service.get_collection_item(&name, item_id)?;
+
+    Ok(Json(module.preview_links.issue(
+        &PreviewTarget::CollectionItem {
+            collection: name.as_str().to_string(),
+            item_id: id,
+        },
+        chrono::Utc::now(),
+    )))
+}
+
+/// The routes a preview link opens. Public, because the signature is the credential - see
+/// [`crate::preview_link`].
+pub fn preview_routes<R: Storage>() -> Router<AppState<R>> {
+    Router::new().route(
+        "/preview/collections/{collection_name}/items/{id}",
+        get(open_collection_item_preview::<R>),
+    )
+}
+
+async fn open_collection_item_preview<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+    Query(query): Query<PreviewTokenQuery>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let target = PreviewTarget::CollectionItem {
+        collection: name.as_str().to_string(),
+        item_id: id,
+    };
+    module
+        .preview_links
+        .verify(&target, &query.token, chrono::Utc::now())
+        .map_err(preview_link_error)?;
+
+    // The same body the authenticated preview returns, so a site's preview code needs one
+    // parser for both.
+    let item_id = CollectionItemId::from_u64(id);
+    Ok(Json(ItemPreview {
+        schema: module.collection_service.get_collection_schema(&name)?,
+        id,
+        values: module.collection_service.get_collection_item(&name, item_id)?,
+    }))
+}
+
 
 async fn publish_collection_item<R: Storage>(
     State(module): State<AppState<R>>,

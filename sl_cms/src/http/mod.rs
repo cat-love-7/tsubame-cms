@@ -32,6 +32,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::app_module::{AppModule, Storage};
 use crate::models::error::HttpError;
+use crate::preview_link::PreviewLinkError;
 use crate::models::user::User;
 
 pub type AppState<R> = Arc<AppModule<R>>;
@@ -78,6 +79,10 @@ pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
         // The read-only content API a site build consumes. Published content only, so it
         // needs no token.
         .merge(content::routes::<R>())
+        // Shareable preview links. Public by design: the signature in the query string is
+        // the credential, and it only ever opens the one working copy it was made for.
+        .merge(collections::preview_routes::<R>())
+        .merge(single_pages::preview_routes::<R>())
         .merge(protected)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -151,6 +156,23 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
         .map(str::trim)
         .filter(|token| !token.is_empty())
+}
+
+/// The `?token=` that a shareable preview link carries.
+#[derive(serde::Deserialize)]
+pub(crate) struct PreviewTokenQuery {
+    pub token: String,
+}
+
+/// An expired link is a matter of time rather than identity, so it is answered differently
+/// from one that was never ours.
+pub(crate) fn preview_link_error(error: PreviewLinkError) -> HttpError {
+    match error {
+        PreviewLinkError::Expired => HttpError::Forbidden(error.message()),
+        PreviewLinkError::Malformed | PreviewLinkError::Invalid => {
+            HttpError::Unauthorized(error.message())
+        }
+    }
 }
 
 /// Liveness endpoint. AWS Lambda Web Adapter also uses this as its readiness check, so it

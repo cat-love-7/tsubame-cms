@@ -40,10 +40,23 @@ class StubCollectionsService {
     return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
+  createPreviewLink(_name: string, _id: number): Observable<{ path: string; expires_at: string }> {
+    return of({
+      path: '/preview/collections/blog/items/7?token=1758000000.abc123',
+      expires_at: '2026-09-13T12:00:00Z',
+    });
+  }
+
   unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.unpublished.push(id);
     return of({ status: 'draft', published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
+}
+
+function previewButton(element: HTMLElement): HTMLButtonElement {
+  return Array.from(element.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes('プレビュー URL'),
+  ) as HTMLButtonElement;
 }
 
 function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
@@ -136,6 +149,27 @@ describe('Edit', () => {
 
     expect(fresh.nativeElement.querySelector('.draft-note')).toBeTruthy();
     expect(fresh.nativeElement.textContent).toContain('まだ公開されていません');
+  });
+
+  /** Asking for a shareable link shows it, so it can be copied even if the clipboard says no. */
+  it('mints a preview link and shows it with its expiry', async () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    const button = previewButton(fresh.nativeElement);
+    expect(button).toBeTruthy();
+    button.click();
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    const component = fresh.componentInstance;
+    expect(component.previewUrl()).toBe(
+      `${location.origin}/api/preview/collections/blog/items/7?token=1758000000.abc123`,
+    );
+    // The link is rendered as a real anchor as well as offered to the clipboard.
+    const anchor = fresh.nativeElement.querySelector('.preview-link a') as HTMLAnchorElement;
+    expect(anchor.getAttribute('href')).toBe(component.previewUrl());
+    expect(component.notice()).toContain('有効期限');
   });
 
   it('publishes the item it is editing without saving the form', () => {

@@ -16,6 +16,11 @@
         {{ published() ? 'Unpublish' : 'Publish' }}
       </button>
     }
+    @if (auth.canEdit()) {
+      <button matButton (click)="sharePreview()">
+        プレビュー URL
+      </button>
+    }
   }
   <span class="spacer"></span>
   <button matButton [routerLink]="['/collections', collectionName]">Cancel</button>
@@ -23,6 +28,13 @@
 
 @if (error()) {
   <p class="error" role="alert">{{ error() }}</p>
+}
+
+@if (notice()) {
+  <p class="notice" role="status">{{ notice() }}</p>
+}
+@if (previewUrl()) {
+  <p class="preview-link"><a [href]="previewUrl()" target="_blank" rel="noopener">{{ previewUrl() }}</a></p>
 }
 
 @if (metadata()?.status === 'published' && metadata()?.has_draft) {

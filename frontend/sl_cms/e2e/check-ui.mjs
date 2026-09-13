@@ -507,6 +507,52 @@ try {
   const imagesAfterDelete = await page.locator('.library .image').count();
   check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
 
+  // ------------------------------------------------- a link shows unpublished work to a guest
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  const titleField = page.locator('app-value-field input').first();
+  await titleField.waitFor({ timeout: 15000 });
+  const previewWording = `preview wording ${Date.now()}`;
+  await titleField.fill(previewWording);
+  await page.click('button:has-text("Save")');
+  await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
+
+  // Saving was not publishing: the delivery API still serves the older wording...
+  const publishedCopy = await api('GET', `/content/collections/${COLLECTION}/items/1`);
+  check(
+    '公開コピーは保存では変わらない',
+    publishedCopy.values.title !== previewWording,
+    `${publishedCopy.values.title}`,
+  );
+
+  // ...while the preview link shows the working copy.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('button:has-text("プレビュー URL")').click();
+  const previewAnchor = page.locator('.preview-link a');
+  await previewAnchor.waitFor({ timeout: 10000 });
+  const previewUrl = await previewAnchor.getAttribute('href');
+  check(
+    'プレビュー URL が発行される',
+    /\/api\/preview\/collections\/e2e_blog\/items\/1\?token=/.test(previewUrl ?? ''),
+    String(previewUrl).slice(0, 70),
+  );
+
+  const previewResponse = await request.fetch(previewUrl);
+  check('プレビュー URL はトークン無しで開ける', previewResponse.status() === 200, `status=${previewResponse.status()}`);
+  const previewBody = await previewResponse.json();
+  check(
+    'プレビューは作業コピーを見せる',
+    previewBody?.values?.title === previewWording,
+    JSON.stringify(previewBody?.values?.title),
+  );
+
+  // The link is signed for one item: pointing it at another one is refused.
+  const tamperedResponse = await request.fetch(previewUrl.replace('/items/1?', '/items/2?'));
+  check(
+    'リンクの宛先は書き換えられない',
+    tamperedResponse.status() === 401,
+    `status=${tamperedResponse.status()}`,
+  );
+
   // -------------------------------------------------------------- roles decide what is offered
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
   const roleAccounts = [

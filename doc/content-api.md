@@ -344,10 +344,41 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   (Lambda のようにインスタンスが入れ替わる環境では共有ストレージが要る)。
 - 同じカウンタを `POST /auth/me/password` の現在のパスワード確認にも使う。
 
+## 5.6 共有できるプレビュー URL
+
+アカウントを持たない相手(クライアント、翻訳者)に下書きを見せるための、**署名付き・期限付き**の
+URL。相手はトークンもアカウントも要らない。
+
+```bash
+# 管理側がリンクを発行する(要 can_edit)
+curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/preview-link \
+  -H "Authorization: Bearer $TOKEN"
+# => {"path":"/preview/collections/blog/items/1?token=1758000000.3f9c...","expires_at":"..."}
+
+# 受け取った人はトークン無しで開ける(作業コピーが見える)
+curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9c...
+```
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| POST | `/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit`) |
+| POST | `/models/single_pages/{name}/preview-link` | 同上 |
+| GET | `/preview/collections/{name}/items/{id}?token=...` | 作業コピーを返す(認証不要) |
+| GET | `/preview/single_pages/{name}?token=...` | 同上 |
+
+- 期限は `PREVIEW_LINK_TTL_MINUTES`(既定 60 分)。トークンは `有効期限.署名` の形で、
+  署名は**行き先と有効期限そのもの**に対する HMAC-SHA256(`JWT_SECRET` を使用、メッセージには
+  専用の接頭辞を付けるので他の署名と使い回せない)。
+  - 行き先を書き換えれば署名が合わなくなるので、**1 本のリンクは 1 つの作業コピーしか開けない**。
+  - 有効期限を先に延ばすこともできない。期限切れは 403、署名違い・壊れたトークンは 401。
+- サーバ側に**保存するものが無い**(期限が署名に含まれるので、消すべきレコードが存在しない)。
+- ただしリンクは**持っている人にとっては資格情報**。期限まではその 1 件の下書きを読めるので、
+  渡す相手と有効期限は意識すること。失効させたい場合は `PREVIEW_LINK_TTL_MINUTES` を短くするか、
+  `JWT_SECRET` を変える(全トークンが無効になる)。
+- 返す本文は管理側のプレビューと同じ形(schema + values)なので、サイト側は 1 つのパーサで済む。
+
 ## 6. まだ無いもの
 
-- **共有できるプレビュー URL**: `/preview` はあるが、トークンを持つ人しか見られない。署名付き・
-  期限付きの URL は未実装(サイト側のプレビュー導線を作るときに必要)。
 - **`published_at` を使った差分ビルド**: 値は返っているが、サイト側の実装はこれから。
 - **リソース単位の権限**: コレクション / 単一ページごとの付与は未実装(いまはアカウント全体)。
 - **監査ログ(履歴)**: いまは「最後に公開したアカウント」だけを持つ。誰がいつ何を保存・公開・

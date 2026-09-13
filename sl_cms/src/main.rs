@@ -22,8 +22,10 @@ mod auth;
 mod config;
 mod http;
 mod models;
+mod preview_link;
 mod repositories;
 mod services;
+mod signing;
 mod webhook;
 
 #[cfg(feature = "on-premises")]

@@ -22,6 +22,9 @@ pub const MIN_JWT_SECRET_LEN: usize = 32;
 /// Default token lifetime in hours (`TOKEN_TTL_HOURS`).
 pub const DEFAULT_TOKEN_TTL_HOURS: i64 = 12;
 
+/// Default lifetime of a shareable preview link in minutes (`PREVIEW_LINK_TTL_MINUTES`).
+pub const DEFAULT_PREVIEW_LINK_TTL_MINUTES: i64 = 60;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Interface to bind. Local development defaults to loopback; deployments that need
@@ -42,6 +45,8 @@ pub struct Config {
     pub jwt_secret_is_ephemeral: bool,
     /// Token lifetime in hours (`TOKEN_TTL_HOURS`).
     pub token_ttl_hours: i64,
+    /// How long a signed preview link stays valid (`PREVIEW_LINK_TTL_MINUTES`).
+    pub preview_link_ttl_minutes: i64,
     /// Credentials for the initial administrator (`ADMIN_EMAIL` / `ADMIN_PASSWORD`).
     /// Only consulted when the user store is still empty.
     pub admin_email: Option<String>,
@@ -64,6 +69,7 @@ impl Default for Config {
             jwt_secret: generate_ephemeral_secret(),
             jwt_secret_is_ephemeral: true,
             token_ttl_hours: DEFAULT_TOKEN_TTL_HOURS,
+            preview_link_ttl_minutes: DEFAULT_PREVIEW_LINK_TTL_MINUTES,
             admin_email: None,
             admin_password: None,
             webhook_urls: Vec::new(),
@@ -126,6 +132,20 @@ impl Config {
                     return Err(format!("TOKEN_TTL_HOURS must be at least 1 (got {hours})"));
                 }
                 config.token_ttl_hours = hours;
+            }
+        }
+        if let Ok(ttl) = std::env::var("PREVIEW_LINK_TTL_MINUTES") {
+            if !ttl.trim().is_empty() {
+                let minutes: i64 = ttl
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("invalid PREVIEW_LINK_TTL_MINUTES {ttl:?}: {e}"))?;
+                if minutes < 1 {
+                    return Err(format!(
+                        "PREVIEW_LINK_TTL_MINUTES must be at least 1 (got {minutes})"
+                    ));
+                }
+                config.preview_link_ttl_minutes = minutes;
             }
         }
         config.admin_email = non_empty_env("ADMIN_EMAIL");
@@ -215,6 +235,10 @@ mod tests {
         assert_eq!(config.data_root, PathBuf::from("./data"));
         assert_eq!(config.cors_allowed_origins, vec![DEFAULT_CORS_ORIGINS.to_string()]);
         assert_eq!(config.token_ttl_hours, DEFAULT_TOKEN_TTL_HOURS);
+        assert_eq!(
+            config.preview_link_ttl_minutes,
+            DEFAULT_PREVIEW_LINK_TTL_MINUTES
+        );
         // Without an explicit secret the process must know its secret is ephemeral.
         assert!(config.jwt_secret_is_ephemeral);
         assert!(config.jwt_secret.len() >= MIN_JWT_SECRET_LEN);

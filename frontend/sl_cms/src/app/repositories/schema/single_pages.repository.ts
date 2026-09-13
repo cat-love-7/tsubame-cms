@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { ItemMetadata } from 'app/models/item-status';
+import { ItemMetadata, PreviewLink } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
 
@@ -57,5 +57,10 @@ export class SinglePageRepository {
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     return this.http.post<ItemMetadata>(`/api/models/single_pages/${name}/unpublish`, null);
+  }
+
+  /** Mints a link that shows this working copy to someone without an account. */
+  createPreviewLink(name: string): Observable<PreviewLink> {
+    return this.http.post<PreviewLink>(`/api/models/single_pages/${name}/preview-link`, null);
   }
 }

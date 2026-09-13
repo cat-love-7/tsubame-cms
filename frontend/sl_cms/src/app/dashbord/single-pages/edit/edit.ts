@@ -12,6 +12,7 @@ import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
+import { absolutePreviewUrl, copyToClipboard } from 'app/shared/preview-link';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /**
@@ -42,6 +43,10 @@ export class Edit {
   public error = signal('');
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** The shareable preview link, once one has been minted. */
+  public previewUrl = signal('');
+  /** What happened to the preview link: copied, or made but not copied. */
+  public notice = signal('');
   public cellStyle = fieldCellStyle;
 
   /** Per-field problems reported by the value fields; saving is refused while any remain. */
@@ -95,6 +100,27 @@ export class Edit {
     } else {
       delete this.fieldErrors[field.name];
     }
+  }
+
+  /** Mint a link that shows this working copy to someone without an account, and copy it
+   * (see the collection item editor for the reasoning). */
+  sharePreview() {
+    this.error.set('');
+    this.notice.set('');
+    this.pages.createPreviewLink(this.pageName).subscribe({
+      next: async (link) => {
+        const url = absolutePreviewUrl(link.path);
+        this.previewUrl.set(url);
+        const copied = await copyToClipboard(url);
+        const expires = new Date(link.expires_at).toLocaleString();
+        this.notice.set(
+          copied
+            ? `プレビュー URL をコピーしました(有効期限: ${expires})`
+            : `プレビュー URL を作成しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+        );
+      },
+      error: (e) => this.error.set(`Could not create a preview link: ${message(e)}`),
+    });
   }
 
   save() {

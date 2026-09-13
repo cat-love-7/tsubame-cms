@@ -47,3 +47,14 @@ export interface ItemMetadata {
 export interface ItemMetadataMap {
   [id: string]: ItemMetadata;
 }
+
+/**
+ * A signed, expiring link that shows one working copy to someone without an account.
+ *
+ * `path` is relative to the API base the CMS is reached through, and the token in it is the
+ * whole credential: it opens that one item and nothing else, until `expires_at`.
+ */
+export interface PreviewLink {
+  path: string;
+  expires_at: string;
+}

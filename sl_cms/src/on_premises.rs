@@ -12,6 +12,7 @@ use rkv::{Manager, Rkv};
 use crate::app_module::AppModule;
 use crate::auth::token::TokenIssuer;
 use crate::config::Config;
+use crate::preview_link::PreviewLinkIssuer;
 
 pub mod repository;
 
@@ -52,5 +53,10 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
         config.webhook_urls.clone(),
         config.webhook_secret.clone(),
     );
-    AppModule::new(repository, token_issuer, notifier)
+    // Preview links are signed with the same secret as the tokens: it is the one secret the
+    // deployment already has to set, and the message carries its own prefix so a signature
+    // can never be replayed as the other kind.
+    let preview_links =
+        PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes);
+    AppModule::new(repository, token_issuer, notifier, preview_links)
 }

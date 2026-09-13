@@ -19,9 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use serde::Serialize;
-use sha2::Sha256;
 
 use crate::models::collection::{CollectionItemId, CollectionName};
 use crate::models::item_status::{ItemMetadata, ItemStatus};
@@ -272,21 +270,7 @@ async fn deliver(
 
 /// HMAC-SHA256 of the raw body, hex encoded, for the `X-CMS-Signature` header.
 pub fn sign(secret: &[u8], body: &[u8]) -> String {
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts a key of any length");
-    mac.update(body);
-    to_hex(&mac.finalize().into_bytes())
-}
-
-fn to_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        // Writing into a String cannot fail.
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
+    crate::signing::sign(secret, body)
 }
 
 /// Build the notifier for the configured receivers.
@@ -400,8 +384,4 @@ mod tests {
         assert!(sign(b"secret-a", body).chars().all(|c| c.is_ascii_hexdigit()));
     }
 
-    #[test]
-    fn hex_encoding_is_zero_padded() {
-        assert_eq!(to_hex(&[0x00, 0x0f, 0xff]), "000fff");
-    }
 }
