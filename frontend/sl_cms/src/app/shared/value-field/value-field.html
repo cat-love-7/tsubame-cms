@@ -108,15 +108,38 @@
       }
       <span class="image-id">id: {{ imageId() ?? '—' }}</span>
       @if (!disabled) {
-        <input
-          type="file"
-          accept="image/*"
-          [disabled]="uploading()"
-          (change)="onFileSelected($event)"
-        />
+        <div class="image-actions">
+          <input
+            type="file"
+            accept="image/*"
+            [disabled]="uploading()"
+            (change)="onFileSelected($event)"
+          />
+          <button matButton type="button" (click)="togglePicker()">
+            <mat-icon>photo_library</mat-icon>
+            {{ pickerOpen() ? 'Close library' : 'Choose existing' }}
+          </button>
+        </div>
       }
       @if (uploading()) {
         <span>Uploading…</span>
+      }
+      @if (pickerOpen()) {
+        <div class="library">
+          @for (image of library(); track image.id) {
+            <button
+              type="button"
+              class="thumb"
+              (click)="chooseImage(image)"
+              [attr.aria-label]="'use image ' + image.id"
+              [title]="image.original_filename"
+            >
+              <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
+            </button>
+          } @empty {
+            <span class="note">No images yet — upload one first.</span>
+          }
+        </div>
       }
     </div>
   }

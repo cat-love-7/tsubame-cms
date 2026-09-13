@@ -6,7 +6,9 @@ import { of } from 'rxjs';
 import { CompositeFieldDefinition } from 'app/models/schema/collection';
 import { FieldSchema, FieldType } from 'app/models/schema/fields';
 import { FieldValue } from 'app/models/values/fields';
+import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { ImagesService } from 'app/services/media/images.service';
 import { ValueField } from './value-field';
 
 function field(name: string, field_type: FieldType): FieldSchema {
@@ -18,10 +20,32 @@ const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
   seo: [field('description', { Text: {} })],
 };
 
+const LIBRARY: ImageEntry[] = [
+  {
+    id: 3,
+    url: '/images/logo.png',
+    original_filename: 'logo.png',
+    uploaded_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+/** Counts library reads, so the picker can be checked for loading lazily. */
+class StubImagesService {
+  public listCalls = 0;
+  listImages = () => {
+    this.listCalls += 1;
+    return of(LIBRARY);
+  };
+  uploadImage = () => of({ id: 9, upload_url: '/images/new.png?key=k' });
+  deleteImage = () => of(void 0);
+}
+
 describe('ValueField', () => {
   let fixture: ComponentFixture<ValueField>;
+  let images: StubImagesService;
 
   beforeEach(async () => {
+    images = new StubImagesService();
     await TestBed.configureTestingModule({
       imports: [ValueField],
       providers: [
@@ -33,6 +57,7 @@ describe('ValueField', () => {
           provide: CompositeFieldsService,
           useValue: { getAllCompositeFields: () => of(COMPOSITE_DEFINITIONS) },
         },
+        { provide: ImagesService, useValue: images },
       ],
     }).compileComponents();
   });
@@ -171,5 +196,38 @@ describe('ValueField', () => {
 
     component.setDateTime('');
     expect(component.value).toBeNull();
+  });
+
+  it('loads the image library when the picker is opened, and only then', () => {
+    const component = create(field('photo', 'Image'));
+    expect(images.listCalls).toBe(0);
+
+    component.togglePicker();
+    expect(images.listCalls).toBe(1);
+
+    // Closing and reopening reuses what was already fetched.
+    component.togglePicker();
+    component.togglePicker();
+    expect(images.listCalls).toBe(1);
+  });
+
+  it('picks an already uploaded image instead of uploading a new one', () => {
+    const component = create(field('photo', 'Image'));
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    component.togglePicker();
+    fixture.detectChanges();
+
+    const thumbs = fixture.nativeElement.querySelectorAll('.thumb') as NodeListOf<HTMLButtonElement>;
+    expect(thumbs.length).toBe(1);
+
+    thumbs[0].click();
+    fixture.detectChanges();
+
+    // The value keeps the shape an upload produces, so the server cannot tell them apart.
+    expect(changes).toEqual([{ id: 3, url: '/images/logo.png' }]);
+    expect(component.value).toEqual({ id: 3, url: '/images/logo.png' });
+    expect(component.pickerOpen()).toBe(false);
   });
 });

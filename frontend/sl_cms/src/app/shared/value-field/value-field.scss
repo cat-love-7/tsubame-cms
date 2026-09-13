@@ -19,9 +19,51 @@
 
 .image-field {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.image-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The picker takes a row of its own, under the preview and the buttons. */
+.library {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 8px;
+}
+
+.thumb {
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #f4f4f4;
+  }
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--mat-sys-primary, #3f51b5);
+  }
 }
 
 .preview {

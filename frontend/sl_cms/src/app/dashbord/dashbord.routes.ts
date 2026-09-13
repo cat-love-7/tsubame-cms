@@ -11,6 +11,7 @@ import { Schema as SinglePageSchema } from "./settings/single-pages/schema/schem
 import { Edit as SinglePageEdit } from "./single-pages/edit/edit";
 import { List as CompositeFieldList } from "./settings/composite-fields/list/list";
 import { Schema as CompositeFieldSchema } from "./settings/composite-fields/schema/schema";
+import { List as ImageLibrary } from "./settings/images/list/list";
 
 
 const dashbordRoutes: Routes = [
@@ -67,6 +68,11 @@ const dashbordRoutes: Routes = [
     {
         path: 'settings/composite-fields/:id/schema',
         component: CompositeFieldSchema
+    },
+    // The image library: everything uploaded, with upload and delete.
+    {
+        path: 'settings/images',
+        component: ImageLibrary
     }
 ];
 

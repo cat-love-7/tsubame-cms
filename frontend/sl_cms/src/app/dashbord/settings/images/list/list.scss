@@ -1,0 +1,72 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.count {
+  color: #666;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.note {
+  color: #666;
+}
+
+.library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.image {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--mat-sys-surface, #fff);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    background: #f4f4f4;
+  }
+
+  figcaption {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+  }
+
+  .name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Secondary information: it should not compete with the thumbnail. */
+  .meta {
+    font-size: 0.75rem;
+    color: #666;
+  }
+
+  .remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(255, 255, 255, 0.85);
+  }
+}

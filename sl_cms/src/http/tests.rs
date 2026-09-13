@@ -957,6 +957,86 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// The image library: what the admin screen lists, and what deleting an image does.
+#[tokio::test]
+async fn images_can_be_listed_and_deleted() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    // The library is not public.
+    let (status, _) = send_raw(&app.router, Method::GET, "/models/images", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, body) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]), "nothing has been uploaded yet");
+
+    // Upload one, through the same two steps the UI takes.
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "photo.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = info["id"].as_u64().expect("the image id");
+    let upload_url = info["upload_url"].as_str().unwrap().to_string();
+
+    let request = Request::builder()
+        .method(Method::PUT)
+        .uri(&upload_url)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from("PNG-BYTES"))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // It is listed with the metadata the screen shows.
+    let (status, body) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["id"], id);
+    assert_eq!(body[0]["original_filename"], "photo.png");
+    assert!(body[0]["url"].as_str().unwrap().starts_with("/images/"));
+    assert!(body[0]["uploaded_at"].is_string());
+
+    let path = body[0]["url"].as_str().unwrap().to_string();
+    let (status, bytes) = send_raw(&app.router, Method::GET, &path, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"PNG-BYTES");
+
+    // Deleting answers with an empty body, like every other mutation.
+    let (status, bytes) = send_raw(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(bytes.is_empty());
+
+    // Gone from the list, and the bytes went with it.
+    let (status, body) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+    let (status, _) = send_raw(&app.router, Method::GET, &path, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Deleting it twice reports the missing image instead of succeeding quietly.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn rejects_unsafe_image_file_names_and_extensions() {
     let app = test_app().await;

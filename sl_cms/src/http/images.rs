@@ -2,13 +2,13 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::error::HttpError;
-use crate::models::image::{is_safe_file_name, is_safe_image_ext, NewImageRequest};
+use crate::models::image::{is_safe_file_name, is_safe_image_ext, ImageID, NewImageRequest};
 
 /// Image bytes are served without a token: an `<img>` tag cannot send an
 /// `Authorization` header, and uploaded media is content rather than API data.
@@ -19,11 +19,31 @@ pub fn public_routes<R: Storage>() -> Router<AppState<R>> {
 /// Uploading requires authentication (enforced by the auth middleware).
 pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
+        // The library itself. `get_upload_url` below is a static segment, which axum
+        // prefers over `{id}`, so both can live here.
+        .route("/models/images", get(list_images::<R>))
+        .route("/models/images/{id}", delete(delete_image::<R>))
         .route(
             "/models/images/get_upload_url",
             post(generate_image_upload_url::<R>),
         )
         .route("/images/{file_name}", axum::routing::put(put_image_file::<R>))
+}
+
+/// Every uploaded image, newest first.
+async fn list_images<R: Storage>(
+    State(module): State<AppState<R>>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(module.image_service.list_images()?))
+}
+
+/// Delete an image, bytes included. Answers with an empty body like the other mutations.
+async fn delete_image<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+) -> Result<impl IntoResponse, HttpError> {
+    module.image_service.delete_image(ImageID::from_u64(id))?;
+    Ok(StatusCode::OK)
 }
 
 /// Ask for a place to upload an image to.

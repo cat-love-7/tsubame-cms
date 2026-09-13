@@ -25,6 +25,27 @@ pub struct Image {
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// One entry in the image library: the metadata the admin screen lists.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ImageEntry {
+    pub id: ImageID,
+    pub url: String,
+    pub original_filename: String,
+    pub uploaded_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl ImageEntry {
+    /// Pair stored metadata with the id it is filed under.
+    pub fn from_image(id: ImageID, image: Image) -> Self {
+        ImageEntry {
+            id,
+            url: image.url,
+            original_filename: image.original_filename,
+            uploaded_at: image.uploaded_at,
+        }
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct NewImageRequest{
     pub original_filename: String,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::models::error::{map_internal_error, HttpError};
-use crate::models::image::{NewImageInfo, NewImageRequest};
+use crate::models::image::{ImageEntry, ImageID, NewImageInfo, NewImageRequest};
 use crate::repositories::image_repository::ImageRepository;
 
 pub struct ImageService<R: ImageRepository> {
@@ -11,6 +11,43 @@ pub struct ImageService<R: ImageRepository> {
 impl<R: ImageRepository> ImageService<R> {
     pub fn new(repository: Arc<R>) -> Self {
         ImageService { repository }
+    }
+
+    /// The image library, newest first.
+    pub fn list_images(&self) -> Result<Vec<ImageEntry>, HttpError> {
+        let mut images = self
+            .repository
+            .get_all_images()
+            .map_err(map_internal_error)?;
+        // Sorted here rather than trusted from the store: the on-premises adapter iterates
+        // in key-byte order, which stops being numeric order once ids pass 255.
+        images.sort_by_key(|(id, _)| std::cmp::Reverse(**id));
+
+        Ok(images
+            .into_iter()
+            .map(|(id, image)| ImageEntry::from_image(id, image))
+            .collect())
+    }
+
+    /// Delete an image and the bytes stored under it.
+    ///
+    /// Content that referenced the image keeps the id it stored, so the reference simply
+    /// stops resolving; there is no reference check and nothing is rewritten.
+    pub fn delete_image(&self, id: ImageID) -> Result<(), HttpError> {
+        if self
+            .repository
+            .get_image(&id)
+            .map_err(map_internal_error)?
+            .is_none()
+        {
+            return Err(HttpError::NotFound(&format!(
+                "Image with id '{}' does not exist",
+                id
+            )));
+        }
+        self.repository
+            .delete_image(&id)
+            .map_err(map_internal_error)
     }
 
     pub fn generate_image_upload_url(

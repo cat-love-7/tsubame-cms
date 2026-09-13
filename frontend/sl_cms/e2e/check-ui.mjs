@@ -12,10 +12,13 @@
  *   - the next page and a different page size reaching the server
  *   - publishing an item from the list
  *   - deleting the only row of the last page, which has to fall back a page
+ *   - the image library: uploading, serving and deleting an image
+ *   - picking that image from the library while editing content, and saving it
  *   - no console errors while all of that happens
  *
- * It seeds its own data (`e2e_blog`, `e2e_small`) and recreates those two collections on
- * every run, so it neither depends on nor disturbs whatever else is in the dev database.
+ * It seeds its own data (`e2e_blog`, `e2e_small`, `e2e_images`) and recreates those
+ * collections on every run, so it neither depends on nor disturbs whatever else is in the
+ * dev database.
  *
  * Prerequisites and usage: see e2e/README.md.
  */
@@ -31,6 +34,19 @@ const TOTAL = Number(process.env.TOTAL ?? 60);
 /** One more than a full page, so the last page holds exactly one row. */
 const LAST_PAGE_COLLECTION = process.env.LAST_PAGE_COLLECTION ?? 'e2e_small';
 const LAST_PAGE_TOTAL = Number(process.env.LAST_PAGE_TOTAL ?? 26);
+/** One item whose only field is an image, for the library picker. */
+const IMAGE_COLLECTION = process.env.IMAGE_COLLECTION ?? 'e2e_images';
+
+/** A 1x1 PNG: enough for the upload path to be exercised for real. */
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+const TEXT_SCHEMA = [
+  { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1 },
+];
+const IMAGE_SCHEMA = [
+  { name: 'photo', field_type: 'Image', required: false, width: 12, height: 1 },
+];
 
 const results = [];
 function check(label, ok, detail = '') {
@@ -60,7 +76,7 @@ async function api(method, path, body, token) {
 }
 
 /** Replace `name` with a fresh collection holding `count` items. */
-async function seedCollection(name, count, token) {
+async function seedCollection(name, count, token, schema = TEXT_SCHEMA, item = null) {
   const reset = await request.fetch(`${API}/models/collections/${name}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
@@ -70,12 +86,10 @@ async function seedCollection(name, count, token) {
     throw new Error(`could not reset ${name}: ${reset.status()}`);
   }
 
-  const schema = [
-    { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1 },
-  ];
   await api('POST', `/models/collections/${name}/schema`, schema, token);
   for (let index = 1; index <= count; index += 1) {
-    await api('POST', `/models/collections/${name}/item`, { title: `${name} item ${index}` }, token);
+    const body = item ? item(index) : { title: `${name} item ${index}` };
+    await api('POST', `/models/collections/${name}/item`, body, token);
   }
 }
 
@@ -83,6 +97,8 @@ async function seed() {
   const login = await api('POST', '/auth/login', { email: EMAIL, password: PASSWORD });
   await seedCollection(COLLECTION, TOTAL, login.token);
   await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
+  await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({ photo: null }));
+  return login.token;
 }
 
 // ------------------------------------------------------------------------------- the check
@@ -100,9 +116,10 @@ if (!probe) {
   process.exit(2);
 }
 
-await seed();
+const token = await seed();
 console.log(
-  `seeded: ${COLLECTION} (${TOTAL} items), ${LAST_PAGE_COLLECTION} (${LAST_PAGE_TOTAL} items)\n`,
+  `seeded: ${COLLECTION} (${TOTAL} items), ${LAST_PAGE_COLLECTION} (${LAST_PAGE_TOTAL} items), ` +
+    `${IMAGE_COLLECTION} (1 item)\n`,
 );
 
 const page = await context.newPage();
@@ -218,6 +235,80 @@ try {
     rowsAfterDelete === 25,
     `${rowsAfterDelete} 行 (削除 id=${doomedId})`,
   );
+
+  // -------------------------------------------------------------- the image library
+  await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
+  const imagesBefore = await page.locator('.library .image').count();
+
+  // Upload through the same hidden file input the button drives.
+  await page.setInputFiles('input[type=file]', {
+    name: 'e2e.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(PNG_BASE64, 'base64'),
+  });
+  await page
+    .waitForFunction(
+      (expected) => document.querySelectorAll('.library .image').length === expected + 1,
+      imagesBefore,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  const imagesAfterUpload = await page.locator('.library .image').count();
+  check(
+    '画像をアップロードできる',
+    imagesAfterUpload === imagesBefore + 1,
+    `${imagesBefore} → ${imagesAfterUpload}`,
+  );
+
+  // The library is newest first, so the upload is the first card.
+  const uploadedCard = page.locator('.library .image').first();
+  const uploadedId = (await uploadedCard.locator('.meta').textContent())?.trim();
+  check(
+    'アップロードした画像が名前つきで並ぶ',
+    Boolean((await uploadedCard.locator('.name').textContent())?.includes('e2e.png')),
+    uploadedId,
+  );
+
+  const imageSource = await uploadedCard.locator('img').getAttribute('src');
+  const servedStatus = await page.evaluate(async (src) => (await fetch(src)).status, imageSource);
+  check('画像の実体が配信される', servedStatus === 200, `${imageSource} → ${servedStatus}`);
+
+  // -------------------------------------------------------------- pick it while editing content
+  await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('button:has-text("Choose existing")').click();
+  const thumbs = page.locator('.thumb');
+  await thumbs.first().waitFor({ timeout: 15000 });
+  const thumbCount = await thumbs.count();
+  check('編集中に既存画像を一覧できる', thumbCount >= 1, `${thumbCount} 件`);
+
+  await thumbs.first().click();
+  await page.click('button:has-text("Save")');
+  await page.waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
+
+  const saved = await api(
+    'GET',
+    `/models/collections/${IMAGE_COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  check(
+    '選んだ画像がアイテムに保存される',
+    typeof saved?.photo === 'object' && saved.photo !== null && saved.photo.url === imageSource?.replace('/api', ''),
+    JSON.stringify(saved?.photo),
+  );
+
+  // -------------------------------------------------------------- delete it again
+  await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
+  await page.locator('.library .image').first().locator('.remove').click();
+  await page
+    .waitForFunction(
+      (expected) => document.querySelectorAll('.library .image').length === expected,
+      imagesBefore,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  const imagesAfterDelete = await page.locator('.library .image').count();
+  check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesAfterUpload} → ${imagesAfterDelete}`);
 
   check('ブラウザのコンソールエラーがない', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 } catch (error) {

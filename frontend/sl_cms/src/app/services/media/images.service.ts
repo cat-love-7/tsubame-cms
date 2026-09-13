@@ -1,7 +1,11 @@
 import { Injectable } from '@angular/core';
 import { map, Observable, switchMap } from 'rxjs';
 
-import { ImageRepository, NewImageInfo } from 'app/repositories/media/images.repository';
+import {
+  ImageEntry,
+  ImageRepository,
+  NewImageInfo,
+} from 'app/repositories/media/images.repository';
 
 @Injectable({
   providedIn: 'root',
@@ -20,5 +24,14 @@ export class ImagesService {
     return this.images
       .requestUploadUrl({ original_filename: file.name, ext: extension })
       .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
+  }
+
+  /** The image library, newest first. */
+  listImages(): Observable<ImageEntry[]> {
+    return this.images.listImages();
+  }
+
+  deleteImage(id: number): Observable<void> {
+    return this.images.deleteImage(id);
   }
 }

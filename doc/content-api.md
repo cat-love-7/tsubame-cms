@@ -51,6 +51,8 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | GET | `/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
 | POST | `/models/single_pages/{name}/publish` | 更新後のメタデータ |
 | POST | `/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
+| GET | `/models/images` | `[{ "id": 1, "url": "/images/...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順) |
+| DELETE | `/models/images/{id}` | 画像と実体を削除(存在しない id は 404) |
 
 `items/metadata` は**全アイテム分**を返す。保存されたことのないアイテムも `draft` として現れるので、
 管理画面の一覧はこれだけで状態の列を描ける。
@@ -60,6 +62,21 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 クライアント側は「保存に失敗した」と判定していた(本文が空ならパースされない)。
 本文が意味を持つもの(アイテム作成は id、publish / unpublish はメタデータ、画像アップロードは URL)
 だけが JSON を返す。
+
+### 画像
+
+| メソッド | パス | 返すもの |
+|---|---|---|
+| POST | `/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/images/<file>?key=..." }`(要トークン) |
+| PUT | `/images/{file_name}?key=...` | 実体を保存(要トークン。`key` は一度きりで、発行時のファイル名に紐づく) |
+| GET | `/images/{file_name}` | 実体の配信。**認証不要**(`<img>` はヘッダを付けられないため) |
+
+アップロードは 2 段階(場所を貰う → 送る)。AWS では同じ契約を S3 の presigned URL が担う。
+管理画面の「Images」(`/settings/images`)が `GET /models/images` を一覧し、アップロードと削除を行う。
+コンテンツ編集の画像フィールドからは、同じ一覧を開いて**既存の画像を選び直せる**。
+
+**削除は参照を検査しない。** 画像を id で参照しているアイテムはそのまま残り、参照先が解決しなくなる
+だけ(使用中チェックと参照の書き換えは行わない、という判断)。
 
 ### 3.1 ページネーション
 

@@ -15,6 +15,15 @@ export interface NewImageInfo {
   upload_url: string;
 }
 
+/** One image in the library, as the admin screens list it. */
+export interface ImageEntry {
+  id: number;
+  /** Backend-relative (`/images/...`); prefix it with `apiUrl` to load the bytes. */
+  url: string;
+  original_filename: string;
+  uploaded_at: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -29,5 +38,20 @@ export class ImageRepository {
   /** Upload the bytes to the URL the server handed out. */
   upload(uploadUrl: string, file: Blob): Observable<void> {
     return this.http.put<void>(apiUrl(uploadUrl), file);
+  }
+
+  /** Everything that has been uploaded, newest first. */
+  listImages(): Observable<ImageEntry[]> {
+    return this.http.get<ImageEntry[]>('/api/models/images');
+  }
+
+  /**
+   * Delete an image and its bytes.
+   *
+   * Nothing checks whether content still references it: a reference keeps the id it stored
+   * and simply stops resolving.
+   */
+  deleteImage(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/models/images/${id}`);
   }
 }

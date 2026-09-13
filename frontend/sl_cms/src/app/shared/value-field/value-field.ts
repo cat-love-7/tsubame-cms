@@ -10,6 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
@@ -26,6 +27,7 @@ import {
 } from 'app/models/schema/fields';
 import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
+import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 import { ImagesService } from 'app/services/media/images.service';
 
@@ -57,6 +59,7 @@ type FieldKind =
   selector: 'app-value-field',
   imports: [
     FormsModule,
+    MatButtonModule,
     MatCheckboxModule,
     MatFormFieldModule,
     MatIconModule,
@@ -88,6 +91,12 @@ export class ValueField implements OnInit, OnChanges {
   /** JSON buffer for Array fields, which are edited as raw JSON. */
   public arrayText = '';
   public imageUrl = apiUrl;
+
+  /** Images already uploaded, so one can be reused instead of uploaded again. */
+  public library = signal<ImageEntry[]>([]);
+  public pickerOpen = signal(false);
+  /** The library is fetched when the picker is first opened, and not before. */
+  private libraryLoaded = false;
 
   /** The referenced composite's sub-schema, or null when it is not defined. */
   public compositeSchema = signal<FieldSchema[] | null>(null);
@@ -236,6 +245,29 @@ export class ValueField implements OnInit, OnChanges {
         this.errorChange.emit(`Upload failed: ${message(e)}`);
       },
     });
+  }
+
+  /** Show the library so an already uploaded image can be picked. */
+  togglePicker() {
+    const opening = !this.pickerOpen();
+    this.pickerOpen.set(opening);
+    if (!opening || this.libraryLoaded) {
+      return;
+    }
+    this.images.listImages().subscribe({
+      next: (images) => {
+        this.libraryLoaded = true;
+        this.library.set(images);
+      },
+      error: (e) => this.errorChange.emit(`Failed to load the images: ${message(e)}`),
+    });
+  }
+
+  /** Use a library image; the value keeps the same shape an upload produces. */
+  chooseImage(image: ImageEntry) {
+    this.update({ id: image.id, url: image.url });
+    this.pickerOpen.set(false);
+    this.errorChange.emit(null);
   }
 
   private loadCompositeSchema() {
