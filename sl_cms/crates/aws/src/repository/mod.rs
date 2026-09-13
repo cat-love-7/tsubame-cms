@@ -91,6 +91,28 @@ impl AwsRepository {
         Ok(())
     }
 
+    /// Create the table unless it is already there.
+    ///
+    /// For a local run, where the alternative is an operator hand-creating a table before the
+    /// server will start. A deployment gets its table from Terraform, and this is not called
+    /// there: quietly creating one would turn a misconfigured table name into a working server
+    /// with an empty database.
+    pub async fn ensure_table(&self) -> Result<bool, BoxError> {
+        let exists = self
+            .inner
+            .client
+            .describe_table()
+            .table_name(&self.inner.table)
+            .send()
+            .await
+            .is_ok();
+        if exists {
+            return Ok(false);
+        }
+        self.create_table().await?;
+        Ok(true)
+    }
+
     pub async fn delete_table(&self) -> Result<(), BoxError> {
         drop_table(&self.inner).await
     }

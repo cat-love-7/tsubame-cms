@@ -1,8 +1,7 @@
-//! The AWS CMS entry point: DynamoDB and S3, running as a Lambda function.
+//! The AWS CMS binary: a Lambda function, or a local HTTP server for driving it by hand.
 //!
-//! There is nothing to serve yet (the Lambda entry point is `doc/aws-plan.md` P3), so this
-//! builds the composition root — which is also how a deployment's configuration is checked to
-//! be usable — and reports what is missing rather than starting a listener nobody asked for.
+//! The runtime sets `AWS_LAMBDA_RUNTIME_API` for a function; anything else means someone ran the
+//! binary themselves, which is how the browser end-to-end suite reaches this backend.
 
 use sl_cms_core::config::Config;
 
@@ -11,13 +10,20 @@ async fn main() {
     init_tracing();
 
     let config = Config::from_env().unwrap_or_else(|error| fatal(error.into()));
-    if let Err(error) = sl_cms_aws::run(&config).await {
+
+    let running_on_lambda = std::env::var("AWS_LAMBDA_RUNTIME_API").is_ok();
+    let result = if running_on_lambda {
+        sl_cms_aws::run_lambda(&config).await
+    } else {
+        sl_cms_aws::run_local(&config).await
+    };
+    if let Err(error) = result {
         fatal(error);
     }
 }
 
 /// A startup failure has to be visible even when the log filter is set to something quiet.
-fn fatal(error: Box<dyn std::error::Error>) -> ! {
+fn fatal(error: Box<dyn std::error::Error + Send + Sync>) -> ! {
     tracing::error!("fatal: {error}");
     eprintln!("fatal: {error}");
     std::process::exit(1);

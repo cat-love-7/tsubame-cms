@@ -24,6 +24,7 @@ use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
+pub mod lambda;
 pub mod repository;
 pub mod settings;
 
@@ -91,7 +92,7 @@ async fn s3_client(settings: &AwsSettings) -> aws_sdk_s3::Client {
 pub async fn build_app_module(
     config: &Config,
     settings: &AwsSettings,
-) -> Result<AppModule<AwsRepository>, Box<dyn std::error::Error>> {
+) -> Result<AppModule<AwsRepository>, Box<dyn std::error::Error + Send + Sync>> {
     let repository = std::sync::Arc::new(AwsRepository::connect(settings).await);
     let token_issuer = TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours);
     let notifier = sl_cms_core::webhook::build_notifier(
@@ -124,13 +125,11 @@ pub fn build_router(
     sl_cms_core::http::router(module, cors)
 }
 
-/// Start the CMS on AWS.
+/// Serve the CMS on AWS Lambda.
 ///
-/// The composition root is built (which is also how the backend's configuration is checked to
-/// be usable), but there is no way to serve it on AWS yet: the Lambda entry point is
-/// `doc/aws-plan.md`'s P3 and Cognito is P4. Reporting that is better than starting a listener
-/// nobody asked for.
-pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+/// This is the entry point a deployment uses: the composition root is built once, when the
+/// runtime first calls in, and every invocation afterwards goes through the same router.
+pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = AwsSettings::from_env()?;
     tracing::info!(
         region = %settings.region,
@@ -139,7 +138,54 @@ pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         jwks = %settings.jwks_url(),
         "aws backend starting"
     );
+    warn_about_the_environment(config, &settings);
 
+    let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
+    let router = build_router(
+        module,
+        sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
+    );
+
+    lambda_http::run(tower::service_fn(move |request| {
+        let router = router.clone();
+        async move { lambda::dispatch(router, request).await }
+    }))
+    .await?;
+    Ok(())
+}
+
+/// Serve this backend over plain HTTP instead, for driving it locally.
+///
+/// The deployment is Lambda, but the same adapter has to be reachable from a browser to be
+/// tested end to end (and to be poked at while developing), which is what this is for.
+pub async fn run_local(config: &Config) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let settings = AwsSettings::from_env()?;
+    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
+    if repository.ensure_table().await? {
+        tracing::info!(table = %settings.table, "created the table for this local run");
+    }
+    let module = std::sync::Arc::new(AppModule::new(
+        repository.clone(),
+        TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours),
+        sl_cms_core::webhook::build_notifier(config.webhook_urls.clone(), config.webhook_secret.clone()),
+        PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes),
+        PasswordResetIssuer::new(&config.jwt_secret, config.password_reset_ttl_minutes),
+    ));
+    warn_about_the_environment(config, &settings);
+
+    let router = build_router(
+        module,
+        sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
+    );
+    let addr = config.socket_addr()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!("listening on http://{addr}");
+    axum::serve(listener, router).await?;
+    Ok(())
+}
+
+/// Say the things a deployment is likely to have wrong before anything else fails.
+fn warn_about_the_environment(config: &Config, settings: &AwsSettings) {
     if config.admin_username.is_some() || config.admin_password.is_some() {
         tracing::warn!(
             "ADMIN_USERNAME / ADMIN_PASSWORD are ignored by the aws backend; set \
@@ -151,10 +197,6 @@ pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
             "BOOTSTRAP_ADMIN_USERNAMES is empty: nobody can provision the first administrator"
         );
     }
-
-    let _module = build_app_module(config, &settings).await?;
-    Err("the aws backend has no entry point yet: the Lambda function is doc/aws-plan.md's P3"
-        .into())
 }
 
 /// The endpoints the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT` and

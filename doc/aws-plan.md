@@ -214,15 +214,41 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
 
 ### P3. Lambda 起動点
 
-- [ ] `lambda_http` で既存ルーターを載せる。イベント形状(API Gateway v1/v2)と
-      **バイナリ応答(base64)** を確認(画像をプロキシするなら必須)(要確認: `lambda_http` の
-      正確な適合関数名・バージョン 1.3.1 の API)
-      → **完了条件**: 合成イベントを通すテスト + staging のスモーク。
-- [ ] 応答後凍結の対策: Webhook を SQS/EventBridge に載せる(1-3 の決定どおり)
+- [x] `lambda_http` で既存ルーターを載せた(`crates/aws/src/lambda.rs`)。
+      `lambda_http::run(service_fn(...))` に、ルーターを `tower` サービスとして渡す形。
+      イベント形状は `lambda_http::request::LambdaRequest`(公開だが doc-hidden)へ
+      **本物と同じ経路でデシリアライズ**してから `http::Request` に変換するので、
+      API Gateway **REST(1.0)/ HTTP API(2.0)** の両方を合成イベントでテストしている。
+      - **base64**: `isBase64Encoded: true` の本文が復号されてルーターに届くことをテスト
+        (`a_base64_body_arrives_as_the_bytes_it_stands_for`)。応答は `Body::Binary` で返すので、
+        API Gateway 側で base64 として扱われ、Content-Type ごとそのまま戻る。
+      - **6MB/base64**: Lambda の呼び出し上限は 6MB で、API Gateway がバイナリ本文を base64 に
+        すると 1/3 増える。CMS のリクエストは JSON(画像は presigned S3 直行)なので
+        **4MB を上限**として `MAX_BODY_BYTES` で先に 413 を返す(理由を本文に書く)。
+        テスト: `a_body_over_the_lambda_limit_is_refused_with_a_reason`。
+      - ローカル起動(`AWS_LAMBDA_RUNTIME_API` が無いとき)も同じルーターで提供し、
+        `run_local` が無ければテーブルを作る。実機確認: エミュレータに対して
+        `cargo run -p sl-cms-aws` → `/` 200、無認証は 401、テーブル自動作成のログ。
+      → **完了条件**: 合成イベントを通すテスト + staging のスモーク
+      → テストは達成(4 件)。**staging のスモークは P5(Terraform)待ち**。
+- [ ] 応答後凍結の対策: Webhook を SQS に載せる(1-3 の決定どおり)。`Notifier` は既に
+      boxed future を返す形なので、AWS 用に `SqsNotifier` を足して `build_notifier` を
+      バックエンドごとに選ぶ形にする。テストには SQS のエミュレータが要る(ElasticMQ を
+      `docker-compose.yml` に足すか、`Notifier` の単体テストだけで済ませるかの判断が要る)。
+      Terraform 側に queue + Lambda の publish 権限 + 配信 Lambda が要る(P5)。
       → **完了条件**: publish が配信完了を待たずに応答し、配信が失われないことを staging で確認。
-- [ ] プロセス内状態の棚卸し: ログイン試行のカウンタ(→ DynamoDB か Cognito に寄せる)、
-      画像の単回トークン(P2 で DynamoDB 化)、Webhook(P3 で SQS 化)
-      → **完了条件**: 「Lambda を 2 インスタンスで動かしても壊れない」項目がゼロになっている。
+- [~] プロセス内状態の棚卸し(2026-09 時点):
+
+      | 状態 | いまの置き場 | Lambda で 2 インスタンスだと | 行き先 |
+      |---|---|---|---|
+      | ログイン試行のカウンタ(`auth/throttle.rs`) | プロセスの `HashMap` | **壊れる**(インスタンスごとに別勘定。ロックアウトが効かない) | P4 で Cognito に寄せる(Cognito 自身の保護と二重になるため、DynamoDB 実装はその判断後) |
+      | 画像の単回トークン | AWS では**存在しない**(presigned S3) | 問題なし | — |
+      | Webhook | リクエスト処理中に配信 | **失われる**(応答後に実行環境が凍結されうる) | 次の項目の SQS |
+      | 発行器(token / preview / reset) | 秘密鍵から導出、状態なし | 問題なし | — |
+      | rkv の `Manager` シングルトン | on-prem 専用 | 対象外 | — |
+
+      → **完了条件**: 「Lambda を 2 インスタンスで動かしても壊れない」項目がゼロ。
+      → 残りは上の 2 つ(Webhook とログイン試行)。
 
 ### P4. Cognito(採用する。§1 の決定どおり)
 
