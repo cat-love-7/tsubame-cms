@@ -7,6 +7,10 @@
     @if (meta.status === 'published' && meta.has_draft) {
       <span class="draft-note">未公開の変更あり</span>
     }
+    <!-- The audit trail: who put this version on the site. -->
+    @if (meta.published_by; as publisher) {
+      <span class="publisher" title="公開したアカウント">{{ publisher.email }}</span>
+    }
     @if (auth.canPublish()) {
       <button matButton (click)="togglePublished()">
         {{ published() ? 'Unpublish' : 'Publish' }}

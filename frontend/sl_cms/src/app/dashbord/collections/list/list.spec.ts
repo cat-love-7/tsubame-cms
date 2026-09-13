@@ -67,6 +67,7 @@ function metadata(overrides: Partial<ItemMetadata>): ItemMetadata {
   return {
     status: 'draft',
     published_at: null,
+    published_by: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,
@@ -160,6 +161,28 @@ describe('List', () => {
 
     expect(stub.unpublished).toEqual([1]);
     expect(fresh.componentInstance.statusOf(1)).toBe('draft');
+  });
+
+  /** The audit trail: the list says who published the row, and stays quiet for drafts. */
+  it('shows who published an item, and nothing for a draft', () => {
+    stub.metadata = {
+      '1': metadata({
+        status: 'published',
+        published_at: '2024-05-06T07:08:09Z',
+        published_by: { id: 'u1', email: 'publisher@example.com' },
+      }),
+    };
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    const note = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
+    expect(note.textContent?.trim()).toBe('publisher@example.com');
+
+    // A draft has no publisher to show, even though it was published before.
+    stub.metadata = { '1': metadata({ status: 'draft', published_by: null }) };
+    const other = TestBed.createComponent(List);
+    other.detectChanges();
+    expect(other.nativeElement.querySelector('.publisher')).toBeNull();
   });
 
   it('shows when each item was last saved', () => {

@@ -145,6 +145,7 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 | `created_at` | 管理 API | 値が最初に保存された時刻 |
 | `updated_at` | 管理 API | **作業コピー**が最後に保存された時刻 |
 | `published_at` | 両方 | 最後に公開された時刻(unpublish で `null` に戻る) |
+| `published_by` | 管理 API | 最後に公開した**アカウント**(`{ id, email }`)。unpublish で `null` に戻る |
 
 公開 API に `updated_at` は**出しません**。2 コピーでは「編集した時刻」と「公開物が変わった
 時刻」が別で、未公開の編集を `lastmod` として見せてしまうためです。公開物の最終更新は
@@ -157,6 +158,10 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 - この機能より前に保存された内容は `created_at` / `updated_at` が `null` になる(移行不要)。
   タイムスタンプを持たない古いメタデータレコードもそのまま読める。
 - 管理 API のメタデータは `has_draft` も返すので、公開済み + 未公開の変更、を見分けられる。
+- `published_by` は**監査用**: 公開した時点のメールと id を記録する。メールはその時の値なので、
+  アカウントが後で改名・削除されても記録は読める。`published_at` と同じく unpublish で消える
+  (サイトから下りたものに「誰が公開したか」は残らない)。**公開 API には出しません**。
+
 
 #### 例
 
@@ -168,7 +173,8 @@ TOKEN=$(curl -s -X POST http://127.0.0.1:8000/auth/login \
 # 公開する
 curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/publish \
   -H "Authorization: Bearer $TOKEN"
-# => {"status":"published","published_at":"2026-09-13T07:19:42.672723691Z","created_at":"...","updated_at":"..."}
+# => {"status":"published","published_at":"2026-09-13T07:19:42.672723691Z",
+#     "published_by":{"id":"...","email":"admin@example.com"},"created_at":"...","updated_at":"..."}
 
 # 誰でも読める
 curl http://127.0.0.1:8000/content/collections/blog
@@ -316,7 +322,8 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   期限付きの URL は未実装(サイト側のプレビュー導線を作るときに必要)。
 - **`published_at` を使った差分ビルド**: 値は返っているが、サイト側の実装はこれから。
 - **リソース単位の権限**: コレクション / 単一ページごとの付与は未実装(いまはアカウント全体)。
-- **監査ログ**: 誰が公開したかを記録していない(`published_by` を足すのが小さな第一歩)。
+- **監査ログ(履歴)**: いまは「最後に公開したアカウント」だけを持つ。誰がいつ何を保存・公開・
+  削除したかの**履歴**は残していない(追記型のログが要る)。
 - **パスワード変更時のトークン失効**: 変更しても既存トークンは有効なまま。
 - **ログイン試行のレート制限**: 総当たりを止める仕組みが無い。
 - **`doc/swagger.yaml`**: 実装済みルートの一部しか載っていない古い記述のまま。

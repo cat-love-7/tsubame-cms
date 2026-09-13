@@ -5,7 +5,7 @@ use chrono::Utc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
-use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
 use crate::repositories::collection_repository::CollectionRepository;
@@ -524,12 +524,16 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collect())
     }
 
-    /// Publish or unpublish one item, recording when it was published.
+    /// Publish or unpublish one item, recording when it happened and who did it.
+    ///
+    /// `actor` is required rather than optional: an audit trail with holes in it is worse
+    /// than none, and every caller in the HTTP layer already has the authenticated user.
     pub fn set_item_status(
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
         status: ItemStatus,
+        actor: PublishedBy,
     ) -> Result<ItemMetadata, HttpError> {
         self.require_item(collection_name, &item_id)?;
         // Built from the stored record so publishing keeps the content timestamps.
@@ -538,7 +542,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .get_item_metadata(collection_name, &item_id)
             .map_err(map_internal_error)?
             .unwrap_or_default()
-            .with_status(status);
+            .with_status(status, Some(actor));
 
         if metadata.is_published() {
             // Publishing *is* the copy: whatever the editor has been working on replaces
@@ -993,13 +997,19 @@ mod tests {
             .create_collection_item(&"blog".into(), &create_test_item("Hello", 1.0))
             .unwrap();
 
-        service
+        let metadata = service
             .set_item_status(
                 &"blog".into(),
                 CollectionItemId::from_u64(item_id),
                 ItemStatus::Published,
+                publisher(),
             )
             .unwrap();
+        // Publishing leaves an audit trail: who did it, alongside when.
+        assert_eq!(
+            metadata.published_by.as_ref().map(|by| by.email.as_str()),
+            Some("admin@example.com")
+        );
         {
             let events = notifier.events.lock().unwrap();
             assert_eq!(events.len(), 1);
@@ -1013,10 +1023,21 @@ mod tests {
             .set_item_status(
                 &"blog".into(),
                 CollectionItemId::from_u64(99),
-                ItemStatus::Published
+                ItemStatus::Published,
+                publisher()
             )
             .is_err());
         assert_eq!(notifier.events.lock().unwrap().len(), 1);
+    }
+
+    /// The account the tests publish as.
+    fn publisher() -> PublishedBy {
+        PublishedBy::from(&crate::models::user::User::new(
+            "admin@example.com",
+            String::new(),
+            true,
+            crate::models::user::Permission::admin(),
+        ))
     }
 
     // Test helper functions

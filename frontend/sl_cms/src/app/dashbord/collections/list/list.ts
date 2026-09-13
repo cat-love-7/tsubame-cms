@@ -103,6 +103,11 @@ export class List {
     return this.metadata()[String(id)]?.has_draft ?? false;
   }
 
+  /** Who published the item, or an empty string while nobody has. */
+  publishedBy(id: number): string {
+    return this.metadata()[String(id)]?.published_by?.email ?? '';
+  }
+
   /** When the item's values were last saved, or a dash when that was never recorded. */
   updatedAt(id: number): string {
     const updated = this.metadata()[String(id)]?.updated_at;

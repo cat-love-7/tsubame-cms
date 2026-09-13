@@ -46,6 +46,15 @@ table.items th {
   white-space: nowrap;
 }
 
+/* The audit trail: who published this row, kept quiet until someone looks for it. */
+.publisher {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: #666;
+  overflow-wrap: anywhere;
+}
+
 /* Timestamps are secondary information, so they do not compete with the content. */
 .updated {
   white-space: nowrap;

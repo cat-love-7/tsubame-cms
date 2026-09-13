@@ -9,7 +9,7 @@ use crate::app_module::Storage;
 use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
-use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{PageQuery, Pagination};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
@@ -133,7 +133,8 @@ async fn publish_collection_item<R: Storage>(
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_publish(&user)?;
-    set_collection_item_status(module, collection_name, id, ItemStatus::Published).await
+    let actor = PublishedBy::from(&user);
+    set_collection_item_status(module, collection_name, id, ItemStatus::Published, actor).await
 }
 
 async fn unpublish_collection_item<R: Storage>(
@@ -142,7 +143,8 @@ async fn unpublish_collection_item<R: Storage>(
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_publish(&user)?;
-    set_collection_item_status(module, collection_name, id, ItemStatus::Draft).await
+    let actor = PublishedBy::from(&user);
+    set_collection_item_status(module, collection_name, id, ItemStatus::Draft, actor).await
 }
 
 async fn set_collection_item_status<R: Storage>(
@@ -150,13 +152,15 @@ async fn set_collection_item_status<R: Storage>(
     collection_name: String,
     id: u64,
     status: ItemStatus,
+    actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(
-        module
-            .collection_service
-            .set_item_status(&name, CollectionItemId::from_u64(id), status)?,
-    ))
+    Ok(Json(module.collection_service.set_item_status(
+        &name,
+        CollectionItemId::from_u64(id),
+        status,
+        actor,
+    )?))
 }
 
 async fn get_collections<R: Storage>(

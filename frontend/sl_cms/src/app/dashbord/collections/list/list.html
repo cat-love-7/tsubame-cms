@@ -39,6 +39,9 @@
           @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
             <span class="draft-note" title="公開するまで、サイトには反映されません">変更あり</span>
           }
+          @if (publishedBy(item[0]); as publisher) {
+            <span class="publisher" title="公開したアカウント">{{ publisher }}</span>
+          }
         </td>
         <td class="updated">{{ updatedAt(item[0]) }}</td>
         <td class="actions">

@@ -300,6 +300,10 @@ try {
   const badgeAfterPublish = (await badgeOf(rowById(draftId)).textContent())?.trim();
   check('一覧から公開できる', badgeAfterPublish === 'Published', `id=${draftId} → ${badgeAfterPublish}`);
 
+  // The audit trail: the row now names the account that published it.
+  const publisherNote = (await rowById(draftId).locator('.publisher').textContent())?.trim();
+  check('誰が公開したかが一覧に出る', publisherNote === EMAIL, `${publisherNote}`);
+
   // -------------------------------------------------------------- delete the last page's only row
   await page.goto(`${BASE}/collections/${LAST_PAGE_COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });

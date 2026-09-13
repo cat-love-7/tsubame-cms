@@ -7,7 +7,7 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
-use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::single_page::{
     SinglePageItemResponse, SinglePageName, SinglePageSchema,
 };
@@ -92,7 +92,8 @@ async fn publish_single_page<R: Storage>(
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_publish(&user)?;
-    set_single_page_status(module, page_name, ItemStatus::Published).await
+    let actor = PublishedBy::from(&user);
+    set_single_page_status(module, page_name, ItemStatus::Published, actor).await
 }
 
 async fn unpublish_single_page<R: Storage>(
@@ -101,16 +102,20 @@ async fn unpublish_single_page<R: Storage>(
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_publish(&user)?;
-    set_single_page_status(module, page_name, ItemStatus::Draft).await
+    let actor = PublishedBy::from(&user);
+    set_single_page_status(module, page_name, ItemStatus::Draft, actor).await
 }
 
 async fn set_single_page_status<R: Storage>(
     module: AppState<R>,
     page_name: String,
     status: ItemStatus,
+    actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    Ok(Json(module.single_page_service.set_page_status(&name, status)?))
+    Ok(Json(module.single_page_service.set_page_status(
+        &name, status, actor,
+    )?))
 }
 
 async fn get_single_pages<R: Storage>(

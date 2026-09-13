@@ -18,6 +18,11 @@
 
 
 /* An unpublished edit is the thing an editor most needs to notice. */
+.publisher {
+  font-size: 0.78rem;
+  color: #666;
+}
+
 .draft-note {
   display: inline-block;
   padding: 2px 6px;

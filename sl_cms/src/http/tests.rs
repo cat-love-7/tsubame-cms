@@ -1720,6 +1720,81 @@ async fn publishing_notifies_the_configured_webhook() {
     assert_eq!(body["published_at"], Value::Null);
 }
 
+/// Publishing leaves an audit trail: the account is recorded on the item, the admin side
+/// can read it back, and the public delivery API never sees it.
+#[tokio::test]
+async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
+    let app = test_app().await;
+    let item_id = create_sample_item(&app, "blog").await;
+
+    // A second account, so "who published" is not just the admin who set everything up.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&app.admin_token),
+        Some(json!({
+            "email": "publisher@example.com",
+            "password": "publisher-password",
+            "is_admin": false,
+            "permission": Permission { can_view: true, can_edit: true, can_publish: true },
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{}", String::from_utf8_lossy(&body));
+    let (_, body) = login(&app.router, "publisher@example.com", "publisher-password").await;
+    let publisher = body["token"].as_str().unwrap().to_string();
+
+    let publish = format!("/models/collections/blog/items/{item_id}/publish");
+    let (status, body) = send(&app.router, Method::POST, &publish, Some(&publisher), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["published_by"]["email"], "publisher@example.com");
+    assert!(body["published_by"]["id"].is_string(), "the account id travels too: {body}");
+
+    // The admin metadata endpoint reports it as well: that is what the UI reads.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/collections/blog/items/{item_id}/metadata"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["published_by"]["email"], "publisher@example.com");
+
+    // The delivery API says when it was published, never who did it: the operator's
+    // address is not something a public site should be able to read.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog/items/{item_id}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["published_at"].is_string());
+    assert!(
+        body.get("published_by").is_none(),
+        "the publisher must not reach the public API: {body}"
+    );
+
+    // Unpublishing takes the item off the site, so it forgets the publisher along with
+    // the publication time.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/unpublish"),
+        Some(&publisher),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["published_by"].is_null());
+    assert!(body["published_at"].is_null());
+}
+
 #[tokio::test]
 async fn publishing_a_single_page_notifies_the_webhook() {
     let (url, received) = start_webhook_receiver(StatusCode::OK).await;

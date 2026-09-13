@@ -321,7 +321,7 @@ mod tests {
     use super::*;
 
     fn collection_event(status: ItemStatus) -> ContentEvent {
-        let metadata = ItemMetadata::default().with_status(status);
+        let metadata = ItemMetadata::default().with_status(status, None);
         ContentEvent::collection_item(
             &CollectionName::from("blog"),
             CollectionItemId::from_u64(7),
@@ -336,7 +336,7 @@ mod tests {
 
         let page = ContentEvent::single_page(
             &SinglePageName::from("home"),
-            &ItemMetadata::default().with_status(ItemStatus::Published),
+            &ItemMetadata::default().with_status(ItemStatus::Published, None),
         );
         assert_eq!(page.name(), "single_page.published");
     }
@@ -371,7 +371,7 @@ mod tests {
     fn a_single_page_event_names_the_page_instead_of_a_collection() {
         let event = ContentEvent::single_page(
             &SinglePageName::from("home"),
-            &ItemMetadata::default().with_status(ItemStatus::Published),
+            &ItemMetadata::default().with_status(ItemStatus::Published, None),
         );
         let body: serde_json::Value = serde_json::from_str(&event.body()).unwrap();
 

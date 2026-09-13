@@ -16,6 +16,7 @@ class StubSinglePagesService {
   public metadata: ItemMetadata = {
     status: 'draft',
     published_at: null,
+    published_by: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,
@@ -35,12 +36,12 @@ class StubSinglePagesService {
 
   publishPage(name: string): Observable<ItemMetadata> {
     this.published.push(name);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     this.unpublished.push(name);
-    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({ status: 'draft', published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 }
 
@@ -137,12 +138,17 @@ describe('Edit', () => {
     stub.metadata = {
       status: 'published',
       published_at: '2024-01-01T00:00:00Z',
+      published_by: { id: 'u1', email: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,
     };
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();
+
+    // The editor names whoever published the version that is live.
+    const publisher = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
+    expect(publisher.textContent?.trim()).toBe('admin@example.com');
 
     publishButton(fresh.nativeElement, 'Unpublish').click();
     fresh.detectChanges();

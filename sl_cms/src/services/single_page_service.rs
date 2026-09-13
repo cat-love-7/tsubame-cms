@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::models::error::{HttpError, map_internal_error};
-use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
 use crate::models::single_page::{SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -285,10 +285,13 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .is_some())
     }
 
+    /// Publish or unpublish a single page, recording when it happened and who did it
+    /// (see [`CollectionService::set_item_status`] for why `actor` is required).
     pub fn set_page_status(
         &self,
         name: &SinglePageName,
         status: ItemStatus,
+        actor: PublishedBy,
     ) -> Result<ItemMetadata, HttpError> {
         self.get_single_page_schema(name)?;
         // Built from the stored record so publishing keeps the content timestamps.
@@ -297,7 +300,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .get_page_metadata(name)
             .map_err(map_internal_error)?
             .unwrap_or_default()
-            .with_status(status);
+            .with_status(status, Some(actor));
 
         if metadata.is_published() {
             // Publishing is the copy (see `CollectionService::set_item_status`).
@@ -583,9 +586,13 @@ mod tests {
             notifier.clone(),
         );
 
-        service
-            .set_page_status(&"home".into(), ItemStatus::Published)
+        let metadata = service
+            .set_page_status(&"home".into(), ItemStatus::Published, publisher())
             .unwrap();
+        assert_eq!(
+            metadata.published_by.as_ref().map(|by| by.email.as_str()),
+            Some("admin@example.com")
+        );
         {
             let events = notifier.events.lock().unwrap();
             assert_eq!(events.len(), 1);
@@ -595,9 +602,19 @@ mod tests {
 
         // An unknown page is a 404 and must not look like a change.
         assert!(service
-            .set_page_status(&"missing".into(), ItemStatus::Published)
+            .set_page_status(&"missing".into(), ItemStatus::Published, publisher())
             .is_err());
         assert_eq!(notifier.events.lock().unwrap().len(), 1);
+    }
+
+    /// The account the tests publish as.
+    fn publisher() -> PublishedBy {
+        PublishedBy::from(&crate::models::user::User::new(
+            "admin@example.com",
+            String::new(),
+            true,
+            crate::models::user::Permission::admin(),
+        ))
     }
 
     fn create_test_schema() -> SinglePageSchema {

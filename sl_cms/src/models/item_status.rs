@@ -1,5 +1,27 @@
 use chrono::{DateTime, Utc};
 
+use crate::models::user::{User, UserId};
+
+/// Who published an item, captured at the moment it was published.
+///
+/// The id links back to the account while it exists; the email is kept as it was, so the
+/// record still reads after the account has been renamed or deleted. That is what makes it
+/// usable as an audit trail rather than just a foreign key.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PublishedBy {
+    pub id: UserId,
+    pub email: String,
+}
+
+impl From<&User> for PublishedBy {
+    fn from(user: &User) -> Self {
+        PublishedBy {
+            id: user.id.clone(),
+            email: user.email.clone(),
+        }
+    }
+}
+
 /// Whether content is visible through the public delivery API.
 ///
 /// Content starts as a draft: publishing is an explicit act, so nothing reaches a public
@@ -35,6 +57,12 @@ pub struct ItemMetadata {
     /// since the last one.
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
+    /// Who published it last; cleared when it is unpublished, like `published_at`.
+    ///
+    /// Optional for the same reason as the timestamps: a record written before this field
+    /// existed still has to be readable.
+    #[serde(default)]
+    pub published_by: Option<PublishedBy>,
 }
 
 impl ItemMetadata {
@@ -42,16 +70,17 @@ impl ItemMetadata {
     ///
     /// Publishing is not an edit, and it must not erase when the content was written: a
     /// record that was never published has no timestamps to lose, but an existing one
-    /// does.
-    pub fn with_status(&self, status: ItemStatus) -> Self {
-        let published_at = match status {
-            ItemStatus::Published => Some(Utc::now()),
-            // Unpublishing forgets when it was published.
-            ItemStatus::Draft => None,
+    /// does. The publisher is only meaningful while the item is published, so
+    /// unpublishing forgets it just as it forgets `published_at`.
+    pub fn with_status(&self, status: ItemStatus, actor: Option<PublishedBy>) -> Self {
+        let (published_at, published_by) = match status {
+            ItemStatus::Published => (Some(Utc::now()), actor),
+            ItemStatus::Draft => (None, None),
         };
         ItemMetadata {
             status,
             published_at,
+            published_by,
             ..self.clone()
         }
     }
@@ -89,13 +118,43 @@ mod tests {
 
     #[test]
     fn publishing_records_when_and_unpublishing_forgets_it() {
-        let published = ItemMetadata::default().with_status(ItemStatus::Published);
+        let published = ItemMetadata::default().with_status(ItemStatus::Published, None);
         assert!(published.is_published());
         assert!(published.published_at.is_some());
 
-        let unpublished = published.with_status(ItemStatus::Draft);
+        let unpublished = published.with_status(ItemStatus::Draft, None);
         assert!(!unpublished.is_published());
         assert!(unpublished.published_at.is_none());
+    }
+
+    /// The audit trail: the publisher is stored with the item, and unpublishing - which
+    /// takes the item off the site - forgets it along with the publication time.
+    #[test]
+    fn publishing_records_who_did_it_and_unpublishing_forgets_that_too() {
+        let admin = User::new(
+            "Admin@Example.com",
+            "hash".to_string(),
+            true,
+            crate::models::user::Permission::admin(),
+        );
+        let published = ItemMetadata::default()
+            .with_status(ItemStatus::Published, Some(PublishedBy::from(&admin)));
+
+        let publisher = published.published_by.clone().expect("記録されている");
+        assert_eq!(publisher.email, "admin@example.com");
+        assert_eq!(publisher.id, admin.id);
+
+        let unpublished = published.with_status(ItemStatus::Draft, None);
+        assert!(unpublished.published_by.is_none());
+    }
+
+    /// A metadata record written before `published_by` existed must still deserialize.
+    #[test]
+    fn a_record_from_before_the_publisher_was_recorded_is_still_readable() {
+        let legacy: ItemMetadata =
+            serde_json::from_str(r#"{"status":"published","published_at":null}"#).unwrap();
+
+        assert!(legacy.published_by.is_none());
     }
 
     /// Publishing must not look like an edit, and must not throw away when the content was
@@ -104,13 +163,13 @@ mod tests {
     fn changing_the_status_keeps_the_content_timestamps() {
         let written = Utc::now();
         let metadata = ItemMetadata::default().touched(written);
-        let published = metadata.with_status(ItemStatus::Published);
+        let published = metadata.with_status(ItemStatus::Published, None);
 
         assert!(published.is_published());
         assert_eq!(published.created_at, Some(written));
         assert_eq!(published.updated_at, Some(written));
 
-        let draft = published.with_status(ItemStatus::Draft);
+        let draft = published.with_status(ItemStatus::Draft, None);
         assert!(draft.published_at.is_none());
         assert_eq!(draft.created_at, Some(written));
         assert_eq!(draft.updated_at, Some(written));
@@ -139,7 +198,7 @@ mod tests {
 
     #[test]
     fn saving_a_published_item_leaves_its_status_alone() {
-        let published = ItemMetadata::default().with_status(ItemStatus::Published);
+        let published = ItemMetadata::default().with_status(ItemStatus::Published, None);
         let saved = published.touched(Utc::now());
 
         assert!(saved.is_published());
