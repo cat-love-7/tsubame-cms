@@ -122,7 +122,7 @@ true/false, "password_reset_links": true/false}`。
       images 4 + S3)。実装は async で書き、同期トレイトへは `BlockingRuntime` で委譲する
       (経緯と順序は [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
       **HTTP の契約スイートが DynamoDB Local + MinIO に対して全部通る**
-      (`cargo test --no-default-features --features aws`、226 + 画像 1 件)。
+      (`cargo test --no-default-features --features aws`、HTTP 統合テスト 43 件を含む 231 件)。
       実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから上記コマンド。
       エミュレータが無いときはエミュレータが要るテストだけ自分を飛ばす。
       押さえるべき点:
@@ -130,12 +130,13 @@ true/false, "password_reset_links": true/false}`。
         並行作成で重複しないこと)。
       - 下書き一覧・メタデータ一覧は **SK の `begins_with` クエリ**(DynamoDB に prefix scan は無い)。
       - 公開は **`TransactWriteItems`** で 3 レコードをまとめる。
-      - 一覧のページングは `Limit` / `ExclusiveStartKey` に押し下げる(現状は全件取得してから
-        ページングしている。`doc/content-api.md` §3.1 に余地として記載済み)。
+      - 一覧のページングは `Limit` / `ExclusiveStartKey` に押し下げる
+        → 配信 API は達成(下の「公開一覧のページング押し下げ」)。管理画面の一覧は
+        2 つのキー空間のマージが要るので残っている。
       - 条件付き書き込みで「存在しないアイテムの削除」等を冪等にする(rkv 実装が握っている
         挙動と同じ結果にする)。
       → **完了条件**: **共有の契約スイートが DynamoDB Local に対して全部通る**
-      → **達成**(HTTP 統合テスト 43 件を含む 226 件 + 画像の往復 1 件)。
+      → **達成**(上記 231 件。DynamoDB Local + MinIO に対して実行)。
 - [x] サイズの検証: 300KB の値は往復し、400KB を超える値は**拒否される**
       (`a_large_value_round_trips_and_an_oversized_one_is_refused`)。画像のバイトを S3 に
       出したことが、1 レコード 400KB に収まる根拠になっている。
