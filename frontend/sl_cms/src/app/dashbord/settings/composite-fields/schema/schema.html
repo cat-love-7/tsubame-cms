@@ -11,4 +11,4 @@
   <p class="error" role="alert">{{ error() }}</p>
 }
 
-<app-edit-schema [Schema]="schema" (save)="save($event)"></app-edit-schema>
+<app-edit-schema [Schema]="schema()" (save)="save($event)"></app-edit-schema>

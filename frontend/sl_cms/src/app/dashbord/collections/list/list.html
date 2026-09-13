@@ -17,7 +17,7 @@
   <thead>
     <tr>
       <th>ID</th>
-      @for (field of schema; track field.name) {
+      @for (field of schema(); track field.name) {
         <th>{{ field.name }}</th>
       }
       <th>Status</th>
@@ -29,7 +29,7 @@
     @for (item of items(); track item[0]) {
       <tr>
         <td>{{ item[0] }}</td>
-        @for (field of schema; track field.name) {
+        @for (field of schema(); track field.name) {
           <td>{{ format(item[1][field.name]) }}</td>
         }
         <td><app-item-status [status]="statusOf(item[0])" /></td>
@@ -58,7 +58,7 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema.length + 4" class="empty">No items yet.</td>
+        <td [attr.colspan]="schema().length + 4" class="empty">No items yet.</td>
       </tr>
     }
   </tbody>

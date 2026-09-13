@@ -25,13 +25,13 @@ export class Schema {
   private compositeFields = inject(CompositeFieldsService);
 
   public compositeId: string = this.route.snapshot.params['id'];
-  public schema: FieldSchema[] = [];
+  public schema = signal<FieldSchema[]>([]);
   public status = signal('');
   public error = signal('');
 
   constructor() {
     this.compositeFields.getCompositeFieldSchema(this.compositeId).subscribe({
-      next: (schema) => (this.schema = schema),
+      next: (schema) => this.schema.set(schema),
       error: (e) => this.error.set(`Failed to load the definition: ${message(e)}`),
     });
   }

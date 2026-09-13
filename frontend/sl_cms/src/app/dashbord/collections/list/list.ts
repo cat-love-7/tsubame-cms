@@ -27,7 +27,7 @@ export class List {
   private collectionsService = inject(CollectionsService);
 
   public collectionName: string = this.route.snapshot.params['name'];
-  public schema: CollectionSchema = [];
+  public schema = signal<CollectionSchema>([]);
   /**
    * The rows on screen. A signal, not a plain field: the response can land while Angular
    * is checking the view, and a plain field changing then trips
@@ -51,7 +51,7 @@ export class List {
 
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
-      next: (schema) => (this.schema = schema),
+      next: (schema) => this.schema.set(schema),
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
     });
 

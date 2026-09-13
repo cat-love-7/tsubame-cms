@@ -19,13 +19,13 @@ export class Schema {
   private pages = inject(SinglePagesService);
 
   public pageName: string = this.route.snapshot.params['name'];
-  public schema: FieldSchema[] = [];
+  public schema = signal<FieldSchema[]>([]);
   public status = signal('');
   public error = signal('');
 
   constructor() {
     this.pages.getPageSchema(this.pageName).subscribe({
-      next: (schema) => (this.schema = schema),
+      next: (schema) => this.schema.set(schema),
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
     });
   }

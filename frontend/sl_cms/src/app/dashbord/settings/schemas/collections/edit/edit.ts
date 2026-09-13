@@ -22,13 +22,13 @@ export class Edit {
    * would hand the child a fresh array on every change detection pass until the request
    * resolves, discarding fields the user had already added.
    */
-  public collectionSchema: FieldSchema[] = [];
+  public collectionSchema = signal<FieldSchema[]>([]);
   public status = signal('');
   public error = signal('');
 
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
-      next: (schema: CollectionSchema) => this.collectionSchema = schema,
+      next: (schema: CollectionSchema) => this.collectionSchema.set(schema),
       error: (e) => this.error.set(`Load failed: ${e?.error ?? e?.message ?? e}`),
     });
   }
