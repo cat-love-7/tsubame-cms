@@ -118,7 +118,15 @@ true/false, "password_reset_links": true/false}`。
       読み取りは `ConsistentRead`、アイテム ID はゼロ埋め、ユーザー名の一意性は予約アイテム +
       条件付き書き込み、公開は `TransactWriteItems`
       → 確認: 実装が必要とするアクセスパターンを表で網羅(44 メソッド分)。
-- [ ] 44 メソッドを実装。押さえるべき点:
+- [~] 44 メソッドを実装。**いまは `CollectionRepository` の 16 メソッドが DynamoDB Local に対して
+      通っている**(`aws::repository` の往復テスト。同期トレイトを `#[tokio::test]` の中から呼ぶので、
+      一時的な `BlockingRuntime` ブリッジの一番壊れやすい所も同時に押さえている)。
+      残りは users / single pages / composite fields / images。実装は async で書き、
+      同期トレイトへはブリッジで委譲する(経緯と順序は
+      [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
+      実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから
+      `cargo test --no-default-features --features aws`(エミュレータが無いときはこのテストだけ飛ばす)。
+      押さえるべき点:
       - アイテム ID は **`UpdateItem` の `ADD` で原子的に採番**(on-prem の `id_counter` 相当。
         並行作成で重複しないこと)。
       - 下書き一覧・メタデータ一覧は **SK の `begins_with` クエリ**(DynamoDB に prefix scan は無い)。
@@ -128,7 +136,7 @@ true/false, "password_reset_links": true/false}`。
       - 条件付き書き込みで「存在しないアイテムの削除」等を冪等にする(rkv 実装が握っている
         挙動と同じ結果にする)。
       → **完了条件**: **共有の契約スイートが DynamoDB Local に対して全部通る**
-      (`cargo test --no-default-features --features aws`)。
+      (`cargo test --no-default-features --features aws`。いまはアダプタ固有の往復テストのみ)。
 - [ ] サイズと上限の検証: 1 レコード 400KB を超えないこと(特に複合フィールドを含む値)、
       クエリ 1MB のページ境界
       → **完了条件**: 大きめの値を入れる専用テスト。

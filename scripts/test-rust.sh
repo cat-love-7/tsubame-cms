@@ -11,9 +11,8 @@ cd "$root/sl_cms"
 echo "== tests (default backend: on-premises) =="
 cargo test --all-targets
 
-# Selecting no backend used to build a binary that did nothing at all, and selecting `aws`
-# used to fail with whatever error came first. Both are refused on purpose, so a change that
-# quietly removes the guard is a regression worth catching here.
+# Selecting no backend used to build a binary that did nothing at all. That is refused on
+# purpose, so a change that quietly removes the guard is a regression worth catching here.
 # The output is captured first: the command *fails*, and under `set -o pipefail` a pipeline
 # ending in a successful `grep` would still report that failure as the pipeline's status.
 expect_refused() {
@@ -33,5 +32,8 @@ expect_refused() {
 echo "== a build with no backend selected is refused =="
 expect_refused "select a storage backend" cargo check --no-default-features
 
-echo "== selecting the unimplemented aws backend is refused =="
-expect_refused "not implemented yet" cargo check --no-default-features --features aws
+# The aws adapter is checked (and tested) with its own feature set; with the default backend on
+# as well, the "exactly one backend" guard would refuse the build. The server itself is still
+# unimplemented, so `run` reports that rather than serving.
+echo "== the aws backend builds, and its tests pass against DynamoDB Local if it is running =="
+cargo test --no-default-features --features aws --all-targets

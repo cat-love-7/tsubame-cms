@@ -1,9 +1,10 @@
 # Continuous integration.
 #
 # The three suites are the same scripts a developer runs locally, so what passes here is what
-# passes on a laptop (and the other way round). The AWS job is deliberately absent: the
-# adapter does not exist yet and selecting it is refused by design, so the emulator job lands
-# with that work (see doc/aws-plan.md).
+# passes on a laptop (and the other way round). The rust job also builds the aws adapter
+# (`--no-default-features --features aws`); its DynamoDB tests skip themselves when no emulator
+# is listening, so the job needs no services yet. A job that runs them against DynamoDB Local
+# and MinIO lands with the rest of doc/aws-plan.md's P1/P2.
 name: CI
 
 on:

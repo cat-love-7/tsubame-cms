@@ -1,33 +1,45 @@
 //! AWS storage adapter: DynamoDB (single table) for structured data, S3 for image bytes.
 //!
-//! Not written yet. The shape is settled, and what is left is the work itself:
+//! The shape is settled in `doc/aws-plan.md` and `doc/aws-dynamodb-design.md`; this module is
+//! being filled in. The repository traits are synchronous and the AWS SDK is not, so the
+//! implementation is written `async` (what it wants to be) and the synchronous traits are
+//! served through [`bridge::BlockingRuntime`]. That bridge is temporary: when the traits
+//! themselves become async, it and the short wrappers go away and the async implementation
+//! stays.
 //!
-//! * a `Repository` over one DynamoDB table (`Repository: Storage`), with the published copy,
-//!   the working copy and the metadata as three records per item, an atomic counter for item
-//!   ids, and `TransactWriteItems` for the publish that copies one to the other;
-//! * S3 behind [`crate::repositories::image_repository::ImageRepository`]: a presigned PUT as
-//!   the upload target, the object's own URL stored in the content (a *stable* URL - never a
-//!   presigned one, which would rot in the content), and no local byte serving at all;
-//! * [`build_app_module`] as the composition root, exactly like `on_premises::build_app_module`;
-//! * a Lambda entry point that hands the shared router to `lambda_http`.
-//!
-//! Until that exists, selecting this backend is refused here rather than failing somewhere
-//! less obvious. The plan, including what has to be decided first, is in `doc/aws-plan.md`.
+//! What is here: the bridge, the DynamoDB helpers (keys, JSON records, atomic ids) and
+//! `CollectionRepository`, verified against DynamoDB Local. Still to come: the other four
+//! traits (users, single pages, composite fields, images), the S3 upload target, the
+//! composition root (`build_app_module`, which needs all five traits) and the Lambda entry
+//! point.
 
-compile_error!(
-    "the `aws` backend (DynamoDB + S3) is not implemented yet; build with the default \
-     `on-premises` feature"
-);
+use aws_sdk_dynamodb::Client;
 
-use crate::config::Config;
+use crate::config::{AwsSettings, Config};
+
+pub mod bridge;
+pub mod repository;
+
+#[cfg_attr(not(test), allow(unused_imports))] // used by `build_app_module`, which needs all five traits
+pub use repository::AwsRepository;
+
+/// Build a DynamoDB client pointed at `settings`, which may be a local emulator.
+async fn dynamodb_client(settings: &AwsSettings) -> Client {
+    let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_sdk_dynamodb::config::Region::new(settings.region.clone()))
+        .credentials_provider(aws_sdk_dynamodb::config::Credentials::new(
+            "test", "test", None, None, "cms",
+        ))
+        .endpoint_url(settings.endpoint_url())
+        .load()
+        .await;
+    Client::new(&config)
+}
 
 /// Start the CMS on AWS.
 ///
-/// Unreachable today - the `compile_error!` above refuses the build - but it is the shape the
-/// rest of the work fills in: check the settings, build the DynamoDB + S3 composition root, and
-/// hand the shared router to `lambda_http`. Writing it down here keeps the "what is missing"
-/// honest and gives the configuration somewhere real to be used from.
-#[allow(dead_code)]
+/// The storage adapter is being built; the Lambda entry point (`lambda_http`) is the last step
+/// of `doc/aws-plan.md`'s P3, so this reports that rather than pretending to serve.
 pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let settings = config.aws_settings()?;
     tracing::info!(
@@ -38,8 +50,6 @@ pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         "aws backend starting"
     );
 
-    // The on-premises administrator settings have no effect here, which is worth saying out
-    // loud rather than leaving an operator to wonder why the account never appears.
     if config.admin_username.is_some() || config.admin_password.is_some() {
         tracing::warn!(
             "ADMIN_USERNAME / ADMIN_PASSWORD are ignored by the aws backend; set \
@@ -53,4 +63,36 @@ pub async fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Err("the aws backend is not implemented yet".into())
+}
+
+/// The endpoint the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT`, or the emulator from
+/// `docker-compose.yml`.
+#[cfg(test)]
+pub fn test_endpoint() -> String {
+    std::env::var("CMS_TEST_DYNAMODB_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:8000".to_string())
+}
+
+/// A repository over a freshly created table, for tests against a local DynamoDB.
+///
+/// The table name is unique per call so tests do not share state; the caller drops it when it
+/// is done.
+#[cfg(test)]
+pub async fn open_test_repository(table_hint: &str) -> (std::sync::Arc<AwsRepository>, String) {
+    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
+    let settings = AwsSettings {
+        region: "us-east-1".to_string(),
+        table: table.clone(),
+        bucket: "unused-bucket".to_string(),
+        user_pool_id: "unused_pool".to_string(),
+        endpoint_url: Some(test_endpoint()),
+        bootstrap_admin_usernames: Vec::new(),
+    };
+    let client = dynamodb_client(&settings).await;
+    let repository = std::sync::Arc::new(AwsRepository::new(client, table.clone()));
+    repository
+        .create_table()
+        .await
+        .expect("could not create the test table");
+    (repository, table)
 }

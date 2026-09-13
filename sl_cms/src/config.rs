@@ -71,6 +71,9 @@ pub struct Config {
     pub webhook_secret: Option<Vec<u8>>,
     /// AWS region (`AWS_REGION`). The `aws` backend only.
     pub aws_region: Option<String>,
+    /// Where the AWS endpoints are (`AWS_ENDPOINT_URL`). Only for a local emulator such as
+    /// DynamoDB Local or MinIO; unset means the real endpoints.
+    pub aws_endpoint_url: Option<String>,
     /// DynamoDB table holding everything structured (`DYNAMODB_TABLE`).
     pub dynamodb_table: Option<String>,
     /// S3 bucket holding uploaded image bytes (`S3_BUCKET`).
@@ -96,6 +99,9 @@ pub struct AwsSettings {
     pub table: String,
     pub bucket: String,
     pub user_pool_id: String,
+    /// Where the DynamoDB/S3 endpoints are, for a local emulator. `None` means the real AWS
+    /// endpoints, which is what a deployment uses.
+    pub endpoint_url: Option<String>,
     /// May be empty: then nobody can provision themselves and an administrator has to create
     /// the first account record another way.
     pub bootstrap_admin_usernames: Vec<String>,
@@ -103,6 +109,13 @@ pub struct AwsSettings {
 
 #[cfg(feature = "aws")]
 impl AwsSettings {
+    /// The endpoint the SDK should talk to: a local emulator when set, AWS otherwise.
+    pub fn endpoint_url(&self) -> String {
+        self.endpoint_url
+            .clone()
+            .unwrap_or_else(|| format!("https://dynamodb.{}.amazonaws.com", self.region))
+    }
+
     /// Where Cognito publishes the signing keys for this pool. Derived rather than configured,
     /// so a pool id and a region cannot disagree.
     pub fn jwks_url(&self) -> String {
@@ -131,6 +144,7 @@ impl Default for Config {
             webhook_urls: Vec::new(),
             webhook_secret: None,
             aws_region: None,
+            aws_endpoint_url: None,
             dynamodb_table: None,
             s3_bucket: None,
             cognito_user_pool_id: None,
@@ -228,6 +242,7 @@ impl Config {
         config.admin_username =
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
         config.aws_region = non_empty_env("AWS_REGION");
+        config.aws_endpoint_url = non_empty_env("AWS_ENDPOINT_URL");
         config.dynamodb_table = non_empty_env("DYNAMODB_TABLE");
         config.s3_bucket = non_empty_env("S3_BUCKET");
         config.cognito_user_pool_id = non_empty_env("COGNITO_USER_POOL_ID");
@@ -257,6 +272,7 @@ impl Config {
             table: required(&self.dynamodb_table, "DYNAMODB_TABLE")?,
             bucket: required(&self.s3_bucket, "S3_BUCKET")?,
             user_pool_id: required(&self.cognito_user_pool_id, "COGNITO_USER_POOL_ID")?,
+            endpoint_url: self.aws_endpoint_url.clone(),
             bootstrap_admin_usernames: self.bootstrap_admin_usernames.clone(),
         })
     }
