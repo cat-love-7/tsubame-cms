@@ -158,6 +158,42 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             }
         }
     }
+
+    /// Update a single page's item from an **untagged** JSON body.
+    ///
+    /// Values arrive without type tags; the page schema is what gives them meaning.
+    /// Types that do not match are rejected with 400 rather than coerced.
+    pub fn update_single_page_item_from_json(
+        &self,
+        name: &SinglePageName,
+        body: &serde_json::Value,
+    ) -> Result<(), HttpError> {
+        let item = self.parse_item(name, body)?;
+        self.update_single_page_item(name, &item)
+    }
+
+    fn parse_item(
+        &self,
+        name: &SinglePageName,
+        body: &serde_json::Value,
+    ) -> Result<SinglePageItem, HttpError> {
+        let schema = self
+            .single_page_repository
+            .get_single_page_schema(name)
+            .map_err(map_internal_error)?
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!(
+                    "Single page with id '{}' does not exist",
+                    name
+                ))
+            })?;
+        let composite_schemas = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+        SinglePageItem::from_untyped(body, &composite_schemas, &schema)
+            .map_err(|e| HttpError::BadRequest(&e))
+    }
 }
 
 #[cfg(test)]

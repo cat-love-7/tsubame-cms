@@ -1,1 +1,52 @@
-<p>list works!</p>
+<div class="toolbar">
+  <h2>{{ collectionName }}</h2>
+  <span class="spacer"></span>
+  <button matButton [routerLink]="['/collections', collectionName, 'create']">
+    <mat-icon>add</mat-icon>
+    New item
+  </button>
+</div>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+<!-- A plain table (rather than mat-table) because the columns are defined by the
+     collection schema, which is only known once it has loaded. -->
+<table class="items">
+  <thead>
+    <tr>
+      <th>ID</th>
+      @for (field of schema; track field.name) {
+        <th>{{ field.name }}</th>
+      }
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (item of items; track item[0]) {
+      <tr>
+        <td>{{ item[0] }}</td>
+        @for (field of schema; track field.name) {
+          <td>{{ format(item[1][field.name]) }}</td>
+        }
+        <td class="actions">
+          <button
+            matIconButton
+            [routerLink]="['/collections', collectionName, 'edit', item[0]]"
+            [attr.aria-label]="'edit item ' + item[0]"
+          >
+            <mat-icon>edit</mat-icon>
+          </button>
+          <button matIconButton (click)="delete(item[0])" [attr.aria-label]="'delete item ' + item[0]">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </td>
+      </tr>
+    } @empty {
+      <tr>
+        <td [attr.colspan]="schema.length + 2" class="empty">No items yet.</td>
+      </tr>
+    }
+  </tbody>
+</table>

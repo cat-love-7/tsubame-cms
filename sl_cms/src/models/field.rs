@@ -66,7 +66,409 @@ where
         }
         Ok(())
     }
+
+    /// Build a value map from an **untagged** JSON object, using `schema` to decide how
+    /// each field is read.
+    ///
+    /// Values travel untyped on the wire (`{"title":"Hello","count":5}`) because the
+    /// schema already states each field's type; carrying a second, redundant type tag
+    /// would allow a value whose tag contradicts the schema. The schema is therefore the
+    /// single source of truth here.
+    ///
+    /// Types that do not match are **rejected** rather than coerced, and keys that the
+    /// schema does not declare are rejected too, so a client typo cannot silently drop
+    /// content.
+    pub fn from_untyped(
+        value: &serde_json::Value,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        schema: &T,
+    ) -> Result<Self, String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| "expected a JSON object of field values".to_string())?;
+
+        for key in object.keys() {
+            let mut known = false;
+            for field in schema {
+                if &field.name == key {
+                    known = true;
+                    break;
+                }
+            }
+            if !known {
+                return Err(format!("Unknown field '{key}'"));
+            }
+        }
+
+        let mut values = HashMap::new();
+        for field in schema {
+            if let Some(raw) = object.get(&field.name) {
+                values.insert(
+                    field.name.clone(),
+                    parse_field_value(field, raw, composite_schemas)?,
+                );
+            }
+        }
+        Ok(FieldValueMap(values, PhantomData))
+    }
 }
+
+/// Read one untagged JSON value as the `FieldValue` that `field`'s type implies.
+fn parse_field_value(
+    field: &FieldSchema,
+    raw: &serde_json::Value,
+    composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+) -> Result<FieldValue, String> {
+    match &field.field_type {
+        FieldType::Array(allowed) => {
+            let items = raw.as_array().ok_or_else(|| mismatch(field, "an array"))?;
+            let mut values = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                values.push(parse_array_element(field, allowed, index, item)?);
+            }
+            Ok(FieldValue::Array(values))
+        }
+        FieldType::CompositeField(reference) => match raw {
+            serde_json::Value::Null => Ok(FieldValue::CompositeField(None)),
+            serde_json::Value::Object(_) => {
+                let nested_schema = composite_schemas.get(&reference.id).ok_or_else(|| {
+                    format!(
+                        "Field '{}': composite field schema '{}' not found",
+                        field.name, reference.id
+                    )
+                })?;
+                let nested = FieldValueMap::<CompositeFieldSchema>::from_untyped(
+                    raw,
+                    composite_schemas,
+                    nested_schema,
+                )
+                .map_err(|e| format!("Field '{}': {e}", field.name))?;
+                Ok(FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: reference.id.clone(),
+                    values: nested,
+                })))
+            }
+            _ => Err(mismatch(field, "an object")),
+        },
+        scalar => parse_untagged_scalar(field, scalar, raw),
+    }
+}
+
+/// The scalar half of [`parse_field_value`]; shared with array elements.
+fn parse_untagged_scalar(
+    field: &FieldSchema,
+    field_type: &FieldType,
+    raw: &serde_json::Value,
+) -> Result<FieldValue, String> {
+    match field_type {
+        FieldType::Text(_) => raw
+            .as_str()
+            .map(|s| FieldValue::Text(s.to_string()))
+            .ok_or_else(|| mismatch(field, "a string")),
+        FieldType::Markdown(_) => raw
+            .as_str()
+            .map(|s| FieldValue::Markdown(s.to_string()))
+            .ok_or_else(|| mismatch(field, "a string")),
+        FieldType::Number => match raw {
+            serde_json::Value::Null => Ok(FieldValue::Number(None)),
+            serde_json::Value::Number(n) => n
+                .as_f64()
+                .map(|v| FieldValue::Number(Some(v)))
+                .ok_or_else(|| mismatch(field, "a number")),
+            _ => Err(mismatch(field, "a number")),
+        },
+        FieldType::Boolean => raw
+            .as_bool()
+            .map(FieldValue::Boolean)
+            .ok_or_else(|| mismatch(field, "a boolean")),
+        FieldType::Date => match raw {
+            serde_json::Value::Null => Ok(FieldValue::Date(None)),
+            serde_json::Value::String(s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map(|d| FieldValue::Date(Some(d)))
+                .map_err(|_| mismatch(field, "an ISO date (YYYY-MM-DD)")),
+            _ => Err(mismatch(field, "an ISO date (YYYY-MM-DD)")),
+        },
+        FieldType::DateTime => match raw {
+            serde_json::Value::Null => Ok(FieldValue::DateTime(None)),
+            serde_json::Value::String(s) => DateTime::parse_from_rfc3339(s)
+                .map(|dt| FieldValue::DateTime(Some(dt)))
+                .map_err(|_| mismatch(field, "an RFC 3339 date-time")),
+            _ => Err(mismatch(field, "an RFC 3339 date-time")),
+        },
+        FieldType::Image => match raw {
+            serde_json::Value::Null => Ok(FieldValue::Image(None)),
+            serde_json::Value::Number(n) => n
+                .as_u64()
+                .map(|id| FieldValue::Image(Some(ImageID::from_u64(id))))
+                .ok_or_else(|| mismatch(field, "an image id (unsigned integer)")),
+            // Responses carry `{ "id": n, "url": "..." }`; accepting that shape back means
+            // a client can load an item, change one field and save the rest untouched.
+            serde_json::Value::Object(map) => map
+                .get("id")
+                .and_then(|id| id.as_u64())
+                .map(|id| FieldValue::Image(Some(ImageID::from_u64(id))))
+                .ok_or_else(|| mismatch(field, "an image id")),
+            _ => Err(mismatch(field, "an image id (unsigned integer)")),
+        },
+        FieldType::TextEnum(options) => {
+            let items = raw
+                .as_array()
+                .ok_or_else(|| mismatch(field, "an array of strings"))?;
+            let mut values = Vec::with_capacity(items.len());
+            for item in items {
+                let value = item
+                    .as_str()
+                    .ok_or_else(|| mismatch(field, "an array of strings"))?;
+                if !options.iter().any(|option| option == value) {
+                    return Err(format!(
+                        "Field '{}': '{value}' is not one of the allowed options",
+                        field.name
+                    ));
+                }
+                values.push(value.to_string());
+            }
+            Ok(FieldValue::TextEnum(values))
+        }
+        // Handled by `parse_field_value` before reaching here.
+        FieldType::Array(_) | FieldType::CompositeField(_) => Err(mismatch(field, "a scalar value")),
+    }
+}
+
+/// Array elements are untyped too, so the declared element types are tried in order and
+/// the first one that accepts the JSON value wins. This keeps interpretation
+/// deterministic given the schema.
+fn parse_array_element(
+    field: &FieldSchema,
+    allowed: &[FieldType],
+    index: usize,
+    raw: &serde_json::Value,
+) -> Result<FieldValue, String> {
+    for candidate in allowed {
+        let probe = FieldSchema {
+            name: format!("{}[{index}]", field.name),
+            field_type: candidate.clone(),
+            required: false,
+            width: 0,
+            height: 0,
+        };
+        if let Ok(value) = parse_untagged_scalar(&probe, candidate, raw) {
+            return Ok(value);
+        }
+    }
+    Err(format!(
+        "Field '{}[{index}]': value does not match any declared array item type",
+        field.name
+    ))
+}
+
+fn mismatch(field: &FieldSchema, expected: &str) -> String {
+    format!("Field '{}': expected {expected}", field.name)
+}
+
+#[cfg(test)]
+mod untyped_parsing_tests {
+    use super::*;
+    use crate::models::collection::CollectionSchema;
+    use serde_json::json;
+
+    fn field(name: &str, field_type: FieldType, required: bool) -> FieldSchema {
+        FieldSchema { name: name.to_string(), field_type, required, width: 12, height: 1 }
+    }
+
+    fn schema() -> CollectionSchema {
+        vec![
+            field("title", FieldType::Text(TextFieldOptions::default()), true),
+            field("body", FieldType::Markdown(TextFieldOptions::default()), false),
+            field("count", FieldType::Number, false),
+            field("live", FieldType::Boolean, false),
+            field("published", FieldType::Date, false),
+            field("at", FieldType::DateTime, false),
+            field("cover", FieldType::Image, false),
+            field("tags", FieldType::TextEnum(vec!["news".into(), "blog".into()]), false),
+            field("scores", FieldType::Array(vec![FieldType::Number]), false),
+        ]
+    }
+
+    fn parse(value: serde_json::Value) -> Result<FieldValueMap<CollectionSchema>, String> {
+        FieldValueMap::from_untyped(&value, &HashMap::new(), &schema())
+    }
+
+    #[test]
+    fn parses_every_scalar_type_without_tags() {
+        let parsed = parse(json!({
+            "title": "Hello",
+            "body": "**bold**",
+            "count": 5,
+            "live": true,
+            "published": "2024-03-01",
+            "at": "2024-03-01T10:00:00+00:00",
+            "cover": 7,
+            "tags": ["news"],
+            "scores": [1, 2.5]
+        }))
+        .unwrap();
+
+        assert_eq!(parsed.0["title"], FieldValue::Text("Hello".into()));
+        assert_eq!(parsed.0["body"], FieldValue::Markdown("**bold**".into()));
+        assert_eq!(parsed.0["count"], FieldValue::Number(Some(5.0)));
+        assert_eq!(parsed.0["live"], FieldValue::Boolean(true));
+        assert_eq!(
+            parsed.0["published"],
+            FieldValue::Date(Some(NaiveDate::from_ymd_opt(2024, 3, 1).unwrap()))
+        );
+        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageID::from_u64(7))));
+        assert_eq!(parsed.0["tags"], FieldValue::TextEnum(vec!["news".into()]));
+        assert_eq!(
+            parsed.0["scores"],
+            FieldValue::Array(vec![
+                FieldValue::Number(Some(1.0)),
+                FieldValue::Number(Some(2.5))
+            ])
+        );
+    }
+
+    #[test]
+    fn explicit_null_means_none_for_optional_types() {
+        let parsed = parse(json!({ "title": "t", "count": null, "published": null, "cover": null }))
+            .unwrap();
+        assert_eq!(parsed.0["count"], FieldValue::Number(None));
+        assert_eq!(parsed.0["published"], FieldValue::Date(None));
+        assert_eq!(parsed.0["cover"], FieldValue::Image(None));
+    }
+
+    #[test]
+    fn image_accepts_the_response_shape_so_items_round_trip() {
+        // Reads return `{id, url}`; a client that loads an item and saves it back must not
+        // be rejected for echoing the untouched image field.
+        let parsed = parse(json!({
+            "title": "t",
+            "cover": { "id": 7, "url": "/images/abc.png" }
+        }))
+        .unwrap();
+        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageID::from_u64(7))));
+
+        // An object without a usable id is still an error.
+        assert!(parse(json!({ "title": "t", "cover": { "url": "/images/abc.png" } })).is_err());
+    }
+
+    #[test]
+    fn omitted_fields_are_absent_rather_than_defaulted() {
+        // Validation decides whether a missing field is acceptable; parsing must not
+        // invent a value.
+        let parsed = parse(json!({ "title": "t" })).unwrap();
+        assert_eq!(parsed.0.len(), 1);
+        assert!(!parsed.0.contains_key("count"));
+    }
+
+    #[test]
+    fn rejects_values_of_the_wrong_type() {
+        // A string where a number is expected must not be coerced.
+        let err = parse(json!({ "title": "t", "count": "5" })).unwrap_err();
+        assert!(err.contains("count"), "unexpected error: {err}");
+        assert!(err.contains("number"), "unexpected error: {err}");
+
+        let err = parse(json!({ "title": 42 })).unwrap_err();
+        assert!(err.contains("string"), "unexpected error: {err}");
+
+        let err = parse(json!({ "title": "t", "live": "yes" })).unwrap_err();
+        assert!(err.contains("boolean"), "unexpected error: {err}");
+
+        let err = parse(json!({ "title": "t", "published": "01/03/2024" })).unwrap_err();
+        assert!(err.contains("ISO date"), "unexpected error: {err}");
+
+        let err = parse(json!({ "title": "t", "scores": ["x"] })).unwrap_err();
+        assert!(err.contains("array item type"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_unknown_fields_so_typos_are_not_silently_dropped() {
+        let err = parse(json!({ "title": "t", "titel": "oops" })).unwrap_err();
+        assert!(err.contains("Unknown field 'titel'"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_enum_values_outside_the_declared_options() {
+        let err = parse(json!({ "title": "t", "tags": ["news", "nope"] })).unwrap_err();
+        assert!(err.contains("not one of the allowed options"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_a_body_that_is_not_an_object() {
+        assert!(parse(json!([1, 2, 3])).is_err());
+        assert!(parse(json!("just a string")).is_err());
+        assert!(parse(json!(null)).is_err());
+    }
+
+    #[test]
+    fn parses_nested_composite_fields() {
+        let composite_id = CompositeFieldId::from("seo");
+        let composite_schema: CompositeFieldSchema = vec![field(
+            "description",
+            FieldType::Text(TextFieldOptions::default()),
+            false,
+        )];
+        let mut schemas = HashMap::new();
+        schemas.insert(composite_id.clone(), composite_schema);
+
+        let outer: CollectionSchema = vec![field(
+            "seo",
+            FieldType::CompositeField(CompositeFieldReference { id: composite_id.clone() }),
+            false,
+        )];
+
+        let parsed = FieldValueMap::from_untyped(
+            &json!({ "seo": { "description": "nested value" } }),
+            &schemas,
+            &outer,
+        )
+        .unwrap();
+
+        match &parsed.0["seo"] {
+            FieldValue::CompositeField(Some(value)) => {
+                assert_eq!(value.id, composite_id);
+                assert_eq!(
+                    value.values.0["description"],
+                    FieldValue::Text("nested value".into())
+                );
+            }
+            other => panic!("expected a composite value, got {other:?}"),
+        }
+
+        // A null composite is allowed; an unknown composite id is not.
+        assert_eq!(
+            FieldValueMap::from_untyped(&json!({ "seo": null }), &schemas, &outer).unwrap().0["seo"],
+            FieldValue::CompositeField(None)
+        );
+        let unknown: CollectionSchema = vec![field(
+            "seo",
+            FieldType::CompositeField(CompositeFieldReference {
+                id: CompositeFieldId::from("missing"),
+            }),
+            false,
+        )];
+        assert!(FieldValueMap::from_untyped(&json!({ "seo": {} }), &schemas, &unknown).is_err());
+    }
+
+    #[test]
+    fn array_elements_pick_the_first_declared_type_that_fits() {
+        let mixed: CollectionSchema = vec![field(
+            "values",
+            FieldType::Array(vec![FieldType::Boolean, FieldType::Number]),
+            false,
+        )];
+        let parsed =
+            FieldValueMap::from_untyped(&json!({ "values": [true, 3] }), &HashMap::new(), &mixed)
+                .unwrap();
+        assert_eq!(
+            parsed.0["values"],
+            FieldValue::Array(vec![
+                FieldValue::Boolean(true),
+                FieldValue::Number(Some(3.0))
+            ])
+        );
+    }
+}
+
 impl<T> std::ops::Deref for FieldValueMap<T> {
     type Target = HashMap<String, FieldValue>;
 

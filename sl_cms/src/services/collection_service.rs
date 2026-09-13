@@ -272,6 +272,56 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?;
         Ok(())
     }
+
+    /// Create an item from an **untagged** JSON body.
+    ///
+    /// This is the entry point the HTTP layer uses: values arrive without type tags, so
+    /// the collection schema is what gives them meaning. Types that do not match are
+    /// rejected with 400 rather than coerced.
+    pub fn create_collection_item_from_json(
+        &self,
+        collection_name: &CollectionName,
+        body: &serde_json::Value,
+    ) -> Result<u64, HttpError> {
+        let item = self.parse_item(collection_name, body)?;
+        self.create_collection_item(collection_name, &item)
+    }
+
+    /// Update an item from an **untagged** JSON body. See
+    /// [`CollectionService::create_collection_item_from_json`].
+    pub fn update_collection_item_from_json(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+        body: &serde_json::Value,
+    ) -> Result<(), HttpError> {
+        let item = self.parse_item(collection_name, body)?;
+        self.update_collection_item(collection_name, item_id, &item)
+    }
+
+    /// Read an untagged body into a [`CollectionItem`] using the collection schema.
+    fn parse_item(
+        &self,
+        collection_name: &CollectionName,
+        body: &serde_json::Value,
+    ) -> Result<CollectionItem, HttpError> {
+        let schema = self
+            .collection_repository
+            .get_collection_schema(collection_name)
+            .map_err(map_internal_error)?
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!(
+                    "Collection with id '{}' does not exist",
+                    collection_name
+                ))
+            })?;
+        let composite_schemas = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+        CollectionItem::from_untyped(body, &composite_schemas, &schema)
+            .map_err(|e| HttpError::BadRequest(&e))
+    }
 }
 
 #[cfg(test)]

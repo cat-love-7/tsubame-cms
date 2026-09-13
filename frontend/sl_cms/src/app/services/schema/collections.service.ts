@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { CollectionSchema } from 'app/models/schema/collection';
+import { CollectionItemEntry, CollectionValue } from 'app/models/values/collection';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
 import { Observable } from 'rxjs';
 
@@ -22,5 +23,27 @@ export class CollectionsService {
   }
   deleteCollection(name: string): Observable<void> {
     return this.collectionRepository.deleteCollection(name);
+  }
+
+  // ---- items ---------------------------------------------------------------
+
+  listCollectionItems(name: string): Observable<CollectionItemEntry[]> {
+    return this.collectionRepository.listCollectionItems(name);
+  }
+
+  getCollectionItem(name: string, id: number): Observable<CollectionValue> {
+    return this.collectionRepository.getCollectionItem(name, id);
+  }
+
+  createCollectionItem(name: string, values: CollectionValue): Observable<number> {
+    return this.collectionRepository.createCollectionItem(name, values);
+  }
+
+  updateCollectionItem(name: string, id: number, values: CollectionValue): Observable<void> {
+    return this.collectionRepository.updateCollectionItem(name, id, values);
+  }
+
+  deleteCollectionItem(name: string, id: number): Observable<void> {
+    return this.collectionRepository.deleteCollectionItem(name, id);
   }
 }

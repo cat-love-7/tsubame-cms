@@ -1,0 +1,40 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.error {
+  color: #b3261e;
+}
+
+table.items {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.items th,
+table.items td {
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+table.items th {
+  font-weight: 500;
+}
+
+.actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.empty {
+  text-align: center;
+  color: #666;
+}

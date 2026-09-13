@@ -343,11 +343,11 @@ async fn collection_item_crud_round_trip() {
         Method::POST,
         "/models/collections/blog/item",
         Some(&token),
-        Some(json!({ "title": { "Text": "Hello" }, "tags": { "TextEnum": ["news"] } })),
+        Some(json!({ "title": "Hello", "tags": ["news"] })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!("1"));
+    assert_eq!(body, json!(1));
 
     // List (the id/response tuple shape is preserved).
     let (status, body) = send(
@@ -379,7 +379,7 @@ async fn collection_item_crud_round_trip() {
         Method::POST,
         "/models/collections/blog/item",
         Some(&token),
-        Some(json!({ "tags": { "TextEnum": ["news"] } })),
+        Some(json!({ "tags": ["news"] })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -392,7 +392,7 @@ async fn collection_item_crud_round_trip() {
         Method::PUT,
         "/models/collections/blog/items/1",
         Some(&token),
-        Some(json!({ "title": { "Text": "Updated" }, "tags": { "TextEnum": [] } })),
+        Some(json!({ "title": "Updated", "tags": [] })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -419,9 +419,85 @@ async fn collection_item_crud_round_trip() {
     assert_eq!(status, StatusCode::OK);
 }
 
+/// Values are untyped on the wire because the schema already states each field's type.
 #[tokio::test]
-async fn deleting_a_collection_without_items_succeeds() {
+async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+
+    // Untagged values are accepted.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "Hello", "tags": ["blog"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // ...and come back untagged, so request and response agree on the shape.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["title"], "Hello");
+    assert_eq!(body["tags"], json!(["blog"]));
+
+    // A value of the wrong type is rejected rather than coerced.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": 42 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("expected a string"), "unexpected body: {text}");
+
+    // An undeclared field is rejected so a client typo cannot silently drop content.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "titel": "typo" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("Unknown field"), "unexpected body: {text}");
+
+    // An enum value outside the declared options is rejected.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "tags": ["not-an-option"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn deleting_a_collection_without_items_succeeds() {    let app = test_app().await;
     let token = app.admin_token.clone();
 
     let (status, _) = send(
@@ -465,7 +541,7 @@ async fn single_page_crud_round_trip() {
         Method::PUT,
         "/models/single_pages/home/item",
         Some(&token),
-        Some(json!({ "title": { "Text": "Home" }, "tags": { "TextEnum": [] } })),
+        Some(json!({ "title": "Home", "tags": [] })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);

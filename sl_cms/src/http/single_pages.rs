@@ -7,7 +7,7 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::error::HttpError;
-use crate::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
+use crate::models::single_page::{SinglePageName, SinglePageSchema};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -90,11 +90,11 @@ async fn get_single_page_item<R: Storage>(
 async fn update_single_page_item<R: Storage>(
     State(module): State<AppState<R>>,
     Path(page_name): Path<String>,
-    Json(item): Json<SinglePageItem>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .update_single_page_item(&name, &item)?;
+        .update_single_page_item_from_json(&name, &body)?;
     Ok((StatusCode::OK, "Single page item updated successfully"))
 }

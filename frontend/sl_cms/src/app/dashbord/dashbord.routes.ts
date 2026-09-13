@@ -2,9 +2,10 @@ import { RouterModule, Routes } from "@angular/router";
 import { Index } from "./index";
 import { NgModule } from "@angular/core";
 import { List as schemaCollectionList } from "./settings/schemas/collections/list/list";
-import { Edit } from "./settings/schemas/collections/edit/edit";
-import { Create } from "./settings/schemas/collections/create/create";
+import { Edit as SchemaEdit } from "./settings/schemas/collections/edit/edit";
+import { Create as SchemaCreate } from "./settings/schemas/collections/create/create";
 import { List as CollectionList } from "./collections/list/list";
+import { Edit as ItemEdit } from "./collections/edit/edit";
 
 
 const dashbordRoutes: Routes = [
@@ -12,21 +13,32 @@ const dashbordRoutes: Routes = [
         path: '',
         component: Index
     },
+    // Content: list an arbitrary collection's items and edit one of them. `Edit`
+    // doubles as the create screen (no `id` in the path means "new").
     {
         path: 'collections/:name',
         component: CollectionList
     },
+    {
+        path: 'collections/:name/create',
+        component: ItemEdit
+    },
+    {
+        path: 'collections/:name/edit/:id',
+        component: ItemEdit
+    },
+    // Schema editing.
     {
         path: 'settings/schemas/collections',
         component: schemaCollectionList
     },
     {
         path: 'settings/schemas/collections/create',
-        component: Create
+        component: SchemaCreate
     },
     {
         path: 'settings/schemas/collections/edit/:name',
-        component: Edit
+        component: SchemaEdit
     }
 ];
 

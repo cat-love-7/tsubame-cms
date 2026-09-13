@@ -1,0 +1,107 @@
+<div class="toolbar">
+  <h2>{{ isNew ? 'New item' : 'Edit item' }} — {{ collectionName }}</h2>
+  <span class="spacer"></span>
+  <button matButton [routerLink]="['/collections', collectionName]">Cancel</button>
+</div>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+@if (schema.length === 0) {
+  <p class="note">This collection has no fields yet. Add fields in the schema editor first.</p>
+}
+
+@for (field of schema; track field.name) {
+  <div class="field">
+    <span class="field-label">
+      {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
+    </span>
+
+    @switch (kind(field)) {
+      @case ('Text') {
+        <mat-form-field appearance="fill" class="full-width">
+          <input matInput [name]="field.name" [(ngModel)]="values[field.name]" />
+        </mat-form-field>
+      }
+      @case ('Markdown') {
+        <mat-form-field appearance="fill" class="full-width">
+          <textarea matInput rows="6" [name]="field.name" [(ngModel)]="values[field.name]"></textarea>
+        </mat-form-field>
+      }
+      @case ('Number') {
+        <mat-form-field appearance="fill" class="full-width">
+          <input matInput type="number" [name]="field.name" [(ngModel)]="values[field.name]" />
+        </mat-form-field>
+      }
+      @case ('Boolean') {
+        <mat-checkbox [name]="field.name" [(ngModel)]="values[field.name]">Yes</mat-checkbox>
+      }
+      @case ('Date') {
+        <mat-form-field appearance="fill" class="full-width">
+          <input matInput type="date" [name]="field.name" [(ngModel)]="values[field.name]" />
+        </mat-form-field>
+      }
+      @case ('DateTime') {
+        <mat-form-field appearance="fill" class="full-width">
+          <input
+            matInput
+            type="datetime-local"
+            [name]="field.name"
+            [ngModel]="toDateTimeLocal(field)"
+            (ngModelChange)="setDateTime(field, $event)"
+          />
+        </mat-form-field>
+      }
+      @case ('TextEnum') {
+        <mat-form-field appearance="fill" class="full-width">
+          <mat-select multiple [name]="field.name" [(ngModel)]="values[field.name]">
+            @for (option of enumOptions(field); track option) {
+              <mat-option [value]="option">{{ option }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      }
+      @case ('Array') {
+        <mat-form-field appearance="fill" class="full-width">
+          <textarea
+            matInput
+            rows="3"
+            [name]="field.name"
+            [(ngModel)]="arrayText[field.name]"
+            placeholder="JSON array, e.g. [1, 2]"
+          ></textarea>
+          <mat-hint>Array values are edited as JSON.</mat-hint>
+        </mat-form-field>
+      }
+      @case ('Image') {
+        <div class="image-field">
+          @if (imagePreviewUrl(field)) {
+            <img [src]="imageUrl(imagePreviewUrl(field))" alt="" class="preview" />
+          }
+          <span class="image-id">id: {{ imageId(field) ?? '—' }}</span>
+          <input
+            type="file"
+            accept="image/*"
+            [disabled]="uploading()"
+            (change)="onFileSelected(field, $event)"
+          />
+          @if (uploading()) {
+            <span>Uploading…</span>
+          }
+        </div>
+      }
+      @default {
+        @if (isComposite(field)) {
+          <p class="note">Composite fields are not editable here yet; the existing value is kept.</p>
+        } @else {
+          <p class="note">Unsupported field type.</p>
+        }
+      }
+    }
+  </div>
+}
+
+<div class="actions">
+  <button matButton color="primary" (click)="save()">Save</button>
+</div>

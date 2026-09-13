@@ -6,7 +6,7 @@ use axum::{Json, Router};
 
 use crate::app_module::Storage;
 use crate::http::AppState;
-use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
+use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
@@ -100,13 +100,13 @@ async fn get_collection_items<R: Storage>(
 async fn add_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
     Path(collection_name): Path<String>,
-    Json(item): Json<CollectionItem>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    let item_id = module.collection_service.create_collection_item(&name, &item)?;
-    // Preserved from the previous implementation: the new id is returned as a JSON
-    // string (e.g. `"1"`) rather than a number.
-    Ok(Json(item_id.to_string()))
+    let item_id = module
+        .collection_service
+        .create_collection_item_from_json(&name, &body)?;
+    Ok(Json(item_id))
 }
 
 async fn get_collection_item<R: Storage>(
@@ -123,13 +123,13 @@ async fn get_collection_item<R: Storage>(
 async fn update_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
     Path((collection_name, id)): Path<(String, u64)>,
-    Json(item): Json<CollectionItem>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    module.collection_service.update_collection_item(
+    module.collection_service.update_collection_item_from_json(
         &name,
         CollectionItemId::from_u64(id),
-        &item,
+        &body,
     )?;
     Ok((StatusCode::OK, "Collection item updated successfully"))
 }

@@ -97,16 +97,18 @@ export function isEnumFieldSchema(field: FieldType): field is EnumFieldSchema {
 }
 
 /**
- * Field types that can appear as array items. Text/Markdown/Array/TextEnum/CompositeField
- * are omitted because they carry configuration of their own that this editor does not
- * collect yet.
+ * Field types that can appear as array items.
+ *
+ * Text/Markdown/Array/TextEnum/CompositeField are omitted because they carry
+ * configuration of their own that this editor does not collect yet. `Image` is omitted
+ * too: array elements are untyped on the wire, and an image id is a number, which would
+ * be indistinguishable from a `Number` element.
  */
 export const ArrayItemTypeOptions: { label: string; value: FieldType }[] = [
   { label: 'Number', value: 'Number' },
   { label: 'Boolean', value: 'Boolean' },
   { label: 'Date', value: 'Date' },
   { label: 'DateTime', value: 'DateTime' },
-  { label: 'Image', value: 'Image' },
 ];
 
 @Pipe({
