@@ -1,9 +1,11 @@
 //! Authentication: credential verification, token issuing, and the user lifecycle.
 
 pub mod password;
+pub mod throttle;
 pub mod token;
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::models::error::HttpError;
 use crate::models::user::{
@@ -11,6 +13,7 @@ use crate::models::user::{
     Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::repositories::user_repository::UserRepository;
+use throttle::LoginThrottle;
 use token::TokenIssuer;
 
 /// Shortest password accepted when creating a user.
@@ -23,11 +26,17 @@ const BAD_CREDENTIALS: &str = "invalid email or password";
 pub struct AuthService<R: UserRepository> {
     repository: Arc<R>,
     issuer: TokenIssuer,
+    /// Counts failed sign-ins per account, so guessing a password is not free.
+    throttle: LoginThrottle,
 }
 
 impl<R: UserRepository> AuthService<R> {
     pub fn new(repository: Arc<R>, issuer: TokenIssuer) -> Self {
-        AuthService { repository, issuer }
+        AuthService {
+            repository,
+            issuer,
+            throttle: LoginThrottle::new(),
+        }
     }
 
     pub fn has_any_user(&self) -> Result<bool, HttpError> {
@@ -41,21 +50,30 @@ impl<R: UserRepository> AuthService<R> {
     /// Verify credentials and issue a token.
     pub fn login(&self, email: &str, password: &str) -> Result<LoginResponse, HttpError> {
         let email = normalize_email(email);
+        // Checked before the password is even looked at, and for unknown addresses too, so
+        // the limiter cannot be used to find out which accounts exist.
+        if let Some(wait) = self.throttle.retry_after(&email, Instant::now()) {
+            return Err(HttpError::TooManyRequests(wait));
+        }
+
         let user = self
             .repository
             .get_user_from_email(&email)
             .map_err(internal)?;
 
         let Some(mut user) = user else {
+            self.throttle.record_failure(&email, Instant::now());
             return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         };
 
         if !password::verify_password(password, &user.password_hash) {
+            self.throttle.record_failure(&email, Instant::now());
             return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         }
         if !user.is_active {
             return Err(HttpError::Forbidden("account is disabled"));
         }
+        self.throttle.record_success(&email);
 
         // Recording the login is a side effect; a failure here must not deny a valid
         // login, so it is logged and swallowed.
@@ -194,10 +212,17 @@ impl<R: UserRepository> AuthService<R> {
         new: &str,
     ) -> Result<PasswordChangedResponse, HttpError> {
         let mut user = self.require_user(id)?;
+        // The current password is guessed the same way a login is, so it is counted the
+        // same way too.
+        if let Some(wait) = self.throttle.retry_after(&user.email, Instant::now()) {
+            return Err(HttpError::TooManyRequests(wait));
+        }
         if !password::verify_password(current, &user.password_hash) {
+            self.throttle.record_failure(&user.email, Instant::now());
             return Err(HttpError::Forbidden("current password is incorrect"));
         }
         validate_password(new)?;
+        self.throttle.record_success(&user.email);
         user.password_hash = password::hash_password(new).map_err(internal)?;
         user.end_existing_sessions();
         self.repository.update_user(id, &user).map_err(internal)?;
@@ -394,6 +419,53 @@ mod tests {
         // The issued token resolves back to the same user.
         let user = auth.user_from_token(&response.token).unwrap();
         assert_eq!(user.email, "alice@example.com");
+    }
+
+    /// Guessing a password is not free: after a few failures the account waits - even when
+    /// the password is finally right - while other addresses carry on as before.
+    #[test]
+    fn repeated_sign_in_failures_are_refused_for_a_while() {
+        let (auth, _) = service();
+        auth.create_user(new_user("a@example.com", "supersecret", false))
+            .unwrap();
+
+        // Two failures and then a success: the count starts over, so the next four are
+        // ordinary rejections rather than a lock.
+        assert!(auth.login("a@example.com", "wrong").is_err());
+        assert!(auth.login("a@example.com", "wrong").is_err());
+        assert!(auth.login("a@example.com", "supersecret").is_ok());
+        for attempt in 1..=4 {
+            assert_eq!(
+                auth.login("a@example.com", "wrong").unwrap_err().status_code,
+                401,
+                "{attempt} 回目はまだ普通の拒否"
+            );
+        }
+
+        // The fifth failure trips the limit, and the right password now waits too.
+        assert!(auth.login("a@example.com", "wrong").is_err());
+        let locked = auth.login("a@example.com", "supersecret").unwrap_err();
+        assert_eq!(locked.status_code, 429);
+        assert!(locked.message.contains("try again"), "{}", locked.message);
+
+        // An address that does not exist is counted the same way, so the limiter itself
+        // cannot be used to find out which accounts exist.
+        for _ in 0..5 {
+            assert_eq!(
+                auth.login("ghost@example.com", "wrong").unwrap_err().status_code,
+                401
+            );
+        }
+        assert_eq!(
+            auth.login("ghost@example.com", "wrong").unwrap_err().status_code,
+            429
+        );
+
+        // And a different address is still just wrong.
+        assert_eq!(
+            auth.login("b@example.com", "wrong").unwrap_err().status_code,
+            401
+        );
     }
 
     /// Changing your own password ends every session, including the one that asked for the

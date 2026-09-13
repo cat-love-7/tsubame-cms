@@ -7,18 +7,22 @@ pub const STATUS_UNAUTHORIZED: u16 = 401;
 pub const STATUS_FORBIDDEN: u16 = 403;
 pub const STATUS_NOT_FOUND: u16 = 404;
 pub const STATUS_CONFLICT: u16 = 409;
+pub const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 pub const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpError {
     pub status_code: u16,
     pub message: String,
+    /// Set by the 429 answers so the response can carry `Retry-After`.
+    pub retry_after_seconds: Option<u64>,
 }
 impl HttpError {
     pub fn new(status_code: u16, message: &str) -> Self {
         HttpError {
             status_code,
             message: message.to_string(),
+            retry_after_seconds: None,
         }
     }
 
@@ -52,6 +56,18 @@ impl HttpError {
     #[allow(non_snake_case)]
     pub fn Conflict(message: &str) -> Self {
         HttpError::new(STATUS_CONFLICT, message)
+    }
+
+    /// Too many attempts: the caller has to wait, and is told for how long.
+    #[allow(non_snake_case)]
+    pub fn TooManyRequests(wait: std::time::Duration) -> Self {
+        // At least one second: "try again in 0 seconds" would invite an immediate retry.
+        let seconds = wait.as_secs().max(1);
+        HttpError {
+            status_code: STATUS_TOO_MANY_REQUESTS,
+            message: format!("too many failed attempts; try again in {seconds} seconds"),
+            retry_after_seconds: Some(seconds),
+        }
     }
 
     #[allow(non_snake_case)]

@@ -163,6 +163,15 @@ impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
         let status =
             StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        (status, self.message).into_response()
+        let retry_after = self.retry_after_seconds;
+        let mut response = (status, self.message).into_response();
+        // Only the 429 answers set this, and a client that knows when to come back does not
+        // have to guess.
+        if let Some(seconds) = retry_after {
+            if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+        }
+        response
     }
 }

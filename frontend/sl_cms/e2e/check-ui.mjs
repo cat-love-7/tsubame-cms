@@ -626,6 +626,63 @@ try {
   await editor.context.close();
   await viewer.context.close();
 
+  // ------------------------------------------- guessing a password is not free
+  // A throwaway account, so the lock this leaves behind touches nothing else. The API is
+  // called from here rather than through the form: what matters is the status codes, and a
+  // refused sign-in is a console error the check below would rightly report.
+  const throttleEmail = 'e2e-throttle@example.com';
+  for (const account of await api('GET', '/auth/users', undefined, token)) {
+    if (account.email === throttleEmail) {
+      await api('DELETE', `/auth/users/${account.id}`, undefined, token);
+    }
+  }
+  await api(
+    'POST',
+    '/auth/users',
+    {
+      email: throttleEmail,
+      password: 'throttle-password',
+      is_admin: false,
+      permission: { can_view: true, can_edit: false, can_publish: false },
+    },
+    token,
+  );
+
+  const attempt = (password) =>
+    request
+      .fetch(`${API}/auth/login`, { method: 'POST', data: { email: throttleEmail, password } })
+      .then((response) => response.status());
+
+  const statuses = [];
+  for (let index = 0; index < 6; index += 1) {
+    statuses.push(await attempt('not-the-password'));
+  }
+  check(
+    '繰り返しの失敗は 429 で止まる',
+    statuses.slice(0, 5).every((status) => status === 401) && statuses[5] === 429,
+    statuses.join(','),
+  );
+
+  // While the lock is in force, even the right password waits.
+  const locked = await request.fetch(`${API}/auth/login`, {
+    method: 'POST',
+    data: { email: throttleEmail, password: 'throttle-password' },
+  });
+  check('ロック中は正しいパスワードでも 429', locked.status() === 429, `status=${locked.status()}`);
+  const retryAfter = Number(locked.headers()['retry-after']);
+  check(
+    'Retry-After で再試行までの秒数が分かる',
+    retryAfter > 0 && retryAfter <= 15 * 60,
+    `retry-after=${retryAfter}`,
+  );
+
+  // Someone else's failures do not lock anybody else out.
+  const otherAccount = await request.fetch(`${API}/auth/login`, {
+    method: 'POST',
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  check('他のアカウントは影響を受けない', otherAccount.status() === 200, `status=${otherAccount.status()}`);
+
   check('ブラウザのコンソールエラーがない', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 } catch (error) {
   check('検証スクリプトが最後まで走る', false, String(error).split('\n')[0]);

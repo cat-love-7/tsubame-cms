@@ -1720,6 +1720,43 @@ async fn publishing_notifies_the_configured_webhook() {
     assert_eq!(body["published_at"], Value::Null);
 }
 
+/// A throttled sign-in is a 429 with `Retry-After`, so a client knows when to come back
+/// instead of guessing.
+#[tokio::test]
+async fn a_throttled_sign_in_answers_429_with_retry_after() {
+    let app = test_app().await;
+
+    for attempt in 1..=5 {
+        let (status, _) = login(&app.router, ADMIN_EMAIL, "not-the-password").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{attempt} 回目");
+    }
+
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({ "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD }).to_string(),
+        ))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let retry_after: u64 = response
+        .headers()
+        .get(header::RETRY_AFTER)
+        .expect("Retry-After が付く")
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((1..=15 * 60).contains(&retry_after), "retry-after={retry_after}");
+
+    // Someone else's failures are their own.
+    let (status, _) = login(&app.router, "someone-else@example.com", "whatever").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
 /// A password change ends the sessions that came before it. The account that asked for the
 /// change gets a token for the new generation, so the screen they are on keeps working.
 #[tokio::test]

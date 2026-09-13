@@ -43,6 +43,18 @@ export class Login {
       },
       error: (response) => {
         this.busy.set(false);
+        if (response?.status === 429) {
+          // Too many failures: `Retry-After` says how long the wait is, so the wording can
+          // be about waiting rather than about the password.
+          const seconds = Number(response.headers?.get('Retry-After'));
+          this.error.set(
+            'ログインの失敗が続いたため、しばらくロックされています。' +
+              (Number.isFinite(seconds) && seconds > 0
+                ? `約 ${Math.ceil(seconds / 60)} 分後にやり直してください。`
+                : '時間をおいてやり直してください。'),
+          );
+          return;
+        }
         // The API answers with a plain-text message for 401.
         this.error.set(
           typeof response?.error === 'string' && response.error
