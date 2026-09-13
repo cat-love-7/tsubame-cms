@@ -37,7 +37,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let module = Arc::new(sl_cms_on_premises::build_app_module(&config));
-    bootstrap_admin(&module, &config)?;
+    bootstrap_admin(&module, &config).await?;
 
     // The shared router, plus the routes for serving and accepting image bytes: this backend
     // keeps them itself, so they are part of what it composes rather than of what every
@@ -59,7 +59,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// The server refuses to start in that state without credentials, rather than coming up with
 /// an unauthenticated CMS.
-fn bootstrap_admin(
+async fn bootstrap_admin(
     module: &sl_cms_core::app_module::AppModule<sl_cms_on_premises::repository::Repository>,
     config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -67,7 +67,9 @@ fn bootstrap_admin(
         config.admin_username.as_deref(),
         config.admin_password.as_deref(),
         config.admin_email.as_deref(),
-    )? {
+    )
+    .await?
+    {
         tracing::info!("created the initial administrator account: {}", user.username);
     }
     Ok(())

@@ -156,7 +156,7 @@ async fn require_auth<R: Storage>(
 ) -> Result<Response, HttpError> {
     let token = bearer_token(request.headers())
         .ok_or_else(|| HttpError::Unauthorized("missing bearer token"))?;
-    let user = state.auth_service.user_from_token(token)?;
+    let user = state.auth_service.user_from_token(token).await?;
 
     let is_write = !matches!(
         *request.method(),

@@ -77,104 +77,92 @@ async fn release_username(inner: &Inner, username: &str, id: &UserId) -> Result<
 }
 
 impl UserRepository for AwsRepository {
-    fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
         let inner = self.inner.clone();
         let id = user_id.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::user(&id), key::RECORD).await? {
-                Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::user(&id), key::RECORD).await? {
+            Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
         let inner = self.inner.clone();
         let username = normalize_username(username);
-        self.runtime.block_on(async move {
-            let Some(id) = read(&inner, key::USER_INDEX, &key::username(&username)).await? else {
-                return Ok(None);
-            };
+        let Some(id) = read(&inner, key::USER_INDEX, &key::username(&username)).await? else {
+            return Ok(None);
+        };
+        let id = UserId::from(id.as_str());
+        match read(&inner, &key::user(&id), key::RECORD).await? {
+            Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
+            // A reservation with no record behind it: the account was deleted while this
+            // read was in flight. The name is not usable by anyone else either, so report
+            // it as free rather than as an account with nothing in it.
+            None => Ok(None),
+        }
+    }
+
+    async fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
+        let inner = self.inner.clone();
+        let user = user.clone();
+        reserve_username(&inner, &user.username, &user.id).await?;
+        write(
+            &inner,
+            &key::user(&user.id),
+            key::RECORD,
+            &AwsRepository::encode(&user)?,
+        )
+        .await?;
+        Ok(user.id)
+    }
+
+    async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let id = user_id.clone();
+        let user = user.clone();
+        let previous = match read(&inner, &key::user(&id), key::RECORD).await? {
+            Some(data) => Some(AwsRepository::decode_user(&data)?.username),
+            None => None,
+        };
+        if previous.as_deref() != Some(user.username.as_str()) {
+            reserve_username(&inner, &user.username, &id).await?;
+            if let Some(previous) = previous {
+                release_username(&inner, &previous, &id).await?;
+            }
+        }
+        write(
+            &inner,
+            &key::user(&id),
+            key::RECORD,
+            &AwsRepository::encode(&user)?,
+        )
+        .await
+    }
+
+    async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
+        let inner = self.inner.clone();
+        // Accounts are few and listed rarely, and the reservation list holds every one of
+        // them (it is written in the same breath as the record), so a point read each is
+        // honest and keeps a single copy of the authoritative record.
+        let mut users = Vec::new();
+        for (_sk, id) in list(&inner, key::USER_INDEX, "username#").await? {
             let id = UserId::from(id.as_str());
-            match read(&inner, &key::user(&id), key::RECORD).await? {
-                Some(data) => Ok(Some(AwsRepository::decode_user(&data)?)),
-                // A reservation with no record behind it: the account was deleted while this
-                // read was in flight. The name is not usable by anyone else either, so report
-                // it as free rather than as an account with nothing in it.
-                None => Ok(None),
-            }
-        })
-    }
-
-    fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
-        let inner = self.inner.clone();
-        let user = user.clone();
-        self.runtime.block_on(async move {
-            reserve_username(&inner, &user.username, &user.id).await?;
-            write(
-                &inner,
-                &key::user(&user.id),
-                key::RECORD,
-                &AwsRepository::encode(&user)?,
-            )
-            .await?;
-            Ok(user.id)
-        })
-    }
-
-    fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
-        let inner = self.inner.clone();
-        let id = user_id.clone();
-        let user = user.clone();
-        self.runtime.block_on(async move {
-            let previous = match read(&inner, &key::user(&id), key::RECORD).await? {
-                Some(data) => Some(AwsRepository::decode_user(&data)?.username),
-                None => None,
-            };
-            if previous.as_deref() != Some(user.username.as_str()) {
-                reserve_username(&inner, &user.username, &id).await?;
-                if let Some(previous) = previous {
-                    release_username(&inner, &previous, &id).await?;
-                }
-            }
-            write(
-                &inner,
-                &key::user(&id),
-                key::RECORD,
-                &AwsRepository::encode(&user)?,
-            )
-            .await
-        })
-    }
-
-    fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
-        let inner = self.inner.clone();
-        self.runtime.block_on(async move {
-            // Accounts are few and listed rarely, and the reservation list holds every one of
-            // them (it is written in the same breath as the record), so a point read each is
-            // honest and keeps a single copy of the authoritative record.
-            let mut users = Vec::new();
-            for (_sk, id) in list(&inner, key::USER_INDEX, "username#").await? {
-                let id = UserId::from(id.as_str());
-                if let Some(data) = read(&inner, &key::user(&id), key::RECORD).await? {
-                    users.push((id, AwsRepository::decode_user(&data)?));
-                }
-            }
-            Ok(users)
-        })
-    }
-
-    fn delete_user(&self, user_id: &UserId) -> Result<(), BoxError> {
-        let inner = self.inner.clone();
-        let id = user_id.clone();
-        self.runtime.block_on(async move {
             if let Some(data) = read(&inner, &key::user(&id), key::RECORD).await? {
-                let user = AwsRepository::decode_user(&data)?;
-                release_username(&inner, &user.username, &id).await?;
+                users.push((id, AwsRepository::decode_user(&data)?));
             }
-            // Deleting an absent key is not an error in DynamoDB, which is the behaviour the
-            // on-premises adapter goes out of its way to reproduce.
-            remove(&inner, &key::user(&id), key::RECORD).await
-        })
+        }
+        Ok(users)
+    }
+
+    async fn delete_user(&self, user_id: &UserId) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let id = user_id.clone();
+        if let Some(data) = read(&inner, &key::user(&id), key::RECORD).await? {
+            let user = AwsRepository::decode_user(&data)?;
+            release_username(&inner, &user.username, &id).await?;
+        }
+        // Deleting an absent key is not an error in DynamoDB, which is the behaviour the
+        // on-premises adapter goes out of its way to reproduce.
+        remove(&inner, &key::user(&id), key::RECORD).await
     }
 }

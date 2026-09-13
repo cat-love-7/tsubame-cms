@@ -99,6 +99,7 @@ impl<B: TestBackend> TestApp<B> {
         module
             .auth_service
             .bootstrap_admin(Some(ADMIN_EMAIL), Some(ADMIN_PASSWORD), None)
+            .await
             .unwrap_or_else(|e| panic!("bootstrap admin: {e}"))
             .expect("the store was empty, so an administrator is created");
 

@@ -48,7 +48,8 @@ async fn login<R: Storage>(
     Ok(Json(
         module
             .auth_service
-            .login(&request.username, &request.password)?,
+            .login(&request.username, &request.password)
+            .await?,
     ))
 }
 
@@ -61,7 +62,7 @@ async fn list_users<R: Storage>(
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
-    Ok(Json(module.auth_service.list_users()?))
+    Ok(Json(module.auth_service.list_users().await?))
 }
 
 async fn create_user<R: Storage>(
@@ -70,7 +71,7 @@ async fn create_user<R: Storage>(
     Json(request): Json<NewUserRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
-    let created = module.auth_service.create_user(request)?;
+    let created = module.auth_service.create_user(request).await?;
     Ok((StatusCode::CREATED, Json(created)))
 }
 
@@ -105,7 +106,8 @@ async fn update_user<R: Storage>(
     Ok(Json(
         module
             .auth_service
-            .update_user(&UserId::from(id.as_str()), request)?,
+            .update_user(&UserId::from(id.as_str()), request)
+            .await?,
     ))
 }
 
@@ -115,7 +117,7 @@ async fn delete_user<R: Storage>(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
-    module.auth_service.delete_user(&UserId::from(id.as_str()))?;
+    module.auth_service.delete_user(&UserId::from(id.as_str())).await?;
     // Empty body, like the other mutations.
     Ok(StatusCode::OK)
 }
@@ -129,7 +131,8 @@ async fn reset_password<R: Storage>(
     require_admin(&user)?;
     module
         .auth_service
-        .set_password(&UserId::from(id.as_str()), &request.password)?;
+        .set_password(&UserId::from(id.as_str()), &request.password)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -143,7 +146,8 @@ async fn issue_password_reset<R: Storage>(
     Ok(Json(
         module
             .auth_service
-            .issue_password_reset(&UserId::from(id.as_str()))?,
+            .issue_password_reset(&UserId::from(id.as_str()))
+            .await?,
     ))
 }
 
@@ -152,10 +156,12 @@ async fn complete_password_reset<R: Storage>(
     State(module): State<AppState<R>>,
     Json(request): Json<CompletePasswordResetRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.auth_service.complete_password_reset(
-        &request.token,
-        &request.new_password,
-    )?))
+    Ok(Json(
+        module
+            .auth_service
+            .complete_password_reset(&request.token, &request.new_password)
+            .await?,
+    ))
 }
 
 async fn change_own_password<R: Storage>(
@@ -165,9 +171,10 @@ async fn change_own_password<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     // Answers with a token for the new generation: the change ends this session along
     // with every other one.
-    Ok(Json(module.auth_service.change_own_password(
-        &user.id,
-        &request.current_password,
-        &request.new_password,
-    )?))
+    Ok(Json(
+        module
+            .auth_service
+            .change_own_password(&user.id, &request.current_password, &request.new_password)
+            .await?,
+    ))
 }

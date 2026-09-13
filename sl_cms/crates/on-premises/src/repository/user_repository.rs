@@ -26,23 +26,24 @@ impl Repository {
 }
 
 impl UserRepository for Repository {
-    fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
         let _guard = self.begin();
         self.user_from_id(user_id)
     }
 
-    fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_username(&self, username: &str) -> Result<Option<User>, BoxError> {
         // A linear scan is fine at the scale of a CMS's accounts, and it avoids a second
         // record that would have to be kept in sync with the primary one.
         let wanted = normalize_username(username);
         Ok(self
-            .get_all_users()?
+            .get_all_users()
+            .await?
             .into_iter()
             .map(|(_, user)| user)
             .find(|user| user.username == wanted))
     }
 
-    fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
+    async fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
@@ -56,7 +57,7 @@ impl UserRepository for Repository {
         Ok(user.id.clone())
     }
 
-    fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
+    async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
@@ -70,7 +71,7 @@ impl UserRepository for Repository {
         Ok(())
     }
 
-    fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
+    async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;
@@ -87,7 +88,7 @@ impl UserRepository for Repository {
         Ok(users)
     }
 
-    fn delete_user(&self, user_id: &UserId) -> Result<(), BoxError> {
+    async fn delete_user(&self, user_id: &UserId) -> Result<(), BoxError> {
         let _guard = self.begin();
         // rkv reports deleting an absent key as an error, so check first.
         if self.user_from_id(user_id)?.is_none() {
