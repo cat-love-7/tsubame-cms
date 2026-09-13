@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component } from '@angular/core';
 import { Header } from '../header/header';
 import { Sidebar } from '../sidebar/sidebar';
 import { RouterModule } from '@angular/router';
@@ -7,7 +7,6 @@ import { RouterModule } from '@angular/router';
   selector: 'app-main-layout',
   templateUrl: './main-layout.html',
   styleUrl: './main-layout.scss',
-  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     Header,
     Sidebar,

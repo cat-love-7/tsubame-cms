@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 
@@ -12,7 +12,6 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
   selector: 'app-single-page-schema',
   imports: [RouterLink, MatButtonModule, EditSchema],
   templateUrl: './schema.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './schema.scss',
 })
 export class Schema {

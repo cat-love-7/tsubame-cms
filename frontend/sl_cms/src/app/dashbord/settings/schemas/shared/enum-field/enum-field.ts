@@ -1,5 +1,5 @@
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
-import { Component, model, ChangeDetectionStrategy } from '@angular/core';
+import { Component, model } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipEditedEvent, MatChipsModule, MatChipInputEvent } from '@angular/material/chips';
@@ -20,7 +20,6 @@ import { MatSelectModule } from '@angular/material/select';
     MatIconModule,
   ],
   templateUrl: './enum-field.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './enum-field.scss',
 })
 export class EnumField {

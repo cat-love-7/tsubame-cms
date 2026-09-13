@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -36,7 +36,6 @@ interface RoleOption {
     MatSelectModule,
   ],
   templateUrl: './list.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './list.scss',
 })
 export class List {

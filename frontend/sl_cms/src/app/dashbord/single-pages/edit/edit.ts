@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 
@@ -25,7 +25,6 @@ import { ValueField } from 'app/shared/value-field/value-field';
   selector: 'app-single-page-edit',
   imports: [RouterLink, MatButtonModule, ItemStatusBadge, ValueField],
   templateUrl: './edit.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './edit.scss',
 })
 export class Edit {

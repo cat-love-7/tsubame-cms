@@ -1,4 +1,4 @@
-import { Component, inject, model, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, model } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
@@ -23,7 +23,6 @@ import { AsyncPipe, KeyValuePipe } from '@angular/common';
     KeyValuePipe,
   ],
   templateUrl: './composite-field.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './composite-field.scss',
 })
 export class CompositeField {

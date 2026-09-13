@@ -1,4 +1,4 @@
-import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIcon, MatIconModule } from '@angular/material/icon';
 import { MatTreeModule } from '@angular/material/tree';
@@ -17,7 +17,6 @@ interface SidebarItem {
   selector: 'app-sidebar',
   templateUrl: './sidebar.html',
   styleUrl: './sidebar.scss',
-  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [
     MatTreeModule,
     MatButtonModule,

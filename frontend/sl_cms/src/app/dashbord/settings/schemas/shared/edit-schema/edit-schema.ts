@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import {
   CdkDrag,
   CdkDragDrop,
@@ -53,7 +53,6 @@ interface ResizeState {
     ValueField,
   ],
   templateUrl: './edit-schema.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './edit-schema.scss',
 })
 export class EditSchema {

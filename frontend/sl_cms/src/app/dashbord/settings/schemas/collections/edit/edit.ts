@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { EditSchema } from "../../shared/edit-schema/edit-schema";
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { CollectionSchema } from 'app/models/schema/collection';
@@ -11,7 +11,6 @@ import { ActivatedRoute } from '@angular/router';
     EditSchema,
   ],
   templateUrl: './edit.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './edit.scss',
 })
 export class Edit {

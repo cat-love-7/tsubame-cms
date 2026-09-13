@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { BehaviorSubject, Observable, switchMap } from 'rxjs';
@@ -23,7 +23,6 @@ import { SinglePagesService } from 'app/services/schema/single_pages.service';
     MatTableModule,
   ],
   templateUrl: './list.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './list.scss',
 })
 export class List {

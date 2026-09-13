@@ -1,4 +1,4 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 import { ItemStatus } from 'app/models/item-status';
 
@@ -9,7 +9,6 @@ import { ItemStatus } from 'app/models/item-status';
 @Component({
   selector: 'app-item-status',
   templateUrl: './item-status.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './item-status.scss',
 })
 export class ItemStatusBadge {
