@@ -22,6 +22,10 @@
 ```bash
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers
 npx playwright install chromium
+# Chromium needs the system libraries it links against. A freshly built container
+# usually lacks them, and the browser fails with "error while loading shared
+# libraries: libglib-2.0.so.0". This one needs root (apt).
+npx playwright install-deps chromium
 ```
 
 実行時も同じ `PLAYWRIGHT_BROWSERS_PATH` が必要(未設定だと Playwright は `~/.cache/ms-playwright`
