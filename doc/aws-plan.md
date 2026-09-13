@@ -80,8 +80,14 @@ true/false, "password_reset_links": true/false}`。
 - [x] テスト用リポジトリ構築をバックエンド別ヘルパー(`on_premises::open_test_repository`)に
       集約し、統合テストをバックエンドのフィーチャーでゲートした
       → 残り: AWS 側のヘルパーができたらゲートを `any(on-premises, aws)` に広げる。
-- [x] `docker-compose.yml`(DynamoDB Local + LocalStack S3)
-      → 確認: この環境には Docker が無いため**未検証**。P1 の最初に動かして確かめる。
+- [x] `docker-compose.yml`(DynamoDB Local + S3 エミュレータ)
+      → **確認済み**。DynamoDB Local で CreateTable → `UpdateItem ADD`(原子カウンタ。1 → 2 を確認)
+      → ListTables → DeleteTable。S3 は **MinIO** に presign した PUT / GET / DELETE を実際に往復
+      (改竄した署名は 403 = エミュレータが SigV4 を本当に検証している)。
+      **LocalStack は不採用**: 現在のイメージはライセンストークンが無いと起動しない
+      (`License activation failed!`, exit 55)。開発者や CI がアカウントを持つ前提になってしまう。
+      MinIO はトークン不要で SigV4 を検証する。DynamoDB Local は実サービス同様なんらかの資格情報を
+      要求するので、SDK には `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` を渡す。
 - [x] テストを 1 コマンドにした(`scripts/test-rust.sh` / `test-frontend.sh` / `test-e2e.sh`)と
       CI(`.github/workflows/ci.yml`: rust / frontend / e2e の 3 ジョブ)
       → 確認: スクリプトは手元で実行して確認済み。**ワークフロー自体はこの環境にランナーが
@@ -184,7 +190,7 @@ true/false, "password_reset_links": true/false}`。
 |---|---|---|
 | ルーター / ドメイン | `oneshot` + **共有契約スイート**(両バックエンド) | — |
 | DynamoDB | DynamoDB Local(`endpoint_url` 差し替え) | GSI の反映遅延、スロットリング、上限 |
-| S3 | LocalStack / MinIO(presign → PUT → GET) | IAM、CloudFront、転送 |
+| S3 | **MinIO**(presign → PUT → GET。検証済み) | IAM、CloudFront、転送 |
 | Lambda 起動点 | localhost で `serve` して E2E / `cargo lambda watch` | イベント形状、コールドスタート、凍結 |
 | Cognito | 鍵を生成して JWKS を注入(単体) | 実プールの設定 |
 | 全体 | — | 使い捨てスタック + 既存 E2E |

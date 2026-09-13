@@ -15,21 +15,28 @@ services:
     image: amazon/dynamodb-local:latest
     # `-sharedDb` keeps every client on one database file, which is what a single test run
     # expects; without it each set of credentials gets its own.
+    #
+    # It insists on *some* credentials, as the real service does: the SDK given
+    # AWS_ACCESS_KEY_ID=test and AWS_SECRET_ACCESS_KEY=test is happy, a bare curl is not.
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
     ports:
       - "8000:8000"
 
   s3:
-    image: localstack/localstack:latest
+    # MinIO rather than LocalStack: the current LocalStack image refuses to start without a
+    # license token (`License activation failed`, exit 55), which would mean every developer
+    # and CI run needing an account. MinIO needs no token and verifies SigV4 for real, so the
+    # presigned PUT/GET the adapter hands out are actually exercised.
+    image: quay.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      # Only S3 is needed; starting the rest costs a few seconds per run.
-      SERVICES: s3
-      DEFAULT_REGION: us-east-1
+      MINIO_ROOT_USER: test
+      MINIO_ROOT_PASSWORD: test-secret
     ports:
-      - "4566:4566"
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console, for looking at what a test left behind
     volumes:
-      # Persisted so an interrupted run can be inspected; `docker compose down -v` clears it.
-      - localstack:/var/lib/localstack
+      - minio:/data
 
 volumes:
-  localstack:
+  minio:
