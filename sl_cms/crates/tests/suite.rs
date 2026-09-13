@@ -3003,6 +3003,95 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
 
 // --------------------------------------------------------------------------- permissions
 
+/// Roles and per-resource grants belong to the CMS, not to whoever authenticates the user: an
+/// administrator changes them on the account record, and the change is in force on the very
+/// next request rather than the next time a token is issued.
+#[tokio::test]
+async fn a_role_change_takes_effect_on_the_next_request() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    let (status, created) = create_account(
+        &app,
+        json!({ "username": "promoted@example.com", "password": "promoted-password" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().expect("an id").to_string();
+    let (_, body) = login(&app, "promoted@example.com", "promoted-password").await;
+    let token = body["token"].as_str().unwrap().to_string();
+
+    // The collections have to exist before there is anything to edit in them.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&admin),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/news/schema",
+        Some(&admin),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A viewer may read, but writing content needs `can_edit`.
+    let write = |token: String, collection: &'static str| {
+        let router = app.router.clone();
+        async move {
+            send(
+                &router,
+                Method::POST,
+                &format!("/models/collections/{collection}/item"),
+                Some(&token),
+                Some(json!({ "title": "Hello", "tags": [] })),
+            )
+            .await
+        }
+    };
+    assert_eq!(write(token.clone(), "blog").await.0, StatusCode::FORBIDDEN);
+
+    // The administrator grants edit rights. The caller's token does not change.
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "permission": Permission::editor() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        write(token.clone(), "blog").await.0,
+        StatusCode::OK,
+        "the stored permission is what decides, not what the token was issued with"
+    );
+
+    // A per-collection override narrows it again, for one collection only.
+    let deny = json!({ "can_view": false, "can_edit": false, "can_publish": false });
+    let (status, _) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{id}"),
+        Some(&admin),
+        Some(json!({ "collection_permissions": { "blog": deny } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(write(token.clone(), "blog").await.0, StatusCode::FORBIDDEN);
+    assert_eq!(
+        write(token, "news").await.0,
+        StatusCode::OK,
+        "another collection is unaffected"
+    );
+}
+
 /// The permission matrix, checked through the real routes rather than the helpers.
 ///
 /// Reading needs `can_view`; editing content needs `can_edit`; releasing it needs
