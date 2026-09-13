@@ -24,6 +24,7 @@ import {
 import { EnumField } from "../enum-field/enum-field";
 import { CompositeField } from '../composite-field/composite-field';
 import { TextField } from "../text-field/text-field";
+import { FieldWidthPresets } from 'app/core/field-layout';
 
 @Component({
   selector: 'app-field',
@@ -58,6 +59,13 @@ export class Field {
   @Output() fieldChange = new EventEmitter<FieldSchema>();
   public typeOptions = Object.keys(FieldDefaults);
   public arrayItemTypeOptions = ArrayItemTypeOptions;
+  public widthPresets = FieldWidthPresets;
+
+  /** Typing a raw column count is not intuitive; the presets cover the common fractions. */
+  public setWidth(width: number) {
+    this.field.width = width;
+    this.fieldChange.emit(this.field);
+  }
 
   public onFieldTypeChange(value: keyof typeof FieldDefaults) {
     this.field.field_type = FieldDefaults[value];

@@ -1,0 +1,35 @@
+.full-width {
+  width: 100%;
+}
+
+.layout-section {
+  margin: 8px 0;
+}
+
+.layout-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--mat-sys-on-surface-variant);
+  margin-bottom: 4px;
+}
+
+.width-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.width-presets button.selected {
+  background-color: var(--mat-sys-secondary-container);
+  font-weight: 600;
+}
+
+.layout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.numeric {
+  width: 9rem;
+}

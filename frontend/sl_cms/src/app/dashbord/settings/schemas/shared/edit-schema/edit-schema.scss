@@ -1,7 +1,35 @@
-mat-grid-tile {
+.hint {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.875rem;
+}
+
+.schema-field {
   background-color: var(--mat-sys-secondary-container);
   border-radius: 8px;
+  padding: 8px;
 }
-mat-grid-list {
-  margin: 16px;
+
+.schema-field-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.schema-field-name {
+  font-weight: 500;
+}
+
+.schema-field-size {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.75rem;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.schema-actions {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
 }

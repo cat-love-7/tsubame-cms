@@ -9,6 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
 import { apiUrl } from 'app/core/api-url';
+import { fieldCellStyle } from 'app/core/field-layout';
 import { errorMessage as message } from 'app/core/http-error';
 import { CollectionSchema } from 'app/models/schema/collection';
 import {
@@ -77,6 +78,8 @@ export class Edit {
   public uploading = signal(false);
   /** Exposed for the template. */
   public imageUrl = apiUrl;
+  /** Places each field on the shared 12-column grid, mirroring the schema editor. */
+  public cellStyle = fieldCellStyle;
   /** JSON buffers for Array fields, which are edited as raw JSON. */
   public arrayText: { [field: string]: string } = {};
 

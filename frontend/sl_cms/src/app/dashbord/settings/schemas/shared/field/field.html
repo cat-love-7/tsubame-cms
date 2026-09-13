@@ -12,13 +12,29 @@
     }
   </mat-select>
 </mat-form-field>
+<div class="layout-section">
+  <span class="layout-label">Width on the content form</span>
+  <div class="width-presets" role="group" aria-label="Field width">
+    @for (preset of widthPresets; track preset.label) {
+      <button
+        matButton
+        type="button"
+        [class.selected]="field.width === preset.width"
+        [attr.aria-pressed]="field.width === preset.width"
+        (click)="setWidth(preset.width)"
+      >
+        {{ preset.label }}
+      </button>
+    }
+  </div>
+</div>
 <div class="layout-row">
-  <mat-form-field appearance="fill">
-    <mat-label>Width (1-12)</mat-label>
+  <mat-form-field appearance="fill" class="numeric">
+    <mat-label>Columns (1-12)</mat-label>
     <input matInput type="number" min="1" max="12" [(ngModel)]="field.width" name="fieldWidth" />
   </mat-form-field>
-  <mat-form-field appearance="fill">
-    <mat-label>Height</mat-label>
+  <mat-form-field appearance="fill" class="numeric">
+    <mat-label>Min height (rows)</mat-label>
     <input matInput type="number" min="1" [(ngModel)]="field.height" name="fieldHeight" />
   </mat-form-field>
 </div>

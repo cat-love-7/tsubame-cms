@@ -12,11 +12,14 @@
   <p class="note">This collection has no fields yet. Add fields in the schema editor first.</p>
 }
 
-@for (field of schema; track field.name) {
-  <div class="field">
-    <span class="field-label">
-      {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
-    </span>
+<!-- The same 12-column grid the schema editor previews, so field widths and order read
+     the same in both screens. -->
+<div class="field-grid">
+  @for (field of schema; track field.name) {
+    <div class="field field-cell" [style]="cellStyle(field)">
+      <span class="field-label">
+        {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
+      </span>
 
     @switch (kind(field)) {
       @case ('Text') {
@@ -99,8 +102,9 @@
         }
       }
     }
-  </div>
-}
+    </div>
+  }
+</div>
 
 <div class="actions">
   <button matButton color="primary" (click)="save()">Save</button>

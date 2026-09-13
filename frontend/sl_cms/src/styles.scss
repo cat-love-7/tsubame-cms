@@ -36,3 +36,39 @@ body {
   height: 100%;
 }
 /* You can add global styles to this file, and also import other style files */
+
+/// Shared 12-column layout grid for schema fields.
+///
+/// The schema editor and the content editor both use these classes, so the layout shown
+/// while editing a schema is the layout the content editor actually renders. They live in
+/// the global stylesheet because Angular's view encapsulation would otherwise give each
+/// component its own private copy.
+.field-grid {
+  /// Height of one layout row unit; a field's `height` is a multiple of this.
+  --field-row-unit: 72px;
+
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.field-cell {
+  // Let wide widgets shrink instead of overflowing their grid track.
+  min-width: 0;
+}
+
+/// CDK renders the drag preview in an overlay attached to the body, so these rules
+/// cannot live in a component stylesheet.
+.cdk-drag-preview {
+  border-radius: 8px;
+  box-shadow:
+    0 5px 5px -3px rgb(0 0 0 / 20%),
+    0 8px 10px 1px rgb(0 0 0 / 14%);
+  background-color: var(--mat-sys-secondary-container);
+}
+
+.cdk-drag-placeholder {
+  opacity: 0.3;
+}
+

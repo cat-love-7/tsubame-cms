@@ -1,18 +1,60 @@
-<mat-grid-list cols="12" rowHeight="150px" gutterSize="16px">
+<p class="hint">
+  Drag the handle (or use the arrows) to set the order, and choose a width to control how
+  the fields are laid out on the content editing screen.
+</p>
+
+<div class="field-grid" cdkDropList (cdkDropListDropped)="drop($event)">
   @for (field of Schema; track $index) {
-    <mat-grid-tile colspan="12" rowspan="1" 
-  cdkDropList
-  cdkDropListOrientation="mixed">
+    <div class="schema-field field-cell" [style]="cellStyle(field)" cdkDrag>
+      <div class="schema-field-header">
+        <!-- Only the handle starts a drag: the tile contains text inputs, so making the
+             whole tile draggable would break selecting text inside them. -->
+        <button matIconButton type="button" cdkDragHandle aria-label="Drag to reorder">
+          <mat-icon>drag_indicator</mat-icon>
+        </button>
+        <span class="schema-field-name">{{ field.name || '(unnamed field)' }}</span>
+        <span class="schema-field-size">{{ field.width }}/12 · min&nbsp;{{ field.height }}×</span>
+        <span class="spacer"></span>
+        <button
+          matIconButton
+          type="button"
+          (click)="moveUp($index)"
+          [disabled]="$index === 0"
+          aria-label="Move field up"
+        >
+          <mat-icon>arrow_upward</mat-icon>
+        </button>
+        <button
+          matIconButton
+          type="button"
+          (click)="moveDown($index)"
+          [disabled]="$index === Schema.length - 1"
+          aria-label="Move field down"
+        >
+          <mat-icon>arrow_downward</mat-icon>
+        </button>
+        <button
+          matIconButton
+          type="button"
+          color="warn"
+          (click)="removeField($index)"
+          aria-label="Remove field"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
       <app-field [(field)]="Schema[$index]" />
-      <button matButton color="warn" (click)="removeField($index)">
-        <mat-icon>delete</mat-icon>
-      </button>
-    </mat-grid-tile>
+    </div>
   }
-</mat-grid-list>
-<button matButton (click)="addField()">
-  <mat-icon>add</mat-icon>
-</button>
-<button matButton color="primary" (click)="requestSave()">
-  <mat-icon>save</mat-icon>
-</button>
+</div>
+
+<div class="schema-actions">
+  <button matButton type="button" (click)="addField()">
+    <mat-icon>add</mat-icon>
+    Add field
+  </button>
+  <button matButton type="button" color="primary" (click)="requestSave()">
+    <mat-icon>save</mat-icon>
+    Save schema
+  </button>
+</div>
