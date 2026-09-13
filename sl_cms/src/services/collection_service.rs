@@ -587,29 +587,31 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         pagination: &Pagination,
     ) -> Result<Page<(CollectionItemId, ItemMetadata, CollectionItemResponse)>, HttpError> {
-        let metadata: HashMap<CollectionItemId, ItemMetadata> =
-            self.list_item_metadata(collection_name)?.into_iter().collect();
-
-        // The published copy, never the working one: edits must not leak to a site.
-        let mut stored = self
+        // The window goes to the storage, which can read a page of the *published* set
+        // without materialising it (see `CollectionRepository::list_published_items_page`).
+        // The delivery API is the one caller that walks a list it did not bound itself, so
+        // this is where reading everything would actually hurt.
+        let (offset, limit) = pagination.window();
+        let (page, total) = self
             .collection_repository
-            .list_collection_items(collection_name)
+            .list_published_items_page(collection_name, offset, limit)
             .map_err(map_internal_error)?;
-        stored.sort_by_key(|(id, _)| **id);
-        let items = self.format_items(
-            &self.get_collection_schema(collection_name)?,
-            stored,
-        )?;
 
-        let mut published = Vec::new();
-        for (id, values) in items {
-            if let Some(metadata) = metadata.get(&id) {
-                if metadata.is_published() {
-                    published.push((id, metadata.clone(), values));
-                }
-            }
+        let schema = self.get_collection_schema(collection_name)?;
+        let mut stored = Vec::with_capacity(page.len());
+        let mut metadata = Vec::with_capacity(page.len());
+        for (id, item, item_metadata) in page {
+            stored.push((id, item));
+            metadata.push(item_metadata);
         }
-        Ok(pagination.apply(published))
+        // The published copy, never the working one: edits must not leak to a site.
+        let items = self.format_items(&schema, stored)?;
+        let items: Vec<(CollectionItemId, ItemMetadata, CollectionItemResponse)> = items
+            .into_iter()
+            .zip(metadata)
+            .map(|((id, values), metadata)| (id, metadata, values))
+            .collect();
+        Ok(pagination.wrap(items, total))
     }
 
     /// One item, but only if it is published.

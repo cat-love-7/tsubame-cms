@@ -198,11 +198,21 @@ async fn remove(inner: &Inner, pk: &str, sk: &str) -> Result<(), BoxError> {
     Ok(())
 }
 
+/// How many `Query` round trips the adapter has made.
+///
+/// A DynamoDB query stops at 1MB, so a long list arrives in pages; a test that wants to know it
+/// really did cross that boundary has nothing else to look at.
+#[cfg(test)]
+pub static QUERY_ROUND_TRIPS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 /// Every record under `pk` whose sort key starts with `prefix`, in key order.
 async fn list(inner: &Inner, pk: &str, prefix: &str) -> Result<Vec<(String, String)>, BoxError> {
     let mut found = Vec::new();
     let mut start_key = None;
     loop {
+        #[cfg(test)]
+        QUERY_ROUND_TRIPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut request = inner
             .client
             .query()
@@ -641,6 +651,84 @@ impl CollectionRepository for AwsRepository {
         })
     }
 
+    fn list_published_items_page(
+        &self,
+        collection_name: &CollectionName,
+        offset: usize,
+        limit: Option<usize>,
+    ) -> Result<
+        (Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize),
+        BoxError,
+    > {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        self.runtime.block_on(async move {
+            let partition = key::collection(&name);
+            // Walk the statuses, not the content. A metadata record is a few hundred bytes and
+            // the item behind it is not, so a page of a 10k-item collection reads 10k small
+            // records and the content of one page — instead of everything.
+            let mut total = 0usize;
+            let mut window = Vec::new();
+            let mut start_key = None;
+            loop {
+                let mut request = inner
+                    .client
+                    .query()
+                    .table_name(&inner.table)
+                    .key_condition_expression("#pk = :pk AND begins_with(#sk, :prefix)")
+                    .expression_attribute_names("#pk", "pk")
+                    .expression_attribute_names("#sk", "sk")
+                    .expression_attribute_values(":pk", AttributeValue::S(partition.clone()))
+                    .expression_attribute_values(":prefix", AttributeValue::S("meta#".to_string()))
+                    .consistent_read(true);
+                if let Some(key) = start_key.take() {
+                    request = request.set_exclusive_start_key(Some(key));
+                }
+                let answer = request
+                    .send()
+                    .await
+                    .map_err(|e| format!("dynamodb query failed: {}", describe(&e)))?;
+                for record in answer.items() {
+                    let sk = record
+                        .get("sk")
+                        .and_then(|value| value.as_s().ok())
+                        .cloned()
+                        .unwrap_or_default();
+                    let data = record
+                        .get("data")
+                        .and_then(|value| value.as_s().ok())
+                        .cloned()
+                        .unwrap_or_default();
+                    let metadata: ItemMetadata = AwsRepository::decode(&data)?;
+                    if !metadata.is_published() {
+                        continue;
+                    }
+                    total += 1;
+                    if total <= offset || window.len() >= limit.unwrap_or(usize::MAX) {
+                        // Past the window: still counted, but its content is not read.
+                        continue;
+                    }
+                    let id = sk.trim_start_matches("meta#").parse::<u64>()?;
+                    match read(&inner, &partition, &key::item(id)).await? {
+                        Some(item) => window.push((
+                            CollectionItemId::from_u64(id),
+                            AwsRepository::decode(&item)?,
+                            metadata,
+                        )),
+                        // A status with no content behind it: counting it would make `total` a
+                        // number the pages cannot add up to.
+                        None => total -= 1,
+                    }
+                }
+                start_key = answer.last_evaluated_key().cloned();
+                if start_key.is_none() {
+                    break;
+                }
+            }
+            Ok((window, total))
+        })
+    }
+
     fn apply_item_status(
         &self,
         collection_name: &CollectionName,
@@ -925,6 +1013,40 @@ mod tests {
         );
         assert!(repository.get_collection_item_draft(&name, &id).unwrap().is_none());
         assert!(repository.get_item_metadata(&name, &id).unwrap().unwrap().is_published());
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// A DynamoDB query stops at 1MB, so a long list arrives in pages and the adapter has to
+    /// follow them to the end. 120 items of 10KB are comfortably past that; every id has to come
+    /// back exactly once, and the round-trip count proves the boundary was actually crossed
+    /// (otherwise the test would pass without testing anything).
+    #[tokio::test]
+    async fn a_list_longer_than_one_query_page_is_read_to_the_end() {
+        let endpoint = crate::aws::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::aws::open_test_repository("cms_onemb").await;
+        let name = CollectionName::from("blog");
+        repository.add_collection_schema(&name, &schema()).unwrap();
+
+        let items = 120;
+        let value = "a".repeat(10_000);
+        for _ in 0..items {
+            repository.add_collection_item(&name, &values(&value)).unwrap();
+        }
+
+        let before = QUERY_ROUND_TRIPS.load(std::sync::atomic::Ordering::Relaxed);
+        let read = repository.list_collection_items(&name).unwrap();
+        let round_trips = QUERY_ROUND_TRIPS.load(std::sync::atomic::Ordering::Relaxed) - before;
+
+        assert_eq!(read.len(), items, "a page boundary dropped items");
+        assert!(
+            round_trips > 1,
+            "the list fitted in one query page, so the boundary was never crossed"
+        );
 
         repository.delete_table().await.unwrap();
     }

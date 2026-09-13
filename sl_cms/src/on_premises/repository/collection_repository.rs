@@ -219,6 +219,57 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
+    fn list_published_items_page(
+        &self,
+        collection_name: &CollectionName,
+        offset: usize,
+        limit: Option<usize>,
+    ) -> Result<(Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let store_name = format!("collection_{}", collection_name);
+        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let reader = env.read()?;
+        let prefix = collection_metadata_prefix(collection_name.as_str());
+
+        // Walk the statuses, not the content: a metadata record is a few bytes and the item
+        // behind it is not, so a page of a large collection no longer reads the collection.
+        // The status is also the only thing that knows an item is published — the published
+        // copy of an unpublished item is still there.
+        let mut total = 0usize;
+        let mut window = Vec::new();
+        for result in metadata_store.iter_from(&reader, prefix.as_bytes())? {
+            let Ok((key, Value::Str(s))) = result else {
+                continue;
+            };
+            let key = str::from_utf8(&key)?;
+            let Some(id) = key.strip_prefix(&prefix) else {
+                break;
+            };
+            let Ok(id) = id.parse::<u64>() else {
+                continue;
+            };
+            let metadata: ItemMetadata = serde_json::from_str(&s)?;
+            if !metadata.is_published() {
+                continue;
+            }
+            total += 1;
+            if total > offset && window.len() < limit.unwrap_or(usize::MAX) {
+                let item_id = CollectionItemId::from_u64(id);
+                match collection_store.get(&reader, &item_id.to_le_bytes())? {
+                    Some(Value::Str(item)) => {
+                        window.push((item_id, serde_json::from_str(&item)?, metadata))
+                    }
+                    // A status with no content behind it: the item is gone, and counting it
+                    // would make `total` a number the pages cannot add up to.
+                    _ => total -= 1,
+                }
+            }
+        }
+        Ok((window, total))
+    }
+
     fn apply_item_status(
         &self,
         collection_name: &CollectionName,

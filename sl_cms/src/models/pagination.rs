@@ -2,7 +2,13 @@
 //!
 //! Offset rather than cursor pagination: the delivery API is read by a site build that
 //! walks the pages once, in order, and the CMS has no cheap cursor to hand out yet. A
-//! DynamoDB adapter may replace this with `LastEvaluatedKey` later.
+//! DynamoDB adapter may replace this with `LastEvaluatedKey` later — that would change the
+//! shape of the response, so it is a decision about the API, not about the storage.
+//!
+//! The window is handed to the storage either way: `Pagination::window` gives a backend the
+//! `offset`/`limit` to read for itself, and `Pagination::wrap` builds the page from what came
+//! back. `apply` (slicing a whole list in memory) is the fallback for a backend that cannot
+//! read a window.
 
 use serde::Deserialize;
 
@@ -78,6 +84,34 @@ impl Pagination {
             limit,
             offset: offset.unwrap_or(0),
         })
+    }
+
+    /// The window itself, for a backend that can read one instead of the whole list.
+    ///
+    /// `(offset, limit)`: the first `offset` items are to be skipped and at most `limit`
+    /// returned, `None` meaning "to the end".
+    pub fn window(&self) -> (usize, Option<usize>) {
+        (self.offset, self.limit)
+    }
+
+    /// Build a page from items a backend already cut to this window.
+    ///
+    /// [`Pagination::apply`] slices a whole list; this is the other half of the same contract,
+    /// for a storage layer that returned exactly the window and reported how long the list is.
+    /// Keeping `total` is what lets `X-Total-Count` and `next_offset` stay truthful without
+    /// reading the list to the end.
+    pub fn wrap<T>(&self, items: Vec<T>, total: usize) -> Page<T> {
+        let consumed = self.offset + items.len();
+        Page {
+            next_offset: match self.limit {
+                Some(_) if consumed < total => Some(consumed),
+                _ => None,
+            },
+            items,
+            total,
+            limit: self.limit,
+            offset: self.offset,
+        }
     }
 
     /// Apply the window to `items`.
