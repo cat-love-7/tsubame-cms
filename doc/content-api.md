@@ -448,6 +448,12 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
   アカウントの存在を漏らさないよう常に同じ応答を返す設計が要る(いまは管理者発行のみ)。
 - **`doc/swagger.yaml`**: 実装済みルートの一部しか載っていない古い記述のまま。
 
+## 6.5 AWS 対応
+
+Lambda + DynamoDB + S3 で動かすための作業一覧は [`doc/aws-plan.md`](aws-plan.md) にある。
+決めなければ後戻りする分岐(画像の配信方式、Cognito の採用、Webhook の配信方式、IaC)と、
+フェーズ順の TODO、テスト方針をまとめてある。
+
 ## 7. CMS 側に GraphQL を持たせない方針
 
 Gatsby の GraphQL は**ビルド時のデータ層**であり、CMS が GraphQL を喋る必要はない。
