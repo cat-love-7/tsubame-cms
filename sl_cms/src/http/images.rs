@@ -77,7 +77,7 @@ async fn put_image_file<R: Storage>(
     // The token is single-use and bound to one file name, so a token cannot be replayed
     // and cannot be used to write a different file than the one it was issued for.
     let Some(authorised) = module.image_service.take_upload_key(&query.key)? else {
-        return Err(HttpError::new(401, "Invalid upload key"));
+        return Err(HttpError::Unauthorized("Invalid upload key"));
     };
     if authorised != file_name {
         return Err(HttpError::new(

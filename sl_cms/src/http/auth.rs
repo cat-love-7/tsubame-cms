@@ -63,6 +63,6 @@ fn require_admin(user: &User) -> Result<(), HttpError> {
     if user.is_admin {
         Ok(())
     } else {
-        Err(HttpError::new(403, "administrator permission required"))
+        Err(HttpError::Forbidden("administrator permission required"))
     }
 }

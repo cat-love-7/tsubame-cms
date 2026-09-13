@@ -46,7 +46,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_none()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::NotFound(&format!(
                 "Collection with id '{}' does not exist",
                 collection_name
             )));
@@ -72,7 +72,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_some()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::Conflict(&format!(
                 "Collection with id '{}' already exists",
                 collection_name
             )));
@@ -88,7 +88,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_none()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::NotFound(&format!(
                 "Collection with id '{}' does not exist",
                 collection_name
             )));
@@ -648,7 +648,7 @@ mod tests {
         ];
         let result = service.add_collection_schema(&"test_collection".into(), &duplicate_schema);
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Collection with id 'test_collection' already exists"));
+        assert_eq!(result.err().unwrap(), HttpError::Conflict("Collection with id 'test_collection' already exists"));
 
         let retrieved_schema = service.get_collection_schema(&"test_collection".into()).unwrap();
         assert_eq!(retrieved_schema, schema);

@@ -36,7 +36,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
             .map_err(map_internal_error)?;
         match s {
             Some(_) => {
-                return Err(HttpError::BadRequest(&format!("Composite field schema already exists: {}", field_name)));
+                return Err(HttpError::Conflict(&format!("Composite field schema already exists: {}", field_name)));
             },
             None => {
                 self.composite_field_repository.add_composite_field_schema(field_name, schema)
@@ -54,7 +54,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
                     .map_err(map_internal_error)
             },
             None => {
-                return Err(HttpError::BadRequest(&format!("Composite field schema not found: {}", field_name)));
+                return Err(HttpError::NotFound(&format!("Composite field schema not found: {}", field_name)));
             },
         }
     }
@@ -67,7 +67,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
                     .map_err(map_internal_error)
             },
             None => {
-                return Err(HttpError::BadRequest(&format!("Composite field schema not found: {}", field_name)));
+                return Err(HttpError::NotFound(&format!("Composite field schema not found: {}", field_name)));
             },
         }
     }
@@ -227,7 +227,7 @@ mod tests {
         ];
         let result = service.add_composite_field_schema(&"test_field".into(), &duplicate_schema);
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Composite field schema already exists: test_field"));
+        assert_eq!(result.err().unwrap(), HttpError::Conflict("Composite field schema already exists: test_field"));
 
         let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).unwrap();
         assert_eq!(retrieved_schema, schema);

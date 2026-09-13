@@ -46,7 +46,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_none()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::NotFound(&format!(
                 "Single page with id '{}' does not exist",
                 name
             )));
@@ -72,7 +72,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_some()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::Conflict(&format!(
                 "Single page with id '{}' already exists",
                 name
             )));
@@ -88,7 +88,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .is_none()
         {
-            return Err(HttpError::BadRequest(&format!(
+            return Err(HttpError::NotFound(&format!(
                 "Single page with id '{}' does not exist",
                 name
             )));
@@ -476,7 +476,7 @@ mod tests {
         ];
         let result = service.add_single_page_schema(&"test_page".into(), &duplicate_schema);
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Single page with id 'test_page' already exists"));
+        assert_eq!(result.err().unwrap(), HttpError::Conflict("Single page with id 'test_page' already exists"));
 
         let retrieved_schema = service.get_single_page_schema(&"test_page".into()).unwrap();
         assert_eq!(retrieved_schema, schema);
@@ -519,7 +519,7 @@ mod tests {
         let result = service.delete_single_page(&"non_existent".into());
         assert!(result.is_err());
 
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Single page with id 'non_existent' does not exist"));
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
         let page_names = service.get_all_page_names().unwrap();
         assert_eq!(page_names, vec!["test_page".into()]);
     }

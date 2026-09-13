@@ -628,6 +628,65 @@ async fn invalid_schemas_are_rejected_when_saved() {
     }
 }
 
+/// A missing resource is a 404 and a duplicate is a 409; both used to be reported as 400,
+/// which made "you asked for something that is not there" indistinguishable from "your
+/// request was malformed".
+#[tokio::test]
+async fn missing_resources_are_404_and_duplicates_are_409() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    // Nothing exists yet, so every one of these is "not found".
+    let not_found = [
+        (Method::DELETE, "/models/collections/nope", None),
+        (
+            Method::PUT,
+            "/models/collections/nope/schema",
+            Some(sample_schema()),
+        ),
+        (Method::DELETE, "/models/single_pages/nope", None),
+        (Method::PUT, "/models/single_pages/nope/item", Some(json!({}))),
+        (Method::PUT, "/models/composite_fields/nope", Some(json!([]))),
+        (Method::DELETE, "/models/composite_fields/nope", None),
+    ];
+    for (method, uri, body) in not_found {
+        let (status, _) = send_raw(&app.router, method.clone(), uri, Some(&token), body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+
+    // Creating the same thing twice conflicts with the current state.
+    let duplicates = [
+        ("/models/collections/dup/schema", sample_schema()),
+        ("/models/single_pages/dup/schema", sample_schema()),
+        ("/models/composite_fields/dup", sample_schema()),
+    ];
+    for (uri, body) in duplicates {
+        let (status, _) = send_raw(
+            &app.router,
+            Method::POST,
+            uri,
+            Some(&token),
+            Some(body.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "first POST {uri} should succeed");
+
+        let (status, _) = send_raw(&app.router, Method::POST, uri, Some(&token), Some(body)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "second POST {uri}");
+    }
+
+    // A genuinely invalid payload is still a 400.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/bad/schema",
+        Some(&token),
+        Some(json!([{ "name": "", "field_type": "Number", "required": false, "width": 12, "height": 1 }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn deleting_a_collection_without_items_succeeds() {    let app = test_app().await;
     let token = app.admin_token.clone();

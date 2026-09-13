@@ -47,14 +47,14 @@ impl<R: UserRepository> AuthService<R> {
             .map_err(internal)?;
 
         let Some(mut user) = user else {
-            return Err(HttpError::new(401, BAD_CREDENTIALS));
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         };
 
         if !password::verify_password(password, &user.password_hash) {
-            return Err(HttpError::new(401, BAD_CREDENTIALS));
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
         }
         if !user.is_active {
-            return Err(HttpError::new(403, "account is disabled"));
+            return Err(HttpError::Forbidden("account is disabled"));
         }
 
         // Recording the login is a side effect; a failure here must not deny a valid
@@ -77,17 +77,17 @@ impl<R: UserRepository> AuthService<R> {
         let user_id = self.issuer.verify_subject(token).map_err(|e| {
             // Do not echo the verifier's reason to the client.
             tracing::debug!("rejected token: {e}");
-            HttpError::new(401, "invalid or expired token")
+            HttpError::Unauthorized("invalid or expired token")
         })?;
 
         let user = self
             .repository
             .get_user_from_id(&user_id)
             .map_err(internal)?
-            .ok_or_else(|| HttpError::new(401, "invalid or expired token"))?;
+            .ok_or_else(|| HttpError::Unauthorized("invalid or expired token"))?;
 
         if !user.is_active {
-            return Err(HttpError::new(403, "account is disabled"));
+            return Err(HttpError::Forbidden("account is disabled"));
         }
         Ok(user)
     }
@@ -108,7 +108,7 @@ impl<R: UserRepository> AuthService<R> {
             .map_err(internal)?
             .is_some()
         {
-            return Err(HttpError::new(409, "a user with that email already exists"));
+            return Err(HttpError::Conflict("a user with that email already exists"));
         }
 
         let hash = password::hash_password(&request.password).map_err(internal)?;

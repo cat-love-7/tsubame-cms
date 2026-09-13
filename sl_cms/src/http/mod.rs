@@ -86,7 +86,7 @@ async fn require_auth<R: Storage>(
     next: Next,
 ) -> Result<Response, HttpError> {
     let token = bearer_token(request.headers())
-        .ok_or_else(|| HttpError::new(401, "missing bearer token"))?;
+        .ok_or_else(|| HttpError::Unauthorized("missing bearer token"))?;
     let user = state.auth_service.user_from_token(token)?;
 
     let is_write = !matches!(
@@ -94,7 +94,7 @@ async fn require_auth<R: Storage>(
         Method::GET | Method::HEAD | Method::OPTIONS
     );
     if is_write && !user.can_write() {
-        return Err(HttpError::new(403, "edit permission required"));
+        return Err(HttpError::Forbidden("edit permission required"));
     }
 
     request.extensions_mut().insert(AuthenticatedUser(user));
