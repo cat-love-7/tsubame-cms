@@ -10,8 +10,16 @@
 //! * **The lock has a fixed end.** Further attempts while locked do not push it out, so
 //!   someone cannot keep an account locked by hammering it.
 //!
+//! **This is the on-premises deployment's policy.** Where sign-in is Cognito's (the AWS
+//! backend), the CMS never sees an attempt — the browser signs in against Cognito and the CMS
+//! only verifies the token it gets back — so there is nothing here to count and nothing that
+//! could count it: Cognito does not expose a failure count, only its own lockout state, and
+//! its documented answer to volume is AWS WAF rather than a per-account limiter. The local
+//! password endpoints answer 501 on AWS for that reason, which is what keeps this module
+//! unreachable there rather than merely unused.
+//!
 //! The counters live in memory: a restart forgets them, and two processes would not share
-//! them. That is enough for the single-process deployment this CMS runs as today; a
+//! them. That is enough for the single-process deployment this runs as; a
 //! multi-instance deployment (or Lambda, where instances come and go) would need the
 //! counters in shared storage.
 

@@ -241,7 +241,7 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
 
       | 状態 | いまの置き場 | Lambda で 2 インスタンスだと | 行き先 |
       |---|---|---|---|
-      | ログイン試行のカウンタ(`auth/throttle.rs`) | プロセスの `HashMap` | **壊れる**(インスタンスごとに別勘定。ロックアウトが効かない) | P4 で Cognito に寄せる(Cognito 自身の保護と二重になるため、DynamoDB 実装はその判断後) |
+      | ログイン試行のカウンタ(`auth/throttle.rs`) | プロセスの `HashMap` | **AWS では持たない**(サインインは Cognito。CMS は試行を見ない) | **決定: on-prem 専用**(下の P4「ログイン試行回数の扱い」) |
       | 画像の単回トークン | AWS では**存在しない**(presigned S3) | 問題なし | — |
       | Webhook | リクエスト処理中に配信 | **失われる**(応答後に実行環境が凍結されうる) | 次の項目の SQS |
       | 発行器(token / preview / reset) | 秘密鍵から導出、状態なし | 問題なし | — |
@@ -251,6 +251,27 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
       → 残りは上の 2 つ(Webhook とログイン試行)。
 
 ### P4. Cognito(採用する。§1 の決定どおり)
+
+#### ログイン試行回数の扱い(2026-09 決定: **A を採用**)
+
+**AWS では回数制限を持たない。** サインインはブラウザと Cognito の間で完結し、CMS は
+JWT を検証するだけなので、CMS は試行そのものを見ない。Cognito も**失敗回数を返す API を
+持たない**(返すのは `TooManyFailedAttemptsException` という状態だけで、回数・期間は
+設定できない)。threat protection は Plus プランのリスクスコアリングで、ドキュメントが
+「流量は見ていない、DDoS には AWS WAF を付けろ」と明言している。失敗で発火するトリガも無い
+(`PreAuthentication` は試行時に呼ばれるが成否は渡されず、既定では存在しないユーザーでは
+呼ばれない)。
+
+| | on-premises | AWS |
+|---|---|---|
+| 失敗回数のカウンタ | **`auth/throttle.rs`**(5 回/15 分、429 + `Retry-After`、識別子の存在を隠す) | **持たない**(Cognito のロックアウトに委ねる) |
+| 存在しない識別子の隠蔽 | 同一メッセージ + 全識別子を数える | `PreventUserExistenceErrors: ENABLED`(アプリクライアント設定) |
+| 大量アクセス | プロセス内カウンタ | **AWS WAF のレートベースルール**(P5 の Terraform) |
+| パスワード系 API | 使える | `/auth/login` など **501** + capabilities で表明 |
+
+したがって **DynamoDB のカウンタも、Cognito からの回数取得も作らない。** 二重に持つと
+「どちらで弾かれたか」が説明できなくなる。サーバー側で `AdminInitiateAuth` して自前で数える案
+(B)は、MFA や `NEW_PASSWORD_REQUIRED` のチャレンジフローを実装する代償に見合わないと判断した。
 
 - [ ] トークン検証器を抽象化(ローカル HS256 / Cognito RS256 + JWKS)。JWKS 取得は差し替え可能に
       → **完了条件**: テスト内で RSA 鍵を生成して、正常・期限切れ・iss/aud 不一致・別鍵・
