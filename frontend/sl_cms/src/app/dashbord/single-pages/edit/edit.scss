@@ -1,0 +1,21 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.error {
+  color: #b3261e;
+}
+
+.note {
+  color: #666;
+}
+
+.actions {
+  margin-top: 16px;
+}

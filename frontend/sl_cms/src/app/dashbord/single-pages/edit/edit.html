@@ -1,0 +1,32 @@
+<div class="toolbar">
+  <h2>{{ pageName }}</h2>
+  <span class="spacer"></span>
+  <button matButton [routerLink]="['/settings/single-pages', pageName, 'schema']">Edit schema</button>
+  <button matButton [routerLink]="['/settings/single-pages']">All pages</button>
+</div>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+@if (schema.length === 0) {
+  <p class="note">This page has no fields yet. Add fields in the schema editor first.</p>
+}
+
+<!-- Same grid as the collection editor, so widths and order read the same. -->
+<div class="field-grid">
+  @for (field of schema; track field.name) {
+    <div class="field-cell" [style]="cellStyle(field)">
+      <app-value-field
+        [field]="field"
+        [value]="values[field.name]"
+        (valueChange)="setValue(field, $event)"
+        (errorChange)="setFieldError(field, $event)"
+      />
+    </div>
+  }
+</div>
+
+<div class="actions">
+  <button matButton color="primary" (click)="save()">Save</button>
+</div>

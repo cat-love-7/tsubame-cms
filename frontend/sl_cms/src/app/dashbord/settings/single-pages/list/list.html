@@ -1,0 +1,58 @@
+<h2>Single documents</h2>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+<div class="new-page">
+  <mat-form-field appearance="fill">
+    <mat-label>New page name</mat-label>
+    <input matInput [(ngModel)]="newName" name="newPageName" (keyup.enter)="create()" />
+  </mat-form-field>
+  <button matButton color="primary" (click)="create()">
+    <mat-icon>add</mat-icon>
+    Add page
+  </button>
+</div>
+
+<table mat-table [dataSource]="pageNames" class="mat-elevation-z8">
+  <ng-container matColumnDef="name">
+    <th mat-header-cell *matHeaderCellDef>Page</th>
+    <td mat-cell *matCellDef="let page">{{ page }}</td>
+  </ng-container>
+  <ng-container matColumnDef="content">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let page">
+      <button
+        matIconButton
+        [routerLink]="['/single-pages', page]"
+        [attr.aria-label]="'edit content of ' + page"
+      >
+        <mat-icon>edit_note</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+  <ng-container matColumnDef="schema">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let page">
+      <button
+        matIconButton
+        [routerLink]="['/settings/single-pages', page, 'schema']"
+        [attr.aria-label]="'edit schema of ' + page"
+      >
+        <mat-icon>view_column</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+  <ng-container matColumnDef="delete">
+    <th mat-header-cell *matHeaderCellDef></th>
+    <td mat-cell *matCellDef="let page">
+      <button matIconButton (click)="delete(page)" [attr.aria-label]="'delete ' + page">
+        <mat-icon>delete</mat-icon>
+      </button>
+    </td>
+  </ng-container>
+
+  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+  <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+</table>

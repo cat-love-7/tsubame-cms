@@ -6,6 +6,9 @@ import { Edit as SchemaEdit } from "./settings/schemas/collections/edit/edit";
 import { Create as SchemaCreate } from "./settings/schemas/collections/create/create";
 import { List as CollectionList } from "./collections/list/list";
 import { Edit as ItemEdit } from "./collections/edit/edit";
+import { List as SinglePageList } from "./settings/single-pages/list/list";
+import { Schema as SinglePageSchema } from "./settings/single-pages/schema/schema";
+import { Edit as SinglePageEdit } from "./single-pages/edit/edit";
 
 
 const dashbordRoutes: Routes = [
@@ -27,6 +30,12 @@ const dashbordRoutes: Routes = [
         path: 'collections/:name/edit/:id',
         component: ItemEdit
     },
+    // Single pages ("single documents"): one schema and exactly one item, so there is no
+    // list or create screen for the content itself.
+    {
+        path: 'single-pages/:name',
+        component: SinglePageEdit
+    },
     // Schema editing.
     {
         path: 'settings/schemas/collections',
@@ -39,6 +48,14 @@ const dashbordRoutes: Routes = [
     {
         path: 'settings/schemas/collections/edit/:name',
         component: SchemaEdit
+    },
+    {
+        path: 'settings/single-pages',
+        component: SinglePageList
+    },
+    {
+        path: 'settings/single-pages/:name/schema',
+        component: SinglePageSchema
     }
 ];
 
