@@ -2,12 +2,15 @@
 //!
 //! These drive the real router with `tower::ServiceExt::oneshot`, so routing, extractors,
 //! the auth middleware, status codes and JSON shapes are all exercised — not just the
-//! services underneath. Storage is a real adapter on a throwaway directory, so the adapter is
-//! covered too, which means a backend has to be selected: `on-premises` is the only one today
-//! and it provides [`crate::on_premises::open_test_repository`]. A second adapter would offer
-//! the same helper and this gate would widen to include it.
-#![cfg(feature = "on-premises")]
+//! services underneath. Storage is a real adapter, so the adapter is covered too, which means
+//! a backend has to be selected. Both of them run this same suite: the assertions *are* the
+//! contract, so a backend that passes them is interchangeable. What differs is only the
+//! scaffolding around it — which repository is built, and how its scratch space is thrown away
+//! afterwards.
+#![cfg(any(feature = "on-premises", feature = "aws"))]
 
+// Only the on-premises scaffolding keeps a directory; the aws one keeps a table.
+#[cfg(feature = "on-premises")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -26,29 +29,54 @@ use crate::models::user::Permission;
 use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::{PreviewLinkIssuer, PreviewTarget};
 use std::collections::HashMap;
-use crate::on_premises::repository::Repository;
 use crate::webhook::{NoopNotifier, Notifier, WebhookNotifier};
+
+/// The storage the suite runs against, chosen by the feature it was built with.
+#[cfg(feature = "on-premises")]
+type TestStorage = crate::on_premises::repository::Repository;
+#[cfg(all(feature = "aws", not(feature = "on-premises")))]
+type TestStorage = crate::aws::AwsRepository;
+
+/// What a test leaves behind. The on-premises adapter writes into a directory; the aws one
+/// writes into an emulator's table.
+enum Scratch {
+    #[cfg(feature = "on-premises")]
+    Directory(PathBuf),
+    #[cfg(all(feature = "aws", not(feature = "on-premises")))]
+    Table { repository: Arc<TestStorage> },
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        match self {
+            // Best effort: the rkv environment may still be open.
+            #[cfg(feature = "on-premises")]
+            Scratch::Directory(dir) => {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            #[cfg(all(feature = "aws", not(feature = "on-premises")))]
+            Scratch::Table { repository } => {
+                let _ = repository.delete_table_blocking();
+            }
+        }
+    }
+}
 
 const ADMIN_EMAIL: &str = "admin@example.com";
 const ADMIN_PASSWORD: &str = "admin-password";
 const VIEWER_EMAIL: &str = "viewer@example.com";
 const VIEWER_PASSWORD: &str = "viewer-password";
 
-/// A running router plus the temporary storage directory behind it.
+/// A running router plus the scratch storage behind it.
 struct TestApp {
     router: Router,
-    dir: PathBuf,
+    /// Dropped with the app, which is what cleans the storage up.
+    #[allow(dead_code)]
+    scratch: Scratch,
     admin_token: String,
     /// Kept so a test can reach a collaborator directly (minting an already-expired preview
     /// link, for instance).
-    module: Arc<AppModule<Repository>>,
-}
-
-impl Drop for TestApp {
-    fn drop(&mut self) {
-        // Best effort: the rkv environment may still be open.
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
+    module: Arc<AppModule<TestStorage>>,
 }
 
 async fn login(router: &Router, email: &str, password: &str) -> (StatusCode, Value) {
@@ -158,10 +186,23 @@ async fn test_app() -> TestApp {
 async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let dir = PathBuf::from(format!("./data/on_premises/test_http_{id}"));
-    std::fs::create_dir_all(&dir).unwrap();
 
-    let repository = crate::on_premises::open_test_repository(&dir);
+    #[cfg(feature = "on-premises")]
+    let (repository, scratch) = {
+        let dir = PathBuf::from(format!("./data/on_premises/test_http_{id}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        (
+            crate::on_premises::open_test_repository(&dir),
+            Scratch::Directory(dir),
+        )
+    };
+    // Each test gets its own table, so tests do not see each other's rows and can run at once.
+    #[cfg(all(feature = "aws", not(feature = "on-premises")))]
+    let (repository, scratch) = {
+        let (repository, _table) = crate::aws::open_test_repository(&format!("cms_http_{id}")).await;
+        (repository.clone(), Scratch::Table { repository })
+    };
+
     let module = Arc::new(AppModule::new(
         repository,
         TokenIssuer::new(b"integration-test-secret", 1),
@@ -188,7 +229,7 @@ async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
 
     TestApp {
         router,
-        dir,
+        scratch,
         admin_token,
         module,
     }
@@ -920,6 +961,10 @@ async fn single_page_crud_round_trip() {
 
 // -------------------------------------------------------------------------------- images
 
+/// The upload endpoint exists only where the CMS itself stores the bytes. On AWS the browser
+/// PUTs straight to S3 with a presigned URL, and that path is covered by the adapter's own
+/// tests (`aws::repository::images`), because there is no route in this router to drive.
+#[cfg(feature = "on-premises")]
 #[tokio::test]
 async fn image_upload_requires_auth_but_downloads_are_public() {
     let app = test_app().await;
@@ -969,6 +1014,7 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
 }
 
 /// The image library: what the admin screen lists, and what deleting an image does.
+#[cfg(feature = "on-premises")]
 #[tokio::test]
 async fn images_can_be_listed_and_deleted() {
     let app = test_app().await;
@@ -1048,6 +1094,7 @@ async fn images_can_be_listed_and_deleted() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+#[cfg(feature = "on-premises")]
 #[tokio::test]
 async fn rejects_unsafe_image_file_names_and_extensions() {
     let app = test_app().await;

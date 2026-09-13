@@ -118,14 +118,13 @@ true/false, "password_reset_links": true/false}`。
       読み取りは `ConsistentRead`、アイテム ID はゼロ埋め、ユーザー名の一意性は予約アイテム +
       条件付き書き込み、公開は `TransactWriteItems`
       → 確認: 実装が必要とするアクセスパターンを表で網羅(44 メソッド分)。
-- [~] 44 メソッドを実装。**いまは `CollectionRepository` の 16 メソッドが DynamoDB Local に対して
-      通っている**(`aws::repository` の往復テスト。同期トレイトを `#[tokio::test]` の中から呼ぶので、
-      一時的な `BlockingRuntime` ブリッジの一番壊れやすい所も同時に押さえている)。
-      残りは users / single pages / composite fields / images。実装は async で書き、
-      同期トレイトへはブリッジで委譲する(経緯と順序は
-      [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
-      実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから
-      `cargo test --no-default-features --features aws`(エミュレータが無いときはこのテストだけ飛ばす)。
+- [x] **44 メソッドを実装**(collections 16 / single pages 11 / users 6 / composite fields 4 /
+      images 4 + S3)。実装は async で書き、同期トレイトへは `BlockingRuntime` で委譲する
+      (経緯と順序は [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
+      **HTTP の契約スイートが DynamoDB Local + MinIO に対して全部通る**
+      (`cargo test --no-default-features --features aws`、226 + 画像 1 件)。
+      実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから上記コマンド。
+      エミュレータが無いときはエミュレータが要るテストだけ自分を飛ばす。
       押さえるべき点:
       - アイテム ID は **`UpdateItem` の `ADD` で原子的に採番**(on-prem の `id_counter` 相当。
         並行作成で重複しないこと)。
@@ -136,7 +135,7 @@ true/false, "password_reset_links": true/false}`。
       - 条件付き書き込みで「存在しないアイテムの削除」等を冪等にする(rkv 実装が握っている
         挙動と同じ結果にする)。
       → **完了条件**: **共有の契約スイートが DynamoDB Local に対して全部通る**
-      (`cargo test --no-default-features --features aws`。いまはアダプタ固有の往復テストのみ)。
+      → **達成**(HTTP 統合テスト 43 件を含む 226 件 + 画像の往復 1 件)。
 - [ ] サイズと上限の検証: 1 レコード 400KB を超えないこと(特に複合フィールドを含む値)、
       クエリ 1MB のページ境界
       → **完了条件**: 大きめの値を入れる専用テスト。
@@ -146,15 +145,18 @@ true/false, "password_reset_links": true/false}`。
 
 ### P2. S3(画像)
 
-- [ ] `generate_image_upload_url` を **presigned PUT** に、`take_upload_key` の単回トークンを
-      **DynamoDB + TTL** に持たせる(現行の「1 回だけ・特定ファイル名に束縛」を維持)
-      → **完了条件**: 契約スイートの画像テスト(トークン再利用拒否、別ファイル名への転用拒否)が通る。
-- [ ] S3 実装は `ImageRepository`(レコード CRUD + presigned PUT)だけを満たせばよい。
-      バイトの読み書きは `LocalImageBytes` に分離済みなので、AWS アダプタに
-      「呼ばれないメソッドのダミー実装」は要らない
-      → **完了条件**: LocalStack S3 に対して presign → PUT → GET の往復テスト。
-- [ ] 配信方式を変える場合は、フロントと E2E の期待値を更新
-      → **完了条件**: E2E の画像チェック(アップロード・表示・削除)が staging で通る。
+- [x] `generate_image_upload_url` を **presigned PUT** にした(有効期限 15 分)。
+      単回トークンは on-prem のローカル PUT 経路のための仕組みで、S3 では不要になった:
+      署名が「1 回だけ・特定のキーだけ」を担う(終了後に PUT しても 403)。
+      `take_upload_key` / `read_image_bytes` / `write_image_bytes`(`LocalImageBytes`)は
+      on-prem だけの契約なので、AWS アダプタには要らない(`Storage` の cfg 分岐もそのまま)。
+      → **完了条件**: presign → PUT → 公開 URL で GET → 削除の往復テスト
+      → **達成**(`aws::repository::images` の往復テスト。MinIO に対して実行)。
+- [x] 保存する URL は**安定 URL**(`AWS_IMAGE_BASE_URL` > S3 エンドポイントの path-style >
+      `https://<bucket>.s3.<region>.amazonaws.com/<key>`)。**presigned URL はコンテンツに
+      入れない**(ページに載った瞬間に期限切れになる)。署名が漏れていないこともテストで確認。
+- [ ] 配信は CloudFront にするか、バケットを公開読み取りにするか(Terraform 側で決める)
+      → **完了条件**: staging で画像が表示され、E2E の画像チェックが通る。
 
 ### P3. Lambda 起動点
 

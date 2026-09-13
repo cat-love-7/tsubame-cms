@@ -81,9 +81,31 @@ pub fn is_safe_image_ext(ext: &str) -> bool {
     trimmed.len() <= 10 && trimmed.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
+/// Normalise a caller-supplied extension into something safe to embed in a file name.
+///
+/// The extension arrives from the client, so anything that could introduce a path separator or
+/// a traversal (`../../x`) must be stripped. Returns `None` when nothing usable remains, in
+/// which case the file name simply has no extension.
+///
+/// Shared by both adapters so that a local upload and an S3 object key are cleaned the same way.
+pub fn sanitize_ext(ext: &str) -> Option<String> {
+    let cleaned: String = ext
+        .trim()
+        .trim_start_matches('.')
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(10)
+        .collect();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned.to_ascii_lowercase())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_safe_file_name, is_safe_image_ext};
+    use super::{is_safe_file_name, is_safe_image_ext, sanitize_ext};
 
     #[test]
     fn accepts_plain_file_names() {
@@ -126,5 +148,20 @@ mod tests {
         for ext in ["../../etc/passwd", "a/b", "..\\..\\x", "p n g", "waytoolongextension"] {
             assert!(!is_safe_image_ext(ext), "expected {ext:?} to be rejected");
         }
+    }
+
+    #[test]
+    fn sanitize_ext_strips_separators_and_traversal() {
+        assert_eq!(sanitize_ext("png").as_deref(), Some("png"));
+        assert_eq!(sanitize_ext(".PNG").as_deref(), Some("png"));
+        assert_eq!(sanitize_ext("jpeg").as_deref(), Some("jpeg"));
+        // Path separators and dots cannot survive.
+        assert_eq!(sanitize_ext("../../etc/passwd").as_deref(), Some("etcpasswd"));
+        assert_eq!(sanitize_ext("a/b").as_deref(), Some("ab"));
+        assert_eq!(sanitize_ext("..\\..\\x").as_deref(), Some("x"));
+        // Nothing usable left -> no extension.
+        assert_eq!(sanitize_ext(""), None);
+        assert_eq!(sanitize_ext("..."), None);
+        assert_eq!(sanitize_ext("../"), None);
     }
 }

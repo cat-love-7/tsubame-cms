@@ -12,10 +12,16 @@ use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 
 use crate::aws::bridge::BlockingRuntime;
+use crate::config::AwsSettings;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::item_status::ItemMetadata;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::image_repository::BoxError;
+
+mod composite_fields;
+mod images;
+mod single_pages;
+mod users;
 
 /// How item ids are written into the sort key. DynamoDB sorts keys as bytes, so without padding
 /// `10` would come before `2`.
@@ -25,7 +31,7 @@ pub fn padded(id: u64) -> String {
     format!("{id:0width$}", width = ID_WIDTH)
 }
 
-/// One table, one client.
+/// One table, one bucket.
 pub struct AwsRepository {
     inner: Arc<Inner>,
     runtime: BlockingRuntime,
@@ -34,12 +40,21 @@ pub struct AwsRepository {
 pub struct Inner {
     client: Client,
     table: String,
+    /// The image bytes live in S3; the records that describe them live in the table.
+    s3: aws_sdk_s3::Client,
+    settings: AwsSettings,
 }
 
 impl AwsRepository {
-    pub fn new(client: Client, table: String) -> Self {
+    /// Connect to the table and the bucket `settings` names.
+    pub async fn connect(settings: &AwsSettings) -> Self {
         AwsRepository {
-            inner: Arc::new(Inner { client, table }),
+            inner: Arc::new(Inner {
+                client: crate::aws::dynamodb_client(settings).await,
+                table: settings.table.clone(),
+                s3: crate::aws::s3_client(settings).await,
+                settings: settings.clone(),
+            }),
             runtime: BlockingRuntime::new(),
         }
     }
@@ -82,14 +97,29 @@ impl AwsRepository {
     }
 
     pub async fn delete_table(&self) -> Result<(), BoxError> {
-        self.inner
-            .client
-            .delete_table()
-            .table_name(&self.inner.table)
-            .send()
-            .await
-            .map_err(|e| format!("could not delete the table: {}", describe(&e)))?;
-        Ok(())
+        drop_table(&self.inner).await
+    }
+
+    /// Run an S3 request on the bridge, for tests that have to set a bucket up (a deployment
+    /// creates buckets in Terraform, so there is no repository API for it).
+    ///
+    /// It goes through the bridge on purpose: the SDK's HTTP client pools connections, and a
+    /// connection opened on one runtime cannot then be driven from another — the first runtime
+    /// is blocked waiting for the bridge, so the request would wait forever. Every request for
+    /// a given client therefore has to happen on the runtime that opened it.
+    #[cfg(test)]
+    pub fn s3_blocking<T: Send + 'static>(
+        &self,
+        request: impl std::future::Future<Output = Result<T, BoxError>> + Send + 'static,
+    ) -> Result<T, BoxError> {
+        self.runtime.block_on(request)
+    }
+
+    /// Drop the table through the bridge, for tests: `Drop` is synchronous and cannot await.
+    #[cfg(test)]
+    pub fn delete_table_blocking(&self) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        self.runtime.block_on(async move { drop_table(&inner).await })
     }
 
     fn encode<T: serde::Serialize>(value: &T) -> Result<String, BoxError> {
@@ -210,6 +240,45 @@ async fn list(inner: &Inner, pk: &str, prefix: &str) -> Result<Vec<(String, Stri
     }
 }
 
+/// Whether something is listening on `endpoint`'s host and port.
+///
+/// The adapter tests need an emulator, but a machine (or a CI runner) that has not started
+/// `docker compose` should still see a green suite, so a test asks this first and skips itself.
+/// Deliberately crude: one TCP connect, no protocol.
+#[cfg(test)]
+pub fn emulator_reachable(endpoint: &str) -> bool {
+    let authority = endpoint
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let Some(host_port) = authority.split('/').next() else {
+        return false;
+    };
+    let socket = if host_port.contains(':') {
+        host_port.to_string()
+    } else {
+        format!("{host_port}:80")
+    };
+    let Ok(mut addresses) = std::net::ToSocketAddrs::to_socket_addrs(&socket) else {
+        return false;
+    };
+    let Some(address) = addresses.next() else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(500)).is_ok()
+}
+
+/// Drop the table behind a repository.
+async fn drop_table(inner: &Inner) -> Result<(), BoxError> {
+    inner
+        .client
+        .delete_table()
+        .table_name(&inner.table)
+        .send()
+        .await
+        .map_err(|e| format!("could not delete the table: {}", describe(&e)))?;
+    Ok(())
+}
+
 /// Allocate the next id for `pk` with an atomic `ADD`, so concurrent writers cannot share one.
 async fn next_id(inner: &Inner, pk: &str) -> Result<u64, BoxError> {
     let answer = inner
@@ -217,7 +286,7 @@ async fn next_id(inner: &Inner, pk: &str) -> Result<u64, BoxError> {
         .update_item()
         .table_name(&inner.table)
         .key("pk", AttributeValue::S(pk.to_string()))
-        .key("sk", AttributeValue::S("counter".to_string()))
+        .key("sk", AttributeValue::S(key::COUNTER.to_string()))
         .update_expression("ADD #value :one")
         .expression_attribute_names("#value", "value")
         .expression_attribute_values(":one", AttributeValue::N("1".to_string()))
@@ -239,6 +308,9 @@ async fn next_id(inner: &Inner, pk: &str) -> Result<u64, BoxError> {
 pub mod key {
     use super::padded;
     use crate::models::collection::CollectionName;
+    use crate::models::schema::CompositeFieldId;
+    use crate::models::single_page::SinglePageName;
+    use crate::models::user::UserId;
 
     pub fn collection(name: &CollectionName) -> String {
         format!("collection#{}", name.as_str())
@@ -256,6 +328,43 @@ pub mod key {
     pub const SCHEMA: &str = "schema";
     /// Where the names of every collection are listed, so listing them is a query.
     pub const COLLECTION_INDEX: &str = "collections";
+
+    // Single pages: one partition per page, because a page is schema + published copy +
+    // working copy + metadata, and they are always read and deleted together.
+    pub fn page(name: &SinglePageName) -> String {
+        format!("page#{}", name.as_str())
+    }
+    /// Where the page names are listed, so listing them is a query.
+    pub const PAGE_INDEX: &str = "pages";
+
+    // Accounts. The record is keyed by id; the username lives in a reservation record, so a
+    // name is looked up with a point read instead of a scan, and two accounts cannot share one.
+    pub fn user(id: &UserId) -> String {
+        format!("user#{}", id.as_str())
+    }
+    pub const USER_INDEX: &str = "users";
+    pub fn username(username: &str) -> String {
+        format!("username#{}", username)
+    }
+
+    // Composite field schemas, listed in one query.
+    pub fn composite_field(id: &CompositeFieldId) -> String {
+        format!("composite#{}", id.as_str())
+    }
+    pub const COMPOSITE_FIELD_INDEX: &str = "composite_fields";
+
+    // Images: the record under the index partition, the bytes in S3 under `file_name`.
+    pub fn image(id: u64) -> String {
+        format!("image#{}", padded(id))
+    }
+    pub const IMAGE_INDEX: &str = "images";
+
+    /// The sort key of a record that is alone in its partition (an account, a composite field).
+    pub const RECORD: &str = "record";
+    /// The sort keys inside a page partition.
+    pub const ITEM: &str = "item";
+    pub const DRAFT: &str = "draft";
+    pub const META: &str = "meta";
 }
 
 impl CollectionRepository for AwsRepository {
@@ -508,23 +617,6 @@ mod tests {
     use crate::models::collection::{CollectionItem, CollectionSchema};
     use crate::models::item_status::ItemStatus;
 
-    /// `Some` when something is listening on the emulator's endpoint, so the suite still passes
-    /// on a machine (or a CI runner) that has not started `docker compose`.
-    fn reachable_emulator() -> Option<String> {
-        let endpoint = crate::aws::test_endpoint();
-        let authority = endpoint.trim_start_matches("http://").trim_start_matches("https://");
-        let host_port = authority.split('/').next()?;
-        let socket = if host_port.contains(':') {
-            host_port.to_string()
-        } else {
-            format!("{host_port}:80")
-        };
-        let address = std::net::ToSocketAddrs::to_socket_addrs(&socket).ok()?.next()?;
-        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(500))
-            .ok()
-            .map(|_| endpoint)
-    }
-
     fn schema() -> CollectionSchema {
         serde_json::from_value(serde_json::json!([
             { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1 }
@@ -543,11 +635,9 @@ mod tests {
     /// inside a runtime, which is exactly where a naive `block_on` would panic.
     #[tokio::test]
     async fn a_collection_round_trips_against_dynamodb_local() {
-        if reachable_emulator().is_none() {
-            eprintln!(
-                "skipped: no DynamoDB at {} (start it with `docker compose up -d`)",
-                crate::aws::test_endpoint()
-            );
+        let endpoint = crate::aws::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
         let (repository, _table) = crate::aws::open_test_repository("cms_test").await;
@@ -577,9 +667,11 @@ mod tests {
         assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).unwrap(), Some(values("First")));
 
         // Metadata, including the status the admin list reads.
-        let mut metadata = ItemMetadata::default();
-        metadata.status = ItemStatus::Published;
-        metadata.published_at = Some(chrono::Utc::now());
+        let metadata = ItemMetadata {
+            status: ItemStatus::Published,
+            published_at: Some(chrono::Utc::now()),
+            ..ItemMetadata::default()
+        };
         repository.set_item_metadata(&name, &CollectionItemId::from_u64(1), &metadata).unwrap();
         assert_eq!(
             repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).unwrap(),

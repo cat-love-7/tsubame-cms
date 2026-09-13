@@ -11,6 +11,14 @@
 //!
 //! Waiting inside an async runtime would panic (`block_on` from within a runtime), which is why
 //! the work runs on a thread of its own rather than on the caller's.
+//!
+//! One rule follows from that, and it is easy to trip over: everything a client does must happen
+//! on this runtime. The SDK's HTTP client pools connections, and a pooled connection belongs to
+//! the runtime that opened it; driving it from another one waits forever, because the runtime
+//! that owns it is the one blocked in `block_on`. So a request issued outside the bridge (in a
+//! test, say) before the first one through it will hang the adapter — hence the test-only
+//! `AwsRepository::s3_blocking`, which exists so a test can set a bucket up without leaving the
+//! bridge.
 
 use std::future::Future;
 use std::sync::mpsc::{channel, Sender};

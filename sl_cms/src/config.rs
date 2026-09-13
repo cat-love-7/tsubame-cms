@@ -74,6 +74,15 @@ pub struct Config {
     /// Where the AWS endpoints are (`AWS_ENDPOINT_URL`). Only for a local emulator such as
     /// DynamoDB Local or MinIO; unset means the real endpoints.
     pub aws_endpoint_url: Option<String>,
+    /// S3's own endpoint. A local emulator runs DynamoDB and S3 on different ports, and the
+    /// SDK's own variable name for this is `AWS_ENDPOINT_URL_S3`.
+    pub aws_s3_endpoint_url: Option<String>,
+    /// Where uploaded images are read from when it is not the bucket itself (a CDN, say).
+    pub aws_image_base_url: Option<String>,
+    /// Credentials for the SDK to use. Unset in a deployment, where the SDK's own chain finds
+    /// the Lambda execution role; a local emulator needs them because it checks the signature.
+    pub aws_access_key_id: Option<String>,
+    pub aws_secret_access_key: Option<String>,
     /// DynamoDB table holding everything structured (`DYNAMODB_TABLE`).
     pub dynamodb_table: Option<String>,
     /// S3 bucket holding uploaded image bytes (`S3_BUCKET`).
@@ -99,9 +108,17 @@ pub struct AwsSettings {
     pub table: String,
     pub bucket: String,
     pub user_pool_id: String,
-    /// Where the DynamoDB/S3 endpoints are, for a local emulator. `None` means the real AWS
-    /// endpoints, which is what a deployment uses.
+    /// Where the DynamoDB endpoint is, for a local emulator. `None` means the real AWS
+    /// endpoint, which is what a deployment uses.
     pub endpoint_url: Option<String>,
+    /// The same for S3. Falls back to `endpoint_url` when only that one is set.
+    pub s3_endpoint_url: Option<String>,
+    /// Where an uploaded image is read from, when that is not the bucket itself.
+    pub image_base_url: Option<String>,
+    /// Set for a local emulator, which verifies the signature. `None` means the SDK's own
+    /// credential chain, which is the Lambda execution role in a deployment.
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
     /// May be empty: then nobody can provision themselves and an administrator has to create
     /// the first account record another way.
     pub bootstrap_admin_usernames: Vec<String>,
@@ -114,6 +131,31 @@ impl AwsSettings {
         self.endpoint_url
             .clone()
             .unwrap_or_else(|| format!("https://dynamodb.{}.amazonaws.com", self.region))
+    }
+
+    /// The endpoint the S3 client should talk to: a local emulator when set, AWS otherwise.
+    pub fn s3_endpoint_url(&self) -> Option<String> {
+        self.s3_endpoint_url.clone().or_else(|| self.endpoint_url.clone())
+    }
+
+    /// The URL an uploaded image is served from.
+    ///
+    /// Deliberately stable, not presigned: the URL is written into content and rendered on a
+    /// public page, so it must not expire the way a signature does. A deployment puts a CDN in
+    /// front (`AWS_IMAGE_BASE_URL`); a local emulator serves path-style `endpoint/bucket/key`.
+    pub fn image_url(&self, file_name: &str) -> String {
+        match (&self.image_base_url, self.s3_endpoint_url()) {
+            (Some(base), _) => format!("{}/{file_name}", base.trim_end_matches('/')),
+            (None, Some(endpoint)) => format!(
+                "{}/{}/{file_name}",
+                endpoint.trim_end_matches('/'),
+                self.bucket
+            ),
+            (None, None) => format!(
+                "https://{}.s3.{}.amazonaws.com/{file_name}",
+                self.bucket, self.region
+            ),
+        }
     }
 
     /// Where Cognito publishes the signing keys for this pool. Derived rather than configured,
@@ -145,6 +187,10 @@ impl Default for Config {
             webhook_secret: None,
             aws_region: None,
             aws_endpoint_url: None,
+            aws_s3_endpoint_url: None,
+            aws_image_base_url: None,
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
             dynamodb_table: None,
             s3_bucket: None,
             cognito_user_pool_id: None,
@@ -243,6 +289,10 @@ impl Config {
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
         config.aws_region = non_empty_env("AWS_REGION");
         config.aws_endpoint_url = non_empty_env("AWS_ENDPOINT_URL");
+        config.aws_s3_endpoint_url = non_empty_env("AWS_ENDPOINT_URL_S3");
+        config.aws_image_base_url = non_empty_env("AWS_IMAGE_BASE_URL");
+        config.aws_access_key_id = non_empty_env("AWS_ACCESS_KEY_ID");
+        config.aws_secret_access_key = non_empty_env("AWS_SECRET_ACCESS_KEY");
         config.dynamodb_table = non_empty_env("DYNAMODB_TABLE");
         config.s3_bucket = non_empty_env("S3_BUCKET");
         config.cognito_user_pool_id = non_empty_env("COGNITO_USER_POOL_ID");
@@ -273,6 +323,10 @@ impl Config {
             bucket: required(&self.s3_bucket, "S3_BUCKET")?,
             user_pool_id: required(&self.cognito_user_pool_id, "COGNITO_USER_POOL_ID")?,
             endpoint_url: self.aws_endpoint_url.clone(),
+            s3_endpoint_url: self.aws_s3_endpoint_url.clone(),
+            image_base_url: self.aws_image_base_url.clone(),
+            access_key_id: self.aws_access_key_id.clone(),
+            secret_access_key: self.aws_secret_access_key.clone(),
             bootstrap_admin_usernames: self.bootstrap_admin_usernames.clone(),
         })
     }

@@ -172,7 +172,7 @@ pub struct WebhookNotifier {
 /// application has to. Ring is the pure-Rust provider, which keeps CMake out of the
 /// build; a provider installed by someone else first is just as good, hence the
 /// ignored error.
-fn install_crypto_provider() {
+pub(crate) fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
