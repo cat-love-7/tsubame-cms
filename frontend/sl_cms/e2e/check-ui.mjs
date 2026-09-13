@@ -267,6 +267,15 @@ try {
   // -------------------------------------------------------------- next page
   // Material overlays a touch target on the pager buttons, so a plain click never lands.
   await paginator.locator('.mat-mdc-paginator-navigation-next').click({ force: true });
+  // Waiting for 25 rows would prove nothing (page one has 25 too), so wait for the content that
+  // tells the pages apart. Without this the check raced the reload and sometimes read page one.
+  await page
+    .waitForFunction(
+      () => document.querySelector('table.items tbody tr td')?.textContent?.trim() === '26',
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
   await waitForRows(25);
   const secondPageFirstId = (await firstRow().locator('td').first().textContent())?.trim();
   check('次ページは id 26 から始まる', secondPageFirstId === '26', `id=${secondPageFirstId}`);
@@ -758,6 +767,79 @@ try {
   });
   check('拒否したコレクションは API でも 403', denied.status() === 403, `status=${denied.status()}`);
   await scopedSession.context.close();
+
+  // ------------------------------- an administrator hands out a password reset link
+  const resetUsername = `e2e-reset-${Date.now()}`;
+  for (const account of await api('GET', '/auth/users', undefined, token)) {
+    if (account.username.startsWith('e2e-reset-')) {
+      await api('DELETE', `/auth/users/${account.id}`, undefined, token);
+    }
+  }
+  await api(
+    'POST',
+    '/auth/users',
+    {
+      username: resetUsername,
+      password: 'reset-password',
+      is_admin: false,
+      permission: { can_view: true, can_edit: false, can_publish: false },
+    },
+    token,
+  );
+
+  // A session that exists before the reset, to watch it die.
+  const openSession = await request.fetch(`${API}/auth/login`, {
+    method: 'POST',
+    data: { username: resetUsername, password: 'reset-password' },
+  });
+  const sessionBeforeReset = (await openSession.json()).token;
+
+  // The administrator issues the link from the account screen...
+  await page.goto(`${BASE}/settings/users`, { waitUntil: 'networkidle' });
+  await page
+    .locator(`button[aria-label="issue a password reset link for ${resetUsername}"]`)
+    .click();
+  const resetAnchor = page.locator('.reset-link a');
+  await resetAnchor.waitFor({ timeout: 10000 });
+  const resetUrl = await resetAnchor.getAttribute('href');
+  check(
+    'リセット URL が発行される',
+    /\/reset-password\?token=/.test(resetUrl ?? ''),
+    String(resetUrl).slice(0, 70),
+  );
+
+  // ...the owner opens it with no session at all and chooses a password.
+  const resetContext = await browser.newContext();
+  const resetPage = await resetContext.newPage();
+  resetPage.on('pageerror', (error) => consoleErrors.push(`reset: ${error}`));
+  resetPage.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(`reset: ${message.text()}`);
+  });
+  await resetPage.goto(resetUrl, { waitUntil: 'networkidle' });
+  await resetPage.fill('input[name=next]', 'chosen-by-the-owner');
+  await resetPage.fill('input[name=repeated]', 'chosen-by-the-owner');
+  await resetPage.click('button:has-text("パスワードを設定")');
+  await resetPage
+    .waitForFunction(() => !location.pathname.includes('/reset-password'), null, { timeout: 15000 })
+    .catch(() => {});
+  check('リセット後はサインイン状態になる', resetPage.url().startsWith(`${BASE}/`), resetPage.url());
+
+  // The new password works, the session from before is gone, and the link is spent.
+  const afterReset = await request.fetch(`${API}/auth/login`, {
+    method: 'POST',
+    data: { username: resetUsername, password: 'chosen-by-the-owner' },
+  });
+  check('新しいパスワードでサインインできる', afterReset.status() === 200, `status=${afterReset.status()}`);
+  const stale = await request.fetch(`${API}/auth/me`, {
+    headers: { Authorization: `Bearer ${sessionBeforeReset}` },
+  });
+  check('リセット前のセッションは切れる', stale.status() === 401, `status=${stale.status()}`);
+  const reused = await request.fetch(`${API}/auth/password-reset`, {
+    method: 'POST',
+    data: { token: (resetUrl ?? '').split('token=')[1], new_password: 'someone-elses-choice' },
+  });
+  check('同じリンクは二度使えない', reused.status() === 403, `status=${reused.status()}`);
+  await resetContext.close();
 
   // ------------------------------------------- guessing a password is not free
   // A throwaway account, so the lock this leaves behind touches nothing else. The API is

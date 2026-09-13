@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
+import { PasswordResetLink } from 'app/models/item-status';
 
 export interface NewUser {
   /** The sign-in identifier; the CMS does not require an email address. */
@@ -57,6 +58,16 @@ export class UsersRepository {
 
   remove(id: string): Observable<void> {
     return this.http.delete<void>(`/api/auth/users/${id}`);
+  }
+
+  /**
+   * An administrator issuing a link that lets one account set its own new password.
+   *
+   * Nothing is mailed: the caller shows the link so it can be passed on, which is also the only
+   * thing that works for an account with no address on file.
+   */
+  issuePasswordResetLink(id: string): Observable<PasswordResetLink> {
+    return this.http.post<PasswordResetLink>(`/api/auth/users/${id}/password-reset-link`, null);
   }
 
   /** An administrator setting someone else's password. */

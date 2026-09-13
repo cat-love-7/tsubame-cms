@@ -10,6 +10,12 @@
 @if (status()) {
   <p class="status" role="status">{{ status() }}</p>
 }
+@if (resetLink()) {
+  <p class="reset-link">
+    {{ resetFor() }}:
+    <a [href]="resetLink()" target="_blank" rel="noopener">{{ resetLink() }}</a>
+  </p>
+}
 
 <div class="create">
   <mat-form-field appearance="fill">
@@ -95,6 +101,13 @@
         </td>
         <td>{{ user.last_login ? user.last_login : '—' }}</td>
         <td class="actions">
+          <button
+            matIconButton
+            (click)="issuePasswordResetLink(user)"
+            [attr.aria-label]="'issue a password reset link for ' + user.username"
+          >
+            <mat-icon>link</mat-icon>
+          </button>
           <button
             matIconButton
             (click)="openResources(user)"

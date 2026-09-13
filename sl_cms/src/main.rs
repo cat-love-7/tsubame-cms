@@ -22,6 +22,7 @@ mod auth;
 mod config;
 mod http;
 mod models;
+mod password_reset;
 mod preview_link;
 mod repositories;
 mod services;

@@ -10,13 +10,17 @@ use crate::app_module::Storage;
 use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    ChangePasswordRequest, LoginRequest, NewUserRequest, ResetPasswordRequest,
-    UpdateUserRequest, UserId,
+    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewUserRequest,
+    ResetPasswordRequest, UpdateUserRequest, UserId,
 };
 
 /// Routes reachable without a token. Only login qualifies.
 pub fn public_routes<R: Storage>() -> Router<AppState<R>> {
-    Router::new().route("/auth/login", post(login::<R>))
+    Router::new()
+        .route("/auth/login", post(login::<R>))
+        // Completing a reset is public by design: the link *is* the credential, and the whole
+        // point is that someone who cannot sign in can use it.
+        .route("/auth/password-reset", post(complete_password_reset::<R>))
 }
 
 /// Routes that require an authenticated caller (the auth middleware has already run).
@@ -29,6 +33,10 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
             patch(update_user::<R>).delete(delete_user::<R>),
         )
         .route("/auth/users/{id}/password", post(reset_password::<R>))
+        .route(
+            "/auth/users/{id}/password-reset-link",
+            post(issue_password_reset::<R>),
+        )
         // Self-service: any authenticated account may change its own password.
         .route("/auth/me/password", post(change_own_password::<R>))
 }
@@ -123,6 +131,31 @@ async fn reset_password<R: Storage>(
         .auth_service
         .set_password(&UserId::from(id.as_str()), &request.password)?;
     Ok(StatusCode::OK)
+}
+
+/// Issue a link an administrator passes on, so the account sets its own new password.
+async fn issue_password_reset<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    Ok(Json(
+        module
+            .auth_service
+            .issue_password_reset(&UserId::from(id.as_str()))?,
+    ))
+}
+
+/// Set a new password with an issued link. Public: the signature is the credential.
+async fn complete_password_reset<R: Storage>(
+    State(module): State<AppState<R>>,
+    Json(request): Json<CompletePasswordResetRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(module.auth_service.complete_password_reset(
+        &request.token,
+        &request.new_password,
+    )?))
 }
 
 async fn change_own_password<R: Storage>(

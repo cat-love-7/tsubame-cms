@@ -74,11 +74,6 @@ impl User {
         }
     }
 
-    /// The name to show for this account: the identifier, which is all that is guaranteed.
-    pub fn display_name(&self) -> &str {
-        &self.username
-    }
-
     /// Fill in `username` for a record written before the field existed, where the sign-in
     /// identifier was the email address.
     ///
@@ -289,6 +284,14 @@ pub struct UpdateUserRequest {
     pub single_page_permissions: Option<HashMap<String, Permission>>,
 }
 
+/// Completing an administrator-issued reset: the token from the link, and the password the
+/// account's owner chose.
+#[derive(serde::Deserialize, Debug)]
+pub struct CompletePasswordResetRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
 /// An administrator setting someone else's password.
 #[derive(serde::Deserialize, Debug)]
 pub struct ResetPasswordRequest {
@@ -340,7 +343,6 @@ mod tests {
     fn new_user_is_a_viewer_with_no_write_access() {
         let user = User::new("Ops.User", "hash".to_string(), false, Permission::default());
         assert_eq!(user.username, "ops.user");
-        assert_eq!(user.display_name(), "ops.user");
         assert!(user.email.is_none(), "メールアドレスは任意");
         assert!(!user.can_write(user.permission));
         assert!(user.is_active);

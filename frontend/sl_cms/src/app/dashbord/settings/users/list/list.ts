@@ -20,6 +20,7 @@ import {
 } from 'app/core/auth/auth.service';
 import { errorMessage as message } from 'app/core/http-error';
 import { UsersService } from 'app/services/auth/users.service';
+import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
@@ -134,6 +135,37 @@ export class List {
 
   labelOf(role: ResourceRole): string {
     return this.resourceRoles.find((option) => option.value === role)?.label ?? role;
+  }
+
+  /** The reset link that was issued last, so an administrator can copy it. */
+  public resetLink = signal('');
+  /** The account the shown link belongs to. */
+  public resetFor = signal('');
+
+  /**
+   * Issue a link that lets one account set its own new password, and offer it for copying.
+   *
+   * The CMS sends no mail, so the link travels however the administrator likes - which also
+   * works for an account with no address on file.
+   */
+  issuePasswordResetLink(user: CurrentUser) {
+    this.error.set('');
+    this.status.set('');
+    this.users.issuePasswordResetLink(user.id).subscribe({
+      next: async (link) => {
+        const url = passwordResetUrl(link.token);
+        this.resetLink.set(url);
+        this.resetFor.set(user.username);
+        const copied = await copyToClipboard(url);
+        const expires = new Date(link.expires_at).toLocaleString();
+        this.status.set(
+          copied
+            ? `${user.username} のリセット URL をコピーしました(有効期限: ${expires})`
+            : `${user.username} のリセット URL を発行しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+        );
+      },
+      error: (e) => this.error.set(`Could not issue a reset link: ${message(e)}`),
+    });
   }
 
   /** Store the overrides for one account; only entries that differ are sent. */

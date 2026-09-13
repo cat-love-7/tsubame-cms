@@ -59,3 +59,14 @@ export interface PreviewLink {
   path: string;
   expires_at: string;
 }
+
+/**
+ * A freshly issued password reset link.
+ *
+ * The token goes in the URL of the reset screen; the CMS mails nothing, so the administrator
+ * hands the link on however they like.
+ */
+export interface PasswordResetLink {
+  token: string;
+  expires_at: string;
+}

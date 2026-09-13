@@ -84,6 +84,12 @@ interface LoginResponse {
   user: CurrentUser;
 }
 
+/** What a password change (or a completed reset) answers with. */
+interface PasswordChanged {
+  token: string;
+  expires_at: string;
+}
+
 const TOKEN_KEY = 'sl_cms.token';
 const USER_KEY = 'sl_cms.user';
 
@@ -170,6 +176,18 @@ export class AuthService {
         writeStorage(USER_KEY, JSON.stringify(response.user));
       }),
     );
+  }
+
+  /**
+   * Set a new password with an administrator-issued link, and sign in with the result.
+   *
+   * The link is the credential, so this needs no session; completing it ends whatever sessions
+   * existed, which is why the answer carries a token for the caller to adopt.
+   */
+  completePasswordReset(token: string, newPassword: string): Observable<PasswordChanged> {
+    return this.http
+      .post<PasswordChanged>('/api/auth/password-reset', { token, new_password: newPassword })
+      .pipe(tap((changed) => this.replaceToken(changed.token)));
   }
 
   /**

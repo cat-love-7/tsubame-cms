@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::auth::token::TokenIssuer;
 use crate::auth::AuthService;
+use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -59,6 +60,7 @@ impl<R: Storage> AppModule<R> {
         token_issuer: TokenIssuer,
         notifier: Arc<dyn Notifier>,
         preview_links: PreviewLinkIssuer,
+        password_resets: PasswordResetIssuer,
     ) -> Self {
         AppModule {
             collection_service: CollectionService::new(
@@ -75,7 +77,7 @@ impl<R: Storage> AppModule<R> {
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),
             image_service: ImageService::new(repository.clone()),
-            auth_service: AuthService::new(repository, token_issuer),
+            auth_service: AuthService::new(repository, token_issuer, password_resets.clone()),
             preview_links,
         }
     }

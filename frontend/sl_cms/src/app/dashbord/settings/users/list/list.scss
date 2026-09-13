@@ -105,3 +105,9 @@ table.accounts th {
   display: flex;
   gap: 8px;
 }
+
+/* An issued reset link, long enough that it has to wrap. */
+.reset-link {
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}

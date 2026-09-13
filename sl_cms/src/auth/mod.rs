@@ -12,6 +12,7 @@ use crate::models::user::{
     is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewUserRequest,
     PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
+use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
 use crate::repositories::user_repository::UserRepository;
 use throttle::LoginThrottle;
 use token::TokenIssuer;
@@ -26,15 +27,22 @@ const BAD_CREDENTIALS: &str = "invalid username or password";
 pub struct AuthService<R: UserRepository> {
     repository: Arc<R>,
     issuer: TokenIssuer,
+    /// Mints the links an administrator hands out for an account to set its own password.
+    password_resets: PasswordResetIssuer,
     /// Counts failed sign-ins per account, so guessing a password is not free.
     throttle: LoginThrottle,
 }
 
 impl<R: UserRepository> AuthService<R> {
-    pub fn new(repository: Arc<R>, issuer: TokenIssuer) -> Self {
+    pub fn new(
+        repository: Arc<R>,
+        issuer: TokenIssuer,
+        password_resets: PasswordResetIssuer,
+    ) -> Self {
         AuthService {
             repository,
             issuer,
+            password_resets,
             throttle: LoginThrottle::new(),
         }
     }
@@ -117,6 +125,76 @@ impl<R: UserRepository> AuthService<R> {
             return Err(HttpError::Forbidden("account is disabled"));
         }
         Ok(user)
+    }
+
+    /// Issue a link that lets one account set a new password, for an administrator to pass on.
+    ///
+    /// Nothing is mailed: the administrator decides how the link reaches its owner, which is
+    /// the only thing that works for an account with no address on file.
+    pub fn issue_password_reset(&self, id: &UserId) -> Result<PasswordResetLink, HttpError> {
+        let user = self.require_user(id)?;
+        // A disabled account cannot sign in, so a link for it would only mislead.
+        if !user.is_active {
+            return Err(HttpError::Forbidden("account is disabled"));
+        }
+        Ok(self.password_resets.issue(&user, chrono::Utc::now()))
+    }
+
+    /// Set a new password using an issued link, and sign the caller in with the result.
+    ///
+    /// Completing this ends every session that exists (see
+    /// [`AuthService::change_own_password`]), which is also what makes the link single use: the
+    /// token carries the generation it was issued for, and the account moves on.
+    pub fn complete_password_reset(
+        &self,
+        token: &str,
+        new_password: &str,
+    ) -> Result<PasswordChangedResponse, HttpError> {
+        let claims = self
+            .password_resets
+            .verify(token, chrono::Utc::now())
+            .map_err(|error| match error {
+                PasswordResetError::Expired => HttpError::Forbidden(error.message()),
+                PasswordResetError::AlreadyUsed => HttpError::Forbidden(error.message()),
+                PasswordResetError::Malformed | PasswordResetError::Invalid => {
+                    // The same answer for every unusable token: a stranger learns nothing
+                    // about which accounts exist.
+                    HttpError::Unauthorized(PasswordResetError::Invalid.message())
+                }
+            })?;
+
+        // An unknown account is answered exactly like an unusable token: this endpoint is
+        // public, so it must not confirm which accounts exist.
+        let user = self
+            .repository
+            .get_user_from_id(&claims.user_id)
+            .map_err(internal)?;
+        let Some(mut user) = user else {
+            return Err(HttpError::Unauthorized(PasswordResetError::Invalid.message()));
+        };
+        // Guessing a token is no easier than guessing a password, but the attempt is counted
+        // the same way so neither can be hammered.
+        if let Some(wait) = self.throttle.retry_after(&user.username, Instant::now()) {
+            return Err(HttpError::TooManyRequests(wait));
+        }
+        // The link was issued for one generation of this account; anything that changed the
+        // password since (this link being used once already included) makes it refuse.
+        if claims.token_version != user.token_version {
+            self.throttle.record_failure(&user.username, Instant::now());
+            return Err(HttpError::Forbidden(PasswordResetError::AlreadyUsed.message()));
+        }
+        if !user.is_active {
+            return Err(HttpError::Forbidden("account is disabled"));
+        }
+        validate_password(new_password)?;
+
+        user.password_hash = password::hash_password(new_password).map_err(internal)?;
+        user.end_existing_sessions();
+        self.repository.update_user(&user.id, &user).map_err(internal)?;
+        self.throttle.record_success(&user.username);
+
+        let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
+        Ok(PasswordChangedResponse { token, expires_at })
     }
 
     pub fn create_user(&self, request: NewUserRequest) -> Result<UserResponse, HttpError> {
@@ -393,7 +471,11 @@ mod tests {
 
     fn service() -> (AuthService<InMemoryUsers>, Arc<InMemoryUsers>) {
         let repo = Arc::new(InMemoryUsers::default());
-        (AuthService::new(repo.clone(), TokenIssuer::new(b"test-secret", 1)), repo)
+        let password_resets = PasswordResetIssuer::new(b"test-secret", 30);
+        (
+            AuthService::new(repo.clone(), TokenIssuer::new(b"test-secret", 1), password_resets),
+            repo,
+        )
     }
 
     fn new_user(email: &str, password: &str, is_admin: bool) -> NewUserRequest {
@@ -468,6 +550,86 @@ mod tests {
             auth.login("b@example.com", "wrong").unwrap_err().status_code,
             401
         );
+    }
+
+    /// An administrator can hand out a link instead of choosing someone else's password; using
+    /// it sets the account's own password and ends every session that came before.
+    #[test]
+    fn a_reset_link_sets_the_password_once_and_then_refuses() {
+        let (auth, _) = service();
+        let account = auth
+            .create_user(new_user("ops", "old-password", false))
+            .unwrap();
+        let id = UserId::from(account.id.to_string().as_str());
+
+        let link = auth.issue_password_reset(&id).unwrap();
+        assert!(link.expires_at > chrono::Utc::now());
+
+        // An old session, to watch it die.
+        let old_token = auth.login("ops", "old-password").unwrap().token;
+        assert!(auth.user_from_token(&old_token).is_ok());
+
+        let changed = auth
+            .complete_password_reset(&link.token, "chosen-by-the-owner")
+            .unwrap();
+
+        // The password is the owner's, the caller is signed in, old sessions are gone...
+        assert!(auth.login("ops", "old-password").is_err());
+        assert!(auth.login("ops", "chosen-by-the-owner").is_ok());
+        assert_eq!(auth.user_from_token(&old_token).unwrap_err().status_code, 401);
+        assert!(auth.user_from_token(&changed.token).is_ok());
+
+        // ...and the link cannot be used twice.
+        let again = auth
+            .complete_password_reset(&link.token, "another-password")
+            .unwrap_err();
+        assert_eq!(again.status_code, 403, "{}", again.message);
+        // The password the owner chose still stands.
+        assert!(auth.login("ops", "chosen-by-the-owner").is_ok());
+    }
+
+    /// The public completion endpoint must not confirm which accounts exist.
+    #[test]
+    fn a_link_for_an_unknown_account_is_refused_like_any_other_bad_token() {
+        let (auth, _) = service();
+        let account = User::new("ops", "hash".to_string(), false, Permission::viewer());
+        let link = PasswordResetIssuer::new(b"test-secret", 30).issue(&account, chrono::Utc::now());
+
+        let error = auth
+            .complete_password_reset(&link.token, "new-password")
+            .unwrap_err();
+        assert_eq!(error.status_code, 401);
+        // A garbage token gets the same answer.
+        assert_eq!(
+            auth.complete_password_reset("not-a-token", "new-password")
+                .unwrap_err()
+                .status_code,
+            401
+        );
+    }
+
+    #[test]
+    fn a_disabled_account_gets_no_reset_link() {
+        let (auth, _) = service();
+        let admin = auth
+            .create_user(new_user("admin", "admin-password", true))
+            .unwrap();
+        let account = auth.create_user(new_user("ops", "ops-password", false)).unwrap();
+
+        auth.update_user(
+            &UserId::from(account.id.to_string().as_str()),
+            UpdateUserRequest { is_active: Some(false), ..Default::default() },
+        )
+        .unwrap();
+
+        let error = auth
+            .issue_password_reset(&UserId::from(account.id.to_string().as_str()))
+            .unwrap_err();
+        assert_eq!(error.status_code, 403);
+        // The administrator's own account still gets one.
+        assert!(auth
+            .issue_password_reset(&UserId::from(admin.id.to_string().as_str()))
+            .is_ok());
     }
 
     /// Changing your own password ends every session, including the one that asked for the

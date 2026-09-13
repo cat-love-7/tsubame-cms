@@ -9,6 +9,12 @@ export const routes: Routes = [
         path: 'login',
         loadComponent: () => import('./core/auth/login/login').then(m => m.Login)
     },
+    // A reset link is opened by someone who cannot sign in, so this screen is public too.
+    {
+        path: 'reset-password',
+        loadComponent: () =>
+            import('./core/auth/password-reset/password-reset').then(m => m.PasswordReset)
+    },
     // Everything else requires a session; the guard redirects to /login otherwise.
     {
         path: '',

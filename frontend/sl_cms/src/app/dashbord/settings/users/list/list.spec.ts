@@ -52,6 +52,11 @@ class StubUsersService {
     return of(void 0);
   };
   changeOwnPassword = () => of({ token: 'replacement-token', expires_at: '2024-01-01T00:00:00Z' });
+  issuePasswordResetLink = (id: string) => {
+    this.resetIssued.push(id);
+    return of({ token: 'user-1.0.1758000000.abc123', expires_at: '2026-09-13T12:00:00Z' });
+  };
+  public resetIssued: string[] = [];
 }
 
 describe('Accounts', () => {
@@ -103,6 +108,17 @@ describe('Accounts', () => {
     expect(change.collection_permissions['blog'].can_publish).toBe(false);
     expect(change.collection_permissions['news'].can_edit).toBe(false);
     expect(change.single_page_permissions).toEqual({});
+  });
+
+  /** The administrator gets a link to hand on; the CMS mails nothing. */
+  it('issues a password reset link and shows it', () => {
+    fixture.componentInstance.issuePasswordResetLink(stub.accounts[0]);
+
+    expect(stub.resetIssued).toEqual(['user-1']);
+    expect(fixture.componentInstance.resetLink()).toBe(
+      `${location.origin}/reset-password?token=user-1.0.1758000000.abc123`,
+    );
+    expect(fixture.componentInstance.resetFor()).toBe('editor@example.com');
   });
 
   it('lists an account\'s overrides in its row', () => {

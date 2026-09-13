@@ -22,6 +22,7 @@ use crate::auth::token::TokenIssuer;
 use crate::http;
 use crate::models::pagination::DEFAULT_PAGE_LIMIT;
 use crate::models::user::Permission;
+use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::{PreviewLinkIssuer, PreviewTarget};
 use std::collections::HashMap;
 use crate::on_premises::repository::Repository;
@@ -173,6 +174,7 @@ async fn test_app_with_notifier(notifier: Arc<dyn Notifier>) -> TestApp {
         // Long enough that a link minted during a test is never expired, and signed with the
         // same secret the tokens use, as the deployment does.
         PreviewLinkIssuer::new(b"integration-test-secret", 60),
+        PasswordResetIssuer::new(b"integration-test-secret", 30),
     ));
 
     module
@@ -2181,6 +2183,106 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+/// The whole password reset flow over HTTP: an administrator mints a link, the account's owner
+/// uses it without being signed in, and the link is spent.
+#[tokio::test]
+async fn an_administrator_can_issue_a_reset_link_that_works_once() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&admin),
+        Some(json!({
+            "username": "ops",
+            "password": "ops-password",
+            "is_admin": false,
+            "permission": Permission::viewer(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // A session that existed before the reset, to watch it die.
+    let (_, body) = login(&app.router, "ops", "ops-password").await;
+    let old_token = body["token"].as_str().unwrap().to_string();
+
+    // Only an administrator may mint a link.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password-reset-link"),
+        Some(&old_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password-reset-link"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = body["token"].as_str().unwrap().to_string();
+    assert!(body["expires_at"].is_string());
+
+    // The link is used without any credentials at all.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": token, "new_password": "chosen-by-ops" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let fresh_token = body["token"]
+        .as_str()
+        .expect("the caller is signed in with the new password")
+        .to_string();
+
+    // The new password works, the old one does not, and the old session is gone.
+    let (status, _) = login(&app.router, "ops", "chosen-by-ops").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = login(&app.router, "ops", "ops-password").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&old_token), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&fresh_token), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Using the same link again is refused, and does not change the password back.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": token, "new_password": "someone-elses-choice" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = login(&app.router, "ops", "chosen-by-ops").await;
+    assert_eq!(status, StatusCode::OK, "パスワードは変わっていない");
+
+    // Nothing usable comes out of a token that was never issued.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": "nonsense", "new_password": "irrelevant-password" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 /// A throttled sign-in is a 429 with `Retry-After`, so a client knows when to come back

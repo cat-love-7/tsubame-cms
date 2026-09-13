@@ -12,7 +12,7 @@ import { CollectionValue } from 'app/models/values/collection';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
-import { absolutePreviewUrl, copyToClipboard } from 'app/shared/preview-link';
+import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /**
@@ -154,7 +154,7 @@ export class Edit {
     this.notice.set('');
     this.collectionsService.createPreviewLink(this.collectionName, this.itemId as number).subscribe({
       next: async (link) => {
-        const url = absolutePreviewUrl(link.path);
+        const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
         const copied = await copyToClipboard(url);
         const expires = new Date(link.expires_at).toLocaleString();

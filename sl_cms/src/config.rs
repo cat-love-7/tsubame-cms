@@ -25,6 +25,10 @@ pub const DEFAULT_TOKEN_TTL_HOURS: i64 = 12;
 /// Default lifetime of a shareable preview link in minutes (`PREVIEW_LINK_TTL_MINUTES`).
 pub const DEFAULT_PREVIEW_LINK_TTL_MINUTES: i64 = 60;
 
+/// Default lifetime of an administrator-issued password reset link in minutes
+/// (`PASSWORD_RESET_TTL_MINUTES`).
+pub const DEFAULT_PASSWORD_RESET_TTL_MINUTES: i64 = 30;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Interface to bind. Local development defaults to loopback; deployments that need
@@ -47,6 +51,8 @@ pub struct Config {
     pub token_ttl_hours: i64,
     /// How long a signed preview link stays valid (`PREVIEW_LINK_TTL_MINUTES`).
     pub preview_link_ttl_minutes: i64,
+    /// How long an issued password reset link stays valid (`PASSWORD_RESET_TTL_MINUTES`).
+    pub password_reset_ttl_minutes: i64,
     /// Sign-in identifier for the initial administrator (`ADMIN_USERNAME`, or `ADMIN_EMAIL`
     /// as the older name of the same setting). Only consulted when the user store is still
     /// empty.
@@ -73,6 +79,7 @@ impl Default for Config {
             jwt_secret_is_ephemeral: true,
             token_ttl_hours: DEFAULT_TOKEN_TTL_HOURS,
             preview_link_ttl_minutes: DEFAULT_PREVIEW_LINK_TTL_MINUTES,
+            password_reset_ttl_minutes: DEFAULT_PASSWORD_RESET_TTL_MINUTES,
             admin_username: None,
             admin_email: None,
             admin_password: None,
@@ -154,6 +161,20 @@ impl Config {
         }
         // An identifier can be anything (see `is_plausible_username`), so the old name of this
         // setting is only a fallback: `ADMIN_EMAIL` alone still bootstraps the same account.
+        if let Ok(ttl) = std::env::var("PASSWORD_RESET_TTL_MINUTES") {
+            if !ttl.trim().is_empty() {
+                let minutes: i64 = ttl
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("invalid PASSWORD_RESET_TTL_MINUTES {ttl:?}: {e}"))?;
+                if minutes < 1 {
+                    return Err(format!(
+                        "PASSWORD_RESET_TTL_MINUTES must be at least 1 (got {minutes})"
+                    ));
+                }
+                config.password_reset_ttl_minutes = minutes;
+            }
+        }
         config.admin_username =
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
         config.admin_email = non_empty_env("ADMIN_EMAIL");
@@ -246,6 +267,10 @@ mod tests {
         assert_eq!(
             config.preview_link_ttl_minutes,
             DEFAULT_PREVIEW_LINK_TTL_MINUTES
+        );
+        assert_eq!(
+            config.password_reset_ttl_minutes,
+            DEFAULT_PASSWORD_RESET_TTL_MINUTES
         );
         // Without an explicit secret the process must know its secret is ephemeral.
         assert!(config.jwt_secret_is_ephemeral);

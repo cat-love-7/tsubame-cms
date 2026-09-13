@@ -12,6 +12,7 @@ use rkv::{Manager, Rkv};
 use crate::app_module::AppModule;
 use crate::auth::token::TokenIssuer;
 use crate::config::Config;
+use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::PreviewLinkIssuer;
 
 pub mod repository;
@@ -58,5 +59,15 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
     // can never be replayed as the other kind.
     let preview_links =
         PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes);
-    AppModule::new(repository, token_issuer, notifier, preview_links)
+    // Same secret, different prefix: a reset signature can never be replayed as a preview
+    // link, a webhook body or a token.
+    let password_resets =
+        PasswordResetIssuer::new(&config.jwt_secret, config.password_reset_ttl_minutes);
+    AppModule::new(
+        repository,
+        token_issuer,
+        notifier,
+        preview_links,
+        password_resets,
+    )
 }
