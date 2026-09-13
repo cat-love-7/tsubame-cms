@@ -10,9 +10,31 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 
-import { fieldCellStyle } from 'app/core/field-layout';
+import {
+  FIELD_ROW_UNIT,
+  MAX_FIELD_WIDTH,
+  fieldCellStyle,
+  resizeHeight,
+  resizeWidth,
+} from 'app/core/field-layout';
 import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
 import { Field } from '../field/field';
+
+/** Which edge of a tile is being dragged. */
+type ResizeAxis = 'width' | 'height';
+
+interface ResizeState {
+  field: FieldSchema;
+  axis: ResizeAxis;
+  startX: number;
+  startY: number;
+  startWidth: number;
+  startHeight: number;
+  /** Width of one grid column, in pixels. */
+  columnWidth: number;
+  /** Height of one row unit, in pixels. */
+  rowUnit: number;
+}
 
 @Component({
   selector: 'app-edit-schema',
@@ -42,6 +64,8 @@ export class EditSchema {
 
   /** Exposed for the template: places each field on the shared 12-column grid. */
   public cellStyle = fieldCellStyle;
+
+  private resizeState: ResizeState | null = null;
 
   addField() {
     this.Schema.push({
@@ -86,5 +110,69 @@ export class EditSchema {
 
   requestSave() {
     this.save.emit(this.Schema);
+  }
+
+  /**
+   * Start a resize from a tile edge.
+   *
+   * Pointer capture plus template event bindings are used (rather than window listeners)
+   * so the moves arrive through Angular's event system and still refresh the view in this
+   * zoneless application.
+   */
+  startResize(field: FieldSchema, axis: ResizeAxis, event: PointerEvent) {
+    const target = event.target as HTMLElement;
+    const grid = target.closest('.field-grid') as HTMLElement | null;
+    if (!grid) {
+      return;
+    }
+
+    // Keep the browser from selecting text while dragging.
+    event.preventDefault();
+    target.setPointerCapture?.(event.pointerId);
+
+    const rowUnit =
+      Number.parseFloat(getComputedStyle(grid).getPropertyValue('--field-row-unit')) ||
+      Number.parseFloat(FIELD_ROW_UNIT) ||
+      72;
+
+    this.resizeState = {
+      field,
+      axis,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: field.width,
+      startHeight: field.height,
+      columnWidth: grid.getBoundingClientRect().width / MAX_FIELD_WIDTH,
+      rowUnit,
+    };
+  }
+
+  onResizeMove(event: PointerEvent) {
+    const state = this.resizeState;
+    if (!state) {
+      return;
+    }
+    if (state.axis === 'width') {
+      state.field.width = resizeWidth(
+        state.startWidth,
+        event.clientX - state.startX,
+        state.columnWidth,
+      );
+    } else {
+      state.field.height = resizeHeight(
+        state.startHeight,
+        event.clientY - state.startY,
+        state.rowUnit,
+      );
+    }
+  }
+
+  endResize() {
+    if (!this.resizeState) {
+      return;
+    }
+    this.resizeState = null;
+    // A resize is a schema change like any other.
+    this.SchemaChange.emit(this.Schema);
   }
 }

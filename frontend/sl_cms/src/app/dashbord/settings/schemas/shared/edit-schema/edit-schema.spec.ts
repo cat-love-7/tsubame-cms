@@ -97,4 +97,67 @@ describe('EditSchema', () => {
     expect(cell.style.gridColumn).toBe('span 4');
     expect(cell.style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 3)');
   });
+
+  /** jsdom has no layout, so the grid is given a width and pointer capture is stubbed. */
+  function prepareResize(fresh: ComponentFixture<EditSchema>, width: number, height: number) {
+    fresh.componentInstance.Schema = [{ ...field('a'), width, height }];
+    fresh.detectChanges();
+
+    const grid = fresh.nativeElement.querySelector('.field-grid') as HTMLElement;
+    grid.getBoundingClientRect = () => ({ width: 1200 }) as unknown as DOMRect;
+
+    const handle = (selector: string) => {
+      const element = fresh.nativeElement.querySelector(selector) as HTMLElement;
+      element.setPointerCapture = () => undefined;
+      return element;
+    };
+    const pointer = (type: string, clientX: number, clientY = 0) =>
+      new MouseEvent(type, { clientX, clientY, bubbles: true });
+
+    return { handle, pointer };
+  }
+
+  it('resizes a field by dragging its right edge', () => {
+    const fresh = TestBed.createComponent(EditSchema);
+    const { handle, pointer } = prepareResize(fresh, 4, 1);
+
+    const right = handle('.resize-handle-right');
+    right.dispatchEvent(pointer('pointerdown', 0));
+    // 1200px / 12 columns = 100px each, so 200px is two columns.
+    right.dispatchEvent(pointer('pointermove', 200));
+    right.dispatchEvent(pointer('pointerup', 200));
+
+    expect(fresh.componentInstance.Schema[0].width).toBe(6);
+    expect(fresh.componentInstance.Schema[0].height).toBe(1);
+  });
+
+  it('resizes a field by dragging its bottom edge', () => {
+    const fresh = TestBed.createComponent(EditSchema);
+    const { handle, pointer } = prepareResize(fresh, 6, 1);
+
+    const bottom = handle('.resize-handle-bottom');
+    bottom.dispatchEvent(pointer('pointerdown', 0, 0));
+    // One row unit is 72px.
+    bottom.dispatchEvent(pointer('pointermove', 0, 144));
+    bottom.dispatchEvent(pointer('pointerup', 0, 144));
+
+    expect(fresh.componentInstance.Schema[0].height).toBe(3);
+    expect(fresh.componentInstance.Schema[0].width).toBe(6);
+  });
+
+  it('emits the schema once a resize ends', () => {
+    const fresh = TestBed.createComponent(EditSchema);
+    const { handle, pointer } = prepareResize(fresh, 4, 1);
+    const emitted: FieldSchema[][] = [];
+    fresh.componentInstance.SchemaChange.subscribe((schema) => emitted.push(schema));
+
+    const right = handle('.resize-handle-right');
+    right.dispatchEvent(pointer('pointerdown', 0));
+    right.dispatchEvent(pointer('pointermove', 100));
+    // Moves alone do not emit; the change is reported when the drag ends.
+    expect(emitted).toHaveLength(0);
+    right.dispatchEvent(pointer('pointerup', 100));
+
+    expect(emitted).toHaveLength(1);
+  });
 });
