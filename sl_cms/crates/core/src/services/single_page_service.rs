@@ -545,6 +545,7 @@ mod tests {
             Ok(NewImageInfo {
                 id: ImageID::from_u64(1),
                 upload_url: "/upload/1".to_string(),
+                url: "/images/1".to_string(),
             })
         }
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {

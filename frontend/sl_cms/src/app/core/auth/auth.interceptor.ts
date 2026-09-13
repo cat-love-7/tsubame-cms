@@ -5,6 +5,11 @@ import { catchError, throwError } from 'rxjs';
 
 import { AuthService } from './auth.service';
 
+/** The API prefix this application talks to, for telling our URLs from everyone else's. */
+function apiBase(): string {
+  return '/api';
+}
+
 /**
  * Attaches the bearer token to every request and signs the user out when the server
  * rejects it.
@@ -17,13 +22,18 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const router = inject(Router);
 
   const token = auth.token();
-  const authorised = token
-    ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
-    : request;
+  // Only this API gets the token. Image bytes go straight to object storage on AWS, and an
+  // `Authorization` header there would be at best ignored and at worst a signature mismatch;
+  // a rejection from S3 is not this session being over either.
+  const external = /^https?:\/\//i.test(request.url) && !request.url.startsWith(apiBase());
+  const authorised =
+    token && !external
+      ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
+      : request;
 
   return next(authorised).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status === 401) {
+      if (error.status === 401 && !external) {
         auth.clear();
         router.navigate(['/login']);
       }

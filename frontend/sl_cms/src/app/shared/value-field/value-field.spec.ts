@@ -47,7 +47,7 @@ class StubImagesService {
   };
   uploadImage = (file: File) => {
     const index = this.uploaded.push(file.name);
-    return of({ id: 100 + index, upload_url: `/images/${file.name}?key=k` });
+    return of({ id: 100 + index, upload_url: `/images/${file.name}?key=k`, url: `/images/${file.name}` });
   };
   deleteImage = () => of(void 0);
 }

@@ -13,6 +13,8 @@ export interface NewImageInfo {
   id: number;
   /** Backend-relative on-premises, or an absolute presigned URL on AWS. */
   upload_url: string;
+  /** Where the image is readable from once uploaded: what content stores. */
+  url: string;
 }
 
 /** One image in the library, as the admin screens list it. */

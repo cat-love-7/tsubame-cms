@@ -123,6 +123,7 @@ impl ImageRepository for Repository {
 
         Ok(NewImageInfo {
             upload_url: format!("/images/{}?key={}", save_file_name, upload_key),
+            url: format!("/images/{}", save_file_name),
             id: image_id,
         })
     }

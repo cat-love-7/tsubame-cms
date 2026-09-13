@@ -105,6 +105,7 @@ impl ImageRepository for AwsRepository {
         Ok(NewImageInfo {
             id: ImageID::from_u64(id),
             upload_url: request.uri().to_string(),
+            url: inner.settings.image_url(&file_name),
         })
     }
 

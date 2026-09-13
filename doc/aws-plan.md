@@ -174,6 +174,12 @@ true/false, "password_reset_links": true/false}`。
 - [x] 保存する URL は**安定 URL**(`AWS_IMAGE_BASE_URL` > S3 エンドポイントの path-style >
       `https://<bucket>.s3.<region>.amazonaws.com/<key>`)。**presigned URL はコンテンツに
       入れない**(ページに載った瞬間に期限切れになる)。署名が漏れていないこともテストで確認。
+- [x] **アップロード情報に安定 URL を載せた**(`NewImageInfo.url`)。S3 の
+      presigned URL は「署名」であって object の公開アドレスではないので、クライアントが
+      `upload_url` から導出するのは AWS では不可能だった(on-prem は `?key=` を落とすだけで
+      済んでいた)。API が返すようにしたので、フロントは両配備で同じ経路を通る。
+      インターセプタも**外部ホストには bearer を付けない**(S3 への PUT に `Authorization` を
+      足すと署名不一致になりうるし、S3 の 401 でサインアウトするのは誤り)。
 - [ ] 配信は CloudFront にするか、バケットを公開読み取りにするか(Terraform 側で決める)
       → **完了条件**: staging で画像が表示され、E2E の画像チェックが通る。
 

@@ -26,7 +26,7 @@ class StubImagesService {
 
   uploadImage = (file: File) => {
     this.uploaded.push(file.name);
-    return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png' });
+    return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png', url: '/images/second.png' });
   };
 
   deleteImage = (id: number) => {
@@ -135,7 +135,7 @@ describe('Image library', () => {
         },
         ...stub.library,
       ];
-      return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png' });
+      return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png', url: '/images/second.png' });
     };
     fixture.detectChanges();
 

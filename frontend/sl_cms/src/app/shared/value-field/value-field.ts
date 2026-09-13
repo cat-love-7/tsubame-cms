@@ -236,7 +236,9 @@ export class ValueField implements OnInit, OnChanges {
       next: (info) => {
         this.uploading.set(false);
         // Mirror the shape the API returns for an image value.
-        this.update({ id: info.id, url: info.upload_url.split('?')[0] });
+        // The stable URL, which the server knows and the client cannot derive: on AWS the
+        // upload URL names a signature, not the object's public address.
+        this.update({ id: info.id, url: info.url });
         input.value = '';
       },
       error: (e) => {
@@ -326,7 +328,7 @@ export class ValueField implements OnInit, OnChanges {
           this.updateArray([
             ...this.arrayItems(),
             // Mirror the shape an image value has.
-            ...uploaded.map((info) => ({ id: info.id, url: info.upload_url.split('?')[0] })),
+            ...uploaded.map((info) => ({ id: info.id, url: info.url })),
           ]);
         },
         error: (e) => {

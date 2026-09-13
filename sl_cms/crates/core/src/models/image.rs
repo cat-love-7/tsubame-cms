@@ -45,7 +45,15 @@ pub struct NewImageRequest{
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct NewImageInfo{
     pub id: ImageID,
+    /// Where to PUT the bytes. On-premises this points at the CMS (with a one-shot token in
+    /// the query), on AWS at S3 with a signature — either way it is **short-lived** and is not
+    /// what belongs in content.
     pub upload_url: String,
+    /// Where the image will be readable from once it is uploaded: the *stable* URL, which is
+    /// what content should store. A presigned URL in a page would expire with the page, and the
+    /// client cannot derive this one from `upload_url` on AWS (it names a signature, not the
+    /// object's public address).
+    pub url: String,
 }
 
 /// Whether `name` is safe to use as a bare file name (and, on S3, as an object key
