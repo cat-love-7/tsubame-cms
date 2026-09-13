@@ -7,6 +7,7 @@
 pub mod auth;
 pub mod collections;
 pub mod composite_fields;
+pub mod content;
 pub mod images;
 pub mod single_pages;
 
@@ -69,6 +70,9 @@ pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
         // Image bytes are public: an <img> tag cannot send an Authorization header, and
         // uploaded media is served content rather than API data.
         .merge(images::public_routes::<R>())
+        // The read-only content API a site build consumes. Published content only, so it
+        // needs no token.
+        .merge(content::routes::<R>())
         .merge(protected)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

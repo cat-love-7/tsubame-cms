@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
 import { SinglePageRepository } from 'app/repositories/schema/single_pages.repository';
@@ -37,5 +38,19 @@ export class SinglePagesService {
 
   updatePageItem(name: string, values: ContentValue): Observable<void> {
     return this.pages.updatePageItem(name, values);
+  }
+
+  // ---- draft / published ---------------------------------------------------
+
+  getPageMetadata(name: string): Observable<ItemMetadata> {
+    return this.pages.getPageMetadata(name);
+  }
+
+  publishPage(name: string): Observable<ItemMetadata> {
+    return this.pages.publishPage(name);
+  }
+
+  unpublishPage(name: string): Observable<ItemMetadata> {
+    return this.pages.unpublishPage(name);
   }
 }

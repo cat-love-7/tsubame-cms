@@ -1,18 +1,20 @@
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { BehaviorSubject, switchMap } from 'rxjs';
+import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
 import { errorMessage as message } from 'app/core/http-error';
+import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemEntry } from 'app/models/values/collection';
 import { formatFieldValue } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
+import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 
 @Component({
   selector: 'app-collection-items',
-  imports: [MatButtonModule, MatIconModule, RouterLink],
+  imports: [MatButtonModule, MatIconModule, RouterLink, ItemStatusBadge],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
@@ -24,6 +26,8 @@ export class List {
   public schema: CollectionSchema = [];
   public items: CollectionItemEntry[] = [];
   public error = signal('');
+  /** Draft/published state per item id; the server sends drafts for untouched items. */
+  public metadata: ItemMetadataMap = {};
   /** Exposed for the template. */
   public format = formatFieldValue;
 
@@ -36,12 +40,43 @@ export class List {
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
     });
 
+    // Items and their status are fetched together: the table shows both in the same row.
     this.refresh
-      .pipe(switchMap(() => this.collectionsService.listCollectionItems(this.collectionName)))
+      .pipe(
+        switchMap(() =>
+          forkJoin({
+            items: this.collectionsService.listCollectionItems(this.collectionName),
+            metadata: this.collectionsService.listItemMetadata(this.collectionName),
+          }),
+        ),
+      )
       .subscribe({
-        next: (items) => (this.items = items),
+        next: ({ items, metadata }) => {
+          this.items = items;
+          this.metadata = metadata;
+        },
         error: (e) => this.error.set(`Failed to load the items: ${message(e)}`),
       });
+  }
+
+  statusOf(id: number): ItemStatus {
+    return this.metadata[String(id)]?.status ?? 'draft';
+  }
+
+  /** Publish or unpublish one item, without leaving the list. */
+  togglePublished(id: number) {
+    const request =
+      this.statusOf(id) === 'published'
+        ? this.collectionsService.unpublishItem(this.collectionName, id)
+        : this.collectionsService.publishItem(this.collectionName, id);
+
+    request.subscribe({
+      next: (metadata) => {
+        this.error.set('');
+        this.metadata = { ...this.metadata, [String(id)]: metadata };
+      },
+      error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
+    });
   }
 
   delete(id: number) {

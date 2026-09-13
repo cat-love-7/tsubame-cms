@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemEntry, CollectionValue } from 'app/models/values/collection';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
@@ -45,5 +46,23 @@ export class CollectionsService {
 
   deleteCollectionItem(name: string, id: number): Observable<void> {
     return this.collectionRepository.deleteCollectionItem(name, id);
+  }
+
+  // ---- draft / published ---------------------------------------------------
+
+  listItemMetadata(name: string): Observable<ItemMetadataMap> {
+    return this.collectionRepository.listItemMetadata(name);
+  }
+
+  getItemMetadata(name: string, id: number): Observable<ItemMetadata> {
+    return this.collectionRepository.getItemMetadata(name, id);
+  }
+
+  publishItem(name: string, id: number): Observable<ItemMetadata> {
+    return this.collectionRepository.publishItem(name, id);
+  }
+
+  unpublishItem(name: string, id: number): Observable<ItemMetadata> {
+    return this.collectionRepository.unpublishItem(name, id);
   }
 }

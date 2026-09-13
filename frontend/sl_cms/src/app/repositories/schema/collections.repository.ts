@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
+import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
 import { CollectionItemEntry, CollectionValue } from 'app/models/values/collection';
 
 /**
@@ -52,5 +53,29 @@ export class CollectionRepository {
 
   deleteCollectionItem(name: string, id: number): Observable<void> {
     return this.http.delete<void>(`/api/models/collections/${name}/items/${id}`);
+  }
+
+  // ---- draft / published ---------------------------------------------------
+  // Status lives outside the item values, so it never collides with a schema field.
+
+  /** Status of every item, keyed by id. Items that were never published are drafts. */
+  listItemMetadata(name: string): Observable<ItemMetadataMap> {
+    return this.http.get<ItemMetadataMap>(`/api/models/collections/${name}/items/metadata`);
+  }
+
+  getItemMetadata(name: string, id: number): Observable<ItemMetadata> {
+    return this.http.get<ItemMetadata>(`/api/models/collections/${name}/items/${id}/metadata`);
+  }
+
+  /** Makes the item visible in the public content API. */
+  publishItem(name: string, id: number): Observable<ItemMetadata> {
+    return this.http.post<ItemMetadata>(`/api/models/collections/${name}/items/${id}/publish`, null);
+  }
+
+  unpublishItem(name: string, id: number): Observable<ItemMetadata> {
+    return this.http.post<ItemMetadata>(
+      `/api/models/collections/${name}/items/${id}/unpublish`,
+      null,
+    );
   }
 }

@@ -3,11 +3,13 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use std::collections::HashMap;
 
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
+use crate::models::item_status::{ItemMetadata, ItemStatus};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -26,6 +28,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/collections/{collection_name}/items",
             get(get_collection_items::<R>),
         )
+        // Static segment registered alongside `{id}`; axum prefers the static one.
+        .route(
+            "/models/collections/{collection_name}/items/metadata",
+            get(get_collection_items_metadata::<R>),
+        )
         .route(
             "/models/collections/{collection_name}/item",
             post(add_collection_item::<R>),
@@ -36,6 +43,72 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
                 .put(update_collection_item::<R>)
                 .delete(delete_collection_item::<R>),
         )
+        .route(
+            "/models/collections/{collection_name}/items/{id}/metadata",
+            get(get_collection_item_metadata::<R>),
+        )
+        .route(
+            "/models/collections/{collection_name}/items/{id}/publish",
+            post(publish_collection_item::<R>),
+        )
+        .route(
+            "/models/collections/{collection_name}/items/{id}/unpublish",
+            post(unpublish_collection_item::<R>),
+        )
+}
+
+/// Status of every item, keyed by id so a client can line it up with the item list.
+async fn get_collection_items_metadata<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(collection_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let metadata: HashMap<String, ItemMetadata> = module
+        .collection_service
+        .list_item_metadata(&name)?
+        .into_iter()
+        .map(|(id, metadata)| (id.to_string(), metadata))
+        .collect();
+    Ok(Json(metadata))
+}
+
+async fn get_collection_item_metadata<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    Ok(Json(module.collection_service.get_item_metadata(
+        &name,
+        CollectionItemId::from_u64(id),
+    )?))
+}
+
+async fn publish_collection_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    set_collection_item_status(module, collection_name, id, ItemStatus::Published).await
+}
+
+async fn unpublish_collection_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    set_collection_item_status(module, collection_name, id, ItemStatus::Draft).await
+}
+
+async fn set_collection_item_status<R: Storage>(
+    module: AppState<R>,
+    collection_name: String,
+    id: u64,
+    status: ItemStatus,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    Ok(Json(
+        module
+            .collection_service
+            .set_item_status(&name, CollectionItemId::from_u64(id), status)?,
+    ))
 }
 
 async fn get_collections<R: Storage>(

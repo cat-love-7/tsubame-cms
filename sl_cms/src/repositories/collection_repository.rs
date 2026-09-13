@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
+use crate::models::item_status::ItemMetadata;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
@@ -14,4 +15,10 @@ pub trait CollectionRepository:Send + Sync + 'static {
     fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> Result<u64, BoxError>;
     fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), BoxError>;
     fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), BoxError>;
+
+    // Draft/published metadata, kept out of the item's values so a schema field may be
+    // named `status` without colliding. Absent metadata means "draft".
+    fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, BoxError>;
+    fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), BoxError>;
+    fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>;
 }

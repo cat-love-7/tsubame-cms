@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
 
@@ -42,5 +43,19 @@ export class SinglePageRepository {
 
   updatePageItem(name: string, values: ContentValue): Observable<void> {
     return this.http.put<void>(`/api/models/single_pages/${name}/item`, values);
+  }
+
+  // ---- draft / published ---------------------------------------------------
+
+  getPageMetadata(name: string): Observable<ItemMetadata> {
+    return this.http.get<ItemMetadata>(`/api/models/single_pages/${name}/item/metadata`);
+  }
+
+  publishPage(name: string): Observable<ItemMetadata> {
+    return this.http.post<ItemMetadata>(`/api/models/single_pages/${name}/publish`, null);
+  }
+
+  unpublishPage(name: string): Observable<ItemMetadata> {
+    return this.http.post<ItemMetadata>(`/api/models/single_pages/${name}/unpublish`, null);
   }
 }

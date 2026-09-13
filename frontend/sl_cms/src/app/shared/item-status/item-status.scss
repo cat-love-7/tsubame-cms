@@ -1,0 +1,20 @@
+:host {
+  display: inline-block;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--mat-sys-surface-variant, #eee);
+  color: var(--mat-sys-on-surface-variant, #555);
+}
+
+/* Draft is the common case, so only the exceptional state gets a colour. */
+.badge.published {
+  background: #e6f4ea;
+  color: #1e6b32;
+}

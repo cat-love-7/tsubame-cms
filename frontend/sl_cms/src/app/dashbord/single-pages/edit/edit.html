@@ -1,5 +1,11 @@
 <div class="toolbar">
   <h2>{{ pageName }}</h2>
+  @if (metadata(); as meta) {
+    <app-item-status [status]="meta.status" />
+    <button matButton (click)="togglePublished()">
+      {{ published() ? 'Unpublish' : 'Publish' }}
+    </button>
+  }
   <span class="spacer"></span>
   <button matButton [routerLink]="['/settings/single-pages', pageName, 'schema']">Edit schema</button>
   <button matButton [routerLink]="['/settings/single-pages']">All pages</button>

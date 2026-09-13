@@ -2,8 +2,16 @@ use std::{fmt::{Debug, Display}, hash::Hash, ops::Deref};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Default)]
+/// A numeric id.
+///
+/// `Copy` is implemented by hand instead of derived: `#[derive(Copy)]` would add a
+/// `T: Copy` bound, but the only thing held about `T` is `PhantomData<fn() -> T>`, which is
+/// `Copy` for every `T`. Deriving silently makes `CollectionItemId` (whose `T` is a `Vec`)
+/// non-`Copy`, which is not intended.
+#[derive(Default)]
 pub struct UintId<T>(u64, std::marker::PhantomData<fn() -> T>);
+
+impl<T> Copy for UintId<T> {}
 
 impl<T> PartialEq for UintId<T> {
     fn eq(&self, other: &Self) -> bool {

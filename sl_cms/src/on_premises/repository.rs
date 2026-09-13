@@ -10,6 +10,27 @@ pub mod single_page_repository;
 pub mod image_repository;
 pub mod user_repository;
 
+/// Store holding draft/published metadata, keyed per item.
+///
+/// Kept apart from the item's values so nothing has to be migrated when this grows, and
+/// so a schema field may be named `status` without colliding.
+pub(crate) const METADATA_STORE: &str = "item_metadata";
+
+/// Metadata key for one item of a collection.
+pub(crate) fn collection_item_metadata_key(collection_name: &str, item_id: u64) -> String {
+    format!("collection:{collection_name}:{item_id}")
+}
+
+/// Prefix shared by every item of one collection, so a range scan can find them.
+pub(crate) fn collection_metadata_prefix(collection_name: &str) -> String {
+    format!("collection:{collection_name}:")
+}
+
+/// Metadata key for a single page.
+pub(crate) fn page_metadata_key(page_name: &str) -> String {
+    format!("page:{page_name}")
+}
+
 pub struct Repository {
     pub rkv: Arc<RwLock<Rkv<SafeModeEnvironment>>>,
     pub counter_store: SingleStore<SafeModeDatabase>,

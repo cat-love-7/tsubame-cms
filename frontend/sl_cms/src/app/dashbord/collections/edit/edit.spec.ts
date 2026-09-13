@@ -1,36 +1,82 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ActivatedRoute } from '@angular/router';
 import { provideRouter } from '@angular/router';
+import { Observable, of } from 'rxjs';
+
+import { ItemMetadata } from 'app/models/item-status';
+import { CollectionsService } from 'app/services/schema/collections.service';
 
 import { Edit } from './edit';
 
+class StubCollectionsService {
+  public published: number[] = [];
+  public unpublished: number[] = [];
+  public metadata: ItemMetadata = { status: 'draft', published_at: null };
+
+  getCollectionSchema(): Observable<unknown> {
+    return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
+  }
+
+  getCollectionItem(): Observable<unknown> {
+    return of({ title: 'Hello' });
+  }
+
+  getItemMetadata(): Observable<ItemMetadata> {
+    return of(this.metadata);
+  }
+
+  publishItem(_name: string, id: number): Observable<ItemMetadata> {
+    this.published.push(id);
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z' });
+  }
+
+  unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
+    this.unpublished.push(id);
+    return of({ status: 'draft', published_at: null });
+  }
+}
+
+function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
+  const button = Array.from(element.querySelectorAll('button')).find((candidate) =>
+    candidate.textContent?.includes(label),
+  );
+  if (!button) {
+    throw new Error(`no button labelled "${label}"`);
+  }
+  return button as HTMLButtonElement;
+}
+
 describe('Edit', () => {
-  let component: Edit;
-  let fixture: ComponentFixture<Edit>;
+  let stub: StubCollectionsService;
 
   beforeEach(async () => {
+    stub = new StubCollectionsService();
     await TestBed.configureTestingModule({
       imports: [Edit],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
-
-    fixture = TestBed.createComponent(Edit);
-    component = fixture.componentInstance;
-    await fixture.whenStable();
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        // Editing item 7 of the `blog` collection.
+        { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'blog', id: '7' } } } },
+        { provide: CollectionsService, useValue: stub },
+      ],
+    }).compileComponents();
   });
 
   it('should create', () => {
+    const fixture = TestBed.createComponent(Edit);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
     expect(component).toBeTruthy();
   });
 
   // The schema's width/height used to be ignored here entirely, which made the layout
   // shown by the schema editor meaningless.
   it('lays fields out using the width and height from the schema', () => {
-    // A fresh fixture: the shared one has already been change-detected, and mutating
-    // component state afterwards trips the dev-mode ExpressionChangedAfterItHasBeenChecked
-    // check.
     const fresh = TestBed.createComponent(Edit);
     fresh.componentInstance.schema = [
       { name: 'a', field_type: 'Number', required: false, width: 6, height: 2 },
@@ -58,5 +104,60 @@ describe('Edit', () => {
     component.save();
 
     expect(component.error()).toContain('invalid JSON');
+  });
+
+  it('publishes the item it is editing without saving the form', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    const badge = fresh.nativeElement.querySelector('app-item-status .badge') as HTMLElement;
+    expect(badge.textContent?.trim()).toBe('Draft');
+
+    publishButton(fresh.nativeElement, 'Publish').click();
+    fresh.detectChanges();
+
+    expect(stub.published).toEqual([7]);
+    expect(fresh.componentInstance.published()).toBe(true);
+    expect(fresh.nativeElement.querySelector('app-item-status .badge').textContent?.trim()).toBe(
+      'Published',
+    );
+    // The control now offers the opposite action.
+    expect(publishButton(fresh.nativeElement, 'Unpublish')).toBeTruthy();
+  });
+
+  it('unpublishes an item that is currently published', () => {
+    stub.metadata = { status: 'published', published_at: '2024-01-01T00:00:00Z' };
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    publishButton(fresh.nativeElement, 'Unpublish').click();
+    fresh.detectChanges();
+
+    expect(stub.unpublished).toEqual([7]);
+    expect(fresh.componentInstance.published()).toBe(false);
+  });
+});
+
+describe('Edit (new item)', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [Edit],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'blog' } } } },
+        { provide: CollectionsService, useValue: new StubCollectionsService() },
+      ],
+    }).compileComponents();
+  });
+
+  /** There is no status to show until the item exists on the server. */
+  it('offers no publish control before the item is saved', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    expect(fresh.componentInstance.isNew).toBe(true);
+    expect(fresh.nativeElement.querySelector('app-item-status')).toBeNull();
   });
 });

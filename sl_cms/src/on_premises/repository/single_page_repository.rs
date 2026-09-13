@@ -1,5 +1,6 @@
+use crate::models::item_status::ItemMetadata;
 use crate::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
-use crate::on_premises::repository::Repository;
+use crate::on_premises::repository::{page_metadata_key, Repository, METADATA_STORE};
 use crate::repositories::single_page_repository::SinglePageRepository;
 use rkv::{StoreOptions, Value};
 use std::error::Error;
@@ -42,13 +43,44 @@ impl SinglePageRepository for Repository {
     fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("single_page_schema", StoreOptions::create())?;
-        let mut writer = env.write()?;
-        store.delete(&mut writer, page_name.as_bytes())?;
         let item_store = env.open_single("single_page_item", StoreOptions::create())?;
+        // Opened before the transactions: LMDB rejects a database handle created after
+        // the transaction that uses it began.
+        let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let mut writer = env.write()?;
+        let reader = env.read()?;
+        store.delete(&mut writer, page_name.as_bytes())?;
         item_store.delete(&mut writer, &page_name.as_bytes())?;
         // Single pages have no id counter (no item-creation path exists), so there is
         // deliberately nothing to remove from `counter_store` here. Deleting an absent
         // key would fail with "key/value pair not found" and surface as a 500.
+        //
+        // The metadata record may legitimately not exist (never published).
+        let metadata_key = page_metadata_key(page_name.as_str());
+        if metadata_store.get(&reader, metadata_key.as_bytes())?.is_some() {
+            metadata_store.delete(&mut writer, metadata_key.as_bytes())?;
+        }
+        writer.commit()?;
+        Ok(())
+    }
+
+    fn get_page_metadata(&self, page_name: &SinglePageName) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let key = page_metadata_key(page_name.as_str());
+        match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            _ => Ok(None),
+        }
+    }
+
+    fn set_page_metadata(&self, page_name: &SinglePageName, metadata: &ItemMetadata) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let key = page_metadata_key(page_name.as_str());
+        let mut writer = env.write()?;
+        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(metadata)?))?;
         writer.commit()?;
         Ok(())
     }

@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
+use crate::models::item_status::{ItemMetadata, ItemStatus};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -340,6 +341,148 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         CollectionItem::from_untyped(body, &composite_schemas, &schema)
             .map_err(|e| HttpError::BadRequest(&e))
     }
+
+    // ---- draft / published ---------------------------------------------------
+
+    /// Draft/published state of one item.
+    ///
+    /// Absent metadata means "draft": an item that was never published is not an error.
+    pub fn get_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<ItemMetadata, HttpError> {
+        self.require_item(collection_name, &item_id)?;
+        Ok(self
+            .collection_repository
+            .get_item_metadata(collection_name, &item_id)
+            .map_err(map_internal_error)?
+            .unwrap_or_default())
+    }
+
+    /// Metadata for every item, so the admin list can show a status for items that were
+    /// never published (those have no stored record).
+    pub fn list_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, ItemMetadata)>, HttpError> {
+        let stored: HashMap<CollectionItemId, ItemMetadata> = self
+            .collection_repository
+            .list_item_metadata(collection_name)
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
+        let items = self
+            .collection_repository
+            .list_collection_items(collection_name)
+            .map_err(map_internal_error)?;
+        Ok(items
+            .into_iter()
+            .map(|(id, _)| {
+                let metadata = stored.get(&id).cloned().unwrap_or_default();
+                (id, metadata)
+            })
+            .collect())
+    }
+
+    /// Publish or unpublish one item, recording when it was published.
+    pub fn set_item_status(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+        status: ItemStatus,
+    ) -> Result<ItemMetadata, HttpError> {
+        self.require_item(collection_name, &item_id)?;
+        let metadata = ItemMetadata::with_status(status);
+        self.collection_repository
+            .set_item_metadata(collection_name, &item_id, &metadata)
+            .map_err(map_internal_error)?;
+        Ok(metadata)
+    }
+
+    /// Items visible to the public delivery API, with the metadata it reports.
+    pub fn list_published_items(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, ItemMetadata, CollectionItemResponse)>, HttpError> {
+        let metadata: HashMap<CollectionItemId, ItemMetadata> =
+            self.list_item_metadata(collection_name)?.into_iter().collect();
+
+        let mut published = Vec::new();
+        for (id, values) in self.get_collection_items(collection_name)? {
+            if let Some(metadata) = metadata.get(&id) {
+                if metadata.is_published() {
+                    published.push((id, metadata.clone(), values));
+                }
+            }
+        }
+        Ok(published)
+    }
+
+    /// One item, but only if it is published.
+    ///
+    /// A draft answers "not found" rather than "forbidden", so the delivery API does not
+    /// reveal that unpublished content exists.
+    pub fn get_published_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<(ItemMetadata, CollectionItemResponse), HttpError> {
+        let metadata = self.get_item_metadata(collection_name, item_id)?;
+        if !metadata.is_published() {
+            return Err(HttpError::NotFound(&format!(
+                "Item with id '{}' not found in collection '{}'",
+                item_id, collection_name
+            )));
+        }
+        Ok((metadata, self.get_collection_item(collection_name, item_id)?))
+    }
+
+    /// Collections that have at least one published item.
+    pub fn list_collections_with_published_items(
+        &self,
+    ) -> Result<Vec<CollectionName>, HttpError> {
+        let mut names = Vec::new();
+        for name in self.get_all_collections()? {
+            if !self.published_item_ids(&name)?.is_empty() {
+                names.push(name);
+            }
+        }
+        Ok(names)
+    }
+
+    fn published_item_ids(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<HashSet<CollectionItemId>, HttpError> {
+        Ok(self
+            .collection_repository
+            .list_item_metadata(collection_name)
+            .map_err(map_internal_error)?
+            .into_iter()
+            .filter(|(_, metadata)| metadata.is_published())
+            .map(|(id, _)| id)
+            .collect())
+    }
+
+    fn require_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<(), HttpError> {
+        if self
+            .collection_repository
+            .get_collection_item(collection_name, item_id)
+            .map_err(map_internal_error)?
+            .is_none()
+        {
+            return Err(HttpError::NotFound(&format!(
+                "Item with id '{}' not found in collection '{}'",
+                item_id, collection_name
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -360,6 +503,7 @@ mod tests {
         schemas: Arc<RwLock<HashMap<CollectionName, CollectionSchema>>>,
         items: Arc<RwLock<HashMap<CollectionName, HashMap<CollectionItemId, CollectionItem>>>>,
         item_counter: Arc<RwLock<u64>>,
+        item_metadata: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), ItemMetadata>>>,
     }
     impl CollectionRepository for MockCollectionRepository {
         fn get_collection_schema(
@@ -387,6 +531,7 @@ mod tests {
             collection_name: &CollectionName,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             self.schemas.write().unwrap().remove(collection_name);
+            self.item_metadata.write().unwrap().retain(|(name, _), _| name != collection_name);
             Ok(())
         }
         fn list_collection_items(
@@ -444,7 +589,49 @@ mod tests {
             if let Some(items_map) = self.items.write().unwrap().get_mut(collection_name) {
                 items_map.remove(item_id);
             }
+            self.item_metadata
+                .write()
+                .unwrap()
+                .remove(&(collection_name.clone(), item_id.clone()));
             Ok(())
+        }
+        fn get_item_metadata(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+        ) -> Result<Option<ItemMetadata>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self
+                .item_metadata
+                .read()
+                .unwrap()
+                .get(&(collection_name.clone(), item_id.clone()))
+                .cloned())
+        }
+        fn set_item_metadata(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            metadata: &ItemMetadata,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.item_metadata
+                .write()
+                .unwrap()
+                .insert((collection_name.clone(), item_id.clone()), metadata.clone());
+            Ok(())
+        }
+        fn list_item_metadata(
+            &self,
+            collection_name: &CollectionName,
+        ) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
+            Ok(self
+                .item_metadata
+                .read()
+                .unwrap()
+                .iter()
+                .filter(|((name, _), _)| name == collection_name)
+                .map(|((_, id), metadata)| (id.clone(), metadata.clone()))
+                .collect())
         }
     }
 
@@ -524,6 +711,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -715,6 +903,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -746,6 +935,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -773,6 +963,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -793,6 +984,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -825,6 +1017,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -851,6 +1044,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -891,6 +1085,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -920,6 +1115,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(2)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -955,6 +1151,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -978,6 +1175,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

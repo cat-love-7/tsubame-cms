@@ -1,14 +1,16 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 
 import { fieldCellStyle } from 'app/core/field-layout';
 import { errorMessage as message } from 'app/core/http-error';
+import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { CollectionValue } from 'app/models/values/collection';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
+import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /**
@@ -18,10 +20,13 @@ import { ValueField } from 'app/shared/value-field/value-field';
  * each field type needs and owns its own input state. Values are sent **without type
  * tags**, and fields this editor cannot edit yet (composite fields) keep whatever the
  * server sent so saving never silently discards them.
+ *
+ * Publishing is separate from saving: an item may be edited any number of times while it
+ * stays a draft, and only publishing makes it visible to the public content API.
  */
 @Component({
   selector: 'app-item-edit',
-  imports: [RouterLink, MatButtonModule, ValueField],
+  imports: [RouterLink, MatButtonModule, ItemStatusBadge, ValueField],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
@@ -40,6 +45,9 @@ export class Edit {
   public schema: CollectionSchema = [];
   public values: CollectionValue = {};
   public error = signal('');
+  /** Draft/published state; `null` for an item that has not been saved yet. */
+  public metadata = signal<ItemMetadata | null>(null);
+  public published = computed(() => this.metadata()?.status === 'published');
   /** Places each field on the shared 12-column grid, mirroring the schema editor. */
   public cellStyle = fieldCellStyle;
 
@@ -58,6 +66,7 @@ export class Edit {
           this.values = withDefaults(schema, {});
         } else {
           this.loadItem(schema, this.itemId);
+          this.loadMetadata(this.itemId);
         }
       },
       error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
@@ -68,6 +77,33 @@ export class Edit {
     this.collectionsService.getCollectionItem(this.collectionName, id).subscribe({
       next: (values) => (this.values = withDefaults(schema, values)),
       error: (e) => this.error.set(`Failed to load the item: ${message(e)}`),
+    });
+  }
+
+  private loadMetadata(id: number) {
+    this.collectionsService.getItemMetadata(this.collectionName, id).subscribe({
+      next: (metadata) => this.metadata.set(metadata),
+      error: (e) => this.error.set(`Failed to load the published state: ${message(e)}`),
+    });
+  }
+
+  /** Publish or unpublish without saving the form (the two are independent acts). */
+  togglePublished() {
+    const id = this.itemId;
+    if (id === null) {
+      return;
+    }
+
+    const request = this.published()
+      ? this.collectionsService.unpublishItem(this.collectionName, id)
+      : this.collectionsService.publishItem(this.collectionName, id);
+
+    request.subscribe({
+      next: (metadata) => {
+        this.error.set('');
+        this.metadata.set(metadata);
+      },
+      error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
     });
   }
 

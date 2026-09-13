@@ -1,5 +1,13 @@
 <div class="toolbar">
   <h2>{{ isNew ? 'New item' : 'Edit item' }} — {{ collectionName }}</h2>
+  <!-- A new item has no status until it has been saved, so the control appears only once
+       the server knows the item. -->
+  @if (metadata(); as meta) {
+    <app-item-status [status]="meta.status" />
+    <button matButton (click)="togglePublished()">
+      {{ published() ? 'Unpublish' : 'Publish' }}
+    </button>
+  }
   <span class="spacer"></span>
   <button matButton [routerLink]="['/collections', collectionName]">Cancel</button>
 </div>

@@ -6,3 +6,4 @@ pub mod error;
 pub mod user;
 pub mod identity;
 pub mod image;
+pub mod item_status;

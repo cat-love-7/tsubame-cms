@@ -170,7 +170,7 @@ async fn root_is_public_and_unknown_routes_404_rather_than_401() {
 // ------------------------------------------------------------------------ authentication
 
 #[tokio::test]
-async fn content_routes_require_a_bearer_token() {
+async fn model_routes_require_a_bearer_token() {
     let app = test_app().await;
 
     let (status, _) = send_raw(&app.router, Method::GET, "/models/collections", None, None).await;
@@ -971,4 +971,397 @@ async fn cors_allows_only_configured_origins() {
         .headers()
         .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
         .is_none());
+}
+
+// ------------------------------------------------------------------- draft / published
+
+/// Nothing is public until it is published, and unpublishing hides it again.
+#[tokio::test]
+async fn only_published_collection_items_reach_the_content_api() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    for title in ["First", "Second"] {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/models/collections/blog/item",
+            Some(&token),
+            Some(json!({ "title": title, "tags": [] })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Both items are drafts: the collection is served, but empty, and it is not advertised
+    // by the index route at all.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["schema"][0]["name"], "title");
+    assert_eq!(body["items"], json!([]));
+
+    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+
+    // A draft answers 404 rather than 403, so the delivery API does not confirm that
+    // unpublished content exists.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // The admin side still reports a status for every item, defaults included.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items/1/metadata",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body["published_at"], Value::Null);
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/blog/items/metadata",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["1"]["status"], "draft");
+    assert_eq!(body["2"]["status"], "draft");
+
+    // Publish the first item.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/1/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "published");
+    assert!(
+        body["published_at"].is_string(),
+        "publishing must record a timestamp: {body}"
+    );
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["id"], 1);
+    assert_eq!(body["values"]["title"], "First");
+    assert!(body["published_at"].is_string());
+    // Values are untyped, but a single item is fetched by a client that already knows the
+    // schema, so only the list route carries it.
+    assert!(body.get("schema").is_none());
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["items"][0]["values"]["title"], "First");
+    // The second item stays a draft inside the same collection.
+    assert_eq!(body["items"][0]["id"], 1);
+
+    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!(["blog"]));
+
+    // Publishing something that does not exist is a 404, not a silent success.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/99/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Unpublishing removes it from the public API and forgets the timestamp.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/1/unpublish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body["published_at"], Value::Null);
+
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+
+    // Deleting a published item must not leave its status behind either: the collection
+    // index goes empty with it.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/1/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        "/models/collections/blog/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+}
+
+#[tokio::test]
+async fn only_published_single_pages_reach_the_content_api() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "title": "Home", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(&app.router, Method::GET, "/content/single-pages", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/single_pages/home/item/metadata",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "draft");
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "published");
+
+    let (status, body) = send(&app.router, Method::GET, "/content/single-pages", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!(["home"]));
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Home");
+    assert_eq!(body["schema"][0]["name"], "title");
+    assert!(body["published_at"].is_string());
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/unpublish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Deleting a published page removes its metadata, so recreating the same name starts
+    // out hidden again.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        "/models/single_pages/home",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "title": "Home again", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, "/content/single-pages", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!([]));
+}
+
+/// Publishing is a write, so a read-only account cannot do it.
+#[tokio::test]
+async fn publishing_requires_edit_permission() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "Hello", "tags": [] })),
+    )
+    .await;
+
+    assert_eq!(
+        create_user(&app, VIEWER_EMAIL, VIEWER_PASSWORD, false).await,
+        StatusCode::CREATED
+    );
+    let (status, body) = login(&app.router, VIEWER_EMAIL, VIEWER_PASSWORD).await;
+    assert_eq!(status, StatusCode::OK);
+    let viewer_token = body["token"].as_str().unwrap().to_string();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/1/publish",
+        Some(&viewer_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // The public route stays reachable without a token.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
