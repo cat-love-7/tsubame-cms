@@ -3,6 +3,11 @@
 //! The routers here are deliberately storage-agnostic: they only touch `AppModule`'s
 //! services, so the same routes serve the on-premises adapter locally and the DynamoDB +
 //! S3 adapter on AWS Lambda.
+//!
+//! Mutating endpoints answer `200 OK` with an **empty body**. The Angular client asks for
+//! JSON and parses any non-empty body as JSON, so the human-readable "… successfully"
+//! strings these routes used to return made a successful save or delete look like a failed
+//! request to the only client there is.
 
 pub mod auth;
 pub mod collections;

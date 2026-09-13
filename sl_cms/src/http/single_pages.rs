@@ -97,7 +97,7 @@ async fn add_single_page_schema<R: Storage>(
     module
         .single_page_service
         .add_single_page_schema(&name, &schema)?;
-    Ok((StatusCode::OK, "Single page schema added successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn update_single_page_schema<R: Storage>(
@@ -109,7 +109,7 @@ async fn update_single_page_schema<R: Storage>(
     module
         .single_page_service
         .update_single_page_schema(&name, &schema)?;
-    Ok((StatusCode::OK, "Single page schema updated successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn delete_single_page<R: Storage>(
@@ -118,7 +118,7 @@ async fn delete_single_page<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     module.single_page_service.delete_single_page(&name)?;
-    Ok((StatusCode::OK, "Single page schema deleted successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn get_single_page_item<R: Storage>(
@@ -140,5 +140,5 @@ async fn update_single_page_item<R: Storage>(
     module
         .single_page_service
         .update_single_page_item_from_json(&name, &body)?;
-    Ok((StatusCode::OK, "Single page item updated successfully"))
+    Ok(StatusCode::OK)
 }

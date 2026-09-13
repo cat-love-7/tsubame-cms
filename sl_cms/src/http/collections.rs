@@ -137,7 +137,7 @@ async fn add_collection_schema<R: Storage>(
     module
         .collection_service
         .add_collection_schema(&name, &schema)?;
-    Ok((StatusCode::OK, "Collection schema added successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn update_collection_schema<R: Storage>(
@@ -149,7 +149,7 @@ async fn update_collection_schema<R: Storage>(
     module
         .collection_service
         .update_collection_schema(&name, &schema)?;
-    Ok((StatusCode::OK, "Collection schema updated successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn delete_collection<R: Storage>(
@@ -158,7 +158,7 @@ async fn delete_collection<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
     module.collection_service.delete_collection(&name)?;
-    Ok((StatusCode::OK, "Collection deleted successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn get_collection_items<R: Storage>(
@@ -216,7 +216,7 @@ async fn update_collection_item<R: Storage>(
         CollectionItemId::from_u64(id),
         &body,
     )?;
-    Ok((StatusCode::OK, "Collection item updated successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn delete_collection_item<R: Storage>(
@@ -227,5 +227,5 @@ async fn delete_collection_item<R: Storage>(
     module
         .collection_service
         .delete_collection_item(&name, CollectionItemId::from_u64(id))?;
-    Ok((StatusCode::OK, "Collection item deleted successfully"))
+    Ok(StatusCode::OK)
 }

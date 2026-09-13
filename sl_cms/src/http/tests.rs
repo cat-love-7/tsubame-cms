@@ -1481,6 +1481,76 @@ async fn wait_for_webhooks(
     );
 }
 
+/// Assert that a mutating call succeeded *and* answered with no body.
+///
+/// The browser client parses every non-empty body as JSON, so a plain-text acknowledgement
+/// is indistinguishable from a failure for it.
+async fn expect_empty_body(
+    app: &TestApp,
+    token: &str,
+    method: Method,
+    uri: &str,
+    body: Option<Value>,
+) {
+    let (status, bytes) = send_raw(&app.router, method.clone(), uri, Some(token), body).await;
+    assert_eq!(status, StatusCode::OK, "{method} {uri}");
+    assert!(
+        bytes.is_empty(),
+        "{method} {uri} answered with a body: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+}
+
+/// Mutations answer with an empty body on purpose; see [`expect_empty_body`].
+#[tokio::test]
+async fn mutations_answer_with_an_empty_body() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let schema = sample_schema();
+
+    expect_empty_body(&app, &token, Method::POST, "/models/collections/blog/schema", Some(schema.clone())).await;
+    expect_empty_body(&app, &token, Method::PUT, "/models/collections/blog/schema", Some(schema.clone())).await;
+
+    // Creating an item answers with its id, so it is checked separately from the mutations.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "Hello", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = body.as_u64().expect("the item id");
+
+    expect_empty_body(
+        &app,
+        &token,
+        Method::PUT,
+        &format!("/models/collections/blog/items/{id}"),
+        Some(json!({ "title": "Edited", "tags": [] })),
+    )
+    .await;
+    expect_empty_body(&app, &token, Method::DELETE, &format!("/models/collections/blog/items/{id}"), None).await;
+    expect_empty_body(&app, &token, Method::DELETE, "/models/collections/blog", None).await;
+
+    expect_empty_body(&app, &token, Method::POST, "/models/single_pages/home/schema", Some(schema.clone())).await;
+    expect_empty_body(&app, &token, Method::PUT, "/models/single_pages/home/schema", Some(schema.clone())).await;
+    expect_empty_body(
+        &app,
+        &token,
+        Method::PUT,
+        "/models/single_pages/home/item",
+        Some(json!({ "title": "Home", "tags": [] })),
+    )
+    .await;
+    expect_empty_body(&app, &token, Method::DELETE, "/models/single_pages/home", None).await;
+
+    expect_empty_body(&app, &token, Method::POST, "/models/composite_fields/seo", Some(schema.clone())).await;
+    expect_empty_body(&app, &token, Method::PUT, "/models/composite_fields/seo", Some(schema.clone())).await;
+    expect_empty_body(&app, &token, Method::DELETE, "/models/composite_fields/seo", None).await;
+}
+
 /// Create `collection` with one item and return the new item's id.
 async fn create_sample_item(app: &TestApp, collection: &str) -> u64 {
     let (status, _) = send(

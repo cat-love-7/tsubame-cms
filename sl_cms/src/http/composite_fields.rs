@@ -52,7 +52,7 @@ async fn add_composite_field_schema<R: Storage>(
     module
         .composite_field_service
         .add_composite_field_schema(&id, &schema)?;
-    Ok((StatusCode::OK, "Composite field schema added successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn update_composite_field_schema<R: Storage>(
@@ -64,7 +64,7 @@ async fn update_composite_field_schema<R: Storage>(
     module
         .composite_field_service
         .update_composite_field_schema(&id, &schema)?;
-    Ok((StatusCode::OK, "Composite field schema updated successfully"))
+    Ok(StatusCode::OK)
 }
 
 async fn delete_composite_field_schema<R: Storage>(
@@ -75,5 +75,5 @@ async fn delete_composite_field_schema<R: Storage>(
     module
         .composite_field_service
         .delete_composite_field_schema(&id)?;
-    Ok((StatusCode::OK, "Composite field schema deleted successfully"))
+    Ok(StatusCode::OK)
 }
