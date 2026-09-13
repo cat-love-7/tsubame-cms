@@ -121,37 +121,162 @@ impl FieldSchema {
         }
     }
 }
-/*
-pub fn format_to_schema(
-    composite_schemas: &HashMap<String, CompositeFieldSchema>,
-    schema: &Vec<FieldSchema>,
-    values: &FieldValueMap,
-) -> FieldValueMap {
-    let mut ret = HashMap::new();
-    for field in schema {
-        if let Some(v) = values.get(&field.name) {
-            ret.insert(
-                field.name.clone(),
-                field.format_field_value(composite_schemas, v),
-            );
-        } else {
-            ret.insert(field.name.clone(), field.get_default_value());
+
+/// Validate a field schema before it is stored.
+///
+/// Without this an unusable schema can be saved and only fails later, when someone tries
+/// to write content against it (or, worse, cannot interpret what is already stored).
+pub fn validate_schema(fields: &[FieldSchema]) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for field in fields {
+        let name = field.name.trim();
+        if name.is_empty() {
+            return Err("field names must not be empty".to_string());
         }
-    }
-    ret
-}
-pub fn validate_to_schema(
-    composite_schemas: &HashMap<String, CompositeFieldSchema>,
-    schema: &Vec<FieldSchema>,
-    values: &FieldValueMap,
-) -> Result<(), String> {
-    for field in schema {
-        if let Some(v) = values.get(&field.name) {
-            field.validate_field_value(composite_schemas, v)?;
-        } else if field.required {
-            return Err(format!("Field '{}' is missing", field.name));
+        if !seen.insert(name.to_string()) {
+            return Err(format!("duplicate field name '{name}'"));
         }
+        if !(1..=12).contains(&field.width) {
+            return Err(format!(
+                "field '{name}': width must be between 1 and 12 (got {})",
+                field.width
+            ));
+        }
+        if field.height < 1 {
+            return Err(format!(
+                "field '{name}': height must be at least 1 (got {})",
+                field.height
+            ));
+        }
+        validate_field_type(name, &field.field_type)?;
     }
     Ok(())
 }
-*/
+
+fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String> {
+    let FieldType::Array(items) = field_type else {
+        return Ok(());
+    };
+
+    if items.is_empty() {
+        return Err(format!(
+            "field '{name}': an array must declare at least one item type"
+        ));
+    }
+    for item in items {
+        match item {
+            FieldType::Array(_) => {
+                return Err(format!("field '{name}': nested arrays are not supported"));
+            }
+            FieldType::CompositeField(_) => {
+                return Err(format!(
+                    "field '{name}': composite fields cannot be used as array items"
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    // Array items are untyped, and an image id is a JSON number, so a bare number would
+    // be ambiguous if both Number and Image were declared. Either on its own is fine.
+    let has_number = items.iter().any(|item| matches!(item, FieldType::Number));
+    let has_image = items.iter().any(|item| matches!(item, FieldType::Image));
+    if has_number && has_image {
+        return Err(format!(
+            "field '{name}': an array cannot declare both Number and Image items, because \
+             an image id is a number and array items carry no type tag"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field(name: &str, field_type: FieldType) -> FieldSchema {
+        FieldSchema {
+            name: name.to_string(),
+            field_type,
+            required: false,
+            width: 12,
+            height: 1,
+        }
+    }
+
+    #[test]
+    fn accepts_a_reasonable_schema() {
+        let schema = vec![
+            field("title", FieldType::Text(TextFieldOptions::default())),
+            field("count", FieldType::Number),
+            field("covers", FieldType::Array(vec![FieldType::Image])),
+        ];
+        assert!(validate_schema(&schema).is_ok());
+        // An empty schema is allowed: a collection can be created before its fields.
+        assert!(validate_schema(&[]).is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_and_duplicate_names() {
+        assert!(validate_schema(&[field("  ", FieldType::Number)])
+            .unwrap_err()
+            .contains("must not be empty"));
+
+        let duplicate = vec![field("title", FieldType::Number), field("title", FieldType::Boolean)];
+        assert!(validate_schema(&duplicate).unwrap_err().contains("duplicate field name"));
+    }
+
+    #[test]
+    fn rejects_out_of_range_layout() {
+        let mut too_wide = field("a", FieldType::Number);
+        too_wide.width = 13;
+        assert!(validate_schema(&[too_wide]).unwrap_err().contains("width"));
+
+        let mut too_narrow = field("a", FieldType::Number);
+        too_narrow.width = 0;
+        assert!(validate_schema(&[too_narrow]).unwrap_err().contains("width"));
+
+        let mut no_height = field("a", FieldType::Number);
+        no_height.height = 0;
+        assert!(validate_schema(&[no_height]).unwrap_err().contains("height"));
+    }
+
+    #[test]
+    fn an_image_array_is_allowed_on_its_own() {
+        let schema = vec![field("covers", FieldType::Array(vec![FieldType::Image]))];
+        assert!(validate_schema(&schema).is_ok());
+    }
+
+    #[test]
+    fn rejects_number_and_image_array_items_together() {
+        let schema = vec![field(
+            "mixed",
+            FieldType::Array(vec![FieldType::Number, FieldType::Image]),
+        )];
+        let error = validate_schema(&schema).unwrap_err();
+        assert!(error.contains("both Number and Image"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn rejects_empty_nested_and_composite_array_items() {
+        assert!(validate_schema(&[field("a", FieldType::Array(vec![]))])
+            .unwrap_err()
+            .contains("at least one item type"));
+
+        assert!(validate_schema(&[field(
+            "a",
+            FieldType::Array(vec![FieldType::Array(vec![FieldType::Number])])
+        )])
+        .unwrap_err()
+        .contains("nested arrays"));
+
+        assert!(validate_schema(&[field(
+            "a",
+            FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
+                id: CompositeFieldId::from("seo"),
+            })])
+        )])
+        .unwrap_err()
+        .contains("composite fields cannot be used as array items"));
+    }
+}

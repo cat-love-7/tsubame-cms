@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::field::{CompositeFieldSchema, FieldSchema};
-use crate::models::schema::CompositeFieldId;
+use crate::models::schema::{validate_schema, CompositeFieldId};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 
 pub struct CompositeFieldService<CFR: CompositeFieldRepository> {
@@ -31,6 +31,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
             .map_err(map_internal_error)
     }
     pub fn add_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         let s = self.composite_field_repository.get_composite_field_schema(&field_name)
             .map_err(map_internal_error)?;
         match s {
@@ -44,6 +45,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         }
     }
     pub fn update_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &Vec<FieldSchema>) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         let s = self.composite_field_repository.get_composite_field_schema(field_name)
             .map_err(map_internal_error)?;
         match s {

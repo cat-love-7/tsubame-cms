@@ -34,11 +34,17 @@
 @if (field.field_type | isArrayFieldSchema) {
   <mat-form-field appearance="fill" class="full-width">
     <mat-label>Array item types</mat-label>
-    <mat-select multiple name="arrayItemTypes" [(ngModel)]="field.field_type.Array">
+    <mat-select
+      multiple
+      name="arrayItemTypes"
+      [ngModel]="field.field_type.Array"
+      (ngModelChange)="onArrayItemTypesChange($event)"
+    >
       @for (itemType of arrayItemTypeOptions; track itemType.label) {
         <mat-option [value]="itemType.value">{{ itemType.label }}</mat-option>
       }
     </mat-select>
+    <mat-hint>Array items carry no type tag, so Number and Image cannot be combined.</mat-hint>
   </mat-form-field>
 }
 @if (field.field_type | isEnumFieldSchema) {

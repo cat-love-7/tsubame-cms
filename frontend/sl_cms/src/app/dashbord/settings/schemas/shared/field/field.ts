@@ -11,12 +11,15 @@ import {
   DefaultFieldLayout,
   FieldDefaults,
   FieldSchema,
+  FieldType,
   FieldTypeStringPipe,
   IsArrayFieldSchemaPipe,
   IsCompositeFieldSchemaPipe,
   IsEnumFieldSchemaPipe,
   IsMarkdownFieldSchema,
   IsTextFieldSchema,
+  isArrayFieldSchema,
+  reconcileArrayItemTypes,
 } from 'app/models/schema/fields';
 import { EnumField } from "../enum-field/enum-field";
 import { CompositeField } from '../composite-field/composite-field';
@@ -58,6 +61,20 @@ export class Field {
 
   public onFieldTypeChange(value: keyof typeof FieldDefaults) {
     this.field.field_type = FieldDefaults[value];
+    this.fieldChange.emit(this.field);
+  }
+
+  /**
+   * Array item types are untyped on the wire, so `Number` and `Image` cannot be combined
+   * (an image id is a number). The binding is one-way, so `field.field_type.Array` is
+   * still the previous selection here.
+   */
+  public onArrayItemTypesChange(selected: FieldType[]) {
+    const fieldType = this.field.field_type;
+    if (!isArrayFieldSchema(fieldType)) {
+      return;
+    }
+    fieldType.Array = reconcileArrayItemTypes(fieldType.Array, selected);
     this.fieldChange.emit(this.field);
   }
 }

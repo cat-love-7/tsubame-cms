@@ -496,6 +496,138 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// Image arrays are allowed on their own; `Number` + `Image` together is not, because
+/// array items carry no type tag and an image id is a JSON number.
+#[tokio::test]
+async fn image_arrays_work_but_number_and_image_together_are_rejected() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let ambiguous = json!([{
+        "name": "mixed",
+        "field_type": { "Array": ["Number", "Image"] },
+        "required": false,
+        "width": 12,
+        "height": 1
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/mixed/schema",
+        Some(&token),
+        Some(ambiguous),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("both Number and Image"), "unexpected body: {text}");
+
+    // Record an image so the id resolves when it is read back.
+    let (_, upload) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "a.png", "ext": "png" })),
+    )
+    .await;
+    let image_id = upload["id"].as_u64().expect("image id");
+
+    let schema = json!([{
+        "name": "covers",
+        "field_type": { "Array": ["Image"] },
+        "required": false,
+        "width": 12,
+        "height": 1
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/gallery/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // A bare id is accepted on write.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/gallery/item",
+        Some(&token),
+        Some(json!({ "covers": [image_id] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // It comes back as the `{id, url}` shape, and re-submitting that is accepted too.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/gallery/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["covers"][0]["id"], image_id);
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/gallery/items/1",
+        Some(&token),
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+}
+
+/// Structural schema rules are enforced at save time, not when someone later writes
+/// content against the schema.
+#[tokio::test]
+async fn invalid_schemas_are_rejected_when_saved() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let cases = [
+        (
+            json!([{ "name": "", "field_type": "Number", "required": false, "width": 12, "height": 1 }]),
+            "must not be empty",
+        ),
+        (
+            json!([
+                { "name": "dup", "field_type": "Number", "required": false, "width": 12, "height": 1 },
+                { "name": "dup", "field_type": "Boolean", "required": false, "width": 12, "height": 1 }
+            ]),
+            "duplicate field name",
+        ),
+        (
+            json!([{ "name": "wide", "field_type": "Number", "required": false, "width": 20, "height": 1 }]),
+            "width must be between 1 and 12",
+        ),
+        (
+            json!([{ "name": "empty", "field_type": { "Array": [] }, "required": false, "width": 12, "height": 1 }]),
+            "at least one item type",
+        ),
+    ];
+
+    for (index, (schema, expected)) in cases.iter().enumerate() {
+        let (status, body) = send_raw(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/bad{index}/schema"),
+            Some(&token),
+            Some(schema.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "case {index} was accepted");
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains(expected), "case {index}: unexpected body: {text}");
+    }
+}
+
 #[tokio::test]
 async fn deleting_a_collection_without_items_succeeds() {    let app = test_app().await;
     let token = app.admin_token.clone();

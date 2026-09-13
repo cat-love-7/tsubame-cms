@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
+use crate::models::schema::validate_schema;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -38,6 +39,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -63,6 +65,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)

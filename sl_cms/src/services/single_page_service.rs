@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
+use crate::models::schema::validate_schema;
 use crate::models::single_page::{SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -38,6 +39,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         name: &SinglePageName,
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -63,6 +65,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         name: &SinglePageName,
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
+        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
         if self
             .single_page_repository
             .get_single_page_schema(name)

@@ -100,16 +100,40 @@ export function isEnumFieldSchema(field: FieldType): field is EnumFieldSchema {
  * Field types that can appear as array items.
  *
  * Text/Markdown/Array/TextEnum/CompositeField are omitted because they carry
- * configuration of their own that this editor does not collect yet. `Image` is omitted
- * too: array elements are untyped on the wire, and an image id is a number, which would
- * be indistinguishable from a `Number` element.
+ * configuration of their own that this editor does not collect yet.
+ *
+ * `Image` is allowed, but not together with `Number`: array items carry no type tag and
+ * an image id is a JSON number, so a bare number would be ambiguous. Either on its own
+ * is unambiguous. [`reconcileArrayItemTypes`] enforces that in the UI, and the server
+ * rejects the combination too.
  */
 export const ArrayItemTypeOptions: { label: string; value: FieldType }[] = [
   { label: 'Number', value: 'Number' },
   { label: 'Boolean', value: 'Boolean' },
   { label: 'Date', value: 'Date' },
   { label: 'DateTime', value: 'DateTime' },
+  { label: 'Image', value: 'Image' },
 ];
+
+/**
+ * Apply the Number/Image exclusivity rule when the user changes an array's item types.
+ *
+ * Returns `selected` unchanged unless it contains both, in which case the type the user
+ * just added wins and the other is dropped (adding `Image` to a `Number` array replaces
+ * `Number`, and vice versa).
+ */
+export function reconcileArrayItemTypes(
+  previous: FieldType[],
+  selected: FieldType[],
+): FieldType[] {
+  if (!(selected.includes('Number') && selected.includes('Image'))) {
+    return selected;
+  }
+  // Whichever of the two the user just added wins; the other is dropped.
+  const imageJustAdded = !previous.includes('Image') && selected.includes('Image');
+  const dropped: FieldType = imageJustAdded ? 'Number' : 'Image';
+  return selected.filter((type) => type !== dropped);
+}
 
 @Pipe({
   name: 'isTextFieldSchema',
