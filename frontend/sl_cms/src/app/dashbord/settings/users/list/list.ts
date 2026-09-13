@@ -18,6 +18,7 @@ import {
   resourceRoleOf,
   roleOf,
 } from 'app/core/auth/auth.service';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { errorMessage as message } from 'app/core/http-error';
 import { UsersService } from 'app/services/auth/users.service';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
@@ -52,10 +53,19 @@ interface RoleOption {
   styleUrl: './list.scss',
 })
 export class List {
+
   private users = inject(UsersService);
   private auth = inject(AuthService);
   private collectionsService = inject(CollectionsService);
   private singlePages = inject(SinglePagesService);
+  private capabilities = inject(CapabilitiesService);
+
+  /**
+   * Whether this deployment owns the passwords. Where it does not, the account is created and
+   * its password reset at the identity provider, so those controls are not this CMS's to offer.
+   */
+  public passwordLogin = this.capabilities.passwordLogin;
+  public passwordResetLinks = this.capabilities.passwordResetLinks;
 
   public accounts = signal<CurrentUser[]>([]);
   public error = signal('');
@@ -96,6 +106,7 @@ export class List {
   ];
 
   constructor() {
+    this.capabilities.load();
     this.load();
     this.collectionsService.getAllCollectionNames().subscribe({
       next: (names) => (this.collections = names),

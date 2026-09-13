@@ -26,10 +26,12 @@
     <mat-label>Email (任意)</mat-label>
     <input matInput type="email" name="email" [(ngModel)]="newEmail" />
   </mat-form-field>
-  <mat-form-field appearance="fill">
-    <mat-label>Password</mat-label>
-    <input matInput type="password" name="password" [(ngModel)]="newPassword" />
-  </mat-form-field>
+  @if (passwordLogin()) {
+    <mat-form-field appearance="fill">
+      <mat-label>Password</mat-label>
+      <input matInput type="password" name="password" [(ngModel)]="newPassword" />
+    </mat-form-field>
+  }
   <mat-form-field appearance="fill">
     <mat-label>Role</mat-label>
     <mat-select name="role" [(ngModel)]="newRole" [disabled]="newIsAdmin">
@@ -101,13 +103,15 @@
         </td>
         <td>{{ user.last_login ? user.last_login : '—' }}</td>
         <td class="actions">
-          <button
-            matIconButton
-            (click)="issuePasswordResetLink(user)"
-            [attr.aria-label]="'issue a password reset link for ' + user.username"
-          >
-            <mat-icon>link</mat-icon>
-          </button>
+          @if (passwordResetLinks()) {
+            <button
+              matIconButton
+              (click)="issuePasswordResetLink(user)"
+              [attr.aria-label]="'issue a password reset link for ' + user.username"
+            >
+              <mat-icon>link</mat-icon>
+            </button>
+          }
           <button
             matIconButton
             (click)="openResources(user)"
@@ -115,13 +119,15 @@
           >
             <mat-icon>tune</mat-icon>
           </button>
-          <button
-            matIconButton
-            (click)="resetPassword(user)"
-            [attr.aria-label]="'reset password of ' + user.username"
-          >
-            <mat-icon>key</mat-icon>
-          </button>
+          @if (passwordLogin()) {
+            <button
+              matIconButton
+              (click)="resetPassword(user)"
+              [attr.aria-label]="'reset password of ' + user.username"
+            >
+              <mat-icon>key</mat-icon>
+            </button>
+          }
           <button
             matIconButton
             (click)="remove(user)"

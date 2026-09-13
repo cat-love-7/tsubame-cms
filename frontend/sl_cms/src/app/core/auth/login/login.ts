@@ -6,6 +6,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
+import { CapabilitiesService } from '../../capabilities/capabilities.service';
 import { AuthService } from '../auth.service';
 
 @Component({
@@ -23,11 +24,23 @@ import { AuthService } from '../auth.service';
 export class Login {
   private auth = inject(AuthService);
   private router = inject(Router);
+  private capabilities = inject(CapabilitiesService);
+
+  /**
+   * Whether this deployment signs users in itself. Where it does not, the form would be a
+   * password box that always answers 501: the sign-in belongs to the identity provider, and
+   * all the CMS can usefully say is so.
+   */
+  public passwordLogin = this.capabilities.passwordLogin;
 
   public username = '';
   public password = '';
   public error = signal('');
   public busy = signal(false);
+
+  constructor() {
+    this.capabilities.load();
+  }
 
   submit() {
     if (this.busy()) {

@@ -42,4 +42,22 @@ describe('Login', () => {
     expect(component.error()).toContain('ロックされています');
     expect(component.error()).toContain('10 分後');
   });
+
+  it('shows where to sign in when the deployment leaves it to an identity provider', async () => {
+    // The component asks what the deployment can do when it is created, so the first request
+    // is that question.
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: false,
+      password_reset_links: false,
+      image_upload: 'presigned',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const password = fixture.nativeElement.querySelector('input[type="password"]');
+    expect(password).toBeNull();
+
+    const message: HTMLElement | null = fixture.nativeElement.querySelector('.elsewhere');
+    expect(message?.textContent).toContain('identity provider');
+  });
 });

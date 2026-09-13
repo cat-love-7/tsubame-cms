@@ -4,37 +4,48 @@
       <mat-card-title>Sign in to SL CMS</mat-card-title>
     </mat-card-header>
     <mat-card-content>
-      @if (error()) {
-        <p class="error" role="alert">{{ error() }}</p>
+      @if (!passwordLogin()) {
+        <!-- The sign-in belongs to the deployment's identity provider, so a password box here
+             would only ever answer 501. -->
+        <p class="elsewhere" role="status">
+          This deployment signs users in through its identity provider. Sign in there, then
+          return to this page.
+        </p>
+      } @else {
+        @if (error()) {
+          <p class="error" role="alert">{{ error() }}</p>
+        }
+        <mat-form-field appearance="fill" class="full-width">
+          <!-- The identifier, which may or may not be an address: hence a plain text field. -->
+          <mat-label>ID</mat-label>
+          <input
+            matInput
+            type="text"
+            name="username"
+            autocomplete="username"
+            [(ngModel)]="username"
+            (keyup.enter)="submit()"
+          />
+        </mat-form-field>
+        <mat-form-field appearance="fill" class="full-width">
+          <mat-label>Password</mat-label>
+          <input
+            matInput
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            [(ngModel)]="password"
+            (keyup.enter)="submit()"
+          />
+        </mat-form-field>
       }
-      <mat-form-field appearance="fill" class="full-width">
-        <!-- The identifier, which may or may not be an address: hence a plain text field. -->
-        <mat-label>ID</mat-label>
-        <input
-          matInput
-          type="text"
-          name="username"
-          autocomplete="username"
-          [(ngModel)]="username"
-          (keyup.enter)="submit()"
-        />
-      </mat-form-field>
-      <mat-form-field appearance="fill" class="full-width">
-        <mat-label>Password</mat-label>
-        <input
-          matInput
-          type="password"
-          name="password"
-          autocomplete="current-password"
-          [(ngModel)]="password"
-          (keyup.enter)="submit()"
-        />
-      </mat-form-field>
     </mat-card-content>
-    <mat-card-actions>
-      <button matButton color="primary" (click)="submit()" [disabled]="busy()">
-        {{ busy() ? 'Signing in…' : 'Sign in' }}
-      </button>
-    </mat-card-actions>
+    @if (passwordLogin()) {
+      <mat-card-actions>
+        <button matButton color="primary" (click)="submit()" [disabled]="busy()">
+          {{ busy() ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </mat-card-actions>
+    }
   </mat-card>
 </div>
