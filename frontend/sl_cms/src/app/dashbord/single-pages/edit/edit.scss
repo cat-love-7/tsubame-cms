@@ -16,6 +16,18 @@
   color: #666;
 }
 
+
+/* An unpublished edit is the thing an editor most needs to notice. */
+.draft-note {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  background: #fff4e5;
+  color: #8a5300;
+  white-space: nowrap;
+}
+
 .actions {
   margin-top: 16px;
 }

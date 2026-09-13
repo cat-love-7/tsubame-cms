@@ -136,24 +136,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 )))
             }
             Some(schema) => {
-                let mut items = self.collection_repository
-                    .list_collection_items(collection_name)
-                    .map_err(map_internal_error)?;
-                // Ordered by id: it is what makes offset paging stable, and it keeps the
-                // admin list from depending on the adapter's iteration order.
-                items.sort_by_key(|(id, _)| **id);
-
-                let composite_schema_map = self
-                    .composite_field_repository
-                    .list_composite_field_schemas()
-                    .map_err(map_internal_error)?;
-                let mut ret = Vec::new();
-                for (id, item) in items {
-                    let formatted_item = item.format_to_schema(&composite_schema_map, &schema);
-                    let response_item = formatted_item.to_response(self.image_repository.as_ref());
-                    ret.push((id, response_item));
-                }
-                Ok(ret)
+                // The working copies: this is the screen an editor saves from.
+                let items = self.working_items(collection_name)?;
+                self.format_items(&schema, items)
             },
         }
     }
@@ -172,21 +157,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 collection_name
             )));
         }
-        let schema = schema.unwrap();
-        let item = self
-            .collection_repository
-            .get_collection_item(collection_name, &item_id)
-            .map_err(map_internal_error)?;
-        let composite_schema_map = self
-            .composite_field_repository
-            .list_composite_field_schemas()
-            .map_err(map_internal_error)?;
+        let item = self.working_item(collection_name, &item_id)?;
         match item {
-            Some(i) => {
-                let formatted_item = i.format_to_schema(&composite_schema_map, &schema);
-                let response_item = formatted_item.to_response(self.image_repository.as_ref());
-                Ok(response_item)
-            }
+            Some(item) => self.format_item(collection_name, &item),
             None => Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
                 item_id.to_string(), collection_name
@@ -218,12 +191,18 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .map_err(|e| HttpError::BadRequest(&e.to_string()))?;
             }
         }
-        let item_id = self
-            .collection_repository
-            .add_collection_item(collection_name, item_data)
+        let item_id = CollectionItemId::from_u64(
+            self.collection_repository
+                .add_collection_item(collection_name, item_data)
+                .map_err(map_internal_error)?,
+        );
+        // The new item starts as a working copy; publishing is what puts it in front of
+        // the delivery API.
+        self.collection_repository
+            .set_collection_item_draft(collection_name, &item_id, item_data)
             .map_err(map_internal_error)?;
-        self.stamp_item(collection_name, CollectionItemId::from_u64(item_id), true)?;
-        Ok(item_id)
+        self.stamp_item(collection_name, item_id, true)?;
+        Ok(*item_id)
     }
     pub fn update_collection_item(
         &self,
@@ -262,8 +241,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     &schema,
                 ).map_err(|e| HttpError::BadRequest(&e.to_string()))?;
 
+                // Saved into the working copy: the published item keeps serving the live
+                // site until this version is published.
                 self.collection_repository
-                    .update_collection_item(collection_name, &item_id, item_data)
+                    .set_collection_item_draft(collection_name, &item_id, item_data)
                     .map_err(|e| HttpError::InternalServerError(&e.to_string()))?;
                 self.stamp_item(collection_name, item_id, false)?;
                 Ok(())
@@ -387,6 +368,93 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     // ---- draft / published ---------------------------------------------------
 
+    /// The item as an editor sees it: the working copy if there is one, the published
+    /// copy otherwise.
+    fn working_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<Option<CollectionItem>, HttpError> {
+        match self
+            .collection_repository
+            .get_collection_item_draft(collection_name, item_id)
+            .map_err(map_internal_error)?
+        {
+            Some(draft) => Ok(Some(draft)),
+            None => self
+                .collection_repository
+                .get_collection_item(collection_name, item_id)
+                .map_err(map_internal_error),
+        }
+    }
+
+    /// Every item as an editor sees it, ordered by id.
+    ///
+    /// The working copies are read in one scan and laid over the published ones, so a list
+    /// of a collection costs two reads rather than one per item.
+    fn working_items(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, CollectionItem)>, HttpError> {
+        let mut drafts: HashMap<CollectionItemId, CollectionItem> = self
+            .collection_repository
+            .list_collection_item_drafts(collection_name)
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
+
+        let mut items = self
+            .collection_repository
+            .list_collection_items(collection_name)
+            .map_err(map_internal_error)?;
+        // Ordered by id: it is what makes offset paging stable, and it keeps the admin list
+        // from depending on the adapter's iteration order.
+        items.sort_by_key(|(id, _)| **id);
+
+        Ok(items
+            .into_iter()
+            .map(|(id, published)| {
+                let working = drafts.remove(&id).unwrap_or(published);
+                (id, working)
+            })
+            .collect())
+    }
+
+    /// Format stored items the way the HTTP layer reports them.
+    fn format_items(
+        &self,
+        schema: &CollectionSchema,
+        items: Vec<(CollectionItemId, CollectionItem)>,
+    ) -> Result<Vec<(CollectionItemId, CollectionItemResponse)>, HttpError> {
+        let composite_schema_map = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+        Ok(items
+            .into_iter()
+            .map(|(id, item)| {
+                let formatted = item.format_to_schema(&composite_schema_map, schema);
+                (id, formatted.to_response(self.image_repository.as_ref()))
+            })
+            .collect())
+    }
+
+    /// Format one stored item the way the HTTP layer reports it.
+    fn format_item(
+        &self,
+        collection_name: &CollectionName,
+        item: &CollectionItem,
+    ) -> Result<CollectionItemResponse, HttpError> {
+        let schema = self.get_collection_schema(collection_name)?;
+        let composite_schema_map = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+        Ok(item
+            .format_to_schema(&composite_schema_map, &schema)
+            .to_response(self.image_repository.as_ref()))
+    }
+
     /// Draft/published state of one item.
     ///
     /// Absent metadata means "draft": an item that was never published is not an error.
@@ -428,6 +496,34 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collect())
     }
 
+    /// Whether the item has an unpublished working copy.
+    pub fn has_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<bool, HttpError> {
+        self.require_item(collection_name, &item_id)?;
+        Ok(self
+            .collection_repository
+            .get_collection_item_draft(collection_name, &item_id)
+            .map_err(map_internal_error)?
+            .is_some())
+    }
+
+    /// Ids of the items with an unpublished working copy, for the admin list.
+    pub fn draft_item_ids(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<HashSet<CollectionItemId>, HttpError> {
+        Ok(self
+            .collection_repository
+            .list_collection_item_drafts(collection_name)
+            .map_err(map_internal_error)?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect())
+    }
+
     /// Publish or unpublish one item, recording when it was published.
     pub fn set_item_status(
         &self,
@@ -443,6 +539,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .unwrap_or_default()
             .with_status(status);
+
+        if metadata.is_published() {
+            // Publishing *is* the copy: whatever the editor has been working on replaces
+            // the published item and stops being a separate draft. With nothing pending,
+            // publishing only refreshes the timestamp.
+            if let Some(draft) = self
+                .collection_repository
+                .get_collection_item_draft(collection_name, &item_id)
+                .map_err(map_internal_error)?
+            {
+                self.collection_repository
+                    .update_collection_item(collection_name, &item_id, &draft)
+                    .map_err(map_internal_error)?;
+                self.collection_repository
+                    .delete_collection_item_draft(collection_name, &item_id)
+                    .map_err(map_internal_error)?;
+            }
+        }
+
         self.collection_repository
             .set_item_metadata(collection_name, &item_id, &metadata)
             .map_err(map_internal_error)?;
@@ -474,8 +589,19 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let metadata: HashMap<CollectionItemId, ItemMetadata> =
             self.list_item_metadata(collection_name)?.into_iter().collect();
 
+        // The published copy, never the working one: edits must not leak to a site.
+        let mut stored = self
+            .collection_repository
+            .list_collection_items(collection_name)
+            .map_err(map_internal_error)?;
+        stored.sort_by_key(|(id, _)| **id);
+        let items = self.format_items(
+            &self.get_collection_schema(collection_name)?,
+            stored,
+        )?;
+
         let mut published = Vec::new();
-        for (id, values) in self.get_collection_items(collection_name)? {
+        for (id, values) in items {
             if let Some(metadata) = metadata.get(&id) {
                 if metadata.is_published() {
                     published.push((id, metadata.clone(), values));
@@ -501,7 +627,17 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 item_id, collection_name
             )));
         }
-        Ok((metadata, self.get_collection_item(collection_name, item_id)?))
+        let item = self
+            .collection_repository
+            .get_collection_item(collection_name, &item_id)
+            .map_err(map_internal_error)?
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!(
+                    "Item with id '{}' not found in collection '{}'",
+                    item_id, collection_name
+                ))
+            })?;
+        Ok((metadata, self.format_item(collection_name, &item)?))
     }
 
     /// Collections that have at least one published item.
@@ -536,12 +672,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
     ) -> Result<(), HttpError> {
-        if self
-            .collection_repository
-            .get_collection_item(collection_name, item_id)
-            .map_err(map_internal_error)?
-            .is_none()
-        {
+        if self.working_item(collection_name, item_id)?.is_none() {
             return Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
                 item_id, collection_name
@@ -571,6 +702,7 @@ mod tests {
         items: Arc<RwLock<HashMap<CollectionName, HashMap<CollectionItemId, CollectionItem>>>>,
         item_counter: Arc<RwLock<u64>>,
         item_metadata: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), ItemMetadata>>>,
+        drafts: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), CollectionItem>>>,
     }
     impl CollectionRepository for MockCollectionRepository {
         fn get_collection_schema(
@@ -686,6 +818,55 @@ mod tests {
                 .insert((collection_name.clone(), item_id.clone()), metadata.clone());
             Ok(())
         }
+        fn get_collection_item_draft(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+        ) -> Result<Option<CollectionItem>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self
+                .drafts
+                .read()
+                .unwrap()
+                .get(&(collection_name.clone(), item_id.clone()))
+                .cloned())
+        }
+        fn set_collection_item_draft(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            item_data: &CollectionItem,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.drafts
+                .write()
+                .unwrap()
+                .insert((collection_name.clone(), item_id.clone()), item_data.clone());
+            Ok(())
+        }
+        fn delete_collection_item_draft(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.drafts
+                .write()
+                .unwrap()
+                .remove(&(collection_name.clone(), item_id.clone()));
+            Ok(())
+        }
+        fn list_collection_item_drafts(
+            &self,
+            collection_name: &CollectionName,
+        ) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
+            Ok(self
+                .drafts
+                .read()
+                .unwrap()
+                .iter()
+                .filter(|((name, _), _)| name == collection_name)
+                .map(|((_, id), item)| (id.clone(), item.clone()))
+                .collect())
+        }
         fn list_item_metadata(
             &self,
             collection_name: &CollectionName,
@@ -795,6 +976,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -844,6 +1026,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1036,6 +1219,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1068,6 +1252,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1096,6 +1281,7 @@ mod tests {
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1117,6 +1303,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1150,6 +1337,7 @@ mod tests {
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1177,6 +1365,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1218,6 +1407,7 @@ mod tests {
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1248,6 +1438,7 @@ mod tests {
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(2)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1284,6 +1475,7 @@ mod tests {
             items: Arc::new(RwLock::new(items)),
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1308,6 +1500,7 @@ mod tests {
             items: Arc::new(RwLock::new(HashMap::new())),
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

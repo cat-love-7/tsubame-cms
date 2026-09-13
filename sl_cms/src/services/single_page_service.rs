@@ -119,6 +119,38 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .delete_single_page(name)
             .map_err(map_internal_error)
     }
+    /// The page's working copy, falling back to the published one.
+    fn working_page_item(&self, name: &SinglePageName) -> Result<Option<SinglePageItem>, HttpError> {
+        match self
+            .single_page_repository
+            .get_single_page_item_draft(name)
+            .map_err(map_internal_error)?
+        {
+            Some(draft) => Ok(Some(draft)),
+            None => self
+                .single_page_repository
+                .get_single_page_item(name)
+                .map_err(map_internal_error),
+        }
+    }
+
+    /// Format a page's values the way the HTTP layer reports them.
+    fn format_page_item(
+        &self,
+        name: &SinglePageName,
+        item: Option<SinglePageItem>,
+    ) -> Result<SinglePageItemResponse, HttpError> {
+        let schema = self.get_single_page_schema(name)?;
+        let composite_schema_map = self
+            .composite_field_repository
+            .list_composite_field_schemas()
+            .map_err(map_internal_error)?;
+        Ok(item
+            .unwrap_or_default()
+            .format_to_schema(&composite_schema_map, &schema)
+            .to_response(self.image_repository.as_ref()))
+    }
+
     pub fn get_single_page_item(
         &self,
         name: &SinglePageName,
@@ -134,20 +166,10 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     name
                 )))
             }
-            Some(schema) => {
-                let item = self.single_page_repository
-                    .get_single_page_item(name)
-                    .map_err(map_internal_error)?;
-
-                let composite_schema_map = self
-                    .composite_field_repository
-                    .list_composite_field_schemas()
-                    .map_err(map_internal_error)?;
-                let formatted_item = item.unwrap_or_default().format_to_schema(&composite_schema_map,
-                    &schema,
-                );
-                let response_item = formatted_item.to_response(self.image_repository.as_ref());
-                Ok(response_item)
+            Some(_) => {
+                // The working copy: this is the screen an editor saves from.
+                let item = self.working_page_item(name)?;
+                self.format_page_item(name, item)
             },
         }
     }
@@ -176,8 +198,10 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     &schema,
                 ).map_err(|e| HttpError::BadRequest(&e.to_string()))?;
 
+                // Saved into the working copy: the published page keeps serving the live
+                // site until this version is published.
                 self.single_page_repository
-                    .update_single_page_item(name, item_data)
+                    .set_single_page_item_draft(name, item_data)
                     .map_err(map_internal_error)?;
                 self.stamp_page(name)?;
                 Ok(())
@@ -251,6 +275,16 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default())
     }
 
+    /// Whether the page has an unpublished working copy.
+    pub fn page_has_draft(&self, name: &SinglePageName) -> Result<bool, HttpError> {
+        self.get_single_page_schema(name)?;
+        Ok(self
+            .single_page_repository
+            .get_single_page_item_draft(name)
+            .map_err(map_internal_error)?
+            .is_some())
+    }
+
     pub fn set_page_status(
         &self,
         name: &SinglePageName,
@@ -264,6 +298,23 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?
             .unwrap_or_default()
             .with_status(status);
+
+        if metadata.is_published() {
+            // Publishing is the copy (see `CollectionService::set_item_status`).
+            if let Some(draft) = self
+                .single_page_repository
+                .get_single_page_item_draft(name)
+                .map_err(map_internal_error)?
+            {
+                self.single_page_repository
+                    .update_single_page_item(name, &draft)
+                    .map_err(map_internal_error)?;
+                self.single_page_repository
+                    .delete_single_page_item_draft(name)
+                    .map_err(map_internal_error)?;
+            }
+        }
+
         self.single_page_repository
             .set_page_metadata(name, &metadata)
             .map_err(map_internal_error)?;
@@ -286,7 +337,12 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 name
             )));
         }
-        Ok((metadata, self.get_single_page_item(name)?))
+        // The published copy, never the working one: edits must not leak to a site.
+        let published = self
+            .single_page_repository
+            .get_single_page_item(name)
+            .map_err(map_internal_error)?;
+        Ok((metadata, self.format_page_item(name, published)?))
     }
 
     /// Pages visible to the public delivery API.
@@ -323,6 +379,7 @@ mod tests {
         schemas: Arc<RwLock<HashMap<SinglePageName, SinglePageSchema>>>,
         items: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
         page_metadata: Arc<RwLock<HashMap<SinglePageName, ItemMetadata>>>,
+        drafts: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
     }
     impl SinglePageRepository for MockSinglePageRepository {
         fn get_single_page_schema(
@@ -368,6 +425,27 @@ mod tests {
             item_data: &SinglePageItem,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             self.items.write().unwrap().insert(single_page_name.clone(), item_data.clone());
+            Ok(())
+        }
+        fn get_single_page_item_draft(
+            &self,
+            page_name: &SinglePageName,
+        ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self.drafts.read().unwrap().get(page_name).cloned())
+        }
+        fn set_single_page_item_draft(
+            &self,
+            page_name: &SinglePageName,
+            item_data: &SinglePageItem,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.drafts.write().unwrap().insert(page_name.clone(), item_data.clone());
+            Ok(())
+        }
+        fn delete_single_page_item_draft(
+            &self,
+            page_name: &SinglePageName,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.drafts.write().unwrap().remove(page_name);
             Ok(())
         }
         fn get_page_metadata(
@@ -462,6 +540,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -491,6 +570,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -723,6 +803,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -753,6 +834,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -778,6 +860,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -798,6 +881,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -829,6 +913,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -853,6 +938,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -889,6 +975,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -915,6 +1002,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

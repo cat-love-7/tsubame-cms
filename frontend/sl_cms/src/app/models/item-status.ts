@@ -21,6 +21,13 @@ export interface ItemMetadata {
    * content itself change?" rather than "was it released?".
    */
   updated_at: string | null;
+  /**
+   * True while an editor has saved something that has not been published.
+   *
+   * Editing never touches the live site: the working copy is what an editor saves into and
+   * what publishing copies across.
+   */
+  has_draft: boolean;
 }
 
 /** Status of every item of a collection, keyed by item id (`"1"`, `"2"`, ...). */

@@ -16,18 +16,45 @@ pub mod user_repository;
 /// so a schema field may be named `status` without colliding.
 pub(crate) const METADATA_STORE: &str = "item_metadata";
 
+/// Store holding an item's working copy, until it is published.
+///
+/// The item store holds what the delivery API serves; editors save here instead, so a save
+/// can never change the live site.
+pub(crate) const DRAFT_STORE: &str = "item_draft";
+
+/// The side stores (metadata, draft) key an item as `collection:<name>:<id>`, so
+/// everything belonging to one collection can be scanned and purged by prefix.
+fn collection_prefix(collection_name: &str) -> String {
+    format!("collection:{collection_name}:")
+}
+
 /// Metadata key for one item of a collection.
 pub(crate) fn collection_item_metadata_key(collection_name: &str, item_id: u64) -> String {
-    format!("collection:{collection_name}:{item_id}")
+    format!("{}{item_id}", collection_prefix(collection_name))
 }
 
 /// Prefix shared by every item of one collection, so a range scan can find them.
 pub(crate) fn collection_metadata_prefix(collection_name: &str) -> String {
-    format!("collection:{collection_name}:")
+    collection_prefix(collection_name)
+}
+
+/// Working-copy key for one item of a collection.
+pub(crate) fn collection_item_draft_key(collection_name: &str, item_id: u64) -> String {
+    format!("{}{item_id}", collection_prefix(collection_name))
+}
+
+/// The same span as [`collection_metadata_prefix`], in the draft store.
+pub(crate) fn collection_draft_prefix(collection_name: &str) -> String {
+    collection_prefix(collection_name)
 }
 
 /// Metadata key for a single page.
 pub(crate) fn page_metadata_key(page_name: &str) -> String {
+    format!("page:{page_name}")
+}
+
+/// Working-copy key for a single page.
+pub(crate) fn page_draft_key(page_name: &str) -> String {
     format!("page:{page_name}")
 }
 

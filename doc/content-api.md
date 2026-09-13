@@ -18,14 +18,26 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 ## 2. 下書き / 公開のモデル
 
-- 保存しただけの内容は **draft**。公開は `publish` を明示的に呼んだときだけ行われる。
-- 状態はアイテムの値とは**別のストア**(`item_metadata`)に入る。スキーマに `status` や
+**値は 2 つある。** 編集者が保存するのは**作業コピー**(draft)で、配信 API が読むのは
+**公開コピー**(published)だけ。`publish` は作業コピーを公開コピーへコピーする操作で、
+`unpublish` は状態を下げるだけでどちらのコピーも消さない。
+
+| 保存先 | 中身 | 誰が見るか |
+|---|---|---|
+| アイテムストア | 公開コピー | `/content/*`(サイト) |
+| 作業コピー用ストア | 作業コピー(未公開の変更) | `/models/*` の読み書き(管理画面・プレビュー) |
+
+- **保存はライブサイトを変えない。** 公開コピーが置き換わるのは `publish` のときだけ。
+  これが「編集はできるが公開はできない」ロールを安全にしている。
+- 作業コピーが無い = 保留中の変更が無い。`publish` は公開コピーを作業コピーで置き換え、
+  作業コピーを消す(何も無ければ `published_at` を更新するだけ)。
+- 状態・日時は値とは**別のストア**(`item_metadata`)に入る。スキーマに `status` や
   `published_at` というフィールドがあっても衝突しない。
-- レコードが無い = draft。既存データの移行は不要で、これまでどおりの保存は下書きのまま。
-- コレクション / 単一ページを削除すると、その配下のメタデータも消える(同じ名前で作り直しても
-  前の公開状態を引き継がない)。
-- draft への `/content/*` は **404**(403 ではない)。未公開コンテンツの存在自体を漏らさないため。
+- コレクション / 単一ページ / アイテムを削除すると、作業コピーとメタデータも一緒に消える。
+- 未公開の内容への `/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
 - `published_at` は publish 時に記録し、unpublish すると `null` に戻る(公開日時は保持しない)。
+- 管理 API のメタデータは `has_draft` を返す。公開済み + `has_draft: true` が
+  「公開中だが、未公開の変更がある」状態で、管理画面はこれを「変更あり」と表示する。
 
 ## 3. エンドポイント
 
@@ -35,22 +47,24 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 |---|---|---|
 | GET | `/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
 | GET | `/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
-| GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "updated_at": "...", "values": {...} }` |
+| GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "values": {...} }` |
 | GET | `/content/single-pages` | 公開済み単一ページ名の配列 |
-| GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "updated_at": "...", "values": {...} }` |
+| GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "values": {...} }` |
 
 ### 管理(要トークン。`publish` / `unpublish` は編集権限が必要)
 
 | メソッド | パス | 返すもの |
 |---|---|---|
 | GET | `/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ |
-| GET | `/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "..." }, ... }` |
+| GET | `/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
 | GET | `/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
 | POST | `/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
 | POST | `/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
 | GET | `/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
 | POST | `/models/single_pages/{name}/publish` | 更新後のメタデータ |
 | POST | `/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
+| GET | `/models/collections/{name}/items/{id}/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
+| GET | `/models/single_pages/{name}/preview` | `{ "schema": [...], "values": {...} }`(作業コピー。要トークン) |
 | GET | `/models/images` | `[{ "id": 1, "url": "/images/...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順) |
 | DELETE | `/models/images/{id}` | 画像と実体を削除(存在しない id は 404) |
 
@@ -126,19 +140,23 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 
 アイテム(単一ページはその 1 件)には、公開状態とは別に 2 つの時刻が付く。
 
-| フィールド | 意味 |
-|---|---|
-| `created_at` | 値が最初に保存された時刻 |
-| `updated_at` | 値が最後に保存された時刻 |
-| `published_at` | 最後に公開された時刻(unpublish で `null` に戻る) |
+| フィールド | 出る場所 | 意味 |
+|---|---|---|
+| `created_at` | 管理 API | 値が最初に保存された時刻 |
+| `updated_at` | 管理 API | **作業コピー**が最後に保存された時刻 |
+| `published_at` | 両方 | 最後に公開された時刻(unpublish で `null` に戻る) |
 
-- **`updated_at` は「内容が変わった時刻」**。publish / unpublish では動かない(`published_at` がその役割)。
-  サイト側が「前回ビルド以降に変わったものだけ処理する」判断に使える。
+公開 API に `updated_at` は**出しません**。2 コピーでは「編集した時刻」と「公開物が変わった
+時刻」が別で、未公開の編集を `lastmod` として見せてしまうためです。公開物の最終更新は
+`published_at` を使ってください(公開コピーが変わるのは publish のときだけ)。
+
+- **`updated_at` は「作業コピーが変わった時刻」**。publish / unpublish では動かない。
+- サイトの差分ビルドに使うのは **`published_at`**(公開物が変わった時刻)。
 - 値を保存すると `updated_at` だけが進み、`created_at` と公開状態は変わらない
   (公開済みのアイテムを編集しても draft に戻らない)。
 - この機能より前に保存された内容は `created_at` / `updated_at` が `null` になる(移行不要)。
   タイムスタンプを持たない古いメタデータレコードもそのまま読める。
-- 公開 API のアイテムにも `updated_at` が入るので、サイトマップの `lastmod` に使える。
+- 管理 API のメタデータは `has_draft` も返すので、公開済み + 未公開の変更、を見分けられる。
 
 #### 例
 
@@ -245,6 +263,29 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 - **AWS Lambda では応答後に実行環境が凍結され得る**ため、バックグラウンド送信が完了しない可能性がある。
   Lambda に載せる際は SQS / EventBridge 経由にするか、配信を同期化する必要がある。
 - 順序は保証しない。受信側は「再ビルドを起動する」程度の使い方を想定している。
+
+## 5.5 権限
+
+| 操作 | 必要 |
+|---|---|
+| 読む(下書きを含む) | `can_view` |
+| 値の作成・編集(作業コピー) | `can_edit` |
+| 公開 / 非公開、コンテンツの削除 | `can_publish` |
+| スキーマ・コレクション・単一ページ・複合フィールドの変更 | `is_admin` |
+| アカウント管理(`/auth/users`) | `is_admin` |
+
+ロールはこのフラグの組み合わせとして扱う。
+
+| ロール | can_view | can_edit | can_publish | is_admin |
+|---|---|---|---|---|
+| 確認(閲覧のみ) | ✓ | – | – | – |
+| 編集(下書きまで) | ✓ | ✓ | – | – |
+| 公開(編集 + 公開操作) | ✓ | ✓ | ✓ | – |
+| 管理者 | ✓ | ✓ | ✓ | ✓ |
+
+判定は「読み取りは `can_view`、それ以外は `can_edit`」を 1 か所のミドルウェアで行い、
+メソッドだけでは決まらないもの(公開・削除・構造変更)はハンドラ側で追加判定する。
+**編集は公開コピーに触れない**ので、`can_edit` だけのロールを安全に運用できる。
 
 ## 6. まだ無いもの
 

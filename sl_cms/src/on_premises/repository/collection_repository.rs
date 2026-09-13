@@ -1,7 +1,8 @@
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::item_status::ItemMetadata;
 use crate::on_premises::repository::{
-    collection_item_metadata_key, collection_metadata_prefix, Repository, METADATA_STORE,
+    collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
+    collection_metadata_prefix, Repository, DRAFT_STORE, METADATA_STORE,
 };
 use crate::repositories::collection_repository::CollectionRepository;
 use rkv::{StoreOptions, Value};
@@ -53,6 +54,7 @@ impl CollectionRepository for Repository {
         // transaction. LMDB rejects a database handle that was created after the
         // transaction using it began, so opening it later would make DELETE fail.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.delete(&mut writer, collection_name.as_bytes())?;
         let reader = env.read()?;
@@ -81,6 +83,20 @@ impl CollectionRepository for Repository {
         }
         for key in stale {
             metadata_store.delete(&mut writer, &key)?;
+        }
+        // The unpublished working copies go with them.
+        let draft_prefix = collection_draft_prefix(collection_name.as_str());
+        let mut stale_drafts = Vec::new();
+        for result in draft_store.iter_from(&reader, draft_prefix.as_bytes())? {
+            if let Ok((key, Value::Str(_))) = result {
+                if !key.starts_with(draft_prefix.as_bytes()) {
+                    break;
+                }
+                stale_drafts.push(key.to_vec());
+            }
+        }
+        for key in stale_drafts {
+            draft_store.delete(&mut writer, &key)?;
         }
         writer.commit()?;
         Ok(())
@@ -159,6 +175,7 @@ impl CollectionRepository for Repository {
         let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         // Opened before the transactions, for the reason given in `delete_collection`.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         // Writer first, then the read snapshot (see `add_collection_item`).
         let mut writer = env.write()?;
         let reader = env.read()?;
@@ -168,6 +185,11 @@ impl CollectionRepository for Repository {
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         if metadata_store.get(&reader, key.as_bytes())?.is_some() {
             metadata_store.delete(&mut writer, key.as_bytes())?;
+        }
+        // The working copy goes with the item, whether or not it was ever published.
+        let draft_key = collection_item_draft_key(collection_name.as_str(), **item_id);
+        if draft_store.get(&reader, draft_key.as_bytes())?.is_some() {
+            draft_store.delete(&mut writer, draft_key.as_bytes())?;
         }
 
         writer.commit()?;
@@ -219,5 +241,67 @@ impl CollectionRepository for Repository {
             }
         }
         Ok(items)
+    }
+
+    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let key = collection_item_draft_key(collection_name.as_str(), **item_id);
+        match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            _ => Ok(None),
+        }
+    }
+
+    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let prefix = collection_draft_prefix(collection_name.as_str());
+
+        let mut items = Vec::new();
+        // Keys are sorted, so everything with this prefix is contiguous.
+        for result in store.iter_from(&reader, prefix.as_bytes())? {
+            if let Ok((key, Value::Str(s))) = result {
+                let key = str::from_utf8(&key)?;
+                let Some(id) = key.strip_prefix(&prefix) else {
+                    break;
+                };
+                let Ok(id) = id.parse::<u64>() else {
+                    continue;
+                };
+                items.push((CollectionItemId::from_u64(id), serde_json::from_str(&s)?));
+            }
+        }
+        Ok(items)
+    }
+
+    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let key = collection_item_draft_key(collection_name.as_str(), **item_id);
+        let mut writer = env.write()?;
+        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(item_data)?))?;
+        writer.commit()?;
+        Ok(())
+    }
+
+    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let key = collection_item_draft_key(collection_name.as_str(), **item_id);
+        // rkv reports deleting an absent key as an error, and most items have no draft.
+        if store.get(&reader, key.as_bytes())?.is_some() {
+            let mut writer = env.write()?;
+            store.delete(&mut writer, key.as_bytes())?;
+            writer.commit()?;
+        }
+        Ok(())
     }
 }

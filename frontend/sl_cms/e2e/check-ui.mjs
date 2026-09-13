@@ -383,6 +383,35 @@ try {
     JSON.stringify(saved?.gallery),
   );
 
+  // -------------------------------------------------------------- saving is not publishing
+  // The delivery API only ever sees the published copy.
+  const draftsOnly = await api('GET', `/content/collections/${IMAGE_COLLECTION}`, undefined, token);
+  check(
+    '保存しただけでは公開されない',
+    draftsOnly.items.length === 0,
+    `${draftsOnly.items.length} 件が公開中`,
+  );
+
+  await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}`, { waitUntil: 'networkidle' });
+  await dataRows().first().waitFor({ timeout: 15000 });
+  await firstRow().locator('button[aria-label^="publish item"]').click();
+  await page
+    .waitForFunction(
+      () => {
+        const badge = document.querySelector('table.items tbody tr app-item-status .badge');
+        return badge && badge.textContent.trim() === 'Published';
+      },
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const publishedItems = await api('GET', `/content/collections/${IMAGE_COLLECTION}`, undefined, token);
+  check(
+    '公開すると配信 API に反映される',
+    publishedItems.items.length === 1,
+    `${publishedItems.items.length} 件`,
+  );
+
   // -------------------------------------------------------------- an image array inside a composite
   await page.goto(`${BASE}/collections/${COMPOSITE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   const composite = page.locator('fieldset.composite');

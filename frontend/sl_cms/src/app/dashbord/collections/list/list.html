@@ -32,7 +32,12 @@
         @for (field of schema(); track field.name) {
           <td>{{ format(item[1][field.name]) }}</td>
         }
-        <td><app-item-status [status]="statusOf(item[0])" /></td>
+        <td>
+          <app-item-status [status]="statusOf(item[0])" />
+          @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
+            <span class="draft-note" title="公開するまで、サイトには反映されません">変更あり</span>
+          }
+        </td>
         <td class="updated">{{ updatedAt(item[0]) }}</td>
         <td class="actions">
           <button

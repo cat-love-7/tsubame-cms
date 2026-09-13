@@ -62,9 +62,9 @@ struct CollectionContent {
 #[derive(serde::Serialize)]
 struct PublishedItem {
     id: CollectionItemId,
+    /// When this copy went live: the published copy only changes when an item is
+    /// published, so this is also when the live content last changed.
     published_at: Option<DateTime<Utc>>,
-    /// When the values were last saved, so a build can skip content it has already seen.
-    updated_at: Option<DateTime<Utc>>,
     values: CollectionItemResponse,
 }
 
@@ -72,7 +72,6 @@ struct PublishedItem {
 struct SinglePageContent {
     schema: SinglePageSchema,
     published_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
     values: SinglePageItemResponse,
 }
 
@@ -104,7 +103,6 @@ async fn get_collection<R: Storage>(
         .map(|(id, metadata, values)| PublishedItem {
             id,
             published_at: metadata.published_at,
-            updated_at: metadata.updated_at,
             values,
         })
         .collect();
@@ -131,7 +129,6 @@ async fn get_collection_item<R: Storage>(
     Ok(Json(PublishedItem {
         id: CollectionItemId::from_u64(id),
         published_at: metadata.published_at,
-        updated_at: metadata.updated_at,
         values,
     }))
 }
@@ -155,7 +152,6 @@ async fn get_single_page<R: Storage>(
     Ok(Json(SinglePageContent {
         schema,
         published_at: metadata.published_at,
-        updated_at: metadata.updated_at,
         values,
     }))
 }

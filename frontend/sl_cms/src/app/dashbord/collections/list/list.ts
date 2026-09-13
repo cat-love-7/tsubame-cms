@@ -95,6 +95,11 @@ export class List {
     return this.metadata()[String(id)]?.status ?? 'draft';
   }
 
+  /** True while the item holds changes that have not been published. */
+  hasDraft(id: number): boolean {
+    return this.metadata()[String(id)]?.has_draft ?? false;
+  }
+
   /** When the item's values were last saved, or a dash when that was never recorded. */
   updatedAt(id: number): string {
     const updated = this.metadata()[String(id)]?.updated_at;

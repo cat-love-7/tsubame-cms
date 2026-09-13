@@ -2091,7 +2091,29 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
     assert_eq!(body["status"], "published");
     assert!(body["published_at"].is_string());
 
-    // The delivery API exposes it, so a build can skip content it already has.
+    // The edit is waiting in the working copy: the live site keeps serving what was
+    // published until the item is published again.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog/items/{item_id}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Hello");
+    assert!(body["values"].get("updated_at").is_none());
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     let (status, body) = send(
         &app.router,
         Method::GET,
@@ -2102,7 +2124,6 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Edited");
-    assert!(body["updated_at"].is_string());
     assert!(body["published_at"].is_string());
 }
 
@@ -2162,6 +2183,27 @@ async fn saving_a_single_page_records_when_it_changed() {
     assert!(timestamp(&body["updated_at"]) > updated_at);
     assert_eq!(body["status"], "published", "saving must not unpublish");
 
+    // Saving a published page leaves the live copy alone until it is published again.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Home");
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     let (status, body) = send(
         &app.router,
         Method::GET,
@@ -2172,7 +2214,6 @@ async fn saving_a_single_page_records_when_it_changed() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Home again");
-    assert!(body["updated_at"].is_string());
 }
 
 // ------------------------------------------------------------------------- concurrency
@@ -2387,4 +2428,99 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "account management is administrator-only");
+}
+
+// --------------------------------------------------------------- draft / published copies
+
+/// The draft/published model, end to end.
+///
+/// A save lands in the working copy; publishing copies it to the published copy, which is
+/// the only thing the delivery API serves. That separation is what makes "may edit but may
+/// not publish" a safe role.
+#[tokio::test]
+async fn edits_wait_in_the_working_copy_until_they_are_published() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let item_id = create_sample_item(&app, "blog").await;
+    let item_url = format!("/models/collections/blog/items/{item_id}");
+    let content_url = format!("/content/collections/blog/items/{item_id}");
+
+    // A new item starts unpublished, even though its values are already stored.
+    let (status, body) = send(&app.router, Method::GET, "/content/collections/blog", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["items"], json!([]));
+
+    // Publishing puts the working copy in front of the delivery API.
+    let (status, _) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Hello");
+
+    // An edit is visible to the editor...
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Edited", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, &item_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["title"], "Edited");
+
+    // ...but the site keeps serving what was published.
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Hello");
+
+    // The metadata says so, so the admin list can show it.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("{item_url}/metadata"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "published");
+    assert_eq!(body["has_draft"], true, "an unpublished edit is pending");
+
+    // Unpublishing hides the item without losing either copy.
+    let (status, _) = send(&app.router, Method::POST, &format!("{item_url}/unpublish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Publishing again releases the edit that was waiting, and clears the working copy.
+    let (status, _) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Edited");
+    let (status, body) = send(&app.router, Method::GET, &format!("{item_url}/metadata"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["has_draft"], false, "nothing is pending after publishing");
+
+    // A preview shows the working copy before it is released.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Previewed", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, &format!("{item_url}/preview"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Previewed");
+    assert_eq!(body["schema"][0]["name"], "title");
+    // ...while the site still serves the published one.
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Edited");
 }

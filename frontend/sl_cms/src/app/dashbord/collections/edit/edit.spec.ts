@@ -18,6 +18,7 @@ class StubCollectionsService {
     published_at: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
   };
 
   getCollectionSchema(): Observable<unknown> {
@@ -34,12 +35,12 @@ class StubCollectionsService {
 
   publishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.published.push(id);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
   unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.unpublished.push(id);
-    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 }
 
@@ -111,6 +112,16 @@ describe('Edit', () => {
     expect(component.error()).toContain('invalid JSON');
   });
 
+  it('says that a saved change is not published yet', () => {
+    // Only a published item with pending changes says so; a draft is obvious already.
+    stub.metadata = { ...stub.metadata, status: 'published', has_draft: true };
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    expect(fresh.nativeElement.querySelector('.draft-note')).toBeTruthy();
+    expect(fresh.nativeElement.textContent).toContain('まだ公開されていません');
+  });
+
   it('publishes the item it is editing without saving the form', () => {
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();
@@ -136,6 +147,7 @@ describe('Edit', () => {
       published_at: '2024-01-01T00:00:00Z',
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
     };
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();

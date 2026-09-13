@@ -49,6 +49,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             get(get_collection_item_metadata::<R>),
         )
         .route(
+            "/models/collections/{collection_name}/items/{id}/preview",
+            get(preview_collection_item::<R>),
+        )
+        .route(
             "/models/collections/{collection_name}/items/{id}/publish",
             post(publish_collection_item::<R>),
         )
@@ -64,11 +68,18 @@ async fn get_collection_items_metadata<R: Storage>(
     Path(collection_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    let metadata: HashMap<String, ItemMetadata> = module
+    let with_draft = module.collection_service.draft_item_ids(&name)?;
+    let metadata: HashMap<String, ItemStatusResponse> = module
         .collection_service
         .list_item_metadata(&name)?
         .into_iter()
-        .map(|(id, metadata)| (id.to_string(), metadata))
+        .map(|(id, metadata)| {
+            let status = ItemStatusResponse {
+                has_draft: with_draft.contains(&id),
+                metadata,
+            };
+            (id.to_string(), status)
+        })
         .collect();
     Ok(Json(metadata))
 }
@@ -78,10 +89,42 @@ async fn get_collection_item_metadata<R: Storage>(
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(module.collection_service.get_item_metadata(
-        &name,
-        CollectionItemId::from_u64(id),
-    )?))
+    let item_id = CollectionItemId::from_u64(id);
+    Ok(Json(ItemStatusResponse {
+        metadata: module.collection_service.get_item_metadata(&name, item_id)?,
+        has_draft: module.collection_service.has_draft(&name, item_id)?,
+    }))
+}
+
+/// The stored metadata plus whether an unpublished working copy exists, which is what the
+/// admin screens need to tell "published" from "published, with changes waiting".
+#[derive(serde::Serialize)]
+struct ItemStatusResponse {
+    #[serde(flatten)]
+    metadata: ItemMetadata,
+    has_draft: bool,
+}
+
+/// What the item would look like if it were published now: the working copy, with the
+/// schema. Authenticated, because that copy is unpublished content.
+async fn preview_collection_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let item_id = CollectionItemId::from_u64(id);
+    Ok(Json(ItemPreview {
+        schema: module.collection_service.get_collection_schema(&name)?,
+        id,
+        values: module.collection_service.get_collection_item(&name, item_id)?,
+    }))
+}
+
+#[derive(serde::Serialize)]
+struct ItemPreview {
+    schema: CollectionSchema,
+    id: u64,
+    values: crate::models::collection::CollectionItemResponse,
 }
 
 async fn publish_collection_item<R: Storage>(

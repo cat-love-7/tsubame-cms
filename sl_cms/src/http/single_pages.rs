@@ -7,8 +7,10 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
-use crate::models::item_status::ItemStatus;
-use crate::models::single_page::{SinglePageName, SinglePageSchema};
+use crate::models::item_status::{ItemMetadata, ItemStatus};
+use crate::models::single_page::{
+    SinglePageItemResponse, SinglePageName, SinglePageSchema,
+};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -32,6 +34,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             get(get_single_page_item_metadata::<R>),
         )
         .route(
+            "/models/single_pages/{page_name}/preview",
+            get(preview_single_page::<R>),
+        )
+        .route(
             "/models/single_pages/{page_name}/publish",
             post(publish_single_page::<R>),
         )
@@ -46,7 +52,38 @@ async fn get_single_page_item_metadata<R: Storage>(
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    Ok(Json(module.single_page_service.get_page_metadata(&name)?))
+    Ok(Json(PageStatusResponse {
+        metadata: module.single_page_service.get_page_metadata(&name)?,
+        has_draft: module.single_page_service.page_has_draft(&name)?,
+    }))
+}
+
+/// The stored metadata plus whether an unpublished working copy exists (see the collection
+/// equivalent).
+#[derive(serde::Serialize)]
+struct PageStatusResponse {
+    #[serde(flatten)]
+    metadata: ItemMetadata,
+    has_draft: bool,
+}
+
+/// What the page would look like if it were published now: the working copy, with the
+/// schema. Authenticated, because that copy is unpublished content.
+async fn preview_single_page<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    Ok(Json(SinglePagePreview {
+        schema: module.single_page_service.get_single_page_schema(&name)?,
+        values: module.single_page_service.get_single_page_item(&name)?,
+    }))
+}
+
+#[derive(serde::Serialize)]
+struct SinglePagePreview {
+    schema: SinglePageSchema,
+    values: SinglePageItemResponse,
 }
 
 async fn publish_single_page<R: Storage>(

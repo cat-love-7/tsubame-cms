@@ -16,6 +16,15 @@ pub trait CollectionRepository:Send + Sync + 'static {
     fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), BoxError>;
     fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), BoxError>;
 
+    // The working copy an editor saves into. The item store is what the delivery API
+    // serves, so as long as a save lands here the live site cannot change by accident.
+    // Absent means "no unpublished changes".
+    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, BoxError>;
+    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), BoxError>;
+    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), BoxError>;
+    /// Every working copy of a collection, so a list can show them without a read each.
+    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>;
+
     // Draft/published metadata, kept out of the item's values so a schema field may be
     // named `status` without colliding. Absent metadata means "draft".
     fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, BoxError>;

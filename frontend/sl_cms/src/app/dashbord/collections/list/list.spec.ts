@@ -68,6 +68,7 @@ function metadata(overrides: Partial<ItemMetadata>): ItemMetadata {
     published_at: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
     ...overrides,
   };
 }
@@ -147,13 +148,23 @@ describe('List', () => {
   });
 
   it('shows when each item was last saved', () => {
-    stub.metadata = { '1': metadata({ updated_at: '2024-05-06T07:08:09Z' }) };
+    stub.metadata = { '1': metadata({ updated_at: '2024-05-06T07:08:09Z', has_draft: false }) };
     const fresh = TestBed.createComponent(List);
     fresh.detectChanges();
 
     // The wording is locale dependent, so compare against the same formatting.
     const cell = fresh.nativeElement.querySelector('.updated') as HTMLElement;
     expect(cell.textContent?.trim()).toBe(new Date('2024-05-06T07:08:09Z').toLocaleString());
+  });
+
+  it('marks an item whose changes are not published yet', () => {
+    stub.metadata = { '1': metadata({ status: 'published', has_draft: true }) };
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    expect(fresh.componentInstance.hasDraft(1)).toBe(true);
+    const note = fresh.nativeElement.querySelector('.draft-note') as HTMLElement;
+    expect(note.textContent).toContain('変更あり');
   });
 
   /** Content saved before the CMS recorded timestamps has nothing to show. */

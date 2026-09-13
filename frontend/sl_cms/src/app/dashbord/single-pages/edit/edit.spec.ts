@@ -17,6 +17,7 @@ class StubSinglePagesService {
     published_at: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
   };
 
   getPageSchema(): Observable<unknown> {
@@ -33,12 +34,12 @@ class StubSinglePagesService {
 
   publishPage(name: string): Observable<ItemMetadata> {
     this.published.push(name);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     this.unpublished.push(name);
-    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' });
+    return of({ status: 'draft', published_at: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 }
 
@@ -123,6 +124,7 @@ describe('Edit', () => {
       published_at: '2024-01-01T00:00:00Z',
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
     };
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();

@@ -13,6 +13,11 @@ pub trait SinglePageRepository:Send + Sync + 'static {
     fn get_single_page_item(&self, page_name: &SinglePageName) -> Result<Option<SinglePageItem>, BoxError>;
     fn update_single_page_item(&self, page_name: &SinglePageName, item_data: &SinglePageItem) -> Result<(), BoxError>;
 
+    // The working copy, as for collection items. Absent means "no unpublished changes".
+    fn get_single_page_item_draft(&self, page_name: &SinglePageName) -> Result<Option<SinglePageItem>, BoxError>;
+    fn set_single_page_item_draft(&self, page_name: &SinglePageName, item_data: &SinglePageItem) -> Result<(), BoxError>;
+    fn delete_single_page_item_draft(&self, page_name: &SinglePageName) -> Result<(), BoxError>;
+
     // Draft/published metadata. Absent metadata means "draft".
     fn get_page_metadata(&self, page_name: &SinglePageName) -> Result<Option<ItemMetadata>, BoxError>;
     fn set_page_metadata(&self, page_name: &SinglePageName, metadata: &ItemMetadata) -> Result<(), BoxError>;

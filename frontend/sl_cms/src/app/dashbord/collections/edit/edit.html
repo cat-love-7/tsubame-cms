@@ -4,6 +4,9 @@
        the server knows the item. -->
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
+    @if (meta.status === 'published' && meta.has_draft) {
+      <span class="draft-note">未公開の変更あり</span>
+    }
     <button matButton (click)="togglePublished()">
       {{ published() ? 'Unpublish' : 'Publish' }}
     </button>
@@ -14,6 +17,12 @@
 
 @if (error()) {
   <p class="error" role="alert">{{ error() }}</p>
+}
+
+@if (metadata()?.status === 'published' && metadata()?.has_draft) {
+  <p class="note">
+    保存した内容はまだ公開されていません。「Publish」を押すまでサイトには反映されません。
+  </p>
 }
 
 @if (schema().length === 0) {
