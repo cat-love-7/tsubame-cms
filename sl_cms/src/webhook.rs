@@ -155,8 +155,17 @@ pub struct WebhookNotifier {
     secret: Option<Vec<u8>>,
 }
 
+/// reqwest 0.13 no longer picks a rustls crypto provider for the process, so the
+/// application has to. Ring is the pure-Rust provider, which keeps CMake out of the
+/// build; a provider installed by someone else first is just as good, hence the
+/// ignored error.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 impl WebhookNotifier {
     pub fn new(targets: Vec<String>, secret: Option<Vec<u8>>) -> Result<Self, String> {
+        install_crypto_provider();
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .build()

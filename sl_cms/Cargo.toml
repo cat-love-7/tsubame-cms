@@ -26,9 +26,12 @@ uuid = { version = "1.20.0", features = ["v4", "serde"] }
 # pure-Rust crypto so the build needs no C toolchain for ring/aws-lc-rs.
 argon2 = { version = "0.6", features = ["password-hash", "rand_core", "getrandom"] }
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-# Outbound webhooks (content events). `ring` rather than the default `aws-lc-rs`
-# provider: aws-lc-rs needs CMake, ring only needs a C compiler.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+# Outbound webhooks (content events). reqwest 0.13 leaves the TLS crypto provider to
+# the process, so `rustls-no-provider` plus an explicit `ring` below keeps the build
+# free of CMake, which `aws-lc-rs` (the provider reqwest would otherwise enable) needs.
+# Certificate trust comes from the platform store instead of a bundled root list.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 # HMAC-SHA256 for the webhook signature.
 hmac = "0.13"
 sha2 = "0.11"
