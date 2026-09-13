@@ -100,19 +100,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_add_and_get_composite_field_schema() {
+    #[tokio::test]
+    async fn test_add_and_get_composite_field_schema() {
         let repository = setup_repository();
         let schema = vec![];
         let id = "test_schema".into();
-        repository.add_composite_field_schema(&id, &schema).unwrap();
-        let retrieved_schema = repository.get_composite_field_schema(&id).unwrap();
+        repository.add_composite_field_schema(&id, &schema).await.unwrap();
+        let retrieved_schema = repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema.is_some());
         assert_eq!(retrieved_schema.unwrap(), schema);
         teardown_repository();
     }
-    #[test]
-    fn test_list_composite_field_schemas() {
+    #[tokio::test]
+    async fn test_list_composite_field_schemas() {
         let repository = setup_repository();
         let id1 = "schema1".into();
         let schema1 = vec![FieldSchema {
@@ -131,9 +131,9 @@ mod tests {
             width: 12,
             height: 1,
         }];
-        repository.add_composite_field_schema(&id1, &schema1).unwrap();
-        repository.add_composite_field_schema(&id2, &schema2).unwrap();
-        let schemas = repository.list_composite_field_schemas().unwrap();
+        repository.add_composite_field_schema(&id1, &schema1).await.unwrap();
+        repository.add_composite_field_schema(&id2, &schema2).await.unwrap();
+        let schemas = repository.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas.len(), 2);
         assert!(schemas.contains_key(&"schema1".into()));
         assert!(schemas.contains_key(&"schema2".into()));
@@ -141,19 +141,19 @@ mod tests {
         assert_eq!(schemas.get(&"schema2".into()).unwrap(), &schema2);
         teardown_repository();
     }
-    #[test]
-    fn test_get_nonexistent_composite_field_schema() {
+    #[tokio::test]
+    async fn test_get_nonexistent_composite_field_schema() {
         let repository = setup_repository();
-        let retrieved_schema = repository.get_composite_field_schema(&"nonexistent".into()).unwrap();
+        let retrieved_schema = repository.get_composite_field_schema(&"nonexistent".into()).await.unwrap();
         assert!(retrieved_schema.is_none());
         teardown_repository();
     }
-    #[test]
-    fn test_get_anomaly() {
+    #[tokio::test]
+    async fn test_get_anomaly() {
         let repository = setup_repository();
         let id = "test_schema".into();
         let schema = vec![];
-        repository.add_composite_field_schema(&id, &schema).unwrap();
+        repository.add_composite_field_schema(&id, &schema).await.unwrap();
         // Manually corrupt the data
         {
             let env = repository.rkv.read().unwrap();
@@ -163,23 +163,23 @@ mod tests {
             writer.commit().unwrap();
         }
 
-        let result = repository.get_composite_field_schema(&"test_schema".into());
+        let result = repository.get_composite_field_schema(&"test_schema".into()).await;
         assert!(result.is_err());
 
-        let list_result = repository.list_composite_field_schemas();
+        let list_result = repository.list_composite_field_schemas().await;
         assert!(list_result.is_err());
         teardown_repository();
     }
-    #[test]
-    fn test_delete_composite_field_schema() {
+    #[tokio::test]
+    async fn test_delete_composite_field_schema() {
         let repository = setup_repository();
         let id = "to_be_deleted".into();
         let schema = vec![];
-        repository.add_composite_field_schema(&id, &schema).unwrap();
-        let retrieved_schema = repository.get_composite_field_schema(&id).unwrap();
+        repository.add_composite_field_schema(&id, &schema).await.unwrap();
+        let retrieved_schema = repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema.is_some());
-        repository.delete_composite_field_schema(&id).unwrap();
-        let retrieved_schema_after_deletion = repository.get_composite_field_schema(&id).unwrap();
+        repository.delete_composite_field_schema(&id).await.unwrap();
+        let retrieved_schema_after_deletion = repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema_after_deletion.is_none());
         teardown_repository();
     }

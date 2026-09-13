@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
+use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
@@ -321,25 +322,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// This is the entry point the HTTP layer uses: values arrive without type tags, so
     /// the collection schema is what gives them meaning. Types that do not match are
     /// rejected with 400 rather than coerced.
-    pub fn create_collection_item_from_json(
+    pub async fn create_collection_item_from_json(
         &self,
         collection_name: &CollectionName,
         body: &serde_json::Value,
     ) -> Result<u64, HttpError> {
-        let item = self.parse_item(collection_name, body)?;
-        self.create_collection_item(collection_name, &item)
+        let item = self.parse_item(collection_name, body).await?;
+        self.create_collection_item(collection_name, &item).await
     }
 
     /// Update an item from an **untagged** JSON body. See
     /// [`CollectionService::create_collection_item_from_json`].
-    pub fn update_collection_item_from_json(
+    pub async fn update_collection_item_from_json(
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
         body: &serde_json::Value,
     ) -> Result<(), HttpError> {
-        let item = self.parse_item(collection_name, body)?;
-        self.update_collection_item(collection_name, item_id, &item)
+        let item = self.parse_item(collection_name, body).await?;
+        self.update_collection_item(collection_name, item_id, &item).await
     }
 
     /// Read an untagged body into a [`CollectionItem`] using the collection schema.
@@ -429,12 +430,22 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let composite_schema_map = self
             .composite_field_repository
             .list_composite_field_schemas()
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
+        // The image library once per request: a field value may point at an image, and the
+        // cheap way to answer that is one query rather than one per value.
+        let images: HashMap<ImageID, Image> = self
+            .image_repository
+            .get_all_images()
+            .await
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
         Ok(items
             .into_iter()
             .map(|(id, item)| {
                 let formatted = item.format_to_schema(&composite_schema_map, schema);
-                (id, formatted.to_response(self.image_repository.as_ref()))
+                (id, formatted.to_response(&images))
             })
             .collect())
     }
@@ -449,10 +460,20 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let composite_schema_map = self
             .composite_field_repository
             .list_composite_field_schemas()
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
+        // The image library once per request: a field value may point at an image, and the
+        // cheap way to answer that is one query rather than one per value.
+        let images: HashMap<ImageID, Image> = self
+            .image_repository
+            .get_all_images()
+            .await
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
         Ok(item
             .format_to_schema(&composite_schema_map, &schema)
-            .to_response(self.image_repository.as_ref()))
+            .to_response(&images))
     }
 
     /// Draft/published state of one item.
@@ -463,7 +484,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         item_id: CollectionItemId,
     ) -> Result<ItemMetadata, HttpError> {
-        self.require_item(collection_name, &item_id)?;
+        self.require_item(collection_name, &item_id).await?;
         Ok(self
             .collection_repository
             .get_item_metadata(collection_name, &item_id)
@@ -502,7 +523,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         item_id: CollectionItemId,
     ) -> Result<bool, HttpError> {
-        self.require_item(collection_name, &item_id)?;
+        self.require_item(collection_name, &item_id).await?;
         Ok(self
             .collection_repository
             .get_collection_item_draft(collection_name, &item_id)
@@ -535,7 +556,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         status: ItemStatus,
         actor: PublishedBy,
     ) -> Result<ItemMetadata, HttpError> {
-        self.require_item(collection_name, &item_id)?;
+        self.require_item(collection_name, &item_id).await?;
         // Built from the stored record so publishing keeps the content timestamps.
         let metadata = self
             .collection_repository
@@ -571,12 +592,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     /// Items with the window the caller asked for. The total travels alongside, because
     /// `X-Total-Count` is what tells an admin caller there is more to fetch.
-    pub fn get_collection_items_page(
+    pub async fn get_collection_items_page(
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
     ) -> Result<Page<(CollectionItemId, CollectionItemResponse)>, HttpError> {
-        Ok(pagination.apply(self.get_collection_items(collection_name)?))
+        Ok(pagination.apply(self.get_collection_items(collection_name).await?))
     }
 
     /// Items visible to the public delivery API, with the metadata it reports.
@@ -644,12 +665,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     }
 
     /// Collections that have at least one published item.
-    pub fn list_collections_with_published_items(
+    pub async fn list_collections_with_published_items(
         &self,
     ) -> Result<Vec<CollectionName>, HttpError> {
         let mut names = Vec::new();
-        for name in self.get_all_collections()? {
-            if !self.published_item_ids(&name)?.is_empty() {
+        for name in self.get_all_collections().await? {
+            if !self.published_item_ids(&name).await?.is_empty() {
                 names.push(name);
             }
         }
@@ -670,12 +691,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collect())
     }
 
-    fn require_item(
+    async fn require_item(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
     ) -> Result<(), HttpError> {
-        if self.working_item(collection_name, item_id)?.is_none() {
+        if self.working_item(collection_name, item_id).await?.is_none() {
             return Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
                 item_id, collection_name
@@ -709,19 +730,19 @@ mod tests {
         drafts: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), CollectionItem>>>,
     }
     impl CollectionRepository for MockCollectionRepository {
-        fn get_collection_schema(
+        async fn get_collection_schema(
             &self,
             collection_name: &CollectionName,
         ) -> Result<Option<CollectionSchema>, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             Ok(self.schemas.read().unwrap().get(collection_name).cloned())
         }
-        fn list_collection_names(
+        async fn list_collection_names(
             &self,
         ) -> Result<Vec<CollectionName>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(self.schemas.read().unwrap().keys().cloned().collect())
         }
-        fn add_collection_schema(
+        async fn add_collection_schema(
             &self,
             collection_name: &CollectionName,
             schema: &CollectionSchema,
@@ -729,7 +750,7 @@ mod tests {
             self.schemas.write().unwrap().insert(collection_name.clone(), schema.clone());
             Ok(())
         }
-        fn delete_collection(
+        async fn delete_collection(
             &self,
             collection_name: &CollectionName,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -737,7 +758,7 @@ mod tests {
             self.item_metadata.write().unwrap().retain(|(name, _), _| name != collection_name);
             Ok(())
         }
-        fn list_collection_items(
+        async fn list_collection_items(
             &self,
             collection_name: &CollectionName,
         ) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn std::error::Error + Send + Sync + 'static>>
@@ -746,7 +767,7 @@ mod tests {
                 items_map.iter().map(|(id, item)| (id.clone(), item.clone())).collect()
             }))
         }
-        fn get_collection_item(
+        async fn get_collection_item(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -758,7 +779,7 @@ mod tests {
                 Ok(None)
             }
         }
-        fn add_collection_item(
+        async fn add_collection_item(
             &self,
             collection_name: &CollectionName,
             item_data: &CollectionItem,
@@ -773,7 +794,7 @@ mod tests {
             collection_items.insert(CollectionItemId::from_u64(new_id), item_data.clone());
             Ok(new_id)
         }
-        fn update_collection_item(
+        async fn update_collection_item(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -784,7 +805,7 @@ mod tests {
             }
             Ok(())
         }
-        fn delete_collection_item(
+        async fn delete_collection_item(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -798,7 +819,7 @@ mod tests {
                 .remove(&(collection_name.clone(), item_id.clone()));
             Ok(())
         }
-        fn get_item_metadata(
+        async fn get_item_metadata(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -810,7 +831,7 @@ mod tests {
                 .get(&(collection_name.clone(), item_id.clone()))
                 .cloned())
         }
-        fn set_item_metadata(
+        async fn set_item_metadata(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -822,7 +843,7 @@ mod tests {
                 .insert((collection_name.clone(), item_id.clone()), metadata.clone());
             Ok(())
         }
-        fn get_collection_item_draft(
+        async fn get_collection_item_draft(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -834,7 +855,7 @@ mod tests {
                 .get(&(collection_name.clone(), item_id.clone()))
                 .cloned())
         }
-        fn set_collection_item_draft(
+        async fn set_collection_item_draft(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -846,7 +867,7 @@ mod tests {
                 .insert((collection_name.clone(), item_id.clone()), item_data.clone());
             Ok(())
         }
-        fn delete_collection_item_draft(
+        async fn delete_collection_item_draft(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -857,7 +878,7 @@ mod tests {
                 .remove(&(collection_name.clone(), item_id.clone()));
             Ok(())
         }
-        fn list_collection_item_drafts(
+        async fn list_collection_item_drafts(
             &self,
             collection_name: &CollectionName,
         ) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn std::error::Error + Send + Sync + 'static>>
@@ -871,7 +892,7 @@ mod tests {
                 .map(|((_, id), item)| (id.clone(), item.clone()))
                 .collect())
         }
-        fn apply_item_status(
+        async fn apply_item_status(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
@@ -898,7 +919,7 @@ mod tests {
                 .insert((collection_name.clone(), item_id.clone()), metadata.clone());
             Ok(())
         }
-        fn list_item_metadata(
+        async fn list_item_metadata(
             &self,
             collection_name: &CollectionName,
         ) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn std::error::Error + Send + Sync + 'static>>
@@ -918,7 +939,7 @@ mod tests {
         schemas: Arc<RwLock<HashMap<CompositeFieldId, CompositeFieldSchema>>>,
     }
     impl CompositeFieldRepository for MockCompositeFieldRepository {
-        fn list_composite_field_schemas(
+        async fn list_composite_field_schemas(
             &self,
         ) -> Result<
             HashMap<CompositeFieldId, CompositeFieldSchema>,
@@ -926,7 +947,7 @@ mod tests {
         > {
             Ok(self.schemas.read().unwrap().clone())
         }
-        fn get_composite_field_schema(
+        async fn get_composite_field_schema(
             &self,
             id: &CompositeFieldId,
         ) -> Result<
@@ -935,7 +956,7 @@ mod tests {
         > {
             Ok(self.schemas.read().unwrap().get(id).cloned())
         }
-        fn add_composite_field_schema(
+        async fn add_composite_field_schema(
             &self,
             id: &CompositeFieldId,
             schema: &CompositeFieldSchema,
@@ -943,7 +964,7 @@ mod tests {
             self.schemas.write().unwrap().insert(id.clone(), schema.clone());
             Ok(())
         }
-        fn delete_composite_field_schema(
+        async fn delete_composite_field_schema(
             &self,
             id: &CompositeFieldId,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -954,23 +975,23 @@ mod tests {
 
     struct MockImageRepository {}
     impl ImageRepository for MockImageRepository {
-        fn get_image(&self, id: &ImageID) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Some(Image {
                 original_filename: format!("image_{}.jpg", id),
                 url: format!("/images/{}", id),
                 uploaded_at: chrono::Utc::now(),
             }))
         }
-        fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(vec![])
         }
-        fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(NewImageInfo {
                 id: ImageID::from_u64(1),
                 upload_url: "/upload/1".to_string(),
             })
         }
-        fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
     }
@@ -1126,8 +1147,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_collection_schema_not_found() {
         let service = create_test_service();
-        let result = service.get_collection_schema(&"non_existent".into());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection not found"));
+        let result = service.get_collection_schema(&"non_existent".into()).await;
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection not found"));
     }
 
     #[tokio::test]
@@ -1143,8 +1164,8 @@ mod tests {
             }
         ];
 
-        let result = service.add_collection_schema(&"test_collection".into(), &schema);
-        assert!(result.await.is_ok());
+        let result = service.add_collection_schema(&"test_collection".into(), &schema).await;
+        assert!(result.is_ok());
 
         let collection_names = service.get_all_collections().await.unwrap();
         assert_eq!(collection_names, vec!["test_collection".into()]);
@@ -1176,8 +1197,8 @@ mod tests {
                 height: 1,
             }
         ];
-        let result = service.update_collection_schema(&"test_collection".into(), &updated_schema);
-        assert!(result.await.is_ok());
+        let result = service.update_collection_schema(&"test_collection".into(), &updated_schema).await;
+        assert!(result.is_ok());
 
         let retrieved_schema = service.get_collection_schema(&"test_collection".into()).await.unwrap();
         assert_eq!(retrieved_schema, updated_schema);
@@ -1206,9 +1227,9 @@ mod tests {
                 height: 1,
             }
         ];
-        let result = service.add_collection_schema(&"test_collection".into(), &duplicate_schema);
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::Conflict("Collection with id 'test_collection' already exists"));
+        let result = service.add_collection_schema(&"test_collection".into(), &duplicate_schema).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::Conflict("Collection with id 'test_collection' already exists"));
 
         let retrieved_schema = service.get_collection_schema(&"test_collection".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
@@ -1228,8 +1249,8 @@ mod tests {
         ];
         service.add_collection_schema(&"test_collection".into(), &schema).await.unwrap();
 
-        let result = service.delete_collection(&"test_collection".into());
-        assert!(result.await.is_ok());
+        let result = service.delete_collection(&"test_collection".into()).await;
+        assert!(result.is_ok());
 
         let collection_names = service.get_all_collections().await.unwrap();
         assert_eq!(collection_names.len(), 0);
@@ -1249,8 +1270,8 @@ mod tests {
                     height: 1,
                 }
             ],
-        );
-        assert!(update_result.await.is_err());
+        ).await;
+        assert!(update_result.is_err());
     }
     #[tokio::test]
     async fn test_create_collection_item_success() {
@@ -1272,17 +1293,17 @@ mod tests {
         let result = service.create_collection_item(
             &"test_composite".into(),
             &create_test_item("Test Title", 42.0),
-        );
-        assert!(result.await.is_ok());
-        assert_eq!(result.await.unwrap(), 1);
+        ).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
     }
 
     #[tokio::test]
     async fn test_create_collection_item_missing_collection() {
         let service = create_test_service();
-        let result = service.create_collection_item(&"non_existent".into(), &FieldValueMap(HashMap::new(), std::marker::PhantomData));
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
+        let result = service.create_collection_item(&"non_existent".into(), &FieldValueMap(HashMap::new(), std::marker::PhantomData)).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
     }
 
     #[tokio::test]
@@ -1305,9 +1326,9 @@ mod tests {
         let result = service.create_collection_item(
             &"test_composite".into(),
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), std::marker::PhantomData),
-        );
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        ).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
     }
 
     #[tokio::test]
@@ -1331,9 +1352,9 @@ mod tests {
         let image_repository = MockImageRepository {};
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
-        let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1));
-        assert!(result.await.is_ok());
-        assert_eq!(result.await.unwrap(), create_test_item_response("Sample Title", 10.0));
+        let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), create_test_item_response("Sample Title", 10.0));
     }
 
     #[tokio::test]
@@ -1353,17 +1374,17 @@ mod tests {
         let image_repository = MockImageRepository {};
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
-        let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999));
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
+        let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999)).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
     }
 
     #[tokio::test]
     async fn test_get_collection_item_missing_collection() {
         let service = create_test_service();
-        let result = service.get_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1));
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
+        let result = service.get_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1)).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
     }
 
     #[tokio::test]
@@ -1391,8 +1412,8 @@ mod tests {
             &"test_composite".into(),
             CollectionItemId::from_u64(1),
             &create_test_item("Updated Title", 100.0),
-        );
-        assert!(result.await.is_ok());
+        ).await;
+        assert!(result.is_ok());
 
         let item = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await.unwrap();
         assert_eq!(item, create_test_item_response("Updated Title", 100.0));
@@ -1419,9 +1440,9 @@ mod tests {
             &"test_composite".into(),
             CollectionItemId::from_u64(999),
             &create_test_item("Updated Title", 100.0),
-        );
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
+        ).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
     }
 
     #[tokio::test]
@@ -1431,9 +1452,9 @@ mod tests {
             &"non_existent".into(),
             CollectionItemId::from_u64(1),
             &create_test_item("Updated Title", 100.0),
-        );
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
+        ).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
     }
 
     #[tokio::test]
@@ -1461,9 +1482,9 @@ mod tests {
             &"test_composite".into(),
             CollectionItemId::from_u64(1),
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(100.0)))]), std::marker::PhantomData),
-        );
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        ).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
     }
 
     #[tokio::test]
@@ -1488,9 +1509,9 @@ mod tests {
         let image_repository = MockImageRepository {};
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
-        let result = service.get_collection_items(&"test_composite".into());
-        assert!(result.await.is_ok());
-        let items = result.await.unwrap();
+        let result = service.get_collection_items(&"test_composite".into()).await;
+        assert!(result.is_ok());
+        let items = result.unwrap();
         assert_eq!(items.len(), 2);
         assert!(items.contains(&(CollectionItemId::from_u64(1), create_test_item_response("Sample Title", 10.0))));
         assert!(items.contains(&(CollectionItemId::from_u64(2), create_test_item_response("Another Title", 20.0))));
@@ -1499,9 +1520,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_collection_items_missing_collection() {
         let service = create_test_service();
-        let result = service.get_collection_items(&"non_existent".into());
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
+        let result = service.get_collection_items(&"non_existent".into()).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
     }
 
     #[tokio::test]
@@ -1525,12 +1546,12 @@ mod tests {
         let image_repository = MockImageRepository {};
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
-        let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1));
-        assert!(result.await.is_ok());
+        let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await;
+        assert!(result.is_ok());
 
-        let get_result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1));
-        assert!(get_result.await.is_err());
-        assert_eq!(get_result.await.err().unwrap(), HttpError::NotFound("Item with id '1' not found in collection 'test_composite'"));
+        let get_result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await;
+        assert!(get_result.is_err());
+        assert_eq!(get_result.err().unwrap(), HttpError::NotFound("Item with id '1' not found in collection 'test_composite'"));
     }
 
     #[tokio::test]
@@ -1550,16 +1571,16 @@ mod tests {
         let image_repository = MockImageRepository {};
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
-        let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999));
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
+        let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999)).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Item with id '999' not found in collection 'test_composite'"));
     }
 
     #[tokio::test]
     async fn test_delete_collection_item_missing_collection() {
         let service = create_test_service();
-        let result = service.delete_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1));
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
+        let result = service.delete_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1)).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Collection with id 'non_existent' does not exist"));
     }
 }

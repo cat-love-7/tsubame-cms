@@ -17,23 +17,19 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<Option<SinglePageSchema>, BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::page(&name), key::SCHEMA).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::page(&name), key::SCHEMA).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
     async fn list_all_page_names(&self) -> Result<Vec<SinglePageName>, BoxError> {
         let inner = self.inner.clone();
-        self.runtime.block_on(async move {
-            let records = list(&inner, key::PAGE_INDEX, "").await?;
-            records
-                .into_iter()
-                .map(|(sk, _)| Ok(SinglePageName::from(sk.as_str())))
-                .collect()
-        })
+        let records = list(&inner, key::PAGE_INDEX, "").await?;
+        records
+            .into_iter()
+            .map(|(sk, _)| Ok(SinglePageName::from(sk.as_str())))
+            .collect()
     }
 
     async fn add_single_page_schema(
@@ -44,27 +40,23 @@ impl SinglePageRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = page_name.clone();
         let data = AwsRepository::encode(schema)?;
-        self.runtime.block_on(async move {
-            write(&inner, &key::page(&name), key::SCHEMA, &data).await?;
-            // The index entry is what `list_all_page_names` queries; it is written after the
-            // schema so a name is never listed before the page exists.
-            write(&inner, key::PAGE_INDEX, name.as_str(), name.as_str()).await
-        })
+        write(&inner, &key::page(&name), key::SCHEMA, &data).await?;
+        // The index entry is what `list_all_page_names` queries; it is written after the
+        // schema so a name is never listed before the page exists.
+        write(&inner, key::PAGE_INDEX, name.as_str(), name.as_str()).await
     }
 
     async fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::page(&name);
-            // Schema, published copy, working copy and metadata, in one pass. Any of them may
-            // be absent (a page that was never published, or never edited), and deleting an
-            // absent key is not an error.
-            for (sk, _) in list(&inner, &partition, "").await? {
-                remove(&inner, &partition, &sk).await?;
-            }
-            remove(&inner, key::PAGE_INDEX, name.as_str()).await
-        })
+        let partition = key::page(&name);
+        // Schema, published copy, working copy and metadata, in one pass. Any of them may
+        // be absent (a page that was never published, or never edited), and deleting an
+        // absent key is not an error.
+        for (sk, _) in list(&inner, &partition, "").await? {
+            remove(&inner, &partition, &sk).await?;
+        }
+        remove(&inner, key::PAGE_INDEX, name.as_str()).await
     }
 
     async fn get_single_page_item(
@@ -73,12 +65,10 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<Option<SinglePageItem>, BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::page(&name), key::ITEM).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::page(&name), key::ITEM).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
     async fn update_single_page_item(
@@ -89,8 +79,7 @@ impl SinglePageRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = page_name.clone();
         let data = AwsRepository::encode(item_data)?;
-        self.runtime
-            .block_on(async move { write(&inner, &key::page(&name), key::ITEM, &data).await })
+        write(&inner, &key::page(&name), key::ITEM, &data).await
     }
 
     async fn get_single_page_item_draft(
@@ -99,12 +88,10 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<Option<SinglePageItem>, BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::page(&name), key::DRAFT).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::page(&name), key::DRAFT).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
     async fn set_single_page_item_draft(
@@ -115,8 +102,7 @@ impl SinglePageRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = page_name.clone();
         let data = AwsRepository::encode(item_data)?;
-        self.runtime
-            .block_on(async move { write(&inner, &key::page(&name), key::DRAFT, &data).await })
+        write(&inner, &key::page(&name), key::DRAFT, &data).await
     }
 
     async fn delete_single_page_item_draft(
@@ -125,8 +111,7 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime
-            .block_on(async move { remove(&inner, &key::page(&name), key::DRAFT).await })
+        remove(&inner, &key::page(&name), key::DRAFT).await
     }
 
     async fn get_page_metadata(
@@ -135,12 +120,10 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<Option<ItemMetadata>, BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::page(&name), key::META).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::page(&name), key::META).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
 
@@ -152,8 +135,7 @@ impl SinglePageRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = page_name.clone();
         let data = AwsRepository::encode(metadata)?;
-        self.runtime
-            .block_on(async move { write(&inner, &key::page(&name), key::META, &data).await })
+        write(&inner, &key::page(&name), key::META, &data).await
     }
 
     async fn apply_page_status(
@@ -166,23 +148,21 @@ impl SinglePageRepository for AwsRepository {
         let name = page_name.clone();
         let draft = draft.cloned();
         let data = AwsRepository::encode(metadata)?;
-        self.runtime.block_on(async move {
-            let partition = key::page(&name);
-            let Some(draft) = draft else {
-                // Nothing pending: only the status changes.
-                return write(&inner, &partition, key::META, &data).await;
-            };
-            let draft_data = AwsRepository::encode(&draft)?;
-            // One transaction, for the reason in `CollectionRepository::apply_item_status`.
-            transact(
-                &inner,
-                vec![
-                    put_in_transaction(&inner, &partition, key::ITEM, &draft_data)?,
-                    delete_in_transaction(&inner, &partition, key::DRAFT)?,
-                    put_in_transaction(&inner, &partition, key::META, &data)?,
-                ],
-            )
-            .await
-        })
+        let partition = key::page(&name);
+        let Some(draft) = draft else {
+            // Nothing pending: only the status changes.
+            return write(&inner, &partition, key::META, &data).await;
+        };
+        let draft_data = AwsRepository::encode(&draft)?;
+        // One transaction, for the reason in `CollectionRepository::apply_item_status`.
+        transact(
+            &inner,
+            vec![
+                put_in_transaction(&inner, &partition, key::ITEM, &draft_data)?,
+                delete_in_transaction(&inner, &partition, key::DRAFT)?,
+                put_in_transaction(&inner, &partition, key::META, &data)?,
+            ],
+        )
+        .await
     }
 }

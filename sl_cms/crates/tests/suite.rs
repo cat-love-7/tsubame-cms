@@ -19,12 +19,10 @@ use axum::Router;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_core::models::pagination::DEFAULT_PAGE_LIMIT;
 use sl_cms_core::models::user::Permission;
-use sl_cms_core::password_reset::PasswordResetIssuer;
-use sl_cms_core::preview_link::{PreviewLinkIssuer, PreviewTarget};
-use sl_cms_core::webhook::{NoopNotifier, Notifier, WebhookNotifier};
+use sl_cms_core::preview_link::PreviewTarget;
+use sl_cms_core::webhook::{Notifier, WebhookNotifier};
 use sl_cms_tests::{
     login, send, send_raw, send_with_headers, TestBackend, ADMIN_EMAIL, ADMIN_PASSWORD,
     VIEWER_EMAIL, VIEWER_PASSWORD,

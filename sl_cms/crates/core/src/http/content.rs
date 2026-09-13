@@ -82,7 +82,7 @@ async fn list_collections<R: Storage>(
     Ok(Json(
         module
             .collection_service
-            .list_collections_with_published_items()?,
+            .list_collections_with_published_items().await?,
     ))
 }
 

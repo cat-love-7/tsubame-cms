@@ -148,42 +148,36 @@ mod tests {
         let (repository, _table) = crate::open_test_repository("cms_images").await.expect("a table for this test");
         let bucket = repository.inner.settings.bucket.clone();
         let s3 = repository.inner.s3.clone();
-        let name = bucket.clone();
-        repository
-            .s3_blocking(async move {
-                s3.create_bucket()
-                    .bucket(&name)
-                    .send()
-                    .await
-                    .map_err(|e| format!("could not create {name}: {}", describe(&e)))?;
-                // The deployment makes the image bucket readable — the URL written into content
-                // is public and unsigned — while the emulator starts private.
-                s3.put_bucket_policy()
-                    .bucket(&name)
-                    .policy(
-                        serde_json::json!({
-                            "Version": "2012-10-17",
-                            "Statement": [{
-                                "Effect": "Allow",
-                                "Principal": { "AWS": ["*"] },
-                                "Action": ["s3:GetObject"],
-                                "Resource": [format!("arn:aws:s3:::{name}/*")],
-                            }],
-                        })
-                        .to_string(),
-                    )
-                    .send()
-                    .await
-                    .map_err(|e| format!("could not open {name} for reading: {}", describe(&e)))?;
-                Ok(())
-            })
-            .unwrap_or_else(|e| panic!("{e}"));
+        // The deployment makes the image bucket readable — the URL written into content is
+        // public and unsigned — while the emulator starts private.
+        s3.create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
+        s3.put_bucket_policy()
+            .bucket(&bucket)
+            .policy(
+                serde_json::json!({
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "AWS": ["*"] },
+                        "Action": ["s3:GetObject"],
+                        "Resource": [format!("arn:aws:s3:::{bucket}/*")],
+                    }],
+                })
+                .to_string(),
+            )
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not open {bucket} for reading: {}", describe(&e)));
 
         let request = NewImageRequest {
             original_filename: "cat.png".to_string(),
             ext: "PNG".to_string(),
         };
-        let info = repository.generate_image_upload_url(&request).unwrap();
+        let info = repository.generate_image_upload_url(&request).await.unwrap();
         assert!(info.upload_url.starts_with("http"), "not a URL: {}", info.upload_url);
 
         // The browser PUTs the bytes straight to S3: image bytes never travel through the API.
@@ -205,7 +199,7 @@ mod tests {
 
         // What is stored in content is the stable URL, not the signature: a presigned URL in a
         // page would expire with the link.
-        let image = repository.get_image(&info.id).unwrap().expect("the record");
+        let image = repository.get_image(&info.id).await.unwrap().expect("the record");
         assert_eq!(image.original_filename, "cat.png");
         assert!(
             image.url.starts_with(&format!("{endpoint}/{bucket}/")),
@@ -220,18 +214,18 @@ mod tests {
         assert_eq!(served.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
 
         // Listing, then deleting: both the record and the bytes go.
-        let all = repository.get_all_images().unwrap();
+        let all = repository.get_all_images().await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].0, info.id);
         assert_eq!(all[0].1.url, image.url);
 
-        repository.delete_image(&info.id).unwrap();
-        assert!(repository.get_image(&info.id).unwrap().is_none());
+        repository.delete_image(&info.id).await.unwrap();
+        assert!(repository.get_image(&info.id).await.unwrap().is_none());
         let gone = client.get(&image.url).send().await.unwrap();
         assert_eq!(gone.status(), 404, "the bytes are still there");
         // Deleting again reports what the on-premises adapter reports, so the service can turn
         // it into the same 404.
-        assert!(repository.delete_image(&info.id).is_err());
+        assert!(repository.delete_image(&info.id).await.is_err());
 
         repository.delete_table().await.unwrap();
     }

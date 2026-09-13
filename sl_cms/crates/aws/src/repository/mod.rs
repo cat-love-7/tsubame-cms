@@ -754,27 +754,27 @@ mod tests {
         let name = CollectionName::from("blog");
 
         // Schema, and the index that makes listing them a query.
-        assert!(repository.get_collection_schema(&name).unwrap().is_none());
-        repository.add_collection_schema(&name, &schema()).unwrap();
-        assert_eq!(repository.get_collection_schema(&name).unwrap(), Some(schema()));
-        assert_eq!(repository.list_collection_names().unwrap(), vec![name.clone()]);
+        assert!(repository.get_collection_schema(&name).await.unwrap().is_none());
+        repository.add_collection_schema(&name, &schema()).await.unwrap();
+        assert_eq!(repository.get_collection_schema(&name).await.unwrap(), Some(schema()));
+        assert_eq!(repository.list_collection_names().await.unwrap(), vec![name.clone()]);
 
         // Item ids come from the atomic counter: 1, then 2.
-        let first = repository.add_collection_item(&name, &values("First")).unwrap();
-        let second = repository.add_collection_item(&name, &values("Second")).unwrap();
+        let first = repository.add_collection_item(&name, &values("First")).await.unwrap();
+        let second = repository.add_collection_item(&name, &values("Second")).await.unwrap();
         assert_eq!((first, second), (1, 2));
-        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).unwrap(), Some(values("First")));
-        assert_eq!(repository.list_collection_items(&name).unwrap().len(), 2);
+        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap(), Some(values("First")));
+        assert_eq!(repository.list_collection_items(&name).await.unwrap().len(), 2);
 
         // The working copy is separate from the published one.
-        repository.set_collection_item_draft(&name, &CollectionItemId::from_u64(1), &values("Draft wording")).unwrap();
+        repository.set_collection_item_draft(&name, &CollectionItemId::from_u64(1), &values("Draft wording")).await.unwrap();
         assert_eq!(
-            repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).unwrap(),
+            repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).await.unwrap(),
             Some(values("Draft wording"))
         );
-        assert_eq!(repository.list_collection_item_drafts(&name).unwrap().len(), 1);
+        assert_eq!(repository.list_collection_item_drafts(&name).await.unwrap().len(), 1);
         // ...and the published copy still says what it said.
-        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).unwrap(), Some(values("First")));
+        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap(), Some(values("First")));
 
         // Metadata, including the status the admin list reads.
         let metadata = ItemMetadata {
@@ -782,24 +782,24 @@ mod tests {
             published_at: Some(chrono::Utc::now()),
             ..ItemMetadata::default()
         };
-        repository.set_item_metadata(&name, &CollectionItemId::from_u64(1), &metadata).unwrap();
+        repository.set_item_metadata(&name, &CollectionItemId::from_u64(1), &metadata).await.unwrap();
         assert_eq!(
-            repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).unwrap(),
+            repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).await.unwrap(),
             Some(metadata)
         );
-        assert_eq!(repository.list_item_metadata(&name).unwrap().len(), 1);
+        assert_eq!(repository.list_item_metadata(&name).await.unwrap().len(), 1);
 
         // Deleting an item takes all three records with it.
-        repository.delete_collection_item(&name, &CollectionItemId::from_u64(1)).unwrap();
-        assert!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).unwrap().is_none());
-        assert!(repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).unwrap().is_none());
-        assert!(repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).unwrap().is_none());
+        repository.delete_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap();
+        assert!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
+        assert!(repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
+        assert!(repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
 
         // Deleting a collection takes its items and its index entry.
-        repository.delete_collection(&name).unwrap();
-        assert!(repository.get_collection_schema(&name).unwrap().is_none());
-        assert!(repository.list_collection_names().unwrap().is_empty());
-        assert!(repository.list_collection_items(&name).unwrap().is_empty());
+        repository.delete_collection(&name).await.unwrap();
+        assert!(repository.get_collection_schema(&name).await.unwrap().is_none());
+        assert!(repository.list_collection_names().await.unwrap().is_empty());
+        assert!(repository.list_collection_items(&name).await.unwrap().is_empty());
 
         repository.delete_table().await.unwrap();
     }
@@ -807,7 +807,9 @@ mod tests {
     /// The id counter is an atomic `ADD`, which is the whole reason it is not a read-modify-write
     /// against the item records: two items can be created at the same moment in different
     /// requests, and neither may lose.
-    #[tokio::test]
+    // Several worker threads, because the point of the test is that two *concurrent* creates
+    // cannot be handed the same id: on a single-threaded runtime the tasks would take turns.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_creates_do_not_share_an_id() {
         let endpoint = crate::test_endpoint();
         if !emulator_reachable(&endpoint) {
@@ -816,7 +818,7 @@ mod tests {
         }
         let (repository, _table) = crate::open_test_repository("cms_concurrent").await.expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).unwrap();
+        repository.add_collection_schema(&name, &schema()).await.unwrap();
 
         let writers = 8;
         let each = 5;
@@ -824,16 +826,18 @@ mod tests {
         for _ in 0..writers {
             let repository = repository.clone();
             let name = name.clone();
-            handles.push(std::thread::spawn(move || {
-                (0..each)
-                    .map(|_| repository.add_collection_item(&name, &values("x")).unwrap())
-                    .collect::<Vec<u64>>()
+            handles.push(tokio::spawn(async move {
+                let mut ids = Vec::new();
+                for _ in 0..each {
+                    ids.push(repository.add_collection_item(&name, &values("x")).await.unwrap());
+                }
+                ids
             }));
         }
-        let mut ids: Vec<u64> = handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("a writer thread panicked"))
-            .collect();
+        let mut ids: Vec<u64> = Vec::new();
+        for handle in handles {
+            ids.extend(handle.await.expect("a writer task panicked"));
+        }
         ids.sort_unstable();
 
         assert_eq!(
@@ -842,7 +846,7 @@ mod tests {
             "an id was handed out twice, or one was skipped"
         );
         assert_eq!(
-            repository.list_collection_items(&name).unwrap().len(),
+            repository.list_collection_items(&name).await.unwrap().len(),
             (writers * each) as usize
         );
 
@@ -861,21 +865,21 @@ mod tests {
         }
         let (repository, _table) = crate::open_test_repository("cms_size").await.expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).unwrap();
+        repository.add_collection_schema(&name, &schema()).await.unwrap();
 
         let large = "a".repeat(300_000);
-        let id = repository.add_collection_item(&name, &values(&large)).unwrap();
+        let id = repository.add_collection_item(&name, &values(&large)).await.unwrap();
         assert_eq!(
             repository
                 .get_collection_item(&name, &CollectionItemId::from_u64(id))
-                .unwrap(),
+                .await.unwrap(),
             Some(values(&large)),
             "a 300KB value should survive the round trip"
         );
 
         let oversized = "a".repeat(500_000);
         assert!(
-            repository.add_collection_item(&name, &values(&oversized)).is_err(),
+            repository.add_collection_item(&name, &values(&oversized)).await.is_err(),
             "a record over DynamoDB's 400KB limit has to be refused"
         );
 
@@ -897,15 +901,15 @@ mod tests {
         }
         let (repository, _table) = crate::open_test_repository("cms_publish").await.expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).unwrap();
+        repository.add_collection_schema(&name, &schema()).await.unwrap();
         let id = CollectionItemId::from_u64(
-            repository.add_collection_item(&name, &values("Published text")).unwrap(),
+            repository.add_collection_item(&name, &values("Published text")).await.unwrap(),
         );
         repository
             .set_collection_item_draft(&name, &id, &values("Draft text"))
-            .unwrap();
+            .await.unwrap();
         assert!(
-            !repository.get_item_metadata(&name, &id).unwrap().unwrap_or_default().is_published(),
+            !repository.get_item_metadata(&name, &id).await.unwrap().unwrap_or_default().is_published(),
             "the item starts unpublished, so publishing has something to change"
         );
 
@@ -915,41 +919,38 @@ mod tests {
             ..ItemMetadata::default()
         };
         let oversized = "a".repeat(500_000);
-        let refused = repository.apply_item_status(
-            &name,
-            &id,
-            Some(&values(&oversized)),
-            &published,
-        );
+        let refused = repository
+            .apply_item_status(&name, &id, Some(&values(&oversized)), &published)
+            .await;
         assert!(refused.is_err(), "a working copy over 400KB cannot be published");
 
         // Nothing moved: not the published copy, not the working copy, not the status.
         assert_eq!(
-            repository.get_collection_item(&name, &id).unwrap(),
+            repository.get_collection_item(&name, &id).await.unwrap(),
             Some(values("Published text")),
             "the published copy changed even though the publish failed"
         );
         assert_eq!(
-            repository.get_collection_item_draft(&name, &id).unwrap(),
+            repository.get_collection_item_draft(&name, &id).await.unwrap(),
             Some(values("Draft text")),
             "the working copy was consumed by a publish that failed"
         );
         assert!(
-            !repository.get_item_metadata(&name, &id).unwrap().unwrap_or_default().is_published(),
+            !repository.get_item_metadata(&name, &id).await.unwrap().unwrap_or_default().is_published(),
             "the status says published although nothing was"
         );
 
         // And the same call with a working copy that fits does all three at once.
         repository
             .apply_item_status(&name, &id, Some(&values("Draft text")), &published)
-            .expect("a publish that fits");
+            .await.expect("a publish that fits");
         assert_eq!(
-            repository.get_collection_item(&name, &id).unwrap(),
+            repository.get_collection_item(&name, &id).await.unwrap(),
             Some(values("Draft text")),
             "the working copy should have replaced the published one"
         );
-        assert!(repository.get_collection_item_draft(&name, &id).unwrap().is_none());
-        assert!(repository.get_item_metadata(&name, &id).unwrap().unwrap().is_published());
+        assert!(repository.get_collection_item_draft(&name, &id).await.unwrap().is_none());
+        assert!(repository.get_item_metadata(&name, &id).await.unwrap().unwrap().is_published());
 
         repository.delete_table().await.unwrap();
     }
@@ -967,16 +968,16 @@ mod tests {
         }
         let (repository, _table) = crate::open_test_repository("cms_onemb").await.expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).unwrap();
+        repository.add_collection_schema(&name, &schema()).await.unwrap();
 
         let items = 120;
         let value = "a".repeat(10_000);
         for _ in 0..items {
-            repository.add_collection_item(&name, &values(&value)).unwrap();
+            repository.add_collection_item(&name, &values(&value)).await.unwrap();
         }
 
         let before = QUERY_ROUND_TRIPS.load(std::sync::atomic::Ordering::Relaxed);
-        let read = repository.list_collection_items(&name).unwrap();
+        let read = repository.list_collection_items(&name).await.unwrap();
         let round_trips = QUERY_ROUND_TRIPS.load(std::sync::atomic::Ordering::Relaxed) - before;
 
         assert_eq!(read.len(), items, "a page boundary dropped items");

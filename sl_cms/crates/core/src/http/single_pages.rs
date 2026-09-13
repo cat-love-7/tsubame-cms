@@ -257,6 +257,6 @@ async fn update_single_page_item<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .update_single_page_item_from_json(&name, &body)?;
+        .update_single_page_item_from_json(&name, &body).await?;
     Ok(StatusCode::OK)
 }

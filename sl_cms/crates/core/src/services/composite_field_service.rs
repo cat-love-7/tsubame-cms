@@ -115,7 +115,7 @@ mod tests {
         schemas: Arc<RwLock<HashMap<CompositeFieldId, CompositeFieldSchema>>>,
     }
     impl CompositeFieldRepository for MockCompositeFieldRepository {
-        fn list_composite_field_schemas(
+        async fn list_composite_field_schemas(
             &self,
         ) -> Result<
             HashMap<CompositeFieldId, CompositeFieldSchema>,
@@ -123,7 +123,7 @@ mod tests {
         > {
             Ok(self.schemas.read().unwrap().clone())
         }
-        fn get_composite_field_schema(
+        async fn get_composite_field_schema(
             &self,
             id: &CompositeFieldId,
         ) -> Result<
@@ -132,7 +132,7 @@ mod tests {
         > {
             Ok(self.schemas.read().unwrap().get(id).cloned())
         }
-        fn add_composite_field_schema(
+        async fn add_composite_field_schema(
             &self,
             id: &CompositeFieldId,
             schema: &CompositeFieldSchema,
@@ -140,7 +140,7 @@ mod tests {
             self.schemas.write().unwrap().insert(id.clone(), schema.clone());
             Ok(())
         }
-        fn delete_composite_field_schema(
+        async fn delete_composite_field_schema(
             &self,
             id: &CompositeFieldId,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -172,8 +172,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_composite_field_schema_not_found() {
         let service = create_test_service();
-        let result = service.get_composite_field_schema(&"non_existent".into());
-        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Composite field schema not found: non_existent"));
+        let result = service.get_composite_field_schema(&"non_existent".into()).await;
+        assert_eq!(result.err().unwrap(), HttpError::NotFound("Composite field schema not found: non_existent"));
     }
 
     #[tokio::test]
@@ -189,8 +189,8 @@ mod tests {
             }
         ];
 
-        let result = service.add_composite_field_schema(&"test_field".into(), &schema);
-        assert!(result.await.is_ok());
+        let result = service.add_composite_field_schema(&"test_field".into(), &schema).await;
+        assert!(result.is_ok());
 
         let schemas_map = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas_map, HashMap::from_iter(vec![("test_field".into(), schema.clone())]));
@@ -221,8 +221,8 @@ mod tests {
                 height: 1,
             }
         ];
-        let result = service.update_composite_field_schema(&"test_field".into(), &updated_schema);
-        assert!(result.await.is_ok());
+        let result = service.update_composite_field_schema(&"test_field".into(), &updated_schema).await;
+        assert!(result.is_ok());
 
         let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).await.unwrap();
         assert_eq!(retrieved_schema, updated_schema);
@@ -251,9 +251,9 @@ mod tests {
                 height: 1,
             }
         ];
-        let result = service.add_composite_field_schema(&"test_field".into(), &duplicate_schema);
-        assert!(result.await.is_err());
-        assert_eq!(result.await.err().unwrap(), HttpError::Conflict("Composite field schema already exists: test_field"));
+        let result = service.add_composite_field_schema(&"test_field".into(), &duplicate_schema).await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), HttpError::Conflict("Composite field schema already exists: test_field"));
 
         let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
@@ -273,8 +273,8 @@ mod tests {
         ];
         service.add_composite_field_schema(&"test_field".into(), &schema).await.unwrap();
 
-        let result = service.delete_composite_field_schema(&"test_field".into());
-        assert!(result.await.is_ok());
+        let result = service.delete_composite_field_schema(&"test_field".into()).await;
+        assert!(result.is_ok());
 
         let schemas_map = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas_map.len(), 0);
@@ -294,7 +294,7 @@ mod tests {
                     height: 1,
                 }
             ],
-        );
-        assert!(update_result.await.is_err());
+        ).await;
+        assert!(update_result.is_err());
     }
 }

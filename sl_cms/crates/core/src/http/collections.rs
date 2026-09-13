@@ -304,7 +304,7 @@ async fn get_collection_items<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let page = module
         .collection_service
-        .get_collection_items_page(&name, &pagination)?;
+        .get_collection_items_page(&name, &pagination).await?;
 
     // The body keeps the `[id, values]` array the UI already reads; the total travels in a
     // header so a paging caller knows how much is left.
@@ -322,7 +322,7 @@ async fn add_collection_item<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let item_id = module
         .collection_service
-        .create_collection_item_from_json(&name, &body)?;
+        .create_collection_item_from_json(&name, &body).await?;
     Ok(Json(item_id))
 }
 
@@ -347,7 +347,7 @@ async fn update_collection_item<R: Storage>(
         &name,
         CollectionItemId::from_u64(id),
         &body,
-    )?;
+    ).await?;
     Ok(StatusCode::OK)
 }
 

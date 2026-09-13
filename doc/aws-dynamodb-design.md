@@ -111,7 +111,7 @@ on-premises の rkv が同期だから。**AWS SDK は非同期**なので、そ
 ために作ってあり、非同期ストレージを差し込むならトレイトを async にするのがその延長線上にある。
 テスト 230 件が安全網になる。
 
-### 7.1 実際に採った順序: B′(実装は async、トレイトは当面そのまま)
+### 7.1 実際に採った順序: B′ を経て A へ(完了)
 
 A を機械的に一括で当てるのを 3 回試して 3 回落ちた(同名の同期/非同期メソッドが複数の型に
 あり、`to_response` や `notify` の呼び出しが別の型のメソッドに化ける。複数行のチェーンと
@@ -126,6 +126,28 @@ A を機械的に一括で当てるのを 3 回試して 3 回落ちた(同名�
 「同期メソッドをランタイムの中から呼ぶ」が一番壊れやすいので、そこは
 `aws::repository::tests::a_collection_round_trips_against_dynamodb_local` が
 `#[tokio::test]` の中から同期トレイトを呼ぶ形で押さえている。
+
+**→ A は完了した(2026-09)。** トレイトは
+`fn f(...) -> impl Future<Output = ...> + Send` になり、`BlockingRuntime` ブリッジと
+`bridge.rs`、`s3_blocking` / `delete_table_blocking` は消えた。分かったこと:
+
+- **`async fn` ではなく `impl Future + Send` を書く。** `async fn` in trait は Send を約束せず、
+  `R: Storage` にジェネリックな axum ハンドラが「future cannot be sent between threads」で
+  落ちる。実装側は `async fn` のままでよい。
+- **変換はコンパイラに運転させる。** トレイトを async にした瞬間、全呼び出し箇所が型エラーに
+  なる。rustc は「`await` をここに入れろ」を span と置換文字列で出すので、名前で置換するより
+  確実(以前それで `to_response` / `notify` の別型メソッドを壊した)。同じ提案が lib と test の
+  2 回出るので**重複除去が必須**。
+- **半分だけ変換したアダプタはデッドロックする。** ブリッジ経由の trait と直接 async の trait が
+  同じ SDK クライアントを使うと、接続プールがランタイム単位なので固まる。アダプタは 1 単位で
+  変換する。
+- 残る山は**借用**だった: `let result = service.call(&"x".into()); ... result.await` のような
+  テストは、await を定義側へ移す(`let result = service.call(&"x".into()).await;`)と両方直る。
+  整形処理(`models/field.rs`)は画像をイテレータの closure の中で引いていたので、
+  **解決済みの画像地図を渡す**形にして純粋関数にした(1 リクエスト 1 クエリになり、以前の
+  「値ごとに 1 回」より速い)。
+
+変換に使った道具は `sl_cms/scripts/migration/` に置いてある。
 
 **確認済み**: テーブル作成、スキーマと一覧の索引、原子的採番(1 → 2)、公開/下書き/メタデータの
 3 レコード、アイテム削除で 3 レコード、コレクション削除で配下と索引まで消えること。

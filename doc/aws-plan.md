@@ -201,6 +201,17 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
   `scripts/test-rust.sh` がポートを見てファイルごとスキップし、CI の `rust-aws` ジョブは
   `docker-compose.yml` からエミュレータを起動して本気で走らせる。
 
+### P8. 保存層を async にそろえる(2026-09、完了)
+
+`doc/aws-dynamodb-design.md` §7 の **A**。トレイト 6 つ 48 メソッドを
+`impl Future + Send` にし、サービス・ハンドラ・テストを async に、**AWS のブリッジを削除**した。
+
+- core のサービスは `async fn`、on-prem の実装は「await しない async fn」。
+- `crates/aws/src/bridge.rs` は無くなり、AWS 実装は素の `async fn`。
+- 変換は rustc の提案 span から機械的に適用(`sl_cms/scripts/migration/`)。
+- **契約スイート 43 件 × 2 バックエンドは変わらず緑**(`cargo test --workspace` で 281 件)。
+  AWS 側の実行時間は 15 秒 → 3.5 秒になった(呼び出しごとのスレッド往復が消えたため)。
+
 ### P3. Lambda 起動点
 
 - [ ] `lambda_http` で既存ルーターを載せる。イベント形状(API Gateway v1/v2)と

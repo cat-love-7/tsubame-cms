@@ -11,7 +11,7 @@ use axum::Router;
 
 use sl_cms_aws::AwsRepository;
 use sl_cms_core::app_module::AppModule;
-use sl_cms_core::http::{self, AppState};
+use sl_cms_core::http;
 use sl_cms_on_premises::repository::Repository;
 
 use crate::TestBackend;
@@ -64,7 +64,6 @@ impl Drop for OnPremises {
 /// checks first and skips this file with a note.
 pub struct Aws {
     repository: Arc<AwsRepository>,
-    table: String,
 }
 
 impl TestBackend for Aws {
@@ -73,7 +72,7 @@ impl TestBackend for Aws {
     const SERVES_IMAGE_BYTES: bool = false;
 
     async fn open(hint: &str) -> Self {
-        let (repository, table) = sl_cms_aws::open_test_repository(hint)
+        let (repository, _table) = sl_cms_aws::open_test_repository(hint)
             .await
             .unwrap_or_else(|e| {
                 panic!(
@@ -81,7 +80,7 @@ impl TestBackend for Aws {
                      start the emulators with `docker compose -f sl_cms/docker-compose.yml up -d`"
                 )
             });
-        Aws { repository, table }
+        Aws { repository }
     }
 
     fn storage(&self) -> Arc<Self::Storage> {
@@ -96,9 +95,15 @@ impl TestBackend for Aws {
 
 impl Drop for Aws {
     fn drop(&mut self) {
-        // The table is per run, so leaving it behind would only accumulate; deleting it needs
-        // the bridge because `Drop` cannot await.
-        let _ = self.repository.delete_table_blocking();
+        // The table belongs to this test, so it is dropped with it. `Drop` cannot await, so the
+        // delete is handed to the runtime the test runs on — best effort, which is all this
+        // needs to be: the emulator keeps its tables in memory.
+        let repository = self.repository.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = repository.delete_table().await;
+            });
+        }
     }
 }
 

@@ -5,8 +5,10 @@ use std::{collections::HashMap, marker::PhantomData};
 #[cfg(test)]
 use strum_macros::EnumIter;
 
-use crate::models::{image::{ImageID, ImageResponse}, schema::CompositeFieldId};
-use crate::repositories::image_repository::ImageRepository;
+use crate::models::{
+    image::{Image, ImageID, ImageResponse},
+    schema::CompositeFieldId,
+};
 
 pub use super::schema::{
     CompositeFieldReference, CompositeFieldSchema, FieldSchema, FieldType, TextFieldOptions,
@@ -43,12 +45,19 @@ where
         FieldValueMap(ret, PhantomData)
     }
     
-    pub fn to_response<IR: ImageRepository>(
+    /// The wire shape of every field.
+    ///
+    /// The images are handed in already resolved rather than looked up here: a field's value
+    /// may point at an image, and resolving that is a storage call. Doing it here would make
+    /// formatting asynchronous all the way down (and a lookup per value); the service reads the
+    /// library once per request and passes it in, which also keeps this a pure function.
+    pub fn to_response(
         &self,
-        image_repository: &IR,
+        images: &HashMap<ImageID, Image>,
     ) -> HashMap<String, FieldValueResponse> {
-        self.0.iter()
-            .map(|(k, v)| (k.clone(), v.to_response(image_repository)))
+        self.0
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_response(images)))
             .collect()
     }
     
@@ -617,10 +626,7 @@ impl Default for FieldValue {
     }
 }
 impl FieldValue {
-    pub async fn to_response<IR: ImageRepository>(
-        &self,
-        image_repository: &IR,
-    ) -> FieldValueResponse {
+    pub fn to_response(&self, images: &HashMap<ImageID, Image>) -> FieldValueResponse {
         match self {
             FieldValue::Text(s) => FieldValueResponse::Text(s.clone()),
             FieldValue::Markdown(s) => FieldValueResponse::Markdown(s.clone()),
@@ -630,11 +636,10 @@ impl FieldValue {
             FieldValue::DateTime(dt) => FieldValueResponse::DateTime(*dt),
             FieldValue::Image(img_id) => {
                 let img_response = img_id.as_ref().and_then(|id| {
-                    image_repository.get_image(id).ok()
-           await.             .and_then(|img_opt| img_opt.map(|img| ImageResponse {
-                            id: id.clone(),
-                            url: img.url,
-                        }))
+                    images.get(id).map(|img| ImageResponse {
+                        id: id.clone(),
+                        url: img.url.clone(),
+                    })
                 });
                 FieldValueResponse::Image(img_response)
             }
@@ -643,13 +648,13 @@ impl FieldValue {
                     CompositeFieldValueResponse {
                         id: v.id.clone(),
                         values: v.values.0.iter()
-                            .map(|(k, val)| (k.clone(), val.to_response(image_repository)))
+                            .map(|(k, val)| (k.clone(), val.to_response(images)))
                             .collect(),
                     }
                 }))
             }
             FieldValue::Array(arr) => {
-                FieldValueResponse::Array(arr.iter().map(|v| v.to_response(image_repository)).collect())
+                FieldValueResponse::Array(arr.iter().map(|v| v.to_response(images)).collect())
             }
             FieldValue::TextEnum(vals) => FieldValueResponse::TextEnum(vals.clone()),
         }
