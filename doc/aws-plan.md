@@ -113,11 +113,11 @@ true/false, "password_reset_links": true/false}`。
 
 ### P1. DynamoDB アダプタ(本丸)
 
-- [ ] **単一テーブルのキー設計を決めて文書化**する。案: `PK = collection#<name>` /
-      `SK = item#<id>`(公開)、`draft#<id>`(下書き)、`meta#<id>`(メタデータ)、
-      スキーマは `PK = schema#collection` / `SK = <name>`、単一ページ・複合フィールド・ユーザーも
-      同様に前置きで分ける。GSI の要否(ユーザー名の一意性、ユーザー一覧、コレクション一覧)も決める
-      → **完了条件**: `doc/` に表として残し、実装がそれだけを見て書ける。
+- [x] **単一テーブルのキー設計**を決めて [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) に
+      書いた。1 テーブル + `PK`/`SK`、**GSI なし**(一覧はすべてパーティションクエリ)、値は JSON 文字列、
+      読み取りは `ConsistentRead`、アイテム ID はゼロ埋め、ユーザー名の一意性は予約アイテム +
+      条件付き書き込み、公開は `TransactWriteItems`
+      → 確認: 実装が必要とするアクセスパターンを表で網羅(44 メソッド分)。
 - [ ] 44 メソッドを実装。押さえるべき点:
       - アイテム ID は **`UpdateItem` の `ADD` で原子的に採番**(on-prem の `id_counter` 相当。
         並行作成で重複しないこと)。

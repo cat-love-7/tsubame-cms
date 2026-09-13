@@ -1,0 +1,105 @@
+# AWS: DynamoDB の設計
+
+`aws` バックエンドの構造化データを **1 テーブル** に収めるための設計。実装はこの文書だけを
+見て書ける状態を目標にする。前提は `doc/aws-plan.md`(決定事項と TODO)。
+
+## 1. 原則
+
+- **1 テーブル**、`PK`(S) + `SK`(S)。オンデマンド。GSI は使わない(すべての一覧が
+  パーティションクエリで済む設計にするため)。
+- **値は JSON 文字列として保存する**。この CMS のドメイン型は「スキーマだけが型情報を持つ
+  `serde_json::Value`」なので、DynamoDB の型へ写す必要がない。`data` という 1 属性に入れる。
+  - 利点: 型変換のコードがゼロになり、on-prem のレコードと 1 対 1 で対応する。
+  - 代償: アイテム内のフィールドでサーバ側フィルタはできない(必要ない)。
+- **読み取りは `ConsistentRead = true`**。CMS は「保存した直とに一覧を見る」ため、結果整合の
+  取りこぼしがそのまま UI の不具合になる。読み取りコストは 2 倍だが、この規模では誤差。
+- **アイテム ID はゼロ埋め**して `SK` に入れる(`{:020}`)。DynamoDB の `SK` はバイト順なので、
+  ゼロ埋めしないと 10 が 2 より前に来る。
+
+## 2. キー設計
+
+| 実体 | PK | SK | 補足 |
+|---|---|---|---|
+| コレクションスキーマ | `collection#<name>` | `schema` | 存在確認も兼ねる |
+| アイテム(公開コピー) | `collection#<name>` | `item#<id:020>` | 配信 API が見る唯一のコピー |
+| アイテム(作業コピー) | `collection#<name>` | `draft#<id:020>` | |
+| アイテムメタデータ | `collection#<name>` | `meta#<id:020>` | status / published_at / created_at / updated_at / published_by |
+| コレクションの ID カウンタ | `collection#<name>` | `counter` | `UpdateItem ADD` で原子的に採番 |
+| コレクション名一覧 | `collections` | `<name>` | 名前だけの小さなアイテム |
+| 単一ページスキーマ | `page#<name>` | `schema` | |
+| 単一ページの内容(公開) | `page#<name>` | `item` | |
+| 単一ページの作業コピー | `page#<name>` | `draft` | |
+| 単一ページのメタデータ | `page#<name>` | `meta` | |
+| 単一ページ名一覧 | `pages` | `<name>` | |
+| 複合フィールド定義 | `composite#<id>` | `schema` | |
+| 複合フィールド一覧 | `composites` | `<id>` | |
+| ユーザー | `users` | `user#<uuid>` | |
+| **ユーザー名の予約** | `users` | `username#<name>` | 値は user id。**一意性をここで担保** |
+| 画像レコード | `images` | `image#<id:020>` | file_name も保持 |
+| 画像の ID カウンタ | `images` | `counter` | |
+| アップロードの単回トークン | `upload_keys` | `<key>` | 値は file_name、`expires_at`(TTL)付き |
+
+- 一覧系はすべて「パーティションを指定した `Query`」になる:
+  - コレクション名 / ページ名 / 複合フィールド / 画像 / ユーザー
+  - アイテム: `PK = collection#<name>` かつ `SK begins_with "item#"`(公開)、`draft#`、`meta#`
+- ユーザー名の予約アイテムをユーザー本体と**同じトランザクション**で書くことで、
+  「同名の 2 人」が作れない。`attribute_not_exists(SK)` を条件にする。
+
+## 3. アクセスパターン → 操作
+
+| トレイトのメソッド(代表) | 操作 |
+|---|---|
+| `get_collection_schema` / `get_single_page_schema` / `get_composite_field_schema` | `GetItem` |
+| `list_collection_names` / `list_all_page_names` / `list_composite_field_schemas` / `get_all_images` / `get_all_users` | `Query`(一覧パーティション) |
+| `add_*_schema` / `update_*` | `PutItem` |
+| `add_collection_item` | `UpdateItem ADD counter 1` → `PutItem item#` |
+| `get_collection_item` / `get_collection_item_draft` / `get_item_metadata` | `GetItem` |
+| `list_collection_items` / `list_collection_item_drafts` / `list_item_metadata` | `Query` + `begins_with` |
+| `delete_collection_item` | `TransactWriteItems`(`item#` + `draft#` + `meta#` を削除。存在しないキーの削除は無視される) |
+| `delete_collection` | `TransactWriteItems`(スキーマ + 一覧アイテム + 配下のアイテム/下書き/メタデータを削除) |
+| 公開(`set_item_status` から) | 下書きを `GetItem` → あれば `TransactWriteItems`(公開コピーへ Put + 下書き Delete + メタデータ Put)、無ければメタデータだけ Put |
+| `add_user` | `TransactWriteItems`(ユーザー Put + ユーザー名予約 Put、予約に `attribute_not_exists`) |
+| `delete_user` | `TransactWriteItems`(ユーザー Delete + 予約 Delete) |
+| `generate_image_upload_url` | `UpdateItem ADD`(画像 ID)→ レコード Put → S3 の presigned PUT URL(トークンは S3 が担うので不要) |
+
+**公開の「下書きが無い場合」**は、そもそも削除をトランザクションに入れない(先に読んで分岐する)。
+`doc/aws-plan.md` に「要確認」と書いた『存在しないキーの削除がトランザクションを失敗させるか』は、
+この設計では**問題にならない**(該当ケースで削除を発行しない)。
+
+## 4. 上限と検証項目
+
+- **1 アイテム 400KB**: アイテムの値・スキーマ・複合フィールド定義が収まること。超える場合は
+  400 を返す(DynamoDB は ValidationException を返す)。複合フィールドを多用した大きめの値を
+  入れるテストを置く。
+- **`Query` 1MB**: 一覧は 1MB で切れる。アイテム一覧は `LastEvaluatedKey` で**ページを繰り返して
+  全件取る**(トレイトの契約は「全件返す」なので、内部でループする)。
+- **`TransactWriteItems` 100 項目 / 4MB**: 公開は 3 項目、ユーザー作成は 2 項目、コレクション削除は
+  配下の件数に依存する → **コレクション削除は 25 件ずつに分けて実行**する(トランザクションは使わず、
+  下書き/メタデータ/アイテムを順に消す。途中で失敗しても再実行できる)。
+- **TTL**: アップロードトークンの `expires_at` に使う(削除は非同期なので、消費時に期限も確認する)。
+
+## 5. テストの作り方
+
+- **テーブルはテストごとに作る**: `test_<uuid>` を作り、`Drop` で消す。`open_test_repository` の
+  AWS 版を `aws.rs` に置き、`http/tests.rs` のゲートを `any(on-premises, aws)` に広げる。
+- **エンドポイント差し替え**: `AWS_ENDPOINT_URL`(既定 `http://localhost:8000`)、
+  `AWS_REGION=us-east-1`、`AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test`。
+  DynamoDB Local は資格情報を要求する(実サービスと同じ)。
+- **S3 は MinIO**: `S3_ENDPOINT_URL`(既定 `http://localhost:9000`)、`force_path_style(true)`、
+  `MINIO_ROOT_USER=test` / `MINIO_ROOT_PASSWORD=test-secret`。presign → PUT → GET を実際に往復する
+  (MinIO は SigV4 を検証するので、presigner が壊れればテストが落ちる)。
+- 起動: `docker compose up -d`(`sl_cms/docker-compose.yml`)。
+
+## 6. 依存とビルド
+
+`aws` フィーチャーで追加する予定: `aws-config`、`aws-sdk-dynamodb`、`aws-sdk-s3`
+(プリサインド URL に必要なフィーチャーは**実装時に確認**する)。`aws-sdk-*` は依存が多く
+ビルドが重いので、`aws` フィーチャーのビルド時間は on-premises より明確に長くなる。
+既定ビルドには影響しない(`dep:` で括る)。
+
+## 7. 未確定(実装時に確認)
+
+- `aws-sdk-s3` のプリサインド URL に必要な正確なフィーチャー名と API。
+- `TransactWriteItems` の `Update` で `ADD` を使えるか(使えれば採番もトランザクションに含められる。
+  現設計は「採番 → Put」の 2 手なので、失敗時に ID が 1 つ飛ぶだけで済む)。
+- `Query` の `ConsistentRead` を全一覧に使ったときのコスト感(必要なら一覧だけ結果整合にする)。
