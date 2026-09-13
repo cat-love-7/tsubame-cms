@@ -51,7 +51,7 @@ async fn put_image_file<R: Storage + LocalImageBytes>(
 
     // The token is single-use and bound to one file name, so a token cannot be replayed
     // and cannot be used to write a different file than the one it was issued for.
-    let Some(authorised) = module.image_service.take_upload_key(&query.key)? else {
+    let Some(authorised) = module.image_service.take_upload_key(&query.key).await? else {
         return Err(HttpError::Unauthorized("Invalid upload key"));
     };
     if authorised != file_name {
@@ -61,7 +61,7 @@ async fn put_image_file<R: Storage + LocalImageBytes>(
         ));
     }
 
-    module.image_service.write_image_bytes(&file_name, &body)?;
+    module.image_service.write_image_bytes(&file_name, &body).await?;
     Ok((StatusCode::CREATED, ()))
 }
 async fn get_image_file<R: Storage + LocalImageBytes>(
@@ -72,7 +72,7 @@ async fn get_image_file<R: Storage + LocalImageBytes>(
     if !is_safe_file_name(&file_name) {
         return Err(HttpError::BadRequest("Invalid file name"));
     }
-    match module.image_service.read_image_bytes(&file_name)? {
+    match module.image_service.read_image_bytes(&file_name).await? {
         Some(data) => Ok((
             [(header::CONTENT_TYPE, "application/octet-stream")],
             data,

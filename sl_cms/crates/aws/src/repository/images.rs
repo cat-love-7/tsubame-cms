@@ -38,105 +38,97 @@ impl AwsRepository {
 }
 
 impl ImageRepository for AwsRepository {
-    fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
+    async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
         let inner = self.inner.clone();
         let id = **id;
-        self.runtime.block_on(async move {
-            match read(&inner, key::IMAGE_INDEX, &key::image(id)).await? {
-                Some(data) => {
-                    let data: ImageData = AwsRepository::decode(&data)?;
-                    Ok(Some(AwsRepository::image_from(&inner, &data)))
-                }
-                None => Ok(None),
-            }
-        })
-    }
-
-    fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
-        let inner = self.inner.clone();
-        self.runtime.block_on(async move {
-            let mut images = Vec::new();
-            for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
-                // The id is in the sort key, so a malformed record is skipped rather than
-                // guessed at or panicked over.
-                let Ok(id) = sk.trim_start_matches("image#").parse::<u64>() else {
-                    continue;
-                };
+        match read(&inner, key::IMAGE_INDEX, &key::image(id)).await? {
+            Some(data) => {
                 let data: ImageData = AwsRepository::decode(&data)?;
-                images.push((ImageID::from_u64(id), AwsRepository::image_from(&inner, &data)));
+                Ok(Some(AwsRepository::image_from(&inner, &data)))
             }
-            Ok(images)
-        })
+            None => Ok(None),
+        }
     }
 
-    fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
+    async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
+        let inner = self.inner.clone();
+        let mut images = Vec::new();
+        for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
+            // The id is in the sort key, so a malformed record is skipped rather than
+            // guessed at or panicked over.
+            let Ok(id) = sk.trim_start_matches("image#").parse::<u64>() else {
+                continue;
+            };
+            let data: ImageData = AwsRepository::decode(&data)?;
+            images.push((ImageID::from_u64(id), AwsRepository::image_from(&inner, &data)));
+        }
+        Ok(images)
+    }
+
+    async fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
         let inner = self.inner.clone();
         let upload_info = NewImageRequest {
             original_filename: upload_info.original_filename.clone(),
             ext: upload_info.ext.clone(),
         };
-        self.runtime.block_on(async move {
-            // The id comes from the same atomic counter the collections use, so two uploads at
-            // once cannot write the same record.
-            let id = next_id(&inner, key::IMAGE_INDEX).await?;
-            let file_name = match sanitize_ext(&upload_info.ext) {
-                Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
-                None => uuid::Uuid::new_v4().to_string(),
-            };
-            let data = ImageData {
-                original_filename: upload_info.original_filename.clone(),
-                file_name: file_name.clone(),
-                uploaded_at: chrono::Utc::now(),
-            };
-            write(
-                &inner,
-                key::IMAGE_INDEX,
-                &key::image(id),
-                &AwsRepository::encode(&data)?,
-            )
-            .await?;
+        // The id comes from the same atomic counter the collections use, so two uploads at
+        // once cannot write the same record.
+        let id = next_id(&inner, key::IMAGE_INDEX).await?;
+        let file_name = match sanitize_ext(&upload_info.ext) {
+            Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
+            None => uuid::Uuid::new_v4().to_string(),
+        };
+        let data = ImageData {
+            original_filename: upload_info.original_filename.clone(),
+            file_name: file_name.clone(),
+            uploaded_at: chrono::Utc::now(),
+        };
+        write(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(id),
+            &AwsRepository::encode(&data)?,
+        )
+        .await?;
 
-            let config = PresigningConfig::expires_in(UPLOAD_URL_TTL)
-                .map_err(|e| format!("could not build the upload URL: {e}"))?;
-            let request = inner
-                .s3
-                .put_object()
-                .bucket(&inner.settings.bucket)
-                .key(&file_name)
-                .presigned(config)
-                .await
-                .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
+        let config = PresigningConfig::expires_in(UPLOAD_URL_TTL)
+            .map_err(|e| format!("could not build the upload URL: {e}"))?;
+        let request = inner
+            .s3
+            .put_object()
+            .bucket(&inner.settings.bucket)
+            .key(&file_name)
+            .presigned(config)
+            .await
+            .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
 
-            Ok(NewImageInfo {
-                id: ImageID::from_u64(id),
-                upload_url: request.uri().to_string(),
-            })
+        Ok(NewImageInfo {
+            id: ImageID::from_u64(id),
+            upload_url: request.uri().to_string(),
         })
     }
 
-    fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
+    async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
-        self.runtime.block_on(async move {
-            let data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
-                Some(data) => AwsRepository::decode::<ImageData>(&data)?,
-                // The on-premises adapter reports a missing image as an error, and the service
-                // turns that into a 404; match it so both backends answer the same way.
-                None => return Err("Image not found".into()),
-            };
+        let data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
+            // The on-premises adapter reports a missing image as an error, and the service
+            // turns that into a 404; match it so both backends answer the same way.
+            None => return Err("Image not found".into()),
+        };
 
-            // The bytes first: a record without bytes is a broken thumbnail, while bytes
-            // without a record are merely invisible (and cheap).
-            inner
-                .s3
-                .delete_object()
-                .bucket(&inner.settings.bucket)
-                .key(&data.file_name)
-                .send()
-                .await
-                .map_err(|e| format!("could not delete the image bytes: {}", describe(&e)))?;
-            remove(&inner, key::IMAGE_INDEX, &key::image(raw)).await
-        })
+        // The bytes first: a record without bytes is a broken thumbnail, while bytes
+        // without a record are merely invisible (and cheap).
+        inner
+            .s3
+            .delete_object()
+            .bucket(&inner.settings.bucket)
+            .key(&data.file_name)
+            .send()
+            .await
+            .map_err(|e| format!("could not delete the image bytes: {}", describe(&e)))?;
+        remove(&inner, key::IMAGE_INDEX, &key::image(raw)).await
     }
 }
 

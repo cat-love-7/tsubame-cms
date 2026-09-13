@@ -93,10 +93,10 @@ async fn get_collection<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let pagination = Pagination::limited(query)?;
     let name = CollectionName::from(collection_name.as_str());
-    let schema = module.collection_service.get_collection_schema(&name)?;
+    let schema = module.collection_service.get_collection_schema(&name).await?;
     let page = module
         .collection_service
-        .list_published_items(&name, &pagination)?;
+        .list_published_items(&name, &pagination).await?;
     let items = page
         .items
         .into_iter()
@@ -124,7 +124,7 @@ async fn get_collection_item<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let (metadata, values) = module
         .collection_service
-        .get_published_item(&name, CollectionItemId::from_u64(id))?;
+        .get_published_item(&name, CollectionItemId::from_u64(id)).await?;
 
     Ok(Json(PublishedItem {
         id: CollectionItemId::from_u64(id),
@@ -137,7 +137,7 @@ async fn list_single_pages<R: Storage>(
     State(module): State<AppState<R>>,
 ) -> Result<impl IntoResponse, HttpError> {
     Ok(Json(
-        module.single_page_service.list_published_page_names()?,
+        module.single_page_service.list_published_page_names().await?,
     ))
 }
 
@@ -146,8 +146,8 @@ async fn get_single_page<R: Storage>(
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    let schema = module.single_page_service.get_single_page_schema(&name)?;
-    let (metadata, values) = module.single_page_service.get_published_page_item(&name)?;
+    let schema = module.single_page_service.get_single_page_schema(&name).await?;
+    let (metadata, values) = module.single_page_service.get_published_page_item(&name).await?;
 
     Ok(Json(SinglePageContent {
         schema,

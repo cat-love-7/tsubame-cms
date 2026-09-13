@@ -26,7 +26,7 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
 async fn list_images<R: Storage>(
     State(module): State<AppState<R>>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.image_service.list_images()?))
+    Ok(Json(module.image_service.list_images().await?))
 }
 
 /// Delete an image, bytes included. Answers with an empty body like the other mutations.
@@ -34,7 +34,7 @@ async fn delete_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.image_service.delete_image(ImageID::from_u64(id))?;
+    module.image_service.delete_image(ImageID::from_u64(id)).await?;
     Ok(StatusCode::OK)
 }
 
@@ -50,6 +50,6 @@ async fn generate_image_upload_url<R: Storage>(
         return Err(HttpError::BadRequest("Invalid image extension"));
     }
     Ok(Json(
-        module.image_service.generate_image_upload_url(request)?,
+        module.image_service.generate_image_upload_url(request).await?,
     ))
 }

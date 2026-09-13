@@ -61,8 +61,8 @@ async fn get_single_page_item_metadata<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(PageStatusResponse {
-        metadata: module.single_page_service.get_page_metadata(&name)?,
-        has_draft: module.single_page_service.page_has_draft(&name)?,
+        metadata: module.single_page_service.get_page_metadata(&name).await?,
+        has_draft: module.single_page_service.page_has_draft(&name).await?,
     }))
 }
 
@@ -83,8 +83,8 @@ async fn preview_single_page<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(SinglePagePreview {
-        schema: module.single_page_service.get_single_page_schema(&name)?,
-        values: module.single_page_service.get_single_page_item(&name)?,
+        schema: module.single_page_service.get_single_page_schema(&name).await?,
+        values: module.single_page_service.get_single_page_item(&name).await?,
     }))
 }
 
@@ -102,7 +102,7 @@ async fn create_single_page_preview_link<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     // A page that does not exist is a 404, not a link to nothing.
-    module.single_page_service.get_single_page_schema(&name)?;
+    module.single_page_service.get_single_page_schema(&name).await?;
 
     Ok(Json(module.preview_links.issue(
         &PreviewTarget::SinglePage {
@@ -135,8 +135,8 @@ async fn open_single_page_preview<R: Storage>(
         .map_err(preview_link_error)?;
 
     Ok(Json(SinglePagePreview {
-        schema: module.single_page_service.get_single_page_schema(&name)?,
-        values: module.single_page_service.get_single_page_item(&name)?,
+        schema: module.single_page_service.get_single_page_schema(&name).await?,
+        values: module.single_page_service.get_single_page_item(&name).await?,
     }))
 }
 
@@ -182,7 +182,7 @@ async fn get_single_pages<R: Storage>(
     // Only the pages this account may read (see `get_collections`).
     let readable: Vec<SinglePageName> = module
         .single_page_service
-        .get_all_page_names()?
+        .get_all_page_names().await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
         .collect();
@@ -195,7 +195,7 @@ async fn get_single_page_schema<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(
-        module.single_page_service.get_single_page_schema(&name)?,
+        module.single_page_service.get_single_page_schema(&name).await?,
     ))
 }
 
@@ -209,7 +209,7 @@ async fn add_single_page_schema<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .add_single_page_schema(&name, &schema)?;
+        .add_single_page_schema(&name, &schema).await?;
     Ok(StatusCode::OK)
 }
 
@@ -223,7 +223,7 @@ async fn update_single_page_schema<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .update_single_page_schema(&name, &schema)?;
+        .update_single_page_schema(&name, &schema).await?;
     Ok(StatusCode::OK)
 }
 
@@ -235,7 +235,7 @@ async fn delete_single_page<R: Storage>(
     // The page and its schema go, so this is a structural change.
     require_admin(&user)?;
     let name = SinglePageName::from(page_name.as_str());
-    module.single_page_service.delete_single_page(&name)?;
+    module.single_page_service.delete_single_page(&name).await?;
     Ok(StatusCode::OK)
 }
 
@@ -245,7 +245,7 @@ async fn get_single_page_item<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(
-        module.single_page_service.get_single_page_item(&name)?,
+        module.single_page_service.get_single_page_item(&name).await?,
     ))
 }
 

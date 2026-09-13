@@ -11,7 +11,7 @@ use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePag
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
 
 impl SinglePageRepository for AwsRepository {
-    fn get_single_page_schema(
+    async fn get_single_page_schema(
         &self,
         page_name: &SinglePageName,
     ) -> Result<Option<SinglePageSchema>, BoxError> {
@@ -25,7 +25,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn list_all_page_names(&self) -> Result<Vec<SinglePageName>, BoxError> {
+    async fn list_all_page_names(&self) -> Result<Vec<SinglePageName>, BoxError> {
         let inner = self.inner.clone();
         self.runtime.block_on(async move {
             let records = list(&inner, key::PAGE_INDEX, "").await?;
@@ -36,7 +36,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn add_single_page_schema(
+    async fn add_single_page_schema(
         &self,
         page_name: &SinglePageName,
         schema: &SinglePageSchema,
@@ -52,7 +52,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(), BoxError> {
+    async fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
         self.runtime.block_on(async move {
@@ -67,7 +67,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn get_single_page_item(
+    async fn get_single_page_item(
         &self,
         page_name: &SinglePageName,
     ) -> Result<Option<SinglePageItem>, BoxError> {
@@ -81,7 +81,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn update_single_page_item(
+    async fn update_single_page_item(
         &self,
         page_name: &SinglePageName,
         item_data: &SinglePageItem,
@@ -93,7 +93,7 @@ impl SinglePageRepository for AwsRepository {
             .block_on(async move { write(&inner, &key::page(&name), key::ITEM, &data).await })
     }
 
-    fn get_single_page_item_draft(
+    async fn get_single_page_item_draft(
         &self,
         page_name: &SinglePageName,
     ) -> Result<Option<SinglePageItem>, BoxError> {
@@ -107,7 +107,7 @@ impl SinglePageRepository for AwsRepository {
         })
     }
 
-    fn set_single_page_item_draft(
+    async fn set_single_page_item_draft(
         &self,
         page_name: &SinglePageName,
         item_data: &SinglePageItem,
@@ -119,7 +119,7 @@ impl SinglePageRepository for AwsRepository {
             .block_on(async move { write(&inner, &key::page(&name), key::DRAFT, &data).await })
     }
 
-    fn delete_single_page_item_draft(
+    async fn delete_single_page_item_draft(
         &self,
         page_name: &SinglePageName,
     ) -> Result<(), BoxError> {
@@ -129,7 +129,7 @@ impl SinglePageRepository for AwsRepository {
             .block_on(async move { remove(&inner, &key::page(&name), key::DRAFT).await })
     }
 
-    fn get_page_metadata(
+    async fn get_page_metadata(
         &self,
         page_name: &SinglePageName,
     ) -> Result<Option<ItemMetadata>, BoxError> {
@@ -144,7 +144,7 @@ impl SinglePageRepository for AwsRepository {
     }
 
 
-    fn set_page_metadata(
+    async fn set_page_metadata(
         &self,
         page_name: &SinglePageName,
         metadata: &ItemMetadata,
@@ -156,7 +156,7 @@ impl SinglePageRepository for AwsRepository {
             .block_on(async move { write(&inner, &key::page(&name), key::META, &data).await })
     }
 
-    fn apply_page_status(
+    async fn apply_page_status(
         &self,
         page_name: &SinglePageName,
         draft: Option<&SinglePageItem>,

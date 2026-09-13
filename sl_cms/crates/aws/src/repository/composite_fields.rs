@@ -11,35 +11,31 @@ use sl_cms_core::models::schema::CompositeFieldId;
 use sl_cms_core::repositories::composite_field_repository::CompositeFieldRepository;
 
 impl CompositeFieldRepository for AwsRepository {
-    fn list_composite_field_schemas(
+    async fn list_composite_field_schemas(
         &self,
     ) -> Result<HashMap<CompositeFieldId, CompositeFieldSchema>, BoxError> {
         let inner = self.inner.clone();
-        self.runtime.block_on(async move {
-            let mut schemas = HashMap::new();
-            for (sk, data) in list(&inner, key::COMPOSITE_FIELD_INDEX, "composite#").await? {
-                let id = CompositeFieldId::from(sk.trim_start_matches("composite#"));
-                schemas.insert(id, AwsRepository::decode(&data)?);
-            }
-            Ok(schemas)
-        })
+        let mut schemas = HashMap::new();
+        for (sk, data) in list(&inner, key::COMPOSITE_FIELD_INDEX, "composite#").await? {
+            let id = CompositeFieldId::from(sk.trim_start_matches("composite#"));
+            schemas.insert(id, AwsRepository::decode(&data)?);
+        }
+        Ok(schemas)
     }
 
-    fn get_composite_field_schema(
+    async fn get_composite_field_schema(
         &self,
         id: &CompositeFieldId,
     ) -> Result<Option<CompositeFieldSchema>, BoxError> {
         let inner = self.inner.clone();
         let id = id.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn add_composite_field_schema(
+    async fn add_composite_field_schema(
         &self,
         id: &CompositeFieldId,
         schema: &CompositeFieldSchema,
@@ -47,16 +43,12 @@ impl CompositeFieldRepository for AwsRepository {
         let inner = self.inner.clone();
         let id = id.clone();
         let data = AwsRepository::encode(schema)?;
-        self.runtime.block_on(async move {
-            write(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id), &data).await
-        })
+        write(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id), &data).await
     }
 
-    fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), BoxError> {
+    async fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let id = id.clone();
-        self.runtime.block_on(async move {
-            remove(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await
-        })
+        remove(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await
     }
 }

@@ -9,7 +9,7 @@ use rkv::{StoreOptions, Value};
 use std::error::Error;
 
 impl CollectionRepository for Repository {
-    fn get_collection_schema(&self, collection_name: &CollectionName) -> Result<Option<CollectionSchema>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_schema(&self, collection_name: &CollectionName) -> Result<Option<CollectionSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("collection_schema", StoreOptions::create())?;
@@ -22,7 +22,7 @@ impl CollectionRepository for Repository {
             _ => Ok(None),
         }
     }
-    fn list_collection_names(&self) -> Result<Vec<CollectionName>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_names(&self) -> Result<Vec<CollectionName>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("collection_schema", StoreOptions::create())?;
@@ -35,7 +35,7 @@ impl CollectionRepository for Repository {
         }
         Ok(collections)
     }
-    fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+    async fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
         let store = env.open_single("collection_schema", StoreOptions::create())?;
@@ -45,7 +45,7 @@ impl CollectionRepository for Repository {
         writer.commit()?;
         Ok(())
     }
-    fn delete_collection(&self, collection_name: &CollectionName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+    async fn delete_collection(&self, collection_name: &CollectionName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("collection_schema", StoreOptions::create())?;
@@ -101,7 +101,7 @@ impl CollectionRepository for Repository {
         writer.commit()?;
         Ok(())
     }
-    fn list_collection_items(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_items(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
@@ -117,7 +117,7 @@ impl CollectionRepository for Repository {
         }
         Ok(items)
     }
-    fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>,Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>,Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
@@ -133,7 +133,7 @@ impl CollectionRepository for Repository {
         }
     }
     
-    fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> Result<u64,Box<dyn Error + Send + Sync + 'static>> {
+    async fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> Result<u64,Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
@@ -156,7 +156,7 @@ impl CollectionRepository for Repository {
         Ok(new_id)
     }
     
-    fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+    async fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
@@ -168,7 +168,7 @@ impl CollectionRepository for Repository {
         Ok(())
     }
     
-    fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+    async fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
@@ -196,7 +196,7 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
-    fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -208,7 +208,7 @@ impl CollectionRepository for Repository {
         }
     }
 
-    fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -219,7 +219,7 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
-    fn list_published_items_page(
+    async fn list_published_items_page(
         &self,
         collection_name: &CollectionName,
         offset: usize,
@@ -270,7 +270,7 @@ impl CollectionRepository for Repository {
         Ok((window, total))
     }
 
-    fn apply_item_status(
+    async fn apply_item_status(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -306,7 +306,7 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
-    fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -330,7 +330,7 @@ impl CollectionRepository for Repository {
         Ok(items)
     }
 
-    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -342,7 +342,7 @@ impl CollectionRepository for Repository {
         }
     }
 
-    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -366,7 +366,7 @@ impl CollectionRepository for Repository {
         Ok(items)
     }
 
-    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -377,7 +377,7 @@ impl CollectionRepository for Repository {
         Ok(())
     }
 
-    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;

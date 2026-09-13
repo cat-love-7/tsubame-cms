@@ -18,9 +18,9 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
             composite_field_repository,
         }
     }
-    pub fn get_composite_field_schema(&self, field_name: &CompositeFieldId) -> Result<CompositeFieldSchema, HttpError> {
+    pub async fn get_composite_field_schema(&self, field_name: &CompositeFieldId) -> Result<CompositeFieldSchema, HttpError> {
         self.composite_field_repository.get_composite_field_schema(field_name)
-            .map_err(map_internal_error)
+            .await.map_err(map_internal_error)
             .and_then(|opt_schema| {
                 match opt_schema {
                     Some(schema) => Ok(schema),
@@ -28,15 +28,15 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
                 }
             })
     }
-    pub fn list_composite_field_schemas(&self) -> Result<HashMap<CompositeFieldId, CompositeFieldSchema>, HttpError> {
+    pub async fn list_composite_field_schemas(&self) -> Result<HashMap<CompositeFieldId, CompositeFieldSchema>, HttpError> {
         self.composite_field_repository.list_composite_field_schemas()
-            .map_err(map_internal_error)
+            .await.map_err(map_internal_error)
     }
 
     /// Reject references to composites that do not exist, and references that would form a
     /// cycle. Both matter because values are parsed and rendered by following references:
     /// a cycle never terminates.
-    fn validate_composite_graph(
+    async fn validate_composite_graph(
         &self,
         id: &CompositeFieldId,
         schema: &CompositeFieldSchema,
@@ -44,7 +44,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         let all = self
             .composite_field_repository
             .list_composite_field_schemas()
-            .map_err(map_internal_error)?;
+            .await.map_err(map_internal_error)?;
 
         // A composite is never an available target for its own references; if it were,
         // the cycle check below would not report the self-reference.
@@ -54,43 +54,43 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         validate_no_composite_cycles(id, schema, &all).map_err(|e| HttpError::BadRequest(&e))?;
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
     }
-    pub fn add_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), HttpError> {
+    pub async fn add_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
-        self.validate_composite_graph(field_name, schema)?;
+        self.validate_composite_graph(field_name, schema).await?;
         let s = self.composite_field_repository.get_composite_field_schema(&field_name)
-            .map_err(map_internal_error)?;
+            .await.map_err(map_internal_error)?;
         match s {
             Some(_) => {
                 return Err(HttpError::Conflict(&format!("Composite field schema already exists: {}", field_name)));
             },
             None => {
                 self.composite_field_repository.add_composite_field_schema(field_name, schema)
-                    .map_err(map_internal_error)
+                    .await.map_err(map_internal_error)
             },
         }
     }
-    pub fn update_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &Vec<FieldSchema>) -> Result<(), HttpError> {
+    pub async fn update_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &Vec<FieldSchema>) -> Result<(), HttpError> {
         validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
-        self.validate_composite_graph(field_name, schema)?;
+        self.validate_composite_graph(field_name, schema).await?;
         let s = self.composite_field_repository.get_composite_field_schema(field_name)
-            .map_err(map_internal_error)?;
+            .await.map_err(map_internal_error)?;
         match s {
             Some(_) => {
                 self.composite_field_repository.add_composite_field_schema(field_name,schema)
-                    .map_err(map_internal_error)
+                    .await.map_err(map_internal_error)
             },
             None => {
                 return Err(HttpError::NotFound(&format!("Composite field schema not found: {}", field_name)));
             },
         }
     }
-    pub fn delete_composite_field_schema(&self, field_name: &CompositeFieldId) -> Result<(), HttpError> {
+    pub async fn delete_composite_field_schema(&self, field_name: &CompositeFieldId) -> Result<(), HttpError> {
         let s = self.composite_field_repository.get_composite_field_schema(field_name)
-            .map_err(map_internal_error)?;
+            .await.map_err(map_internal_error)?;
         match s {
             Some(_) => {
                 self.composite_field_repository.delete_composite_field_schema(field_name)
-                    .map_err(map_internal_error)
+                    .await.map_err(map_internal_error)
             },
             None => {
                 return Err(HttpError::NotFound(&format!("Composite field schema not found: {}", field_name)));
@@ -157,27 +157,27 @@ mod tests {
         CompositeFieldService::new(Arc::new(composite_field_repository))
     }
 
-    #[test]
-    fn test_create_composite_field_service() {
+    #[tokio::test]
+    async fn test_create_composite_field_service() {
         let service = create_test_service();
-        assert!(service.list_composite_field_schemas().is_ok());
+        assert!(service.list_composite_field_schemas().await.is_ok());
     }
-    #[test]
-    fn test_list_composite_field_schemas_empty() {
+    #[tokio::test]
+    async fn test_list_composite_field_schemas_empty() {
         let service = create_test_service();
-        let composite_field_schemas = service.list_composite_field_schemas().unwrap();
+        let composite_field_schemas = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(composite_field_schemas.len(), 0);
     }
 
-    #[test]
-    fn test_get_composite_field_schema_not_found() {
+    #[tokio::test]
+    async fn test_get_composite_field_schema_not_found() {
         let service = create_test_service();
         let result = service.get_composite_field_schema(&"non_existent".into());
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Composite field schema not found: non_existent"));
+        assert_eq!(result.await.err().unwrap(), HttpError::NotFound("Composite field schema not found: non_existent"));
     }
 
-    #[test]
-    fn test_add_composite_field_schema_success() {
+    #[tokio::test]
+    async fn test_add_composite_field_schema_success() {
         let service = create_test_service();
         let schema = vec![
             FieldSchema {
@@ -190,16 +190,16 @@ mod tests {
         ];
 
         let result = service.add_composite_field_schema(&"test_field".into(), &schema);
-        assert!(result.is_ok());
+        assert!(result.await.is_ok());
 
-        let schemas_map = service.list_composite_field_schemas().unwrap();
+        let schemas_map = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas_map, HashMap::from_iter(vec![("test_field".into(), schema.clone())]));
-        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).unwrap();
+        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
     }
 
-    #[test]
-    fn test_update_composite_field_schema_success() {
+    #[tokio::test]
+    async fn test_update_composite_field_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![
             FieldSchema {
@@ -210,7 +210,7 @@ mod tests {
                 height: 1,
             }
         ];
-        service.add_composite_field_schema(&"test_field".into(), &initial_schema).unwrap();
+        service.add_composite_field_schema(&"test_field".into(), &initial_schema).await.unwrap();
 
         let updated_schema = vec![
             FieldSchema {
@@ -222,14 +222,14 @@ mod tests {
             }
         ];
         let result = service.update_composite_field_schema(&"test_field".into(), &updated_schema);
-        assert!(result.is_ok());
+        assert!(result.await.is_ok());
 
-        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).unwrap();
+        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).await.unwrap();
         assert_eq!(retrieved_schema, updated_schema);
     }
 
-    #[test]
-    fn test_add_composite_field_schema_already_exists() {
+    #[tokio::test]
+    async fn test_add_composite_field_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![
             FieldSchema {
@@ -240,7 +240,7 @@ mod tests {
                 height: 1,
             }
         ];
-        service.add_composite_field_schema(&"test_field".into(), &schema).unwrap();
+        service.add_composite_field_schema(&"test_field".into(), &schema).await.unwrap();
 
         let duplicate_schema = vec![
             FieldSchema {
@@ -252,15 +252,15 @@ mod tests {
             }
         ];
         let result = service.add_composite_field_schema(&"test_field".into(), &duplicate_schema);
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::Conflict("Composite field schema already exists: test_field"));
+        assert!(result.await.is_err());
+        assert_eq!(result.await.err().unwrap(), HttpError::Conflict("Composite field schema already exists: test_field"));
 
-        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).unwrap();
+        let retrieved_schema = service.get_composite_field_schema(&"test_field".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
     }
 
-    #[test]
-    fn test_delete_composite_field_success() {
+    #[tokio::test]
+    async fn test_delete_composite_field_success() {
         let service = create_test_service();
         let schema = vec![
             FieldSchema {
@@ -271,17 +271,17 @@ mod tests {
                 height: 1,
             }
         ];
-        service.add_composite_field_schema(&"test_field".into(), &schema).unwrap();
+        service.add_composite_field_schema(&"test_field".into(), &schema).await.unwrap();
 
         let result = service.delete_composite_field_schema(&"test_field".into());
-        assert!(result.is_ok());
+        assert!(result.await.is_ok());
 
-        let schemas_map = service.list_composite_field_schemas().unwrap();
+        let schemas_map = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas_map.len(), 0);
     }
 
-    #[test]
-    fn test_update_missing_schema() {
+    #[tokio::test]
+    async fn test_update_missing_schema() {
         let service = create_test_service();
         let update_result = service.update_composite_field_schema(
             &"non_existent".into(),
@@ -295,6 +295,6 @@ mod tests {
                 }
             ],
         );
-        assert!(update_result.is_err());
+        assert!(update_result.await.is_err());
     }
 }

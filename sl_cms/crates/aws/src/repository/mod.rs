@@ -1,9 +1,7 @@
 //! The DynamoDB side of the AWS adapter: one table, keys laid out as in
 //! `doc/aws-dynamodb-design.md`, values stored as JSON strings.
 //!
-//! Everything meaningful here is `async` (the AWS SDK is). The synchronous repository traits
-//! are implemented further down by handing each call to [`BlockingRuntime`] - that is the
-//! temporary part; the async methods are the implementation.
+//! Everything here is `async`, which is what the SDK is and what the traits now are.
 
 use std::sync::Arc;
 
@@ -11,7 +9,6 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 
-use crate::bridge::BlockingRuntime;
 use crate::settings::AwsSettings;
 use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use sl_cms_core::models::item_status::ItemMetadata;
@@ -34,7 +31,6 @@ pub fn padded(id: u64) -> String {
 /// One table, one bucket.
 pub struct AwsRepository {
     inner: Arc<Inner>,
-    runtime: BlockingRuntime,
 }
 
 pub struct Inner {
@@ -55,7 +51,6 @@ impl AwsRepository {
                 s3: crate::s3_client(settings).await,
                 settings: settings.clone(),
             }),
-            runtime: BlockingRuntime::new(),
         }
     }
 
@@ -98,27 +93,6 @@ impl AwsRepository {
 
     pub async fn delete_table(&self) -> Result<(), BoxError> {
         drop_table(&self.inner).await
-    }
-
-    /// Run an S3 request on the bridge, for tests that have to set a bucket up (a deployment
-    /// creates buckets in Terraform, so there is no repository API for it).
-    ///
-    /// It goes through the bridge on purpose: the SDK's HTTP client pools connections, and a
-    /// connection opened on one runtime cannot then be driven from another — the first runtime
-    /// is blocked waiting for the bridge, so the request would wait forever. Every request for
-    /// a given client therefore has to happen on the runtime that opened it. Public for the
-    /// same reason as `open_test_repository`: the contract suite lives in another crate.
-    pub fn s3_blocking<T: Send + 'static>(
-        &self,
-        request: impl std::future::Future<Output = Result<T, BoxError>> + Send + 'static,
-    ) -> Result<T, BoxError> {
-        self.runtime.block_on(request)
-    }
-
-    /// Drop the table through the bridge, for tests: `Drop` is synchronous and cannot await.
-    pub fn delete_table_blocking(&self) -> Result<(), BoxError> {
-        let inner = self.inner.clone();
-        self.runtime.block_on(async move { drop_table(&inner).await })
     }
 
     fn encode<T: serde::Serialize>(value: &T) -> Result<String, BoxError> {
@@ -425,32 +399,28 @@ pub mod key {
 }
 
 impl CollectionRepository for AwsRepository {
-    fn get_collection_schema(
+    async fn get_collection_schema(
         &self,
         collection_name: &CollectionName,
     ) -> Result<Option<CollectionSchema>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            match read(&inner, &key::collection(&name), key::SCHEMA).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::collection(&name), key::SCHEMA).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn list_collection_names(&self) -> Result<Vec<CollectionName>, BoxError> {
+    async fn list_collection_names(&self) -> Result<Vec<CollectionName>, BoxError> {
         let inner = self.inner.clone();
-        self.runtime.block_on(async move {
-            let records = list(&inner, key::COLLECTION_INDEX, "").await?;
-            records
-                .into_iter()
-                .map(|(sk, _)| Ok(CollectionName::from(sk.as_str())))
-                .collect()
-        })
+        let records = list(&inner, key::COLLECTION_INDEX, "").await?;
+        records
+            .into_iter()
+            .map(|(sk, _)| Ok(CollectionName::from(sk.as_str())))
+            .collect()
     }
 
-    fn add_collection_schema(
+    async fn add_collection_schema(
         &self,
         collection_name: &CollectionName,
         schema: &CollectionSchema,
@@ -458,42 +428,36 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let data = AwsRepository::encode(schema)?;
-        self.runtime.block_on(async move {
-            write(&inner, &key::collection(&name), key::SCHEMA, &data).await?;
-            write(&inner, key::COLLECTION_INDEX, name.as_str(), name.as_str()).await
-        })
+        write(&inner, &key::collection(&name), key::SCHEMA, &data).await?;
+        write(&inner, key::COLLECTION_INDEX, name.as_str(), name.as_str()).await
     }
 
-    fn delete_collection(&self, collection_name: &CollectionName) -> Result<(), BoxError> {
+    async fn delete_collection(&self, collection_name: &CollectionName) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            for (sk, _) in list(&inner, &partition, "").await? {
-                remove(&inner, &partition, &sk).await?;
-            }
-            remove(&inner, key::COLLECTION_INDEX, name.as_str()).await
-        })
+        let partition = key::collection(&name);
+        for (sk, _) in list(&inner, &partition, "").await? {
+            remove(&inner, &partition, &sk).await?;
+        }
+        remove(&inner, key::COLLECTION_INDEX, name.as_str()).await
     }
 
-    fn list_collection_items(
+    async fn list_collection_items(
         &self,
         collection_name: &CollectionName,
     ) -> Result<Vec<(CollectionItemId, sl_cms_core::models::collection::CollectionItem)>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            let mut items = Vec::new();
-            for (sk, data) in list(&inner, &partition, "item#").await? {
-                let id = sk.trim_start_matches("item#").parse::<u64>()?;
-                items.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
-            }
-            Ok(items)
-        })
+        let partition = key::collection(&name);
+        let mut items = Vec::new();
+        for (sk, data) in list(&inner, &partition, "item#").await? {
+            let id = sk.trim_start_matches("item#").parse::<u64>()?;
+            items.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+        }
+        Ok(items)
     }
 
-    fn get_collection_item(
+    async fn get_collection_item(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -501,15 +465,13 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        self.runtime.block_on(async move {
-            match read(&inner, &key::collection(&name), &key::item(id)).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::collection(&name), &key::item(id)).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn add_collection_item(
+    async fn add_collection_item(
         &self,
         collection_name: &CollectionName,
         item_data: &sl_cms_core::models::collection::CollectionItem,
@@ -517,15 +479,13 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let data = AwsRepository::encode(item_data)?;
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            let id = next_id(&inner, &partition).await?;
-            write(&inner, &partition, &key::item(id), &data).await?;
-            Ok(id)
-        })
+        let partition = key::collection(&name);
+        let id = next_id(&inner, &partition).await?;
+        write(&inner, &partition, &key::item(id), &data).await?;
+        Ok(id)
     }
 
-    fn update_collection_item(
+    async fn update_collection_item(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -535,12 +495,10 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let id = **item_id;
         let data = AwsRepository::encode(item_data)?;
-        self.runtime.block_on(async move {
-            write(&inner, &key::collection(&name), &key::item(id), &data).await
-        })
+        write(&inner, &key::collection(&name), &key::item(id), &data).await
     }
 
-    fn delete_collection_item(
+    async fn delete_collection_item(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -548,17 +506,15 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            // The published copy, the working copy and the metadata go together: removing one
-            // and leaving the others would show up as a half-deleted item.
-            remove(&inner, &partition, &key::item(id)).await?;
-            remove(&inner, &partition, &key::draft(id)).await?;
-            remove(&inner, &partition, &key::metadata(id)).await
-        })
+        let partition = key::collection(&name);
+        // The published copy, the working copy and the metadata go together: removing one
+        // and leaving the others would show up as a half-deleted item.
+        remove(&inner, &partition, &key::item(id)).await?;
+        remove(&inner, &partition, &key::draft(id)).await?;
+        remove(&inner, &partition, &key::metadata(id)).await
     }
 
-    fn get_collection_item_draft(
+    async fn get_collection_item_draft(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -566,15 +522,13 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        self.runtime.block_on(async move {
-            match read(&inner, &key::collection(&name), &key::draft(id)).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::collection(&name), &key::draft(id)).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn set_collection_item_draft(
+    async fn set_collection_item_draft(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -584,12 +538,10 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let id = **item_id;
         let data = AwsRepository::encode(item_data)?;
-        self.runtime.block_on(async move {
-            write(&inner, &key::collection(&name), &key::draft(id), &data).await
-        })
+        write(&inner, &key::collection(&name), &key::draft(id), &data).await
     }
 
-    fn delete_collection_item_draft(
+    async fn delete_collection_item_draft(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -597,29 +549,25 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        self.runtime.block_on(async move {
-            remove(&inner, &key::collection(&name), &key::draft(id)).await
-        })
+        remove(&inner, &key::collection(&name), &key::draft(id)).await
     }
 
-    fn list_collection_item_drafts(
+    async fn list_collection_item_drafts(
         &self,
         collection_name: &CollectionName,
     ) -> Result<Vec<(CollectionItemId, sl_cms_core::models::collection::CollectionItem)>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            let mut drafts = Vec::new();
-            for (sk, data) in list(&inner, &partition, "draft#").await? {
-                let id = sk.trim_start_matches("draft#").parse::<u64>()?;
-                drafts.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
-            }
-            Ok(drafts)
-        })
+        let partition = key::collection(&name);
+        let mut drafts = Vec::new();
+        for (sk, data) in list(&inner, &partition, "draft#").await? {
+            let id = sk.trim_start_matches("draft#").parse::<u64>()?;
+            drafts.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+        }
+        Ok(drafts)
     }
 
-    fn get_item_metadata(
+    async fn get_item_metadata(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -627,15 +575,13 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        self.runtime.block_on(async move {
-            match read(&inner, &key::collection(&name), &key::metadata(id)).await? {
-                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
-                None => Ok(None),
-            }
-        })
+        match read(&inner, &key::collection(&name), &key::metadata(id)).await? {
+            Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+            None => Ok(None),
+        }
     }
 
-    fn set_item_metadata(
+    async fn set_item_metadata(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -645,12 +591,10 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let id = **item_id;
         let data = AwsRepository::encode(metadata)?;
-        self.runtime.block_on(async move {
-            write(&inner, &key::collection(&name), &key::metadata(id), &data).await
-        })
+        write(&inner, &key::collection(&name), &key::metadata(id), &data).await
     }
 
-    fn list_published_items_page(
+    async fn list_published_items_page(
         &self,
         collection_name: &CollectionName,
         offset: usize,
@@ -661,74 +605,72 @@ impl CollectionRepository for AwsRepository {
     > {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            // Walk the statuses, not the content. A metadata record is a few hundred bytes and
-            // the item behind it is not, so a page of a 10k-item collection reads 10k small
-            // records and the content of one page — instead of everything.
-            let mut total = 0usize;
-            let mut window = Vec::new();
-            let mut start_key = None;
-            loop {
-                let mut request = inner
-                    .client
-                    .query()
-                    .table_name(&inner.table)
-                    .key_condition_expression("#pk = :pk AND begins_with(#sk, :prefix)")
-                    .expression_attribute_names("#pk", "pk")
-                    .expression_attribute_names("#sk", "sk")
-                    .expression_attribute_values(":pk", AttributeValue::S(partition.clone()))
-                    .expression_attribute_values(":prefix", AttributeValue::S("meta#".to_string()))
-                    .consistent_read(true);
-                if let Some(key) = start_key.take() {
-                    request = request.set_exclusive_start_key(Some(key));
+        let partition = key::collection(&name);
+        // Walk the statuses, not the content. A metadata record is a few hundred bytes and
+        // the item behind it is not, so a page of a 10k-item collection reads 10k small
+        // records and the content of one page — instead of everything.
+        let mut total = 0usize;
+        let mut window = Vec::new();
+        let mut start_key = None;
+        loop {
+            let mut request = inner
+                .client
+                .query()
+                .table_name(&inner.table)
+                .key_condition_expression("#pk = :pk AND begins_with(#sk, :prefix)")
+                .expression_attribute_names("#pk", "pk")
+                .expression_attribute_names("#sk", "sk")
+                .expression_attribute_values(":pk", AttributeValue::S(partition.clone()))
+                .expression_attribute_values(":prefix", AttributeValue::S("meta#".to_string()))
+                .consistent_read(true);
+            if let Some(key) = start_key.take() {
+                request = request.set_exclusive_start_key(Some(key));
+            }
+            let answer = request
+                .send()
+                .await
+                .map_err(|e| format!("dynamodb query failed: {}", describe(&e)))?;
+            for record in answer.items() {
+                let sk = record
+                    .get("sk")
+                    .and_then(|value| value.as_s().ok())
+                    .cloned()
+                    .unwrap_or_default();
+                let data = record
+                    .get("data")
+                    .and_then(|value| value.as_s().ok())
+                    .cloned()
+                    .unwrap_or_default();
+                let metadata: ItemMetadata = AwsRepository::decode(&data)?;
+                if !metadata.is_published() {
+                    continue;
                 }
-                let answer = request
-                    .send()
-                    .await
-                    .map_err(|e| format!("dynamodb query failed: {}", describe(&e)))?;
-                for record in answer.items() {
-                    let sk = record
-                        .get("sk")
-                        .and_then(|value| value.as_s().ok())
-                        .cloned()
-                        .unwrap_or_default();
-                    let data = record
-                        .get("data")
-                        .and_then(|value| value.as_s().ok())
-                        .cloned()
-                        .unwrap_or_default();
-                    let metadata: ItemMetadata = AwsRepository::decode(&data)?;
-                    if !metadata.is_published() {
-                        continue;
-                    }
-                    total += 1;
-                    if total <= offset || window.len() >= limit.unwrap_or(usize::MAX) {
-                        // Past the window: still counted, but its content is not read.
-                        continue;
-                    }
-                    let id = sk.trim_start_matches("meta#").parse::<u64>()?;
-                    match read(&inner, &partition, &key::item(id)).await? {
-                        Some(item) => window.push((
-                            CollectionItemId::from_u64(id),
-                            AwsRepository::decode(&item)?,
-                            metadata,
-                        )),
-                        // A status with no content behind it: counting it would make `total` a
-                        // number the pages cannot add up to.
-                        None => total -= 1,
-                    }
+                total += 1;
+                if total <= offset || window.len() >= limit.unwrap_or(usize::MAX) {
+                    // Past the window: still counted, but its content is not read.
+                    continue;
                 }
-                start_key = answer.last_evaluated_key().cloned();
-                if start_key.is_none() {
-                    break;
+                let id = sk.trim_start_matches("meta#").parse::<u64>()?;
+                match read(&inner, &partition, &key::item(id)).await? {
+                    Some(item) => window.push((
+                        CollectionItemId::from_u64(id),
+                        AwsRepository::decode(&item)?,
+                        metadata,
+                    )),
+                    // A status with no content behind it: counting it would make `total` a
+                    // number the pages cannot add up to.
+                    None => total -= 1,
                 }
             }
-            Ok((window, total))
-        })
+            start_key = answer.last_evaluated_key().cloned();
+            if start_key.is_none() {
+                break;
+            }
+        }
+        Ok((window, total))
     }
 
-    fn apply_item_status(
+    async fn apply_item_status(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
@@ -740,46 +682,42 @@ impl CollectionRepository for AwsRepository {
         let id = item_id.clone();
         let draft = draft.cloned();
         let data = AwsRepository::encode(metadata)?;
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            let metadata_key = key::metadata(*id);
-            let Some(draft) = draft else {
-                // Nothing pending: only the status changes, and one write is already atomic.
-                return write(&inner, &partition, &metadata_key, &data).await;
-            };
-            let draft_data = AwsRepository::encode(&draft)?;
-            // One transaction. A published copy that exists while its working copy is still
-            // there, or a status naming content that has not landed, is a CMS that disagrees
-            // with itself — the delivery API reads the copy and the admin list reads the
-            // status. DynamoDB's transaction costs two writes per item, which is the price of
-            // never showing that state.
-            transact(
-                &inner,
-                vec![
-                    put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
-                    delete_in_transaction(&inner, &partition, &key::draft(*id))?,
-                    put_in_transaction(&inner, &partition, &metadata_key, &data)?,
-                ],
-            )
-            .await
-        })
+        let partition = key::collection(&name);
+        let metadata_key = key::metadata(*id);
+        let Some(draft) = draft else {
+            // Nothing pending: only the status changes, and one write is already atomic.
+            return write(&inner, &partition, &metadata_key, &data).await;
+        };
+        let draft_data = AwsRepository::encode(&draft)?;
+        // One transaction. A published copy that exists while its working copy is still
+        // there, or a status naming content that has not landed, is a CMS that disagrees
+        // with itself — the delivery API reads the copy and the admin list reads the
+        // status. DynamoDB's transaction costs two writes per item, which is the price of
+        // never showing that state.
+        transact(
+            &inner,
+            vec![
+                put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
+                delete_in_transaction(&inner, &partition, &key::draft(*id))?,
+                put_in_transaction(&inner, &partition, &metadata_key, &data)?,
+            ],
+        )
+        .await
     }
 
-    fn list_item_metadata(
+    async fn list_item_metadata(
         &self,
         collection_name: &CollectionName,
     ) -> Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        self.runtime.block_on(async move {
-            let partition = key::collection(&name);
-            let mut metadata = Vec::new();
-            for (sk, data) in list(&inner, &partition, "meta#").await? {
-                let id = sk.trim_start_matches("meta#").parse::<u64>()?;
-                metadata.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
-            }
-            Ok(metadata)
-        })
+        let partition = key::collection(&name);
+        let mut metadata = Vec::new();
+        for (sk, data) in list(&inner, &partition, "meta#").await? {
+            let id = sk.trim_start_matches("meta#").parse::<u64>()?;
+            metadata.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+        }
+        Ok(metadata)
     }
 }
 
@@ -801,7 +739,7 @@ mod tests {
             .expect("values")
     }
 
-    /// The bridge, the key layout and the DynamoDB calls, against a local emulator.
+    /// The key layout and the DynamoDB calls, against a local emulator.
     ///
     /// `#[tokio::test]` is the point: these are the synchronous trait methods, called from
     /// inside a runtime, which is exactly where a naive `block_on` would panic.

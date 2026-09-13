@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use std::future::Future;
+
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::item_status::ItemMetadata;
 
@@ -15,30 +17,30 @@ pub(crate) fn cut<T>(items: Vec<T>, offset: usize, limit: Option<usize>) -> Vec<
 }
 
 pub trait CollectionRepository:Send + Sync + 'static {
-    fn get_collection_schema(&self, collection_name: &CollectionName) -> Result<Option<CollectionSchema>, BoxError>;
-    fn list_collection_names(&self) -> Result<Vec<CollectionName>, BoxError>;
-    fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> Result<(), BoxError>;
-    fn delete_collection(&self, collection_name: &CollectionName) -> Result<(), BoxError>;
-    fn list_collection_items(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>;
-    fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, BoxError>;
-    fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> Result<u64, BoxError>;
-    fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), BoxError>;
-    fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), BoxError>;
+    fn get_collection_schema(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Option<CollectionSchema>, BoxError>> + Send;
+    fn list_collection_names(&self) -> impl Future<Output = Result<Vec<CollectionName>, BoxError>> + Send;
+    fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection(&self, collection_name: &CollectionName) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn list_collection_items(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
+    fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
+    fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> impl Future<Output = Result<u64, BoxError>> + Send;
+    fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     // The working copy an editor saves into. The item store is what the delivery API
     // serves, so as long as a save lands here the live site cannot change by accident.
     // Absent means "no unpublished changes".
-    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, BoxError>;
-    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), BoxError>;
-    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), BoxError>;
+    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
+    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Every working copy of a collection, so a list can show them without a read each.
-    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>;
+    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
 
     // Draft/published metadata, kept out of the item's values so a schema field may be
     // named `status` without colliding. Absent metadata means "draft".
-    fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, BoxError>;
-    fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), BoxError>;
-    fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>;
+    fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<ItemMetadata>, BoxError>> + Send;
+    fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn list_item_metadata(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>> + Send;
 
     /// One page of a collection's items, in id order, plus how many items there are.
     ///
@@ -52,10 +54,15 @@ pub trait CollectionRepository:Send + Sync + 'static {
         collection_name: &CollectionName,
         offset: usize,
         limit: Option<usize>,
-    ) -> Result<(Vec<(CollectionItemId, CollectionItem)>, usize), BoxError> {
-        let all = self.list_collection_items(collection_name)?;
-        let total = all.len();
-        Ok((cut(all, offset, limit), total))
+    ) -> impl Future<Output = Result<(Vec<(CollectionItemId, CollectionItem)>, usize), BoxError>> + Send
+    {
+        // The default is to read the list and cut it, which is correct anywhere; an adapter
+        // that can read a window overrides this. `async move` because the body borrows `self`.
+        async move {
+            let all = self.list_collection_items(collection_name).await?;
+            let total = all.len();
+            Ok((cut(all, offset, limit), total))
+        }
     }
 
     /// One page of the *published* items, in id order, each with its metadata, plus how many
@@ -70,22 +77,27 @@ pub trait CollectionRepository:Send + Sync + 'static {
         collection_name: &CollectionName,
         offset: usize,
         limit: Option<usize>,
-    ) -> Result<(Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize), BoxError> {
-        let metadata: std::collections::HashMap<CollectionItemId, ItemMetadata> = self
-            .list_item_metadata(collection_name)?
-            .into_iter()
-            .collect();
-        let mut published: Vec<(CollectionItemId, CollectionItem, ItemMetadata)> = Vec::new();
-        for (id, item) in self.list_collection_items(collection_name)? {
-            if let Some(metadata) = metadata.get(&id) {
-                if metadata.is_published() {
-                    published.push((id.clone(), item, metadata.clone()));
+    ) -> impl Future<
+        Output = Result<(Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize), BoxError>,
+    > + Send {
+        async move {
+            let metadata: std::collections::HashMap<CollectionItemId, ItemMetadata> = self
+                .list_item_metadata(collection_name)
+                .await?
+                .into_iter()
+                .collect();
+            let mut published: Vec<(CollectionItemId, CollectionItem, ItemMetadata)> = Vec::new();
+            for (id, item) in self.list_collection_items(collection_name).await? {
+                if let Some(metadata) = metadata.get(&id) {
+                    if metadata.is_published() {
+                        published.push((id.clone(), item, metadata.clone()));
+                    }
                 }
             }
+            published.sort_by_key(|(id, _, _)| **id);
+            let total = published.len();
+            Ok((cut(published, offset, limit), total))
         }
-        published.sort_by_key(|(id, _, _)| **id);
-        let total = published.len();
-        Ok((cut(published, offset, limit), total))
     }
 
     /// Publish or unpublish one item as a single step.
@@ -102,5 +114,5 @@ pub trait CollectionRepository:Send + Sync + 'static {
         item_id: &CollectionItemId,
         draft: Option<&CollectionItem>,
         metadata: &ItemMetadata,
-    ) -> Result<(), BoxError>;
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }

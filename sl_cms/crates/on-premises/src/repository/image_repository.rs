@@ -51,7 +51,7 @@ impl Repository {
 }
 
 impl ImageRepository for Repository {
-    fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
+    async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
                 original_filename: image.original_filename,
@@ -62,7 +62,7 @@ impl ImageRepository for Repository {
         }
     }
 
-    fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
+    async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
@@ -88,7 +88,7 @@ impl ImageRepository for Repository {
         Ok(images)
     }
 
-    fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
+    async fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
@@ -127,7 +127,7 @@ impl ImageRepository for Repository {
         })
     }
 
-    fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
+    async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
         let _guard = self.begin();
         let image = self.image_data(id)?.ok_or("Image not found")?;
         // Remove the stored bytes first; a missing file is not an error (the metadata
@@ -149,11 +149,11 @@ impl ImageRepository for Repository {
 /// The bytes themselves: this adapter stores them on disk and hands out its own upload URL,
 /// so it is the one that authorises and serves the transfers (see [`LocalImageBytes`]).
 impl LocalImageBytes for Repository {
-    fn take_upload_key(&self, key: &str) -> Result<Option<String>, BoxError> {
+    async fn take_upload_key(&self, key: &str) -> Result<Option<String>, BoxError> {
         Ok(self.consume_upload_key(key))
     }
 
-    fn read_image_bytes(&self, file_name: &str) -> Result<Option<Vec<u8>>, BoxError> {
+    async fn read_image_bytes(&self, file_name: &str) -> Result<Option<Vec<u8>>, BoxError> {
         let path = self.image_path(file_name)?;
         match fs::read(&path) {
             Ok(data) => Ok(Some(data)),
@@ -162,7 +162,7 @@ impl LocalImageBytes for Repository {
         }
     }
 
-    fn write_image_bytes(&self, file_name: &str, data: &[u8]) -> Result<(), BoxError> {
+    async fn write_image_bytes(&self, file_name: &str, data: &[u8]) -> Result<(), BoxError> {
         let path = self.image_path(file_name)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

@@ -617,7 +617,7 @@ impl Default for FieldValue {
     }
 }
 impl FieldValue {
-    pub fn to_response<IR: ImageRepository>(
+    pub async fn to_response<IR: ImageRepository>(
         &self,
         image_repository: &IR,
     ) -> FieldValueResponse {
@@ -631,7 +631,7 @@ impl FieldValue {
             FieldValue::Image(img_id) => {
                 let img_response = img_id.as_ref().and_then(|id| {
                     image_repository.get_image(id).ok()
-                        .and_then(|img_opt| img_opt.map(|img| ImageResponse {
+           await.             .and_then(|img_opt| img_opt.map(|img| ImageResponse {
                             id: id.clone(),
                             url: img.url,
                         }))

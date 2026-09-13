@@ -1,15 +1,14 @@
 //! AWS storage adapter: DynamoDB (single table) for structured data, S3 for image bytes.
 //!
-//! The shape is settled in `doc/aws-plan.md` and `doc/aws-dynamodb-design.md`; this module is
-//! being filled in. The repository traits are synchronous and the AWS SDK is not, so the
-//! implementation is written `async` (what it wants to be) and the synchronous traits are
-//! served through [`bridge::BlockingRuntime`]. That bridge is temporary: when the traits
-//! themselves become async, it and the short wrappers go away and the async implementation
-//! stays.
+//! The shape is settled in `doc/aws-plan.md` and `doc/aws-dynamodb-design.md`.
 //!
-//! What is here: the composition root and all five repository traits (collections, users,
-//! single pages, composite fields, images), the DynamoDB helpers (keys, JSON records, atomic
-//! ids) and the S3 upload target. Still to come: the Lambda entry point and Cognito.
+//! The repository traits are async, which is what this adapter always wanted to be: there used
+//! to be a bridge that ran each call on a runtime thread so synchronous traits could be served,
+//! and it is gone (see `doc/aws-dynamodb-design.md` §7.1).
+//!
+//! What is here: the composition root, all five repository traits (collections, users, single
+//! pages, composite fields, images), the DynamoDB helpers (keys, JSON records, atomic ids) and
+//! the S3 upload target. Still to come: the Lambda entry point and Cognito.
 
 // Until the Lambda entry point exists (`doc/aws-plan.md` P3) nothing in the server binary drives
 // the adapter: `run` builds the composition root and reports that it has nowhere to serve it.
@@ -25,7 +24,6 @@ use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
-pub mod bridge;
 pub mod repository;
 pub mod settings;
 
