@@ -37,6 +37,20 @@ impl User {
         self.is_admin || self.permission.can_edit
     }
 
+    /// Whether this user may read content, drafts included.
+    pub fn can_read(&self) -> bool {
+        self.is_admin || self.permission.can_view
+    }
+
+    /// Whether this user may change whether content is published.
+    ///
+    /// Deliberately separate from [`User::can_write`]: drafts are kept apart from the
+    /// published copy, so editing an item does not touch the live site. That is what lets
+    /// a CMS have editors who prepare content and publishers who release it.
+    pub fn can_publish(&self) -> bool {
+        self.is_admin || self.permission.can_publish
+    }
+
     pub fn to_response(&self) -> UserResponse {
         UserResponse {
             id: self.id.clone(),
@@ -157,5 +171,40 @@ mod tests {
         let editor = User::new("a@b.co", "h".into(), false, Permission::editor());
         assert!(admin.can_write());
         assert!(editor.can_write());
+    }
+
+    /// The three capabilities are independent: an editor writes drafts but cannot release
+    /// them, and only a publisher (or an administrator) can.
+    #[test]
+    fn publishing_is_a_separate_capability_from_editing() {
+        let editor = User::new("a@b.co", "h".into(), false, Permission::editor());
+        assert!(editor.can_write());
+        assert!(editor.can_read());
+        assert!(!editor.can_publish());
+
+        let publisher = User::new(
+            "a@b.co",
+            "h".into(),
+            false,
+            Permission { can_view: true, can_edit: true, can_publish: true },
+        );
+        assert!(publisher.can_publish());
+
+        // An administrator can do all three whatever the permission record says.
+        let admin = User::new("a@b.co", "h".into(), true, Permission::viewer());
+        assert!(admin.can_read() && admin.can_write() && admin.can_publish());
+    }
+
+    #[test]
+    fn an_account_without_can_view_cannot_read() {
+        let none = User::new(
+            "a@b.co",
+            "h".into(),
+            false,
+            Permission { can_view: false, can_edit: false, can_publish: false },
+        );
+        assert!(!none.can_read());
+        assert!(!none.can_write());
+        assert!(!none.can_publish());
     }
 }

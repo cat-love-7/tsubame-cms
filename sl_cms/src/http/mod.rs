@@ -86,9 +86,10 @@ pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
 
 /// Authenticate the bearer token and apply coarse authorization.
 ///
-/// Reads are allowed to any authenticated account; writes additionally require edit
-/// rights (or administrator status). Fine-grained, per-resource permissions are not
-/// implemented yet.
+/// Reads need `can_view`, every other method needs `can_edit`. The checks that depend on
+/// more than the method — releasing content, or changing the site's structure — belong to
+/// the handlers, which use [`require_publish`] and [`require_admin`], because one path
+/// often serves several of them (a `GET` and a `DELETE` on the same URL, for instance).
 async fn require_auth<R: Storage>(
     State(state): State<AppState<R>>,
     mut request: Request,
@@ -102,12 +103,40 @@ async fn require_auth<R: Storage>(
         *request.method(),
         Method::GET | Method::HEAD | Method::OPTIONS
     );
-    if is_write && !user.can_write() {
-        return Err(HttpError::Forbidden("edit permission required"));
+    if is_write {
+        if !user.can_write() {
+            return Err(HttpError::Forbidden("edit permission required"));
+        }
+    } else if !user.can_read() {
+        return Err(HttpError::Forbidden("view permission required"));
     }
 
     request.extensions_mut().insert(AuthenticatedUser(user));
     Ok(next.run(request).await)
+}
+
+/// Releasing or hiding content, and deleting it.
+///
+/// Safe to keep separate from "may edit" because the draft a user edits is not what the
+/// delivery API serves; only publishing copies it across.
+pub fn require_publish(user: &User) -> Result<(), HttpError> {
+    if user.can_publish() {
+        Ok(())
+    } else {
+        Err(HttpError::Forbidden("publish permission required"))
+    }
+}
+
+/// Changing the shape of the site (schemas, collections, pages) or managing accounts.
+///
+/// Editing content is not the same as changing what content can exist, so this is
+/// deliberately not implied by `can_edit`.
+pub fn require_admin(user: &User) -> Result<(), HttpError> {
+    if user.is_admin {
+        Ok(())
+    } else {
+        Err(HttpError::Forbidden("administrator permission required"))
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {

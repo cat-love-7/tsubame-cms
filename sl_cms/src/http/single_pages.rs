@@ -1,11 +1,11 @@
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::AppState;
+use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
 use crate::models::item_status::ItemStatus;
 use crate::models::single_page::{SinglePageName, SinglePageSchema};
@@ -51,15 +51,19 @@ async fn get_single_page_item_metadata<R: Storage>(
 
 async fn publish_single_page<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_publish(&user)?;
     set_single_page_status(module, page_name, ItemStatus::Published).await
 }
 
 async fn unpublish_single_page<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_publish(&user)?;
     set_single_page_status(module, page_name, ItemStatus::Draft).await
 }
 
@@ -90,9 +94,11 @@ async fn get_single_page_schema<R: Storage>(
 
 async fn add_single_page_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
     Json(schema): Json<SinglePageSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
@@ -102,9 +108,11 @@ async fn add_single_page_schema<R: Storage>(
 
 async fn update_single_page_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
     Json(schema): Json<SinglePageSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
@@ -114,8 +122,11 @@ async fn update_single_page_schema<R: Storage>(
 
 async fn delete_single_page<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
+    // The page and its schema go, so this is a structural change.
+    require_admin(&user)?;
     let name = SinglePageName::from(page_name.as_str());
     module.single_page_service.delete_single_page(&name)?;
     Ok(StatusCode::OK)

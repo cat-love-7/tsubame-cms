@@ -21,6 +21,8 @@ use crate::app_module::AppModule;
 use crate::auth::token::TokenIssuer;
 use crate::http;
 use crate::models::pagination::DEFAULT_PAGE_LIMIT;
+use crate::models::user::Permission;
+use std::collections::HashMap;
 use crate::on_premises::repository::Repository;
 use crate::webhook::{NoopNotifier, Notifier, WebhookNotifier};
 
@@ -2224,4 +2226,165 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body.as_array().unwrap().len(), created.len());
+}
+
+// --------------------------------------------------------------------------- permissions
+
+/// The permission matrix, checked through the real routes rather than the helpers.
+///
+/// Reading needs `can_view`; editing content needs `can_edit`; releasing it needs
+/// `can_publish`; and changing the shape of the site needs an administrator, because
+/// editing content is not the same as deciding what content can exist.
+#[tokio::test]
+async fn each_role_can_do_exactly_what_it_is_granted() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+    let item_id = create_sample_item(&app, "blog").await;
+
+    let roles = [
+        ("viewer@example.com", Permission::viewer()),
+        ("editor@example.com", Permission::editor()),
+        (
+            "publisher@example.com",
+            Permission { can_view: true, can_edit: true, can_publish: true },
+        ),
+        (
+            "nobody@example.com",
+            Permission { can_view: false, can_edit: false, can_publish: false },
+        ),
+    ];
+    for (email, permission) in roles {
+        let (status, body) = send_raw(
+            &app.router,
+            Method::POST,
+            "/auth/users",
+            Some(&admin),
+            Some(json!({
+                "email": email,
+                "password": "role-password",
+                "is_admin": false,
+                "permission": permission,
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{email}: {}", String::from_utf8_lossy(&body));
+    }
+
+    let mut tokens = HashMap::new();
+    for (email, _) in roles {
+        let (status, body) = login(&app.router, email, "role-password").await;
+        assert_eq!(status, StatusCode::OK, "{email} login: {body}");
+        tokens.insert(email, body["token"].as_str().unwrap().to_string());
+    }
+
+    // Reading: everyone holding `can_view`.
+    for email in ["viewer@example.com", "editor@example.com", "publisher@example.com"] {
+        let (status, _) = send(
+            &app.router,
+            Method::GET,
+            "/models/collections",
+            Some(&tokens[email]),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{email} should be able to read");
+    }
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections",
+        Some(&tokens["nobody@example.com"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "an account without can_view cannot read");
+
+    // Editing content: editors and publishers, not viewers.
+    for (email, expected) in [
+        ("viewer@example.com", StatusCode::FORBIDDEN),
+        ("editor@example.com", StatusCode::OK),
+        ("publisher@example.com", StatusCode::OK),
+    ] {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/models/collections/blog/item",
+            Some(&tokens[email]),
+            Some(json!({ "title": "draft", "tags": [] })),
+        )
+        .await;
+        assert_eq!(status, expected, "{email} creating an item");
+    }
+
+    // Releasing it: only a publisher.
+    for (email, expected) in [
+        ("viewer@example.com", StatusCode::FORBIDDEN),
+        ("editor@example.com", StatusCode::FORBIDDEN),
+        ("publisher@example.com", StatusCode::OK),
+    ] {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/blog/items/{item_id}/publish"),
+            Some(&tokens[email]),
+            None,
+        )
+        .await;
+        assert_eq!(status, expected, "{email} publishing");
+    }
+
+    // Changing the shape of the site: administrators only.
+    for email in ["editor@example.com", "publisher@example.com"] {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/models/collections/another/schema",
+            Some(&tokens[email]),
+            Some(sample_schema()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{email} changing a schema");
+    }
+
+    // Deleting content takes it off the site, so it needs a publisher.
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/collections/blog/items/{item_id}"),
+        Some(&tokens["editor@example.com"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "an editor cannot delete content");
+
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/collections/blog/items/{item_id}"),
+        Some(&tokens["publisher@example.com"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "a publisher may delete content");
+
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        "/models/collections/blog",
+        Some(&tokens["publisher@example.com"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "deleting a collection is structural");
+
+    // The administrator can do all of it.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/auth/users",
+        Some(&tokens["publisher@example.com"]),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "account management is administrator-only");
 }

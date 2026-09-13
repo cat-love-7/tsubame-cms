@@ -1,11 +1,11 @@
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::AppState;
+use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
 use crate::models::field::CompositeFieldSchema;
 use crate::models::schema::CompositeFieldId;
@@ -45,9 +45,12 @@ async fn get_composite_field_schema<R: Storage>(
 
 async fn add_composite_field_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(schema): Json<CompositeFieldSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    // A composite is referenced by other schemas, so it is part of the site's shape.
+    require_admin(&user)?;
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service
@@ -57,9 +60,11 @@ async fn add_composite_field_schema<R: Storage>(
 
 async fn update_composite_field_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
     Json(schema): Json<CompositeFieldSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service
@@ -69,8 +74,10 @@ async fn update_composite_field_schema<R: Storage>(
 
 async fn delete_composite_field_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service

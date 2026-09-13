@@ -7,9 +7,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::{AppState, AuthenticatedUser};
+use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
-use crate::models::user::{LoginRequest, NewUserRequest, User};
+use crate::models::user::{LoginRequest, NewUserRequest};
 
 /// Routes reachable without a token. Only login qualifies.
 pub fn public_routes<R: Storage>() -> Router<AppState<R>> {
@@ -54,15 +54,4 @@ async fn create_user<R: Storage>(
     require_admin(&user)?;
     let created = module.auth_service.create_user(request)?;
     Ok((StatusCode::CREATED, Json(created)))
-}
-
-/// Account management is restricted to administrators; the middleware's `can_edit` check
-/// deliberately does not cover this, because editing content is not the same as creating
-/// accounts.
-fn require_admin(user: &User) -> Result<(), HttpError> {
-    if user.is_admin {
-        Ok(())
-    } else {
-        Err(HttpError::Forbidden("administrator permission required"))
-    }
 }

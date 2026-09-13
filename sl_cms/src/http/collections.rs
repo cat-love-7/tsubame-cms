@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
@@ -6,7 +6,7 @@ use axum::{Json, Router};
 use std::collections::HashMap;
 
 use crate::app_module::Storage;
-use crate::http::AppState;
+use crate::http::{require_admin, require_publish, AppState, AuthenticatedUser};
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus};
@@ -86,15 +86,19 @@ async fn get_collection_item_metadata<R: Storage>(
 
 async fn publish_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_publish(&user)?;
     set_collection_item_status(module, collection_name, id, ItemStatus::Published).await
 }
 
 async fn unpublish_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_publish(&user)?;
     set_collection_item_status(module, collection_name, id, ItemStatus::Draft).await
 }
 
@@ -130,9 +134,12 @@ async fn get_collection_schema<R: Storage>(
 
 async fn add_collection_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(collection_name): Path<String>,
     Json(schema): Json<CollectionSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    // Creating a collection changes what content can exist, which is not an editing act.
+    require_admin(&user)?;
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
@@ -142,9 +149,11 @@ async fn add_collection_schema<R: Storage>(
 
 async fn update_collection_schema<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(collection_name): Path<String>,
     Json(schema): Json<CollectionSchema>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
@@ -154,8 +163,10 @@ async fn update_collection_schema<R: Storage>(
 
 async fn delete_collection<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(collection_name): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
     let name = CollectionName::from(collection_name.as_str());
     module.collection_service.delete_collection(&name)?;
     Ok(StatusCode::OK)
@@ -221,8 +232,11 @@ async fn update_collection_item<R: Storage>(
 
 async fn delete_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
+    // Deleting content removes it from the site just as unpublishing does.
+    require_publish(&user)?;
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
