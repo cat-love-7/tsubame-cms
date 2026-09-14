@@ -80,7 +80,27 @@ function check(label, ok, detail = '') {
 // ------------------------------------------------------------------------------ seed data
 
 const browser = await chromium.launch({ args: ['--no-sandbox'] });
-const context = await browser.newContext();
+/**
+ * Pin the interface language.
+ *
+ * The interface follows the browser until someone chooses otherwise, so without this every
+ * check would depend on the language the test browser happens to ask for - and half of them
+ * would start failing the moment a screen is translated. The check about switching sets its own
+ * value on top of this.
+ */
+async function newContext() {
+  const context = await browser.newContext();
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem('sl_cms.language', 'en');
+    } catch {
+      // A context that refuses storage simply keeps the browser's own language.
+    }
+  });
+  return context;
+}
+
+const context = await newContext();
 // Requests go through the browser's own network stack, not Node's `fetch`: `localhost`
 // resolves to IPv4 first for Node, while the dev server may only listen on IPv6.
 const request = context.request;
@@ -185,7 +205,7 @@ const badgeOf = (row) => row.locator('app-item-status .badge');
 
 /** Sign in on a fresh context, so a second role can be looked at beside the admin one. */
 async function openAs(username, password) {
-  const roleContext = await browser.newContext();
+  const roleContext = await newContext();
   const rolePage = await roleContext.newPage();
   rolePage.on('pageerror', (error) => consoleErrors.push(`${username}: ${error}`));
   rolePage.on('console', (message) => {
@@ -809,7 +829,7 @@ try {
   );
 
   // ...the owner opens it with no session at all and chooses a password.
-  const resetContext = await browser.newContext();
+  const resetContext = await newContext();
   const resetPage = await resetContext.newPage();
   resetPage.on('pageerror', (error) => consoleErrors.push(`reset: ${error}`));
   resetPage.on('console', (message) => {

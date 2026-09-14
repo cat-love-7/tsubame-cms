@@ -4,10 +4,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { HttpTestingController } from '@angular/common/http/testing';
 
-import { provideTransloco } from '@jsverse/transloco';
-
-import { FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES } from '../../i18n/language';
-import { BundledTranslocoLoader } from '../../i18n/transloco.loader';
+import { provideTestTransloco } from '../../i18n/testing';
 import { Login } from './login';
 
 describe('Login', () => {
@@ -23,19 +20,9 @@ describe('Login', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         // The real catalogs, so a key that does not exist fails the test that reads it.
-        provideTransloco({
-          config: {
-            availableLangs: [...SUPPORTED_LANGUAGES],
-            defaultLang: FALLBACK_LANGUAGE,
-            fallbackLang: FALLBACK_LANGUAGE,
-            reRenderOnLangChange: true,
-            prodMode: false,
-          },
-          loader: BundledTranslocoLoader,
-        }),
+        ...provideTestTransloco(),
       ],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(Login);
