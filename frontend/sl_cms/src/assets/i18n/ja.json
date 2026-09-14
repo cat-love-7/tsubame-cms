@@ -91,5 +91,15 @@
     "uploading": "アップロード中…",
     "columns": "列(1〜12)",
     "minHeight": "最小の高さ(行)"
+  },
+  "errors": {
+    "bad_request": "リクエストが受け付けられませんでした。",
+    "unauthorized": "続けるにはサインインしてください。",
+    "forbidden": "その操作を行う権限がありません。",
+    "not_found": "見つかりませんでした。",
+    "conflict": "すでに存在する内容と競合しています。",
+    "too_many_requests": "試行が多すぎます。しばらくしてからお試しください。",
+    "internal_error": "サーバーで問題が発生しました。",
+    "not_implemented": "この配備では対応していません。"
   }
 }

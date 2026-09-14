@@ -91,5 +91,15 @@
     "uploading": "Uploading…",
     "columns": "Columns (1-12)",
     "minHeight": "Min height (rows)"
+  },
+  "errors": {
+    "bad_request": "The request was not accepted.",
+    "unauthorized": "Sign in to continue.",
+    "forbidden": "You do not have permission to do that.",
+    "not_found": "That was not found.",
+    "conflict": "That conflicts with something that already exists.",
+    "too_many_requests": "Too many attempts. Try again shortly.",
+    "internal_error": "Something went wrong on the server.",
+    "not_implemented": "This deployment does not support that."
   }
 }

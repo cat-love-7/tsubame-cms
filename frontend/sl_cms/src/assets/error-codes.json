@@ -1,0 +1,10 @@
+[
+  "bad_request",
+  "unauthorized",
+  "forbidden",
+  "not_found",
+  "conflict",
+  "too_many_requests",
+  "internal_error",
+  "not_implemented"
+]

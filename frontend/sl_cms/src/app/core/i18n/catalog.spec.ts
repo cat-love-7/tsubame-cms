@@ -1,4 +1,5 @@
 import en from '../../../assets/i18n/en.json';
+import errorCodes from '../../../assets/error-codes.json';
 import ja from '../../../assets/i18n/ja.json';
 
 /**
@@ -42,6 +43,18 @@ describe('translation catalogs', () => {
           .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], catalogs[language]);
         expect(typeof value, `${language}:${key}`).toBe('string');
         expect((value as string).trim(), `${language}:${key}`).not.toBe('');
+      }
+    }
+  });
+
+  it('translate every error code the API can answer with', () => {
+    // The codes are the contract the server publishes (a Rust test keeps its copy in step);
+    // this is the other side of it, so a code the UI cannot word is caught here rather than
+    // showing English to someone who chose Japanese.
+    for (const language of LANGUAGES) {
+      const errors = (catalogs[language]['errors'] ?? {}) as Record<string, string>;
+      for (const code of errorCodes) {
+        expect(errors[code], `${language}: errors.${code}`).toBeTruthy();
       }
     }
   });

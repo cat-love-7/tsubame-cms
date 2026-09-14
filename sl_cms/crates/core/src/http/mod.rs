@@ -246,7 +246,13 @@ impl IntoResponse for HttpError {
         let status =
             StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let retry_after = self.retry_after_seconds;
-        let mut response = (status, self.message).into_response();
+        // A code the client can translate, and the English message for anyone reading a log or
+        // curling the API. Plain text would leave a client with nothing but English to show.
+        let mut response = (
+            status,
+            axum::Json(serde_json::json!({ "code": self.code, "message": self.message })),
+        )
+            .into_response();
         // Only the 429 answers set this, and a client that knows when to come back does not
         // have to guess.
         if let Some(seconds) = retry_after {
