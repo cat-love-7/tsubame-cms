@@ -78,12 +78,19 @@ export type FieldSchema = {
   name: string;
   field_type: FieldType;
   required: boolean;
+  /**
+   * Whether the value has to be unique inside its collection.
+   *
+   * Omitted by the server when false, so treat a missing value as false. Only a text field may
+   * set it: the check compares the stored value, and a slug's normalisation is a separate job.
+   */
+  unique?: boolean;
   width: number;
   height: number;
 }
 
 /** The layout a newly added field starts with: full width, single row. */
-export const DefaultFieldLayout = { width: 12, height: 1 } as const;
+export const DefaultFieldLayout = { width: 12, height: 1, unique: false } as const;
 
 export function isTextFieldSchema(field: FieldType): field is TextFieldSchema {
   return typeof field === 'object' && field !== null && 'Text' in field;

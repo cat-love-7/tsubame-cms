@@ -13,4 +13,5 @@
   <p class="error" role="alert">{{ problem | message }}</p>
 }
 
-<app-edit-schema [Schema]="schema()" (save)="save($event)"></app-edit-schema>
+<!-- One item (or an embedded definition): nothing to compare a value against. -->
+<app-edit-schema [Schema]="schema()" [uniqueAllowed]="false" (save)="save($event)"></app-edit-schema>

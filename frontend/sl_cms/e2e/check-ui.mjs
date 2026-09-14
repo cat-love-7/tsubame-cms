@@ -216,6 +216,16 @@ console.log(
 const page = await context.newPage();
 
 const consoleErrors = [];
+/**
+ * Console errors this run provokes on purpose.
+ *
+ * A screen that has to show a refusal makes a request that fails, and the browser logs it. The
+ * check at the end is about the *unexpected* ones, so the expected ones are claimed here.
+ */
+const expectedConsoleErrors = [];
+function expectConsoleError(pattern) {
+  expectedConsoleErrors.push(pattern);
+}
 page.on('pageerror', (error) => consoleErrors.push(String(error)));
 page.on('console', (message) => {
   if (message.type() === 'error') consoleErrors.push(message.text());
@@ -905,6 +915,13 @@ try {
     ((await textField.locator('mat-label').first().textContent()) ?? '').includes('Field Name'),
   );
 
+  // The title has to be unique: the value is compared across the collection when saved.
+  await textField.locator('input[name="fieldUnique"]').check({ force: true });
+  check(
+    '一意チェックが画面にある',
+    await textField.locator('input[name="fieldUnique"]').isChecked(),
+  );
+
   // A second field of another type: an enum, whose values are chips.
   await page.click('button:has-text("Add field")');
   const enumField = page.locator('.schema-field').nth(1);
@@ -981,6 +998,7 @@ try {
   check(
     '画面で組んだスキーマが保存される',
     builtText?.width === 6 &&
+      builtText?.unique === true &&
       builtText?.field_type?.Text !== undefined &&
       builtEnum?.field_type?.TextEnum?.join() === 'published' &&
       builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK,
@@ -1101,6 +1119,31 @@ try {
     '入れ子の複合配列が保存される',
     nestedItem?.blocks?.[0]?.values?.children?.[0]?.values?.line === 'nested block',
     JSON.stringify(nestedItem?.blocks?.[0]?.values?.children),
+  );
+
+  // A value another item holds is refused, and the form says which field it was about.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/create`, { waitUntil: 'networkidle' });
+  const duplicateTitle = page.locator('app-value-field input').first();
+  await duplicateTitle.waitFor({ timeout: 15000 });
+  await duplicateTitle.fill('first item');
+  // The refusal is the point of this step, so its 409 is expected.
+  expectConsoleError(/409 \(Conflict\)/);
+  await page.click('button:has-text("Save")');
+  const refusal = page.locator('.error');
+  await refusal.waitFor({ timeout: 10000 }).catch(() => {});
+  const refusalText = ((await refusal.textContent()) ?? '').trim();
+  check('一意な値の重複はフォームで止まる', refusalText.includes('title'), refusalText);
+
+  const afterRefusal = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items/metadata`,
+    undefined,
+    token,
+  );
+  check(
+    '重複したアイテムは作られない',
+    Object.keys(afterRefusal).length === 1,
+    `${Object.keys(afterRefusal).length} 件`,
   );
 
   // Through the API rather than the screen: this collection exists only for this scenario.
@@ -1239,7 +1282,19 @@ try {
   });
   check('他のアカウントは影響を受けない', otherAccount.status() === 200, `status=${otherAccount.status()}`);
 
-  check('ブラウザのコンソールエラーがない', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
+  const unexpectedErrors = consoleErrors.filter((text) => {
+    const claimed = expectedConsoleErrors.findIndex((pattern) => pattern.test(text));
+    if (claimed === -1) {
+      return true;
+    }
+    expectedConsoleErrors.splice(claimed, 1);
+    return false;
+  });
+  check(
+    'ブラウザのコンソールエラーがない',
+    unexpectedErrors.length === 0,
+    unexpectedErrors.slice(0, 2).join(' | '),
+  );
 } catch (error) {
   check('検証スクリプトが最後まで走る', false, String(error).split('\n')[0]);
 } finally {

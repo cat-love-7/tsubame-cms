@@ -6,6 +6,14 @@
 <mat-checkbox [(ngModel)]="field.required" name="fieldRequired">
   {{ 'common.required' | transloco }}
 </mat-checkbox>
+@if (uniqueAllowed && (field.field_type | isTextFieldSchema)) {
+  <div class="unique-field">
+    <mat-checkbox [(ngModel)]="field.unique" name="fieldUnique">
+      {{ 'schema.unique' | transloco }}
+    </mat-checkbox>
+    <span class="unique-hint">{{ 'schema.uniqueHint' | transloco }}</span>
+  </div>
+}
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.fieldType' | transloco }}</mat-label>
   <mat-select name="fieldType" [value]="field.field_type | FieldTypeString" (selectionChange)="onFieldTypeChange($event.value)">

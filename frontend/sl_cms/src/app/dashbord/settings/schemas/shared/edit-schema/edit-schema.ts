@@ -59,6 +59,8 @@ interface ResizeState {
 })
 export class EditSchema {
   @Input() Schema: FieldSchema[] = [];
+  /** Passed on to each field: see [`Field.uniqueAllowed`]. */
+  @Input() uniqueAllowed = true;
   @Output() SchemaChange = new EventEmitter<FieldSchema[]>();
   /**
    * Emitted when the user asks to persist. The parent performs the HTTP call because it

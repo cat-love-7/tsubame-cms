@@ -229,7 +229,8 @@
     "conflict": "すでに存在する内容と競合しています。",
     "too_many_requests": "試行が多すぎます。しばらくしてからお試しください。",
     "internal_error": "サーバーで問題が発生しました。",
-    "not_implemented": "この配備では対応していません。"
+    "not_implemented": "この配備では対応していません。",
+    "value_taken": "'{{field}}' の値は別のアイテムで既に使われています。"
   },
   "nav": {
     "documents": "ドキュメント",
@@ -260,7 +261,9 @@
     "removeEnumValue": "{{value}} を削除",
     "arrayCompositeTypes": "複合の要素型",
     "arrayCompositeHint": "この配列に要素として入れられる複合フィールドです。",
-    "arrayNoCompositeTypes": "まだ複合フィールドが定義されていません。"
+    "arrayNoCompositeTypes": "まだ複合フィールドが定義されていません。",
+    "unique": "コレクション内で一意にする",
+    "uniqueHint": "スキーマの保存時に、既存のアイテムと重複していないか確認します。"
   },
   "labels": {
     "toggleNavigation": "ナビゲーションを開閉",

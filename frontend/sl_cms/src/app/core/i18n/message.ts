@@ -35,7 +35,12 @@ export function failure(
 ): Message {
   const key = errorKey(error);
   if (key && !isStatusError(error)) {
-    return { key };
+    // A refusal that is about one field names it, so the wording can point at the input
+    // rather than leaving the reader to find which one it meant.
+    const field = (error as { error?: { field?: unknown } })?.error?.field;
+    return typeof field === 'string' && field
+      ? { key, params: { field, ...params } }
+      : { key };
   }
   return { key: siteKey, params: { ...params, message: errorMessage(error) } };
 }

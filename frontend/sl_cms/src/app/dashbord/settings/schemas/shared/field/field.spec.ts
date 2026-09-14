@@ -166,6 +166,26 @@ describe('Field', () => {
     http.expectNone('/api/models/composite_fields');
   });
 
+  it('offers the unique flag for a text field, and only where it means something', async () => {
+    fixture.componentRef.setInput('field', field());
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeTruthy();
+
+    // The server refuses it for a type whose values are not compared as text.
+    fixture.componentRef.setInput('field', field({ field_type: 'Number' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
+
+    // ...and for a screen with nothing to compare a value against (a single page, a composite).
+    fixture.componentRef.setInput('uniqueAllowed', false);
+    fixture.componentRef.setInput('field', field());
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
+  });
+
   it('brings the enum editor in when the field is an enum', async () => {
     fixture.componentRef.setInput('field', field({ field_type: { TextEnum: ['draft'] } }));
     await fixture.whenStable();

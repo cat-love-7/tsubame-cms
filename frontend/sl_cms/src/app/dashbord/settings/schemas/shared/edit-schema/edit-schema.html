@@ -57,7 +57,7 @@
              the real form. -->
         <app-value-field [field]="field" [value]="previewValue(field)" [disabled]="true" />
       } @else {
-        <app-field [(field)]="Schema[$index]" />
+        <app-field [(field)]="Schema[$index]" [uniqueAllowed]="uniqueAllowed" />
       }
 
       <!-- Drag either edge to resize. The numeric inputs in the field editor remain the

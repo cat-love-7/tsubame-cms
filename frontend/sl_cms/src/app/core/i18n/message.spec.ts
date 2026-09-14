@@ -39,6 +39,21 @@ describe('message helpers', () => {
     expect(isStatusError(invalid)).toBe(true);
   });
 
+  it('names the field a refusal is about', () => {
+    // The body carries `field` for a refusal that is about one input, so the wording can point
+    // at it instead of leaving the reader to find which field was meant.
+    const refused = response(409, {
+      code: 'value_taken',
+      message: "field 'slug': the value 'intro' is already used by item 1",
+      field: 'slug',
+    });
+
+    expect(failure('content.saveFailed', refused)).toEqual({
+      key: 'errors.value_taken',
+      params: { field: 'slug' },
+    });
+  });
+
   it('shows a code it does not know as the server wrote it', () => {
     // A code added since this client was built: the message is what makes that survivable.
     const future = response(400, { code: 'invented_later', message: 'something new went wrong' });

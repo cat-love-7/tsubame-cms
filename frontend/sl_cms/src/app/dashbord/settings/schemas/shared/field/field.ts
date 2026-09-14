@@ -71,6 +71,14 @@ export class Field implements OnInit, OnChanges {
     required: false,
     ...DefaultFieldLayout,
   };
+  /**
+   * Whether this screen may offer `unique` at all.
+   *
+   * A collection holds many items, so a value can be compared across them; a single page holds
+   * one and a composite definition's fields are embedded in the item that uses them, so the
+   * server refuses it there and the control would only ever fail.
+   */
+  @Input() uniqueAllowed = true;
   @Output() fieldChange = new EventEmitter<FieldSchema>();
 
   /**

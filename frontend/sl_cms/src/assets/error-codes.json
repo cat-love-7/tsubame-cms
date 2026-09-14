@@ -8,7 +8,8 @@
     "invalid_username",
     "weak_password",
     "username_taken",
-    "last_administrator"
+    "last_administrator",
+    "value_taken"
   ],
   "status": [
     "bad_request",

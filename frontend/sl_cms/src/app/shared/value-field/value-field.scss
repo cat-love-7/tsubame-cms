@@ -193,3 +193,13 @@
 .element-type {
   width: 12rem;
 }
+
+.unique-field {
+  display: block;
+  margin-top: 4px;
+
+  .unique-hint {
+    color: var(--mat-sys-on-surface-variant, #666);
+    font-size: 0.75rem;
+  }
+}
