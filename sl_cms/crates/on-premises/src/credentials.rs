@@ -40,7 +40,9 @@ pub fn verify_password(password: &str, stored_hash: &str) -> bool {
 }
 
 impl Repository {
-    /// The stored PHC string, without the storage lock (`delete_user` already holds it).
+    /// The stored PHC string. The caller must hold the storage lock (see [`Repository::begin`]),
+    /// because rkv opens the store on every call and LMDB refuses to open one while another
+    /// transaction is active.
     pub(crate) fn stored_password(&self, user_id: &UserId) -> Result<Option<String>, BoxError> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(CREDENTIAL_STORE, StoreOptions::create())?;
@@ -65,9 +67,16 @@ impl LocalCredentials for Repository {
     }
 
     async fn verify_password(&self, user_id: &UserId, password: &str) -> Result<bool, BoxError> {
-        // No lock: reading a credential is a snapshot read, and hashing is deliberately slow —
-        // holding a mutex across it would serialise every sign-in in the process.
-        let Some(hash) = self.stored_password(user_id)? else {
+        // The lock covers the read of the hash and nothing else. It has to cover that much
+        // (rkv's `open_single` opens the store, and LMDB refuses to open a database while
+        // another transaction is active, which is exactly what a second request is doing),
+        // but it must not cover the hashing: Argon2id is deliberately slow, and holding the
+        // mutex across it would serialise every sign-in in the process.
+        let stored = {
+            let _guard = self.begin();
+            self.stored_password(user_id)?
+        };
+        let Some(hash) = stored else {
             return Ok(false);
         };
         Ok(verify_password(password, &hash))
@@ -112,5 +121,62 @@ mod tests {
     fn malformed_hash_never_verifies() {
         assert!(!verify_password("anything", "not-a-phc-string"));
         assert!(!verify_password("anything", ""));
+    }
+
+    /// A second request must not turn a sign-in into a 500.
+    ///
+    /// rkv opens the credential store on every read, and the safe backend refuses to open a
+    /// database while any other read transaction is live (`attempted to open DB during
+    /// transaction`). The adapter's storage lock is what prevents that, so verification has to
+    /// take it for the read — this is the regression that made a sign-in fail whenever the admin
+    /// UI was loading data at the same time.
+    #[test]
+    fn verifying_a_password_waits_for_another_request_instead_of_failing() {
+        use crate::open_test_repository;
+        use sl_cms_core::repositories::local_credentials::LocalCredentials;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let dir = std::env::temp_dir().join(format!(
+            "sl-cms-verify-concurrency-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        // A previous run of the same test in this process: start from a clean environment.
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repository = open_test_repository(&dir);
+        let user_id = UserId::from("concurrency@example.com");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        runtime.block_on(async {
+            repository
+                .set_password(&user_id, "correct horse battery staple")
+                .await
+                .unwrap();
+        });
+
+        // Another request, holding the lock and a read transaction for as long as it works.
+        let (txn_open, txn_ready) = mpsc::channel();
+        let holder_repository = std::sync::Arc::clone(&repository);
+        let holder = std::thread::spawn(move || {
+            let guard = holder_repository.begin();
+            let env = holder_repository.rkv.read().unwrap();
+            let _reader = env.read().unwrap();
+            txn_open.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            drop(guard);
+        });
+        txn_ready.recv().unwrap();
+
+        // The sign-in must wait for it (and then succeed), not fail while the transaction lives.
+        let result = runtime
+            .block_on(repository.verify_password(&user_id, "correct horse battery staple"))
+            .unwrap();
+        holder.join().unwrap();
+        assert!(result);
+
+        drop(repository);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
