@@ -1,9 +1,18 @@
+
+/// Signing in is the one screen with no shell around it, so it centres its own card.
 .login-page {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 16px;
+  background: var(--mat-sys-surface-container-low);
+}
+
+.switcher {
+  position: fixed;
+  top: 8px;
+  right: 8px;
 }
 
 .login-card {
@@ -14,7 +23,11 @@
   width: 100%;
 }
 
+/* The error is above the fields it belongs to, so it needs a gap of its own. */
 .error {
-  color: #b3261e;
-  margin: 0 0 12px;
+  margin-bottom: 12px;
+}
+
+.elsewhere {
+  color: var(--mat-sys-on-surface-variant);
 }

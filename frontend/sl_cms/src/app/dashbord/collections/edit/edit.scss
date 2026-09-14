@@ -1,55 +1,7 @@
-.toolbar {
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.spacer {
-  flex: 1 1 auto;
-}
-
-.error {
-  color: #b3261e;
-}
-
-.note {
-  color: #666;
-}
-
-
-/* An unpublished edit is the thing an editor most needs to notice. */
-.publisher {
-  font-size: 0.78rem;
-  color: #666;
-}
-
-.draft-note {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 0.72rem;
-  background: #fff4e5;
-  color: #8a5300;
-  white-space: nowrap;
-}
-
-.actions {
-  margin-top: 16px;
-}
-
-/* The shareable link is long, so it wraps rather than stretching the toolbar. */
-.notice {
-  color: #1b5e20;
-}
-
-.preview-link {
-  overflow-wrap: anywhere;
-  font-size: 0.8rem;
-}
-
-// The field the server refused: the message names it, and this shows which input that is.
-.field-cell.problem {
-  outline: 2px solid var(--mat-sys-error, #b3261e);
-  outline-offset: 4px;
-  border-radius: 4px;
+  flex-direction: column;
+  gap: 16px;
 }

@@ -1,46 +1,32 @@
-.toolbar {
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.spacer {
-  flex: 1 1 auto;
-}
-
-.count {
-  color: #666;
-}
-
-.error {
-  color: #b3261e;
-}
-
-.note {
-  color: #666;
-}
-
+/// The library is a wall of thumbnails; each one is a card that says what it is.
 .library {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
-  margin-top: 16px;
 }
 
 .image {
   position: relative;
   margin: 0;
-  border: 1px solid var(--mat-sys-outline-variant, #ddd);
-  border-radius: 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--mat-sys-surface, #fff);
+  background: var(--mat-sys-surface-container-low);
 
   img {
     display: block;
     width: 100%;
     height: 140px;
     object-fit: cover;
-    background: #f4f4f4;
+    background: var(--mat-sys-surface-container-high);
   }
 
   figcaption {
@@ -51,7 +37,7 @@
   }
 
   .name {
-    font-weight: 500;
+    font: var(--mat-sys-body-medium);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -59,14 +45,15 @@
 
   /* Secondary information: it should not compete with the thumbnail. */
   .meta {
-    font-size: 0.75rem;
-    color: #666;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
   }
 
   .remove {
     position: absolute;
     top: 4px;
     right: 4px;
-    background: rgba(255, 255, 255, 0.85);
+    background: var(--mat-sys-surface-container-high);
+    color: var(--mat-sys-on-surface);
   }
 }

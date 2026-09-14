@@ -1,67 +1,13 @@
-.toolbar {
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.spacer {
-  flex: 1 1 auto;
-}
-
-.error {
-  color: #b3261e;
-}
-
-table.items {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-table.items th,
-table.items td {
-  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
-  padding: 8px 12px;
-  text-align: left;
-  vertical-align: top;
-}
-
-table.items th {
-  font-weight: 500;
-}
-
+/// The row of row-actions: never wrapped, and at the end of the line.
 .actions {
-  white-space: nowrap;
   text-align: right;
-}
-
-/* An unpublished edit is the thing an editor most needs to notice. */
-.draft-note {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 0.72rem;
-  background: #fff4e5;
-  color: #8a5300;
   white-space: nowrap;
-}
-
-/* The audit trail: who published this row, kept quiet until someone looks for it. */
-.publisher {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.72rem;
-  color: #666;
-  overflow-wrap: anywhere;
-}
-
-/* Timestamps are secondary information, so they do not compete with the content. */
-.updated {
-  white-space: nowrap;
-  color: #666;
-}
-
-.empty {
-  text-align: center;
-  color: #666;
 }

@@ -1,0 +1,17 @@
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/// The landing screen has one thing to say, so it says it in a card rather than across the page.
+.welcome {
+  max-width: 640px;
+}
+
+.welcome p {
+  margin: 8px 0 0;
+  color: var(--mat-sys-on-surface-variant);
+}

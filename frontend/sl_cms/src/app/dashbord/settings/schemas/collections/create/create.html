@@ -1,12 +1,20 @@
-<h2>{{ 'content.newCollection' | transloco }}</h2>
+<div class="toolbar">
+  <h2>{{ 'content.newCollection' | transloco }}</h2>
+</div>
+
 @if (error(); as problem) {
-  <p class="error">{{ problem | message }}</p>
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
-<mat-form-field appearance="fill">
-  <mat-label>{{ 'content.collectionName' | transloco }}</mat-label>
-  <input matInput [(ngModel)]="name" name="name" (keyup.enter)="create()" />
-</mat-form-field>
-<button matButton color="primary" (click)="create()">{{ 'common.create' | transloco }}</button>
-<button matButton [routerLink]="['/settings/schemas/collections']">
-  {{ 'common.cancel' | transloco }}
-</button>
+
+<div class="panel create-form">
+  <mat-form-field appearance="fill">
+    <mat-label>{{ 'content.collectionName' | transloco }}</mat-label>
+    <input matInput [(ngModel)]="name" name="name" (keyup.enter)="create()" />
+  </mat-form-field>
+  <div class="actions">
+    <button matButton color="primary" (click)="create()">{{ 'common.create' | transloco }}</button>
+    <button matButton [routerLink]="['/settings/schemas/collections']">
+      {{ 'common.cancel' | transloco }}
+    </button>
+  </div>
+</div>

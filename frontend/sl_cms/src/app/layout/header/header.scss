@@ -1,14 +1,23 @@
-.mat-toolbar {
-  background-color: var(--mat-sys-primary-container);
-  color: var(--mat-sys-on-primary-container);
-  font: var(--mat-sys-body-large);
+/// The app bar. It stays a plain surface rather than a coloured one: Material's buttons and
+/// icons are drawn for a surface background, and the palette shows up instead in the brand and
+/// in the navigation.
+.app-toolbar {
+  gap: 4px;
+  background: var(--mat-sys-surface-container);
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
 }
 
-.spacer {
-  flex: 1 1 auto;
+.brand {
+  margin-inline-start: 4px;
+  color: var(--mat-sys-primary);
+  font: var(--mat-sys-title-large);
+  font-weight: 600;
 }
 
 .user-email {
-  margin-right: 8px;
-  font-size: 0.875rem;
+  max-width: 22ch;
+  margin-inline: 8px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

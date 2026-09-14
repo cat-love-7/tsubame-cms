@@ -2,19 +2,19 @@
   display: inline-block;
 }
 
+/// Where an item stands. Draft is the common case, so only the exceptional state is
+/// coloured - from the theme, so both colour schemes are covered.
 .badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--mat-sys-surface-variant);
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-medium);
   white-space: nowrap;
-  background: var(--mat-sys-surface-variant, #eee);
-  color: var(--mat-sys-on-surface-variant, #555);
 }
 
-/* Draft is the common case, so only the exceptional state gets a colour. */
 .badge.published {
-  background: #e6f4ea;
-  color: #1e6b32;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
 }

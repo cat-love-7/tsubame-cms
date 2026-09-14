@@ -1,13 +1,7 @@
-.toolbar {
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.spacer {
-  flex: 1 1 auto;
-}
-
-.error {
-  color: #b3261e;
+  flex-direction: column;
+  gap: 16px;
 }

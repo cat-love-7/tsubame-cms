@@ -1,8 +1,9 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, Injector } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIcon, MatIconModule } from '@angular/material/icon';
 import { MatTreeModule } from '@angular/material/tree';
-import { RouterLink } from '@angular/router';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -26,6 +27,7 @@ interface SidebarItem {
     MatButtonModule,
     MatIconModule,
     RouterLink,
+    RouterLinkActive,
     TranslocoPipe,
   ],
 })
@@ -33,15 +35,20 @@ export class Sidebar {
   private collectionsService = inject(CollectionsService);
   private singlePagesService = inject(SinglePagesService);
   private auth = inject(AuthService);
+  private injector = inject(Injector);
   dataSource!: Observable<SidebarItem[]>;
   childrenAccessor = (node: SidebarItem) => node.children || [];
   hasChild = (_: number, node: SidebarItem) => !!node.children && node.children.length > 0;
   ngOnInit() {
-    let list = combineLatest([
+    // The account is part of the stream, not read once: only an administrator is offered the
+    // schema and account screens, and the profile arrives a moment after the shell does - a
+    // refresh on a settings screen would otherwise draw a navigation with those links missing.
+    const user = toObservable(this.auth.user, { injector: this.injector });
+    this.dataSource = combineLatest([
       this.collectionsService.getAllCollectionNames(),
       this.singlePagesService.listPageNames(),
-    ]).pipe(map((names) => this.toTreeNodes(names)));
-    this.dataSource = list;
+      user,
+    ]).pipe(map(([collections, pages]) => this.toTreeNodes([collections, pages])));
   }
   toTreeNodes(obs: [string[], string[]]): SidebarItem[] {
     const [collectionNames, singlePageNames] = obs;

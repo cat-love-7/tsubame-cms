@@ -1,3 +1,6 @@
+// The schema editor's per-field form: name, required, uniqueness, type, and how the field
+// takes space in the grid.
+
 .full-width {
   width: 100%;
 }
@@ -8,20 +11,21 @@
 
 .layout-label {
   display: block;
-  font-size: 0.75rem;
-  color: var(--mat-sys-on-surface-variant);
   margin-bottom: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-medium);
 }
 
 .width-presets {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
 
-.width-presets button.selected {
-  background-color: var(--mat-sys-secondary-container);
-  font-weight: 600;
+  /// The chosen width reads as pressed, not as a link.
+  button.selected {
+    background-color: var(--mat-sys-secondary-container);
+    font-weight: 600;
+  }
 }
 
 .layout-row {
@@ -32,4 +36,17 @@
 
 .numeric {
   width: 9rem;
+}
+
+/// Uniqueness is the one setting that costs something at write time, so it is explained
+/// rather than merely labelled.
+.unique-field {
+  display: block;
+  margin-top: 4px;
+
+  .unique-hint {
+    display: block;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+  }
 }

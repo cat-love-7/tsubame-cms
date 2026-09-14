@@ -1,30 +1,45 @@
-.hint {
-  color: var(--mat-sys-on-surface-variant);
-  font-size: 0.875rem;
+// The schema editor: the layout grid the content editor will render, with each field shown
+// as the tile you can move and resize. `.hint` and `.schema-actions` come from the global
+// vocabulary.
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
+/// One field's tile. It is the thing being dragged and resized, so it has to read as an
+/// object rather than as a piece of the page.
 .schema-field {
   // Anchors the resize handles.
   position: relative;
 
-  background-color: var(--mat-sys-secondary-container);
-  border-radius: 8px;
   padding: 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  background-color: var(--mat-sys-surface-container);
 }
 
+/// The tile's own title bar: the handle, the name, the size, and the order controls. It is
+/// what makes the tile readable as one object among the others.
 .schema-field-header {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin: -8px -8px 8px;
+  padding: 2px 4px 2px 4px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px 12px 0 0;
+  background: var(--mat-sys-surface-container-high);
 }
 
 .schema-field-name {
-  font-weight: 500;
+  font: var(--mat-sys-title-small);
 }
 
 .schema-field-size {
   color: var(--mat-sys-on-surface-variant);
-  font-size: 0.75rem;
+  font: var(--mat-sys-body-small);
 }
 
 .spacer {
@@ -32,9 +47,7 @@
 }
 
 .schema-actions {
-  display: flex;
-  gap: 8px;
-  margin: 16px 0;
+  margin: 4px 0 8px;
 }
 
 .resize-handle {
@@ -46,7 +59,7 @@
   &::after {
     content: '';
     position: absolute;
-    background-color: var(--mat-sys-outline, #999);
+    background-color: var(--mat-sys-outline);
     opacity: 0;
     transition: opacity 120ms ease-in-out;
   }

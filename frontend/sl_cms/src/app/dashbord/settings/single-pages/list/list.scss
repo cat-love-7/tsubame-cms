@@ -1,10 +1,16 @@
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/// A new page is named where the pages are listed, so the form sits above the table.
 .new-page {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
-}
-
-.error {
-  color: #b3261e;
+  margin-bottom: 12px;
 }

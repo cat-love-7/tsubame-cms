@@ -1,20 +1,21 @@
+// The widgets a field can be rendered with. The shared shapes - `.note`, `.array-actions`,
+// `.picker-actions`, `.element-actions` - come from `src/styles.scss`; what is left here is
+// the layout that is particular to editing one value.
+
 .field-label {
   display: block;
-  font-weight: 500;
   margin-bottom: 4px;
+  font: var(--mat-sys-label-large);
 }
 
+/// The asterisk: the label is read out with the field, so the mark itself is decoration.
 .required {
-  color: #b3261e;
   margin-left: 2px;
+  color: var(--mat-sys-error);
 }
 
 .full-width {
   width: 100%;
-}
-
-.note {
-  color: #666;
 }
 
 .image-field {
@@ -27,11 +28,19 @@
 
 .image-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+
+  /// The browser's own file control cannot be restyled, only made to look like it belongs.
+  input[type='file'] {
+    max-width: 100%;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+  }
 }
 
-/* The picker takes a row of its own, under the preview and the buttons. */
+/// The picker takes a row of its own, under the preview and the buttons.
 .library {
   flex-basis: 100%;
   display: grid;
@@ -40,7 +49,7 @@
   max-height: 200px;
   overflow-y: auto;
   padding: 8px;
-  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border: 1px solid var(--mat-sys-outline-variant);
   border-radius: 8px;
 }
 
@@ -58,33 +67,31 @@
     height: 64px;
     object-fit: cover;
     border-radius: 4px;
-    background: #f4f4f4;
+    background: var(--mat-sys-surface-container-high);
   }
 
   &:hover,
   &:focus-visible {
-    border-color: var(--mat-sys-primary, #3f51b5);
+    border-color: var(--mat-sys-primary);
   }
 
   /* Ticked in the multi-image picker. */
   &.selected {
-    border-color: var(--mat-sys-primary, #3f51b5);
-    outline: 2px solid var(--mat-sys-primary, #3f51b5);
+    border-color: var(--mat-sys-primary);
+    outline: 2px solid var(--mat-sys-primary);
   }
 
   .tick {
     position: absolute;
     top: 2px;
     right: 2px;
-    color: var(--mat-sys-primary, #3f51b5);
-    background: #fff;
     border-radius: 50%;
+    background: var(--mat-sys-surface);
+    color: var(--mat-sys-primary);
   }
 }
 
 .picker-actions {
-  display: flex;
-  gap: 8px;
   margin-top: 8px;
 }
 
@@ -102,7 +109,7 @@
 .array-item {
   position: relative;
   margin: 0;
-  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border: 1px solid var(--mat-sys-outline-variant);
   border-radius: 8px;
   overflow: hidden;
 
@@ -112,27 +119,25 @@
     width: 96px;
     height: 72px;
     object-fit: cover;
-    background: #f4f4f4;
+    background: var(--mat-sys-surface-container-high);
   }
 
   .placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
-    color: #666;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
   }
 
   figcaption {
     display: flex;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--mat-sys-surface-container);
   }
 }
 
 .array-actions {
-  display: flex;
-  gap: 8px;
   margin-top: 8px;
 }
 
@@ -143,24 +148,24 @@
 }
 
 .image-id {
-  color: #666;
-  font-size: 0.875rem;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
 }
 
 .composite {
-  border: 1px solid var(--mat-sys-outline-variant, #ddd);
-  border-radius: 8px;
   margin: 0 0 8px;
   padding: 8px 12px 0;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
 }
 
 // Nesting is shown by an indent rather than a deeper border, which gets noisy fast.
 .composite .composite {
-  border: none;
-  border-left: 2px solid var(--mat-sys-outline-variant, #ddd);
-  border-radius: 0;
-  padding-right: 0;
   margin-left: 8px;
+  padding-right: 0;
+  border: none;
+  border-left: 2px solid var(--mat-sys-outline-variant);
+  border-radius: 0;
 }
 
 .composite-array {
@@ -168,10 +173,10 @@
 }
 
 .composite-element {
-  border: 1px solid var(--mat-sys-outline-variant, #ddd);
-  border-radius: 8px;
   margin: 0 0 8px;
   padding: 4px 12px 0;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
 
   legend {
     display: flex;
@@ -181,8 +186,8 @@
   }
 
   .element-name {
-    color: var(--mat-sys-on-surface-variant, #666);
-    font-size: 0.875rem;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-medium);
   }
 
   .element-actions {
@@ -192,14 +197,4 @@
 
 .element-type {
   width: 12rem;
-}
-
-.unique-field {
-  display: block;
-  margin-top: 4px;
-
-  .unique-hint {
-    color: var(--mat-sys-on-surface-variant, #666);
-    font-size: 0.75rem;
-  }
 }

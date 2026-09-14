@@ -138,6 +138,8 @@
     "newPageName": "新しいページ名",
     "collectionName": "コレクション名",
     "noItems": "まだアイテムがありません。",
+    "noPages": "単一ページはまだありません。",
+    "noCompositeFields": "複合フィールドはまだありません。",
     "images": "画像",
     "noImages": "まだ画像がありません。",
     "noImagesUploadFirst": "まだ画像がありません。まず 1 つアップロードしてください。",

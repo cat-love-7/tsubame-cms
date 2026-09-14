@@ -16,33 +16,237 @@ html {
     typography: Roboto,
     density: 0,
   ));
+
+  // `mat.theme()` defines the system variables for both schemes; this is what makes the
+  // browser hand us the dark ones when the reader's system asks for them.
+  color-scheme: light dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
-  // Default the application to a light color theme. This can be changed to
-  // `dark` to enable the dark color theme, or to `light dark` to defer to the
-  // user's system settings.
-  color-scheme: light;
-
-  // Set a default background, font and text colors for the application using
-  // Angular Material's system-level CSS variables. Learn more about these
-  // variables at https://material.angular.dev/guide/system-variables
+  margin: 0;
+  min-height: 100dvh;
   background-color: var(--mat-sys-surface);
   color: var(--mat-sys-on-surface);
   font: var(--mat-sys-body-medium);
-
-  // Reset the user agent margin.
-  margin: 0;
-  height: 100%;
 }
-/* You can add global styles to this file, and also import other style files */
 
-/// Shared 12-column layout grid for schema fields.
-///
-/// The schema editor and the content editor both use these classes, so the layout shown
-/// while editing a schema is the layout the content editor actually renders. They live in
-/// the global stylesheet because Angular's view encapsulation would otherwise give each
-/// component its own private copy.
+// ------------------------------------------------------------------- the vocabulary
+//
+// Screens are assembled from a handful of shapes: a page header, a panel, a banner, a table,
+// a row of actions. They live here rather than in each component because Angular's view
+// encapsulation would otherwise give every screen its own slightly different copy - which is
+// how the interface drifted into three shades of grey and two reds.
+//
+// Everything is expressed with Material's system variables, so the palette stays the theme's
+// business and a colour scheme change (or dark mode) carries through.
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+  color: var(--mat-sys-on-surface);
+}
+
+a {
+  color: var(--mat-sys-primary);
+}
+
+/// Keyboard users get to see where they are, including on the plain links the navigation and
+/// the schemas use - Material's own controls draw their own focus states.
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/// The header of a screen: its title, and the things you can do from here.
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.toolbar > h2 {
+  font: var(--mat-sys-headline-small);
+  font-weight: 500;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/// A panel: one self-contained piece of a screen (a form, a table, a list of settings).
+.panel {
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container-low);
+}
+
+.panel > h3 {
+  margin-bottom: 12px;
+  font: var(--mat-sys-title-medium);
+}
+
+/// Messages. They are all the same shape so a reader learns it once: a tinted surface that
+/// says which kind of message it is, with the text on top.
+.error,
+.status,
+.notice,
+.note,
+.hint {
+  display: block;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font: var(--mat-sys-body-medium);
+}
+
+.error {
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.status {
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}
+
+.notice {
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+
+.note,
+.hint {
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+/// Secondary text: timestamps, file names, the explanation under a control. A timestamp stays
+/// on one line, or a table row grows to twice its height to say one thing.
+.updated,
+.publisher,
+.user-email,
+.count {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.updated {
+  white-space: nowrap;
+}
+
+/// A chip: one small piece of state, next to the title it belongs to.
+.draft-note {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font: var(--mat-sys-label-small);
+  white-space: nowrap;
+}
+
+/// A link meant to be handed out - a preview URL, long and unremarkable.
+.preview-link {
+  font: var(--mat-sys-body-small);
+  overflow-wrap: anywhere;
+}
+
+/// The field a refusal named: the message says which one, and this shows where it is.
+.field-cell.problem {
+  outline: 2px solid var(--mat-sys-error);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/// Rows of buttons, so they are spaced the same everywhere.
+.actions,
+.array-actions,
+.picker-actions,
+.resource-actions,
+.schema-actions,
+.element-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/// The short line under a role, or the key to one, read as one entry per line.
+.role-hint {
+  display: block;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+/// Tables, whether Material's or a plain one for schema-driven columns.
+table.items,
+table.accounts {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  th {
+    font: var(--mat-sys-label-large);
+    color: var(--mat-sys-on-surface-variant);
+    white-space: nowrap;
+  }
+
+  tbody tr:hover {
+    background: var(--mat-sys-surface-container);
+  }
+
+  /// A row of row-actions takes the width it needs and no more. It stays a table cell: a flex
+  /// cell leaves the table's layout behind, and the buttons would stack down the side.
+  td.actions {
+    display: table-cell;
+    width: 1px;
+    white-space: nowrap;
+    text-align: right;
+  }
+}
+
+.mat-mdc-table {
+  width: 100%;
+  background: transparent;
+
+  .mat-mdc-header-cell {
+    font: var(--mat-sys-label-large);
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// --------------------------------------------------------------- the schema field grid
+//
+// Shared by the schema editor and the content editor, so the layout shown while editing a
+// schema is the layout the content editor renders. Global because Angular's view encapsulation
+// would otherwise give each component a private copy.
+
 .field-grid {
   /// Height of one layout row unit; a field's `height` is a multiple of this.
   --field-row-unit: 72px;
@@ -58,17 +262,14 @@ body {
   min-width: 0;
 }
 
-/// CDK renders the drag preview in an overlay attached to the body, so these rules
-/// cannot live in a component stylesheet.
+/// CDK renders the drag preview in an overlay attached to the body, so these rules cannot live
+/// in a component stylesheet.
 .cdk-drag-preview {
-  border-radius: 8px;
-  box-shadow:
-    0 5px 5px -3px rgb(0 0 0 / 20%),
-    0 8px 10px 1px rgb(0 0 0 / 14%);
-  background-color: var(--mat-sys-secondary-container);
+  border-radius: 12px;
+  box-shadow: var(--mat-sys-level3);
+  background-color: var(--mat-sys-surface-container-high);
 }
 
 .cdk-drag-placeholder {
   opacity: 0.3;
 }
-

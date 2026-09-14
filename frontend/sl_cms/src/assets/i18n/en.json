@@ -138,6 +138,8 @@
     "newPageName": "New page name",
     "collectionName": "Collection name",
     "noItems": "No items yet.",
+    "noPages": "No single pages yet.",
+    "noCompositeFields": "No composite fields yet.",
     "images": "Images",
     "noImages": "No images yet.",
     "noImagesUploadFirst": "No images yet — upload one first.",

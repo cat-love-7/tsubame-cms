@@ -1,0 +1,7 @@
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

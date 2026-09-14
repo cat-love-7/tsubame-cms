@@ -1,87 +1,42 @@
-.toolbar {
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.spacer {
-  flex: 1 1 auto;
-}
-
-.count,
-.hint {
-  color: #666;
-}
-
-.error {
-  color: #b3261e;
-}
-
-.status {
-  color: #1e6b32;
-}
-
+/// Adding an account is a row of controls above the table it adds to.
 .create {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin: 16px 0 8px;
+  margin-bottom: 12px;
 }
 
-.role-hint {
-  display: block;
-  font-size: 0.8rem;
-}
-
-table.accounts {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 16px;
-}
-
-table.accounts th,
-table.accounts td {
-  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
-  padding: 8px 12px;
-  text-align: left;
-  vertical-align: middle;
-}
-
-table.accounts th {
-  font-weight: 500;
-}
-
+/// The signed-in account, marked so it is not edited by mistake.
 .you {
   margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-size: 0.72rem;
-  background: var(--mat-sys-surface-variant, #eee);
-  color: #555;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font: var(--mat-sys-label-small);
 }
 
-.actions {
-  white-space: nowrap;
-  text-align: right;
-}
-
-.empty {
-  text-align: center;
-  color: #666;
-}
-
-/* Per-resource permissions sit under the account-wide role they override. */
+/// Per-resource permissions sit under the account-wide role they override.
 .overrides {
   display: block;
   margin-top: 4px;
-  font-size: 0.72rem;
-  color: #666;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
   overflow-wrap: anywhere;
 }
 
+/// The expanded permission editor spans the table, so it reads as a band rather than a row.
 .resource-row td {
-  background: #fafafa;
+  background: var(--mat-sys-surface-container);
 }
 
 .resource-grid {
@@ -97,17 +52,12 @@ table.accounts th {
 }
 
 .resource-name {
-  font-size: 0.75rem;
-  color: #555;
-}
-
-.resource-actions {
-  display: flex;
-  gap: 8px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
 }
 
 /* An issued reset link, long enough that it has to wrap. */
 .reset-link {
+  font: var(--mat-sys-body-small);
   overflow-wrap: anywhere;
-  font-size: 0.8rem;
 }

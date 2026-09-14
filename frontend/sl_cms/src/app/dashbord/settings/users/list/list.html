@@ -112,7 +112,7 @@
             [attr.aria-label]="'labels.activeOf' | transloco: { username: user.username }"
           />
         </td>
-        <td>{{ user.last_login ? user.last_login : '—' }}</td>
+        <td class="updated">{{ lastSignIn(user) }}</td>
         <td class="actions">
           @if (passwordResetLinks()) {
             <button

@@ -1,15 +1,16 @@
-.hint {
-  color: var(--mat-sys-on-surface-variant);
-  font-size: 0.875rem;
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+/// A new definition is named where the definitions are listed.
 .new-field {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
-}
-
-.error {
-  color: #b3261e;
+  margin-bottom: 12px;
 }

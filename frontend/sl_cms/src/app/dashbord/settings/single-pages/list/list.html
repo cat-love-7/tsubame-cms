@@ -1,62 +1,71 @@
-<h2>{{ 'content.singlePages' | transloco }}</h2>
+<div class="toolbar">
+  <h2>{{ 'content.singlePages' | transloco }}</h2>
+</div>
 
 @if (error(); as problem) {
   <p class="error" role="alert">{{ problem | message }}</p>
 }
 
-<div class="new-page">
-  <mat-form-field appearance="fill">
-    <mat-label>{{ 'content.newPageName' | transloco }}</mat-label>
-    <input matInput [(ngModel)]="newName" name="newPageName" (keyup.enter)="create()" />
-  </mat-form-field>
-  <button matButton color="primary" (click)="create()">
-    <mat-icon>add</mat-icon>
-    {{ 'content.addPage' | transloco }}
-  </button>
+<div class="panel">
+  <div class="new-page">
+    <mat-form-field appearance="fill">
+      <mat-label>{{ 'content.newPageName' | transloco }}</mat-label>
+      <input matInput [(ngModel)]="newName" name="newPageName" (keyup.enter)="create()" />
+    </mat-form-field>
+    <button matButton color="primary" (click)="create()">
+      <mat-icon>add</mat-icon>
+      {{ 'content.addPage' | transloco }}
+    </button>
+  </div>
+
+  <table mat-table [dataSource]="pageNames">
+    <ng-container matColumnDef="name">
+      <th mat-header-cell *matHeaderCellDef>{{ 'common.page' | transloco }}</th>
+      <td mat-cell *matCellDef="let page">{{ page }}</td>
+    </ng-container>
+    <ng-container matColumnDef="content">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let page">
+        <button
+          matIconButton
+          [routerLink]="['/single-pages', page]"
+          [attr.aria-label]="'labels.editContentOf' | transloco: { name: page }"
+        >
+          <mat-icon>edit_note</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+    <ng-container matColumnDef="schema">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let page">
+        <button
+          matIconButton
+          [routerLink]="['/settings/single-pages', page, 'schema']"
+          [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: page }"
+        >
+          <mat-icon>view_column</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+    <ng-container matColumnDef="delete">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let page">
+        <button
+          matIconButton
+          (click)="delete(page)"
+          [attr.aria-label]="'labels.deleteOf' | transloco: { name: page }"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+    <tr *matNoDataRow>
+      <td [attr.colspan]="displayedColumns.length" class="empty">
+        {{ 'content.noPages' | transloco }}
+      </td>
+    </tr>
+  </table>
 </div>
-
-<table mat-table [dataSource]="pageNames" class="mat-elevation-z8">
-  <ng-container matColumnDef="name">
-    <th mat-header-cell *matHeaderCellDef>{{ 'common.page' | transloco }}</th>
-    <td mat-cell *matCellDef="let page">{{ page }}</td>
-  </ng-container>
-  <ng-container matColumnDef="content">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let page">
-      <button
-        matIconButton
-        [routerLink]="['/single-pages', page]"
-        [attr.aria-label]="'labels.editContentOf' | transloco: { name: page }"
-      >
-        <mat-icon>edit_note</mat-icon>
-      </button>
-    </td>
-  </ng-container>
-  <ng-container matColumnDef="schema">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let page">
-      <button
-        matIconButton
-        [routerLink]="['/settings/single-pages', page, 'schema']"
-        [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: page }"
-      >
-        <mat-icon>view_column</mat-icon>
-      </button>
-    </td>
-  </ng-container>
-  <ng-container matColumnDef="delete">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let page">
-      <button
-        matIconButton
-        (click)="delete(page)"
-        [attr.aria-label]="'labels.deleteOf' | transloco: { name: page }"
-      >
-        <mat-icon>delete</mat-icon>
-      </button>
-    </td>
-  </ng-container>
-
-  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-  <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
-</table>

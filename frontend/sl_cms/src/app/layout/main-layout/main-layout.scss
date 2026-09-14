@@ -1,16 +1,36 @@
+/// The shell: a fixed header, and everything else scrolling beside the navigation.
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.header {
+  flex: 0 0 auto;
+}
+
 .main-layout-container {
   display: flex;
-  height: calc(100vh - 60px); // Assuming header height is 60px
-  flex-direction: row;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.header {
-  height: 60px;
-  background-color: #f8f9fa;
-}
+
 .sidebar {
-  width: 250px;
-  height: 100%;
+  flex: 0 0 260px;
+  border-inline-end: 1px solid var(--mat-sys-outline-variant);
+  background: var(--mat-sys-surface-container-low);
+  overflow: auto;
 }
+
 .content {
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 24px;
+  overflow: auto;
+
+  // A screen is easier to read when it does not stretch across a very wide display, and the
+  // gutter keeps it off the navigation.
+  width: 100%;
+  max-width: 1400px;
+  margin-inline: auto;
 }

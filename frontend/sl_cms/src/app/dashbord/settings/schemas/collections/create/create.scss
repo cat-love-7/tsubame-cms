@@ -1,8 +1,16 @@
+/// The screen's vertical rhythm: the vocabulary above spaces nothing on its own, and a screen
+/// is a stack of toolbar, messages, content, actions.
 :host {
-  display: block;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.error {
-  color: #b3261e;
+/// Naming a collection is one field and a decision, so it gets a narrow card.
+.create-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 420px;
 }

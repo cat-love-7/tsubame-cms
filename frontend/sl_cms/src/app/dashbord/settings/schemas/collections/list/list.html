@@ -1,35 +1,47 @@
-<button matIconButton [routerLink]="['/settings/schemas/collections/create']">
-  <mat-icon>add</mat-icon>
-</button>
-@if (error(); as problem) {
-  <p class="error">{{ problem | message }}</p>
-}
-<table mat-table [dataSource]="collectionNames" class="mat-elevation-z8">
-  <ng-container matColumnDef="name">
-      <th mat-header-cell *matHeaderCellDef> {{ 'content.collectionName' | transloco }} </th>
-      <td mat-cell *matCellDef="let collection"> {{collection}} </td>
-  </ng-container>
-  <ng-container matColumnDef="edit">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let collection">
-      <button matIconButton [routerLink]="['/settings/schemas/collections/edit/', collection]">
-        <mat-icon>edit</mat-icon>
-      </button>
-    </td>
-  </ng-container>
-  <ng-container matColumnDef="delete">
-    <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let collection">
-      <button
-        matIconButton
-        (click)="delete(collection)"
-        [attr.aria-label]="'labels.deleteOf' | transloco: { name: collection }"
-      >
-        <mat-icon>delete</mat-icon>
-      </button>
-    </td>
-  </ng-container>
+<div class="toolbar">
+  <h2>{{ 'content.collections' | transloco }}</h2>
+  <span class="spacer"></span>
+  <button
+    matIconButton
+    [routerLink]="['/settings/schemas/collections/create']"
+    [attr.aria-label]="'content.newCollection' | transloco"
+  >
+    <mat-icon>add</mat-icon>
+  </button>
+</div>
 
-  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-  <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
-</table>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
+}
+
+<div class="panel">
+  <table mat-table [dataSource]="collectionNames">
+    <ng-container matColumnDef="name">
+      <th mat-header-cell *matHeaderCellDef>{{ 'content.collectionName' | transloco }}</th>
+      <td mat-cell *matCellDef="let collection">{{ collection }}</td>
+    </ng-container>
+    <ng-container matColumnDef="edit">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let collection">
+        <button matIconButton [routerLink]="['/settings/schemas/collections/edit/', collection]">
+          <mat-icon>edit</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+    <ng-container matColumnDef="delete">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let collection">
+        <button
+          matIconButton
+          (click)="delete(collection)"
+          [attr.aria-label]="'labels.deleteOf' | transloco: { name: collection }"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+  </table>
+</div>

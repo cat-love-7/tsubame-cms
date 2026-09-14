@@ -332,4 +332,9 @@ export class List {
   isMe(user: CurrentUser): boolean {
     return this.me()?.id === user.id;
   }
+
+  /** When the account last signed in, in the reader's language; "never" is a dash. */
+  lastSignIn(user: CurrentUser): string {
+    return this.dates.format(user.last_login);
+  }
 }

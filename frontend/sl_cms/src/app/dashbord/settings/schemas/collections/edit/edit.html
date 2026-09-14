@@ -1,8 +1,12 @@
-<h2>{{ collectionName }}</h2>
+<div class="toolbar">
+  <h2>{{ collectionName }}</h2>
+</div>
+
 @if (status(); as note) {
   <p class="status">{{ note | message }}</p>
 }
 @if (error(); as problem) {
   <p class="error">{{ problem | message }}</p>
 }
+
 <app-edit-schema [Schema]="collectionSchema()" (save)="save($event)"></app-edit-schema>
