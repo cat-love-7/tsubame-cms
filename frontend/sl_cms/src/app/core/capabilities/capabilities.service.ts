@@ -18,6 +18,8 @@ export interface Capabilities {
   password_reset_links: boolean;
   /** Who accepts the bytes of an uploaded image. */
   image_upload: 'proxied' | 'presigned';
+  /** Where to sign in, when that is not here. Absent when the deployment does not know. */
+  login_url?: string | null;
 }
 
 /**
@@ -31,6 +33,7 @@ const ASSUMED: Capabilities = {
   password_login: true,
   password_reset_links: true,
   image_upload: 'proxied',
+  login_url: null,
 };
 
 @Injectable({ providedIn: 'root' })
@@ -50,6 +53,9 @@ export class CapabilitiesService {
 
   /** Whether image bytes go through this API or straight to object storage. */
   readonly imageUpload = computed(() => this.known().image_upload);
+
+  /** Where to send someone to sign in, when the deployment named a page. */
+  readonly loginUrl = computed(() => this.known().login_url ?? null);
 
   /**
    * Ask the deployment, once.

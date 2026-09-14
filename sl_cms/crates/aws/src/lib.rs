@@ -122,13 +122,23 @@ pub fn build_router(
     module: std::sync::Arc<AppModule<AwsRepository>>,
     cors: tower_http::cors::CorsLayer,
 ) -> axum::Router {
+    build_router_with_login(module, cors, None)
+}
+
+/// The same, saying where users sign in when the deployment knows its provider's page.
+pub fn build_router_with_login(
+    module: std::sync::Arc<AppModule<AwsRepository>>,
+    cors: tower_http::cors::CorsLayer,
+    login_url: Option<String>,
+) -> axum::Router {
     // Sign-in belongs to Cognito here, so the password endpoints do not exist. They are
     // registered anyway, answering 501 with a sentence that says where to sign in: a client
     // that guessed the path learns something, and a 404 would only say "wrong URL".
-    let message = "this deployment signs users in through Cognito; the CMS does not handle                    passwords. Set the pool and app client in the client, and ask                    GET /auth/capabilities what this deployment supports";
+    let message = "this deployment signs users in through Cognito, so the CMS does not handle \
+                   passwords; GET /auth/capabilities says where to sign in";
     let extra_public = sl_cms_core::http::password_auth::unavailable_public(message).merge(
         sl_cms_core::http::capabilities::routes(
-            sl_cms_core::models::capabilities::Capabilities::AWS,
+            sl_cms_core::models::capabilities::Capabilities::aws(login_url),
         ),
     );
     let extra_protected = sl_cms_core::http::password_auth::unavailable_protected(message);
@@ -136,10 +146,6 @@ pub fn build_router(
     sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
 }
 
-/// Serve the CMS on AWS Lambda.
-///
-/// This is the entry point a deployment uses: the composition root is built once, when the
-/// runtime first calls in, and every invocation afterwards goes through the same router.
 pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = AwsSettings::from_env()?;
     tracing::info!(
@@ -152,9 +158,10 @@ pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error
     warn_about_the_environment(config, &settings);
 
     let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
-    let router = build_router(
+    let router = build_router_with_login(
         module,
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
+        settings.login_url.clone(),
     );
 
     lambda_http::run(tower::service_fn(move |request| {
@@ -241,6 +248,7 @@ pub async fn open_test_repository(
         bucket: format!("cms-test-{}", uuid::Uuid::new_v4().simple()),
         user_pool_id: "unused_pool".to_string(),
         client_id: "unused_client".to_string(),
+        login_url: None,
         endpoint_url: Some(test_endpoint()),
         s3_endpoint_url: Some(test_s3_endpoint()),
         image_base_url: None,

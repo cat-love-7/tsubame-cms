@@ -6,7 +6,7 @@
 //! to S3 directly. Discovering that from a 501 is a poor way to find out.
 
 /// A deployment's shape, as `GET /auth/capabilities` reports it.
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Capabilities {
     /// Whether the CMS verifies passwords: `/auth/login`, `/auth/me/password` and the reset
     /// links exist only where it does.
@@ -15,6 +15,12 @@ pub struct Capabilities {
     pub password_reset_links: bool,
     /// How image bytes reach storage.
     pub image_upload: ImageUpload,
+    /// Where to send someone to sign in, when that is not here.
+    ///
+    /// Without it a client can only say "sign in at your identity provider" and leave the user
+    /// to find it. A deployment that knows its provider's sign-in page says so here.
+    #[serde(default)]
+    pub login_url: Option<String>,
 }
 
 /// Who accepts the bytes of an uploaded image.
@@ -33,12 +39,21 @@ impl Capabilities {
         password_login: true,
         password_reset_links: true,
         image_upload: ImageUpload::Proxied,
+        // This deployment *is* the sign-in page.
+        login_url: None,
     };
 
     /// The AWS deployment: Cognito signs users in, and S3 takes the bytes directly.
-    pub const AWS: Capabilities = Capabilities {
-        password_login: false,
-        password_reset_links: false,
-        image_upload: ImageUpload::Presigned,
-    };
+    ///
+    /// `login_url` is the pool's hosted sign-in page when the deployment knows it (Terraform
+    /// creates the domain and passes it in); without one, a client can only describe where to
+    /// go.
+    pub fn aws(login_url: Option<String>) -> Capabilities {
+        Capabilities {
+            password_login: false,
+            password_reset_links: false,
+            image_upload: ImageUpload::Presigned,
+            login_url,
+        }
+    }
 }

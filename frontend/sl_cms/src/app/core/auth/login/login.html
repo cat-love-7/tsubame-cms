@@ -8,9 +8,16 @@
         <!-- The sign-in belongs to the deployment's identity provider, so a password box here
              would only ever answer 501. -->
         <p class="elsewhere" role="status">
-          This deployment signs users in through its identity provider. Sign in there, then
-          return to this page.
+          This deployment signs users in through its identity provider.
+          @if (loginUrl()) {
+            Sign in there, then return to this page.
+          } @else {
+            Sign in there, then return to this page. Ask an administrator for the address.
+          }
         </p>
+        @if (loginUrl()) {
+          <a matButton class="full-width" [href]="loginUrl()" rel="noopener">Go to sign in</a>
+        }
       } @else {
         @if (error()) {
           <p class="error" role="alert">{{ error() }}</p>

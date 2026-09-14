@@ -60,4 +60,20 @@ describe('Login', () => {
     const message: HTMLElement | null = fixture.nativeElement.querySelector('.elsewhere');
     expect(message?.textContent).toContain('identity provider');
   });
+
+  it('sends the user to the provider when the deployment names a sign-in page', async () => {
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: false,
+      password_reset_links: false,
+      image_upload: 'presigned',
+      login_url: 'https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement | null = fixture.nativeElement.querySelector('a.full-width');
+    expect(link?.getAttribute('href')).toBe(
+      'https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc',
+    );
+  });
 });

@@ -32,6 +32,7 @@ export class Login {
    * all the CMS can usefully say is so.
    */
   public passwordLogin = this.capabilities.passwordLogin;
+  public loginUrl = this.capabilities.loginUrl;
 
   public username = '';
   public password = '';
