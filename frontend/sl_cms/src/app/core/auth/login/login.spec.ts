@@ -4,6 +4,10 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { HttpTestingController } from '@angular/common/http/testing';
 
+import { provideTransloco } from '@jsverse/transloco';
+
+import { FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES } from '../../i18n/language';
+import { BundledTranslocoLoader } from '../../i18n/transloco.loader';
 import { Login } from './login';
 
 describe('Login', () => {
@@ -14,7 +18,22 @@ describe('Login', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Login],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        // The real catalogs, so a key that does not exist fails the test that reads it.
+        provideTransloco({
+          config: {
+            availableLangs: [...SUPPORTED_LANGUAGES],
+            defaultLang: FALLBACK_LANGUAGE,
+            fallbackLang: FALLBACK_LANGUAGE,
+            reRenderOnLangChange: true,
+            prodMode: false,
+          },
+          loader: BundledTranslocoLoader,
+        }),
+      ],
     })
     .compileComponents();
 
@@ -39,8 +58,10 @@ describe('Login', () => {
     });
 
     expect(component.busy()).toBe(false);
-    expect(component.error()).toContain('ロックされています');
-    expect(component.error()).toContain('10 分後');
+    // The component holds the key and the values; the wording is the catalog's business, and
+    // the catalog test is what checks it reads well.
+    expect(component.error()).toBe('auth.tooManyAttempts');
+    expect(component.errorParams()).toEqual({ seconds: 600 });
   });
 
   it('shows where to sign in when the deployment leaves it to an identity provider', async () => {
@@ -75,5 +96,28 @@ describe('Login', () => {
     expect(link?.getAttribute('href')).toBe(
       'https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc',
     );
+  });
+
+  it('can be switched to Japanese, and remembers the choice', async () => {
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: true,
+      password_reset_links: true,
+      image_upload: 'proxied',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The switch is on the sign-in screen on purpose: somebody who cannot read the language the
+    // browser guessed is exactly the person who cannot look behind a sign-in for a setting.
+    const japanese = [...fixture.nativeElement.querySelectorAll('button')].find(
+      (button: HTMLButtonElement) => button.textContent?.includes('日本語'),
+    ) as HTMLButtonElement | undefined;
+    expect(japanese).toBeTruthy();
+    japanese!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('パスワード');
+    expect(localStorage.getItem('sl_cms.language')).toBe('ja');
   });
 });

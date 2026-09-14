@@ -1,30 +1,29 @@
 <div class="login-page">
+  <app-language-switcher class="switcher" />
   <mat-card class="login-card">
     <mat-card-header>
-      <mat-card-title>Sign in to SL CMS</mat-card-title>
+      <mat-card-title>{{ 'auth.signInTitle' | transloco }}</mat-card-title>
     </mat-card-header>
     <mat-card-content>
       @if (!passwordLogin()) {
         <!-- The sign-in belongs to the deployment's identity provider, so a password box here
              would only ever answer 501. -->
         <p class="elsewhere" role="status">
-          This deployment signs users in through its identity provider.
-          @if (loginUrl()) {
-            Sign in there, then return to this page.
-          } @else {
-            Sign in there, then return to this page. Ask an administrator for the address.
-          }
+          {{ 'auth.elsewhere' | transloco }}
+          {{ (loginUrl() ? 'auth.elsewhereWithLink' : 'auth.elsewhereWithoutLink') | transloco }}
         </p>
         @if (loginUrl()) {
-          <a matButton class="full-width" [href]="loginUrl()" rel="noopener">Go to sign in</a>
+          <a matButton class="full-width" [href]="loginUrl()" rel="noopener">{{
+            'auth.goToSignIn' | transloco
+          }}</a>
         }
       } @else {
         @if (error()) {
-          <p class="error" role="alert">{{ error() }}</p>
+          <p class="error" role="alert">{{ error() | transloco: errorParams() }}</p>
         }
         <mat-form-field appearance="fill" class="full-width">
           <!-- The identifier, which may or may not be an address: hence a plain text field. -->
-          <mat-label>ID</mat-label>
+          <mat-label>{{ 'auth.username' | transloco }}</mat-label>
           <input
             matInput
             type="text"
@@ -35,7 +34,7 @@
           />
         </mat-form-field>
         <mat-form-field appearance="fill" class="full-width">
-          <mat-label>Password</mat-label>
+          <mat-label>{{ 'auth.password' | transloco }}</mat-label>
           <input
             matInput
             type="password"
@@ -50,7 +49,7 @@
     @if (passwordLogin()) {
       <mat-card-actions>
         <button matButton color="primary" (click)="submit()" [disabled]="busy()">
-          {{ busy() ? 'Signing in…' : 'Sign in' }}
+          {{ (busy() ? 'auth.signingIn' : 'auth.signIn') | transloco }}
         </button>
       </mat-card-actions>
     }

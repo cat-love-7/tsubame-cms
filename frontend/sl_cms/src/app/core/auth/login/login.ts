@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,16 +8,19 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
 import { CapabilitiesService } from '../../capabilities/capabilities.service';
+import { LanguageSwitcher } from '../../../shared/language-switcher/language-switcher';
 import { AuthService } from '../auth.service';
 
 @Component({
   selector: 'app-login',
   imports: [
     FormsModule,
+    LanguageSwitcher,
     MatButtonModule,
     MatCardModule,
     MatFormFieldModule,
     MatInputModule,
+    TranslocoPipe,
   ],
   templateUrl: './login.html',
   styleUrl: './login.scss',
@@ -36,7 +40,10 @@ export class Login {
 
   public username = '';
   public password = '';
+  /** The message key, not the message: the wording lives in the catalogs. */
   public error = signal('');
+  /** What the message needs filled in, if anything (`{seconds}`). */
+  public errorParams = signal<Record<string, unknown>>({});
   public busy = signal(false);
 
   constructor() {
@@ -48,6 +55,7 @@ export class Login {
       return;
     }
     this.error.set('');
+    this.errorParams.set({});
     this.busy.set(true);
 
     this.auth.login(this.username.trim(), this.password).subscribe({
@@ -58,22 +66,21 @@ export class Login {
       error: (response) => {
         this.busy.set(false);
         if (response?.status === 429) {
-          // Too many failures: `Retry-After` says how long the wait is, so the wording can
-          // be about waiting rather than about the password.
+          // Too many failures: `Retry-After` says how long the wait is, so the message can be
+          // about waiting rather than about the password.
           const seconds = Number(response.headers?.get('Retry-After'));
-          this.error.set(
-            'ログインの失敗が続いたため、しばらくロックされています。' +
-              (Number.isFinite(seconds) && seconds > 0
-                ? `約 ${Math.ceil(seconds / 60)} 分後にやり直してください。`
-                : '時間をおいてやり直してください。'),
-          );
+          this.error.set('auth.tooManyAttempts');
+          this.errorParams.set({
+            seconds: Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 0,
+          });
           return;
         }
-        // The API answers with a plain-text message for 401.
+        // The API answers with a plain-text English message; it is shown as it came, which is
+        // what a client that does not know the reason can honestly do.
         this.error.set(
           typeof response?.error === 'string' && response.error
             ? response.error
-            : 'Sign in failed',
+            : 'auth.signInFailed',
         );
       },
     });
