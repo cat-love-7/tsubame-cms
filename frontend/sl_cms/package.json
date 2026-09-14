@@ -7,6 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:coverage": "ng test --coverage --no-isolate",
     "e2e": "node e2e/check-ui.mjs"
   },
   "prettier": {
@@ -40,6 +41,7 @@
     "@angular/build": "^22.1.8",
     "@angular/cli": "^22.1.8",
     "@angular/compiler-cli": "^22.1.6",
+    "@vitest/coverage-v8": "^4.1.11",
     "jsdom": "^30.0.1",
     "playwright": "^1.63.0",
     "typescript": "~6.0.3",

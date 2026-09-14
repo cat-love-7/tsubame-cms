@@ -44,6 +44,18 @@ To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use th
 ng test
 ```
 
+For coverage (needs `@vitest/coverage-v8`, which is a dev dependency):
+
+```bash
+npm run test:coverage
+```
+
+The coverage run passes `--no-isolate`. Every spec file is otherwise given its own jsdom and
+Angular environment, and under instrumentation that contention makes a synchronous test
+occasionally overshoot Vitest's 5s timeout and be reported as a failure. One shared environment
+is faster and stable; `ng test` keeps the isolated default. The end-to-end check
+(`e2e/README.md`) is not part of either number.
+
 ## Running end-to-end tests
 
 For end-to-end (e2e) testing, run:
