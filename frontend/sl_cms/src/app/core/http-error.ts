@@ -24,6 +24,19 @@ export function errorMessage(error: unknown): string {
   return String(http?.message ?? error);
 }
 
+/** Every code this client can put a name to. The server publishes both lists (see below). */
+const KNOWN_CODES: readonly string[] = [...errorCodes.situational, ...errorCodes.status];
+
+/** The codes that only stand for a status, where `message` is the part that says what happened. */
+const STATUS_CODES: readonly string[] = errorCodes.status;
+
+/** The code the server named, when it named one at all. */
+export function errorCode(error: unknown): string | null {
+  const body = (error as { error?: unknown })?.error as { code?: unknown } | null | undefined;
+  const code = body && typeof body === 'object' ? body.code : undefined;
+  return typeof code === 'string' && code ? code : null;
+}
+
 /**
  * The translation key for an error, when the deployment named a code this client knows.
  *
@@ -33,10 +46,19 @@ export function errorMessage(error: unknown): string {
  * keeps the translations covering it, so the three cannot drift apart.
  */
 export function errorKey(error: unknown): string | null {
-  const body = (error as { error?: unknown })?.error as { code?: unknown } | null | undefined;
-  const code = body && typeof body === 'object' ? body.code : undefined;
-  if (typeof code !== 'string' || !code) {
-    return null;
-  }
-  return (errorCodes as readonly string[]).includes(code) ? `errors.${code}` : null;
+  const code = errorCode(error);
+  return code !== null && KNOWN_CODES.includes(code) ? `errors.${code}` : null;
+}
+
+/**
+ * Whether the code says no more than the status did.
+ *
+ * `bad_request` is answered for a missing field, a duplicate name and a dozen other things, so a
+ * screen that replaced the server's sentence with "the request was not accepted" would throw away
+ * the only part that helps. The situational codes are the opposite: they *are* the reason, and
+ * wording them here is what makes them readable without English.
+ */
+export function isStatusError(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== null && STATUS_CODES.includes(code);
 }

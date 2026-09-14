@@ -2,17 +2,13 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { App } from './app';
-import { provideTestTransloco } from './core/i18n/testing';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [
-        provideRouter([]),
-        // The root component decides the language, so it needs the catalogs like the app does.
-        ...provideTestTransloco(),
-      ],
+      // Transloco comes from the test environment (`src/test-providers.ts`), like every spec.
+      providers: [provideRouter([])],
     }).compileComponents();
   });
 

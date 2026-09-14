@@ -51,9 +51,10 @@ describe('translation catalogs', () => {
     // The codes are the contract the server publishes (a Rust test keeps its copy in step);
     // this is the other side of it, so a code the UI cannot word is caught here rather than
     // showing English to someone who chose Japanese.
+    const codes = [...errorCodes.situational, ...errorCodes.status];
     for (const language of LANGUAGES) {
       const errors = (catalogs[language]['errors'] ?? {}) as Record<string, string>;
-      for (const code of errorCodes) {
+      for (const code of codes) {
         expect(errors[code], `${language}: errors.${code}`).toBeTruthy();
       }
     }

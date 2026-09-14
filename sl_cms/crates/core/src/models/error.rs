@@ -1,12 +1,43 @@
 use std::fmt::Display;
 use std::error::Error;
 
-/// The codes a client can recognise without reading English.
+/// The codes that name what went wrong, where the status alone could not say it usefully.
 ///
-/// A client that knows the code chooses its own wording; one that does not shows `message`,
-/// which is why a new code cannot break an old client. The list is the contract: a Rust test
-/// keeps `frontend/sl_cms/src/assets/error-codes.json` equal to it, and a frontend test keeps
-/// its translations covering that file.
+/// A client that shows its own wording for one of these loses nothing: the code is the whole
+/// story, and the wording can be in the reader's language.
+pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
+    "invalid_credentials",
+    "invalid_token",
+    "session_ended",
+    "account_disabled",
+    "not_provisioned",
+    "invalid_username",
+    "weak_password",
+    "username_taken",
+    "last_administrator",
+];
+
+/// The fallback code a status stands for, when a site has nothing more specific to say.
+///
+/// These are *not* the whole story: `message` is. A client that replaced it with its own wording
+/// for "bad request" would hide the one sentence that says which input was wrong, so the
+/// published wording of these is used only where nothing better is at hand.
+pub const STATUS_ERROR_CODES: &[&str] = &[
+    "bad_request",
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "conflict",
+    "too_many_requests",
+    "internal_error",
+    "not_implemented",
+];
+
+/// Every code a client can recognise without reading English.
+///
+/// The list is the contract: a Rust test keeps `frontend/sl_cms/src/assets/error-codes.json`
+/// equal to it, split the same way, and a frontend test keeps its translations covering every
+/// code in it.
 pub const ERROR_CODES: &[&str] = &[
     // What went wrong, where the status alone is too coarse to say anything useful to a user.
     "invalid_credentials",
@@ -161,17 +192,42 @@ mod tests {
     }
 
 
-    /// The client's copy of the list. A Rust test owns it so the two cannot drift: adding a
-    /// code here without adding it there fails, and the frontend test then fails on the
-    /// translations.
+    /// The client's copy of the lists, split the same way. A Rust test owns it so the two cannot
+    /// drift: adding a code here without adding it there fails, and the frontend test then fails
+    /// on the translations.
     #[test]
     fn the_published_code_list_matches_the_one_clients_carry() {
-        let published: Vec<String> = serde_json::from_str(include_str!(
+        #[derive(serde::Deserialize)]
+        struct Published {
+            situational: Vec<String>,
+            status: Vec<String>,
+        }
+
+        let published: Published = serde_json::from_str(include_str!(
             "../../../../../frontend/sl_cms/src/assets/error-codes.json"
         ))
-        .expect("the fixture is a JSON array of strings");
+        .expect("the fixture names both lists");
 
-        assert_eq!(published, ERROR_CODES, "regenerate the fixture when this changes");
+        assert_eq!(published.situational, SITUATIONAL_ERROR_CODES);
+        assert_eq!(published.status, STATUS_ERROR_CODES);
+    }
+
+    /// The three lists are one list: the two halves must make up [`ERROR_CODES`] exactly, or a
+    /// code could be reachable without being published (or published twice).
+    #[test]
+    fn the_two_halves_make_up_the_published_list() {
+        let mut both: Vec<&str> = SITUATIONAL_ERROR_CODES
+            .iter()
+            .chain(STATUS_ERROR_CODES)
+            .copied()
+            .collect();
+        both.sort_unstable();
+        both.dedup();
+        assert_eq!(both.len(), SITUATIONAL_ERROR_CODES.len() + STATUS_ERROR_CODES.len());
+
+        let mut all = ERROR_CODES.to_vec();
+        all.sort_unstable();
+        assert_eq!(both, all);
     }
 
     #[test]

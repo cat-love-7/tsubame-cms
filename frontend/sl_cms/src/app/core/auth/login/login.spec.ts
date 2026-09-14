@@ -4,7 +4,6 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { HttpTestingController } from '@angular/common/http/testing';
 
-import { provideTestTransloco } from '../../i18n/testing';
 import { Login } from './login';
 
 describe('Login', () => {
@@ -19,8 +18,6 @@ describe('Login', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        // The real catalogs, so a key that does not exist fails the test that reads it.
-        ...provideTestTransloco(),
       ],
     }).compileComponents();
 

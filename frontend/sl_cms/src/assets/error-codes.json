@@ -1,19 +1,23 @@
-[
-  "invalid_credentials",
-  "invalid_token",
-  "session_ended",
-  "account_disabled",
-  "not_provisioned",
-  "invalid_username",
-  "weak_password",
-  "username_taken",
-  "last_administrator",
-  "bad_request",
-  "unauthorized",
-  "forbidden",
-  "not_found",
-  "conflict",
-  "too_many_requests",
-  "internal_error",
-  "not_implemented"
-]
+{
+  "situational": [
+    "invalid_credentials",
+    "invalid_token",
+    "session_ended",
+    "account_disabled",
+    "not_provisioned",
+    "invalid_username",
+    "weak_password",
+    "username_taken",
+    "last_administrator"
+  ],
+  "status": [
+    "bad_request",
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "conflict",
+    "too_many_requests",
+    "internal_error",
+    "not_implemented"
+  ]
+}
