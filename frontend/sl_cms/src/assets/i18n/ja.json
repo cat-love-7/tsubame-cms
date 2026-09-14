@@ -10,7 +10,7 @@
     "signIn": "サインイン",
     "signingIn": "サインインしています…",
     "invalidCredentials": "ID またはパスワードが違います。",
-    "tooManyAttempts": "失敗が続いたため、しばらく試せません。{seconds} 秒後にもう一度お試しください。",
+    "tooManyAttempts": "失敗が続いたため、しばらく試せません。{{seconds}} 秒後にもう一度お試しください。",
     "sessionExpired": "セッションが切れました。もう一度サインインしてください。",
     "passwordChanged": "パスワードを変更しました。",
     "elsewhere": "この配備は ID プロバイダでサインインします。",

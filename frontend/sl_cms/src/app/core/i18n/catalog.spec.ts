@@ -60,8 +60,29 @@ describe('translation catalogs', () => {
     }
   });
 
+  it('fill their values in with double braces, which is what the translator substitutes', () => {
+    // A single-braced `{seconds}` reads fine and is never replaced, so the screen shows the
+    // placeholder itself. The parity check above cannot see this (both languages can be wrong
+    // the same way), which is why it is asserted directly.
+    const singleBraced = (text: string) => /(?<!\{)\{\w+\}(?!\})/.test(text);
+    for (const language of LANGUAGES) {
+      for (const key of keys(catalogs[language])) {
+        const value = key
+          .split('.')
+          .reduce<unknown>(
+            (node, part) => (node as Record<string, unknown>)[part],
+            catalogs[language],
+          ) as string;
+        expect(singleBraced(value), `${language}:${key} = ${value}`).toBe(false);
+      }
+    }
+  });
+
   it('share the placeholders of every message, so a translation cannot drop one', () => {
-    const placeholders = (text: string) => (text.match(/\{[a-z]+\}/g) ?? []).sort();
+    // Double braces: that is what Transloco interpolates. Matching single braces as well would
+    // accept a message whose placeholders are never filled in - which is exactly what
+    // `auth.tooManyAttempts` did until this caught it.
+    const placeholders = (text: string) => (text.match(/\{\{\s*\w+\s*\}\}/g) ?? []).sort();
     for (const key of keys(catalogs['en'])) {
       const value = key
         .split('.')

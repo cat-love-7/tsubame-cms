@@ -32,7 +32,7 @@ describe('Login', () => {
   });
 
   /** A throttled sign-in explains the wait instead of blaming the password. */
-  it('turns a 429 into advice about waiting', () => {
+  it('turns a 429 into advice about waiting, with the seconds filled in', async () => {
     component.submit();
     const request = httpMock.expectOne('/api/auth/login');
     request.flush('too many failed attempts; try again in 600 seconds', {
@@ -45,6 +45,13 @@ describe('Login', () => {
     // The component holds the key and the values; the wording is the catalog's business, and
     // the catalog test is what checks it reads well.
     expect(component.error()).toEqual({ key: 'auth.tooManyAttempts', params: { seconds: 600 } });
+
+    // And the wait is really on screen: a placeholder that is never substituted would leave
+    // the message readable but useless.
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('600');
+    expect(fixture.nativeElement.textContent).not.toContain('{{seconds}}');
   });
 
   it('shows where to sign in when the deployment leaves it to an identity provider', async () => {

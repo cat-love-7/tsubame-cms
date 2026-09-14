@@ -10,7 +10,7 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "invalidCredentials": "That identifier and password do not match.",
-    "tooManyAttempts": "Too many failed attempts. Try again in {seconds} seconds.",
+    "tooManyAttempts": "Too many failed attempts. Try again in {{seconds}} seconds.",
     "sessionExpired": "Your session ended. Sign in again.",
     "passwordChanged": "Your password has been changed.",
     "elsewhere": "This deployment signs users in through its identity provider.",
