@@ -46,10 +46,12 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
             .list_composite_field_schemas()
             .await.map_err(map_internal_error)?;
 
-        // A composite is never an available target for its own references; if it were,
-        // the cycle check below would not report the self-reference.
+        // The definition being saved counts as existing: a block that holds a list of blocks
+        // references itself, and it will exist the moment this returns. The loops that would not
+        // terminate are refused by the cycle check below, which reads the reference graph rather
+        // than this set.
         let mut available: HashSet<CompositeFieldId> = all.keys().cloned().collect();
-        available.remove(id);
+        available.insert(id.clone());
 
         validate_no_composite_cycles(id, schema, &all).map_err(|e| HttpError::BadRequest(&e))?;
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))

@@ -168,7 +168,18 @@ async function seed() {
   await api(
     'POST',
     `/models/composite_fields/${SCHEMA_BLOCK}`,
-    [{ name: 'line', field_type: { Text: {} }, required: false, width: 12, height: 1 }],
+    [
+      { name: 'line', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      // The block holds a list of blocks: the definition reaches itself through an array, which
+      // is allowed because the editor draws elements from the value.
+      {
+        name: 'children',
+        field_type: { Array: [{ CompositeField: { id: SCHEMA_BLOCK } }] },
+        required: false,
+        width: 12,
+        height: 1,
+      },
+    ],
     login.token,
   );
   await seedComposite(login.token);
@@ -985,14 +996,16 @@ try {
     JSON.stringify(builtItem?.state) === '["published"]',
     JSON.stringify(builtItem?.state),
   );
+  // The definition's own fields come back filled in with their defaults, so compare what this
+  // scenario set: which definition each element is, and what was typed into it.
+  const savedElements = (builtItem?.blocks ?? []).map(
+    (element) => `${element.id}:${element.values?.line}`,
+  );
   check(
     '複合配列が要素ごとに保存される',
-    JSON.stringify(builtItem?.blocks) ===
-      JSON.stringify([
-        { id: SCHEMA_BLOCK, values: { line: 'second block' } },
-        { id: SCHEMA_BLOCK, values: { line: 'first block' } },
-      ]),
-    JSON.stringify(builtItem?.blocks),
+    JSON.stringify(savedElements) ===
+      JSON.stringify([`${SCHEMA_BLOCK}:second block`, `${SCHEMA_BLOCK}:first block`]),
+    JSON.stringify(savedElements),
   );
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.
@@ -1003,6 +1016,40 @@ try {
     (await page.locator('.composite-element').nth(0).locator('input').first().inputValue()) ===
       'second block',
     await page.locator('.composite-element').nth(0).locator('input').first().inputValue(),
+  );
+
+  // A block that holds blocks. The element's own array is empty, so the form stops there; the
+  // one element added inside it is one more level and nothing below that.
+  const firstBlock = page.locator('.composite-element').first();
+  await firstBlock.locator('button:has-text("Add element")').first().click();
+  const nestedBlocks = firstBlock.locator('.composite-element');
+  await nestedBlocks.first().locator('input').first().fill('nested block');
+  check('複合の中に複合を追加できる', (await nestedBlocks.count()) === 1);
+  check(
+    '入れ子の配列は空のところで止まる',
+    await nestedBlocks
+      .first()
+      .locator('.note')
+      .first()
+      .textContent()
+      .then((text) => text?.includes('No elements yet') ?? false)
+      .catch(() => false),
+  );
+
+  await page.click('button:has-text("Save")');
+  await page
+    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+  const nestedItem = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  check(
+    '入れ子の複合配列が保存される',
+    nestedItem?.blocks?.[0]?.values?.children?.[0]?.values?.line === 'nested block',
+    JSON.stringify(nestedItem?.blocks?.[0]?.values?.children),
   );
 
   // Through the API rather than the screen: this collection exists only for this scenario.

@@ -947,16 +947,111 @@ async fn composite_arrays_round_trip() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // A composite may hold an array of another composite, but not of itself: parsing and the
-    // editor both follow references, so a cycle would never terminate.
+    // A block that holds blocks: the definition references itself through an array. That is a
+    // loop in the reference graph and it is allowed, because the elements come from the value -
+    // an empty array is where it stops.
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/loop",
+        "/models/composite_fields/tree",
+        Some(&token),
+        Some(json!([
+            { "name": "line", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
+            { "name": "children", "field_type": { "Array": [{ "CompositeField": { "id": "tree" } }] },
+              "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/nested/schema",
         Some(&token),
         Some(json!([{
-            "name": "again",
-            "field_type": { "Array": [{ "CompositeField": { "id": "loop" } }] },
+            "name": "blocks",
+            "field_type": { "Array": [{ "CompositeField": { "id": "tree" } }] },
+            "required": false, "width": 12, "height": 1
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let tree = json!({ "blocks": [
+        { "id": "tree", "values": { "line": "root", "children": [
+            { "line": "leaf", "children": [] }
+        ] } }
+    ] });
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/nested/item",
+        Some(&token),
+        Some(tree),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/nested/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["blocks"][0]["values"]["line"], "root");
+    assert_eq!(
+        body["blocks"][0]["values"]["children"][0]["values"]["line"],
+        "leaf"
+    );
+    assert_eq!(
+        body["blocks"][0]["values"]["children"][0]["values"]["children"],
+        json!([])
+    );
+
+    // A loop that never enters an array is still refused: the editor draws a composite's
+    // sub-fields from the schema, so that one would never finish. Two definitions are needed
+    // because the first has to exist before the second may point at it.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/composite_fields/loop_b",
+        Some(&token),
+        Some(json!([{
+            "name": "value", "field_type": "Number",
+            "required": false, "width": 12, "height": 1
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/composite_fields/loop_a",
+        Some(&token),
+        Some(json!([{
+            "name": "to_b",
+            "field_type": { "CompositeField": { "id": "loop_b" } },
+            "required": false, "width": 12, "height": 1
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // Now closing the loop is refused, and it is the cycle that is reported rather than the
+    // reference being missing.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/composite_fields/loop_b",
+        Some(&token),
+        Some(json!([{
+            "name": "back",
+            "field_type": { "CompositeField": { "id": "loop_a" } },
             "required": false, "width": 12, "height": 1
         }])),
     )

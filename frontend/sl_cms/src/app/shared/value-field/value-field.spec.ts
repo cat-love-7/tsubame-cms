@@ -21,6 +21,8 @@ function field(name: string, field_type: FieldType): FieldSchema {
 const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
   seo: [field('description', { Text: {} })],
   gallery: [field('images', { Array: ['Image'] })],
+  // A block that holds blocks: the definition reaches itself through an array.
+  tree: [field('line', { Text: {} }), field('children', { Array: [{ CompositeField: { id: 'tree' } }] })],
 };
 
 const LIBRARY: ImageEntry[] = [
@@ -502,6 +504,37 @@ describe('ValueField', () => {
     component.setElementValues(0, { description: 'typed' } as unknown as FieldValue);
 
     expect(changes.at(-1)).toEqual([{ id: 'seo', values: { description: 'typed' } }]);
+  });
+
+  it('stops where the value stops when a definition holds an array of itself', () => {
+    // The editor draws array elements from the value and composite sub-fields from the schema, so
+    // this is where a self-referencing definition ends: one level per stored element, and an
+    // element whose own array is empty draws nothing. (That is also what makes the schema legal.)
+    create(field('blocks', { Array: [{ CompositeField: { id: 'tree' } }] }), [
+      { id: 'tree', values: { line: 'root', children: [] } },
+    ] as unknown as FieldValue);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(1);
+    expect(fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length).toBe(0);
+    expect(
+      (fixture.nativeElement.querySelector('.composite-element .note') as HTMLElement)?.textContent,
+    ).toContain('No elements yet');
+
+    // The same field with one element stored at the second level draws exactly that much.
+    create(field('blocks', { Array: [{ CompositeField: { id: 'tree' } }] }), [
+      {
+        id: 'tree',
+        values: {
+          line: 'root',
+          children: [{ id: 'tree', values: { line: 'leaf', children: [] } }],
+        },
+      },
+    ] as unknown as FieldValue);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(2);
+    expect(fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length).toBe(1);
   });
 
   it('leaves a mixed array to the JSON view, which accepts composite elements', () => {

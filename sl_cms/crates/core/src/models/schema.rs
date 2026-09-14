@@ -189,6 +189,26 @@ pub fn referenced_composite_ids(fields: &[FieldSchema]) -> Vec<CompositeFieldId>
     ids
 }
 
+/// The composite ids a value of `fields` reaches *without* going through an array.
+///
+/// This is the graph [`validate_no_composite_cycles`] walks: a loop through an array is fine,
+/// because the array's elements come from the stored value and an empty array stops there.
+pub fn directly_referenced_composite_ids(fields: &[FieldSchema]) -> Vec<CompositeFieldId> {
+    let mut ids = Vec::new();
+    for field in fields {
+        collect_direct_references(&field.field_type, &mut ids);
+    }
+    ids
+}
+
+fn collect_direct_references(field_type: &FieldType, into: &mut Vec<CompositeFieldId>) {
+    if let FieldType::CompositeField(reference) = field_type {
+        into.push(reference.id.clone());
+    }
+    // An array is where the recursion stops being about the schema: its elements are whatever
+    // the value holds, so its item types are not part of this graph.
+}
+
 fn collect_type_references_in(fields: &[FieldSchema], into: &mut Vec<CompositeFieldId>) {
     for field in fields {
         collect_type_references(&field.field_type, into);
@@ -221,16 +241,18 @@ pub fn validate_composite_references(
     Ok(())
 }
 
-/// A composite must not reference itself, directly or through other composites.
+/// A composite must not reach itself without passing through an array.
 ///
-/// Parsing a value would recurse forever, and the editor renders sub-fields by following
-/// the references, so a cycle would hang the browser rather than fail visibly.
+/// The editor draws a composite's sub-fields from the *schema*, so `a → b → a` would build
+/// component after component until the browser gives up, whatever the value says. Through an
+/// array it stops: elements are drawn from the *value*, so an empty array draws nothing, and a
+/// deeper tree costs a deeper value. That is what lets a block definition hold a list of blocks.
 pub fn validate_no_composite_cycles(
     id: &CompositeFieldId,
     fields: &[FieldSchema],
     all: &std::collections::HashMap<CompositeFieldId, CompositeFieldSchema>,
 ) -> Result<(), String> {
-    let mut stack = referenced_composite_ids(fields);
+    let mut stack = directly_referenced_composite_ids(fields);
     let mut visited = std::collections::HashSet::new();
     while let Some(current) = stack.pop() {
         if &current == id {
@@ -243,7 +265,7 @@ pub fn validate_no_composite_cycles(
             continue;
         }
         if let Some(schema) = all.get(&current) {
-            stack.extend(referenced_composite_ids(schema));
+            stack.extend(directly_referenced_composite_ids(schema));
         }
     }
     Ok(())
@@ -404,5 +426,64 @@ mod tests {
         all.insert(CompositeFieldId::from("b"), vec![]);
         assert!(validate_no_composite_cycles(&id, &chain, &all).is_ok());
         assert!(validate_no_composite_cycles(&id, &vec![field("gone", composite_ref("gone"))], &all).is_ok());
+    }
+
+    /// A block that holds a list of blocks is the point of an array of composites, and it is a
+    /// loop in the reference graph. It is allowed because every edge of this loop goes through an
+    /// array: the editor draws array elements from the value, so an empty array draws nothing.
+    #[test]
+    fn allows_a_composite_that_reaches_itself_through_an_array() {
+        let id = CompositeFieldId::from("tree");
+        let tree = vec![
+            field("line", FieldType::Text(TextFieldOptions::default())),
+            field(
+                "children",
+                FieldType::Array(vec![composite_ref("tree")]),
+            ),
+        ];
+        assert!(validate_no_composite_cycles(&id, &tree, &HashMap::new()).is_ok());
+
+        // ...including when the loop takes a detour: tree -> other -> array of tree.
+        let mut all: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
+        all.insert(
+            CompositeFieldId::from("other"),
+            vec![field("again", FieldType::Array(vec![composite_ref("tree")]))],
+        );
+        let detour = vec![field("other", composite_ref("other"))];
+        assert!(validate_no_composite_cycles(&id, &detour, &all).is_ok());
+
+        // But a route back that never enters an array is still refused.
+        let mut back: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
+        back.insert(
+            CompositeFieldId::from("other"),
+            vec![field("back", composite_ref("tree"))],
+        );
+        assert!(validate_no_composite_cycles(&id, &detour, &back)
+            .unwrap_err()
+            .contains("cannot reference itself"));
+    }
+
+    #[test]
+    fn the_two_reference_walks_differ_only_at_arrays() {
+        let fields = vec![
+            field("direct", composite_ref("direct")),
+            field(
+                "in_array",
+                FieldType::Array(vec![composite_ref("in_array")]),
+            ),
+        ];
+
+        let mut both: Vec<String> = referenced_composite_ids(&fields)
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        both.sort();
+        assert_eq!(both, vec!["direct".to_string(), "in_array".to_string()]);
+
+        let stops: Vec<String> = directly_referenced_composite_ids(&fields)
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
+        assert_eq!(stops, vec!["direct".to_string()]);
     }
 }
