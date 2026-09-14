@@ -29,13 +29,14 @@ export function fieldCellStyle(field: FieldSchema): Record<string, string> {
  * Typing a raw column count is not intuitive; these cover the common fractions and the
  * numeric input remains available for anything else.
  */
-export const FieldWidthPresets: { label: string; width: number }[] = [
+export const FieldWidthPresets: { label: string; width: number; key?: string }[] = [
   { label: '1/4', width: 3 },
   { label: '1/3', width: 4 },
   { label: '1/2', width: 6 },
   { label: '2/3', width: 8 },
   { label: '3/4', width: 9 },
-  { label: 'Full', width: 12 },
+  // The fractions need no translation; "Full" is a word, so it is a catalog key.
+  { label: 'Full', width: 12, key: 'common.full' },
 ];
 
 /** Bounds shared with the server's `validate_schema`. */

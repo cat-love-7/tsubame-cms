@@ -1,10 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
-import { errorMessage as message } from 'app/core/http-error';
+import { DateTimeFormat } from 'app/core/i18n/date-format';
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
@@ -24,7 +26,7 @@ import { ValueField } from 'app/shared/value-field/value-field';
  */
 @Component({
   selector: 'app-single-page-edit',
-  imports: [RouterLink, MatButtonModule, ItemStatusBadge, ValueField],
+  imports: [ItemStatusBadge, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe, ValueField],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
@@ -32,6 +34,7 @@ export class Edit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private pages = inject(SinglePagesService);
+  private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
@@ -40,7 +43,8 @@ export class Edit {
    * asynchronous loads that would otherwise trip the dev-mode change check. */
   public schema = signal<CollectionSchema>([]);
   public values = signal<ContentValue>({});
-  public error = signal('');
+  /** The failure to show, as a key or as the server's own words. */
+  public error = signal<Message | null>(null);
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
   /** What this account may do *with this page*, overrides included. */
@@ -49,11 +53,11 @@ export class Edit {
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
-  public notice = signal('');
+  public notice = signal<Message | null>(null);
   public cellStyle = fieldCellStyle;
 
   /** Per-field problems reported by the value fields; saving is refused while any remain. */
-  private fieldErrors: { [field: string]: string } = {};
+  private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
     this.pages.getPageSchema(this.pageName).subscribe({
@@ -61,19 +65,19 @@ export class Edit {
         this.schema.set(schema);
         this.loadItem(schema);
       },
-      error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
 
     this.pages.getPageMetadata(this.pageName).subscribe({
       next: (metadata) => this.metadata.set(metadata),
-      error: (e) => this.error.set(`Failed to load the published state: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
   }
 
   private loadItem(schema: CollectionSchema) {
     this.pages.getPageItem(this.pageName).subscribe({
       next: (values) => this.values.set(withDefaults(schema, values)),
-      error: (e) => this.error.set(`Failed to load the content: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadContent', e)),
     });
   }
 
@@ -85,10 +89,10 @@ export class Edit {
 
     request.subscribe({
       next: (metadata) => {
-        this.error.set('');
+        this.error.set(null);
         this.metadata.set(metadata);
       },
-      error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
     });
   }
 
@@ -97,7 +101,7 @@ export class Edit {
     this.values.update((values) => ({ ...values, [field.name]: value }));
   }
 
-  setFieldError(field: FieldSchema, message: string | null) {
+  setFieldError(field: FieldSchema, message: Message | null) {
     if (message) {
       this.fieldErrors[field.name] = message;
     } else {
@@ -108,21 +112,21 @@ export class Edit {
   /** Mint a link that shows this working copy to someone without an account, and copy it
    * (see the collection item editor for the reasoning). */
   sharePreview() {
-    this.error.set('');
-    this.notice.set('');
+    this.error.set(null);
+    this.notice.set(null);
     this.pages.createPreviewLink(this.pageName).subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
         const copied = await copyToClipboard(url);
-        const expires = new Date(link.expires_at).toLocaleString();
+        const expires = this.dates.format(link.expires_at);
         this.notice.set(
           copied
-            ? `プレビュー URL をコピーしました(有効期限: ${expires})`
-            : `プレビュー URL を作成しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+            ? t('content.previewCopied', { expires })
+            : t('content.previewNotCopied', { expires }),
         );
       },
-      error: (e) => this.error.set(`Could not create a preview link: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToCreatePreviewLink', e)),
     });
   }
 
@@ -133,13 +137,13 @@ export class Edit {
       return;
     }
 
-    this.error.set('');
+    this.error.set(null);
     this.pages.updatePageItem(this.pageName, { ...this.values() }).subscribe({
       next: () => {
-        this.error.set('');
+        this.error.set(null);
         this.router.navigate(['/settings/single-pages']);
       },
-      error: (e) => this.error.set(`Save failed: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.saveFailed', e)),
     });
   }
 }

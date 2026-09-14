@@ -1,15 +1,15 @@
 <mat-tree #tree [dataSource]="dataSource" [childrenAccessor]="childrenAccessor">
     <mat-tree-node *matTreeNodeDef="let node" matTreeNodePadding>
         <button mat-icon-button disabled></button>
-        <a [routerLink]="node.link">{{node.name}}</a>
+        <a [routerLink]="node.link">{{ node.nameKey ? (node.nameKey | transloco) : node.name }}</a>
     </mat-tree-node>
-    <mat-tree-node *matTreeNodeDef="let node; when: hasChild" matTreeNodePadding matTreeNodeToggle [cdkTreeNodeTypeaheadLabel]="node.name">
+    <mat-tree-node *matTreeNodeDef="let node; when: hasChild" matTreeNodePadding matTreeNodeToggle [cdkTreeNodeTypeaheadLabel]="node.nameKey ? (node.nameKey | transloco) : node.name">
         <button mat-icon-button matTreeNodeToggle
-                [attr.aria-label]="'toggle ' + node.name">
+                [attr.aria-label]="'labels.toggleNode' | transloco: { name: (node.nameKey ? (node.nameKey | transloco) : node.name) }">
             <mat-icon class="mat-icon-rtl-mirror">
                 {{tree.isExpanded(node) ? 'expand_more' : 'chevron_right'}}
             </mat-icon>
         </button>
-        {{node.name}}
+        {{ node.nameKey ? (node.nameKey | transloco) : node.name }}
     </mat-tree-node>
 </mat-tree>

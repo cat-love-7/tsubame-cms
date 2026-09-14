@@ -30,7 +30,8 @@
     "backToSignIn": "Back to sign in",
     "passwordChangedOwn": "Your password was changed. Other sessions have ended.",
     "changePasswordFailed": "Could not change the password: {{message}}",
-    "setPasswordFailed": "Could not set the password: {{message}}"
+    "setPasswordFailed": "Could not set the password: {{message}}",
+    "signInFailed": "Sign in failed. Try again."
   },
   "accounts": {
     "title": "Accounts",
@@ -203,7 +204,8 @@
     "deleteImageConfirm": "Delete {{name}}?",
     "requiredCollectionName": "Collection name is required",
     "requiredPageName": "Page name is required",
-    "requiredCompositeId": "Composite field id is required"
+    "requiredCompositeId": "Composite field id is required",
+    "failedToLoadComposite": "Failed to load composite field {{id}}: {{message}}"
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",

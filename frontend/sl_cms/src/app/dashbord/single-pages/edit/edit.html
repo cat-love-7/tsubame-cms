@@ -3,47 +3,49 @@
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
     @if (meta.status === 'published' && meta.has_draft) {
-      <span class="draft-note">未公開の変更あり</span>
+      <span class="draft-note">{{ 'content.unsaved' | transloco }}</span>
     }
     <!-- The audit trail: who put this version on the site. -->
     @if (meta.published_by; as publisher) {
-      <span class="publisher" title="公開したアカウント">{{ publisher.username }}</span>
+      <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher.username }}</span>
     }
     @if (canPublish()) {
       <button matButton (click)="togglePublished()">
-        {{ published() ? 'Unpublish' : 'Publish' }}
+        {{ (published() ? 'content.unpublish' : 'content.publish') | transloco }}
       </button>
     }
     @if (canEdit()) {
       <button matButton (click)="sharePreview()">
-        プレビュー URL
+        {{ 'content.previewLink' | transloco }}
       </button>
     }
   }
   <span class="spacer"></span>
-  <button matButton [routerLink]="['/settings/single-pages', pageName, 'schema']">Edit schema</button>
-  <button matButton [routerLink]="['/settings/single-pages']">All pages</button>
+  <button matButton [routerLink]="['/settings/single-pages', pageName, 'schema']">
+    {{ 'content.editSchema' | transloco }}
+  </button>
+  <button matButton [routerLink]="['/settings/single-pages']">
+    {{ 'content.allPages' | transloco }}
+  </button>
 </div>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
-@if (notice()) {
-  <p class="notice" role="status">{{ notice() }}</p>
+@if (notice(); as happened) {
+  <p class="notice" role="status">{{ happened | message }}</p>
 }
 @if (previewUrl()) {
   <p class="preview-link"><a [href]="previewUrl()" target="_blank" rel="noopener">{{ previewUrl() }}</a></p>
 }
 
 @if (metadata()?.status === 'published' && metadata()?.has_draft) {
-  <p class="note">
-    保存した内容はまだ公開されていません。「Publish」を押すまでサイトには反映されません。
-  </p>
+  <p class="note">{{ 'content.draftNotPublished' | transloco }}</p>
 }
 
 @if (schema().length === 0) {
-  <p class="note">This page has no fields yet. Add fields in the schema editor first.</p>
+  <p class="note">{{ 'content.noFieldsInPage' | transloco }}</p>
 }
 
 <!-- Same grid as the collection editor, so widths and order read the same. -->
@@ -63,8 +65,8 @@
 
 @if (canEdit()) {
   <div class="actions">
-    <button matButton color="primary" (click)="save()">Save</button>
+    <button matButton color="primary" (click)="save()">{{ 'common.save' | transloco }}</button>
   </div>
 } @else {
-  <p class="note">この内容を編集する権限がありません(閲覧のみ)。</p>
+  <p class="note">{{ 'permissions.readOnly' | transloco }}</p>
 }

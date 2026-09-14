@@ -1,16 +1,17 @@
 <mat-toolbar>
-  <button matIconButton aria-label="Toggle navigation">
+  <button matIconButton [attr.aria-label]="'labels.toggleNavigation' | transloco">
     <mat-icon>menu</mat-icon>
   </button>
-  <span>SL CMS</span>
+  <span>{{ 'app.name' | transloco }}</span>
   <span class="spacer"></span>
+  <app-language-switcher />
   @if (auth.user(); as user) {
     <span class="user-email">{{ user.email }}</span>
   }
-  <button matIconButton routerLink="/account" aria-label="Change password">
+  <button matIconButton routerLink="/account" [attr.aria-label]="'auth.changePassword' | transloco">
     <mat-icon>key</mat-icon>
   </button>
-  <button matIconButton (click)="logout()" aria-label="Sign out">
+  <button matIconButton (click)="logout()" [attr.aria-label]="'common.signOut' | transloco">
     <mat-icon>logout</mat-icon>
   </button>
 </mat-toolbar>

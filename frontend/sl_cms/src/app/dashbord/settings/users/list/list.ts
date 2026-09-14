@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import {
   AuthService,
@@ -19,7 +20,8 @@ import {
   roleOf,
 } from 'app/core/auth/auth.service';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
-import { errorMessage as message } from 'app/core/http-error';
+import { DateTimeFormat } from 'app/core/i18n/date-format';
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -27,8 +29,9 @@ import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
 interface RoleOption {
   value: Role;
-  label: string;
-  hint: string;
+  /** The catalog key of the role's name, and of the one line under it. */
+  labelKey: string;
+  hintKey: string;
 }
 
 /**
@@ -48,6 +51,8 @@ interface RoleOption {
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    MessagePipe,
+    TranslocoPipe,
   ],
   templateUrl: './list.html',
   styleUrl: './list.scss',
@@ -59,6 +64,8 @@ export class List {
   private collectionsService = inject(CollectionsService);
   private singlePages = inject(SinglePagesService);
   private capabilities = inject(CapabilitiesService);
+  private i18n = inject(TranslocoService);
+  private dates = inject(DateTimeFormat);
 
   /**
    * Whether this deployment owns the passwords. Where it does not, the account is created and
@@ -68,8 +75,9 @@ export class List {
   public passwordResetLinks = this.capabilities.passwordResetLinks;
 
   public accounts = signal<CurrentUser[]>([]);
-  public error = signal('');
-  public status = signal('');
+  /** A failure or a note about what just happened: keys, so they follow a language change. */
+  public error = signal<Message | null>(null);
+  public status = signal<Message | null>(null);
 
   /** The signed-in administrator, so the screen can refuse to lock itself out. */
   public me = computed(() => this.auth.user());
@@ -82,9 +90,9 @@ export class List {
   public newIsAdmin = false;
 
   public readonly roles: RoleOption[] = [
-    { value: 'viewer', label: '確認(閲覧のみ)', hint: '下書きを含めて読めますが、編集はできません' },
-    { value: 'editor', label: '編集(下書きまで)', hint: '保存しても、公開するまでサイトには出ません' },
-    { value: 'publisher', label: '公開(編集 + 公開)', hint: '公開・非公開、削除もできます' },
+    { value: 'viewer', labelKey: 'roles.viewer', hintKey: 'roles.viewerHint' },
+    { value: 'editor', labelKey: 'roles.editor', hintKey: 'roles.editorHint' },
+    { value: 'publisher', labelKey: 'roles.publisher', hintKey: 'roles.publisherHint' },
   ];
 
   /** The resources an override can be given for. */
@@ -97,12 +105,12 @@ export class List {
   public draftCollections: Record<string, ResourceRole> = {};
   public draftPages: Record<string, ResourceRole> = {};
 
-  public readonly resourceRoles: { value: ResourceRole; label: string }[] = [
-    { value: 'inherit', label: '共通のロール' },
-    { value: 'viewer', label: '確認(閲覧のみ)' },
-    { value: 'editor', label: '編集(下書きまで)' },
-    { value: 'publisher', label: '公開(編集 + 公開)' },
-    { value: 'deny', label: 'なし(拒否)' },
+  public readonly resourceRoles: { value: ResourceRole; labelKey: string }[] = [
+    { value: 'inherit', labelKey: 'roles.inherit' },
+    { value: 'viewer', labelKey: 'roles.viewer' },
+    { value: 'editor', labelKey: 'roles.editor' },
+    { value: 'publisher', labelKey: 'roles.publisher' },
+    { value: 'deny', labelKey: 'roles.deny' },
   ];
 
   constructor() {
@@ -110,18 +118,18 @@ export class List {
     this.load();
     this.collectionsService.getAllCollectionNames().subscribe({
       next: (names) => (this.collections = names),
-      error: (e) => this.error.set(`Failed to load the collections: ${message(e)}`),
+      error: (e) => this.error.set(failure('accounts.failedToLoadCollections', e)),
     });
     this.singlePages.listPageNames().subscribe({
       next: (names) => (this.pages = names),
-      error: (e) => this.error.set(`Failed to load the single pages: ${message(e)}`),
+      error: (e) => this.error.set(failure('accounts.failedToLoadSinglePages', e)),
     });
   }
 
   /** Open the per-resource editor for one account, seeded from what is stored. */
   openResources(user: CurrentUser) {
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.draftCollections = {};
     this.draftPages = {};
     for (const name of this.collections) {
@@ -145,7 +153,9 @@ export class List {
   }
 
   labelOf(role: ResourceRole): string {
-    return this.resourceRoles.find((option) => option.value === role)?.label ?? role;
+    const option = this.resourceRoles.find((candidate) => candidate.value === role);
+    // Read at render time, so the summary follows a language change with the rest of the row.
+    return option ? this.i18n.translate(option.labelKey) : role;
   }
 
   /** The reset link that was issued last, so an administrator can copy it. */
@@ -160,29 +170,29 @@ export class List {
    * works for an account with no address on file.
    */
   issuePasswordResetLink(user: CurrentUser) {
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.users.issuePasswordResetLink(user.id).subscribe({
       next: async (link) => {
         const url = passwordResetUrl(link.token);
         this.resetLink.set(url);
         this.resetFor.set(user.username);
         const copied = await copyToClipboard(url);
-        const expires = new Date(link.expires_at).toLocaleString();
+        const expires = this.dates.format(link.expires_at);
         this.status.set(
           copied
-            ? `${user.username} のリセット URL をコピーしました(有効期限: ${expires})`
-            : `${user.username} のリセット URL を発行しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+            ? t('accounts.resetLinkCopied', { user: user.username, expires })
+            : t('accounts.resetLinkNotCopied', { user: user.username, expires }),
         );
       },
-      error: (e) => this.error.set(`Could not issue a reset link: ${message(e)}`),
+      error: (e) => this.error.set(failure('accounts.issueResetLinkFailed', e)),
     });
   }
 
   /** Store the overrides for one account; only entries that differ are sent. */
   saveResources(user: CurrentUser) {
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     const collections: Record<string, Permission> = {};
     for (const [name, role] of Object.entries(this.draftCollections)) {
       const permission = permissionForResource(role);
@@ -205,18 +215,18 @@ export class List {
       })
       .subscribe({
         next: () => {
-          this.status.set(`${user.email} のリソース権限を保存しました`);
+          this.status.set(t('accounts.resourcesSaved', { user: user.email }));
           this.editingResources.set(null);
           this.load();
         },
-        error: (e) => this.error.set(`Could not save the permissions: ${message(e)}`),
+        error: (e) => this.error.set(failure('accounts.savePermissionsFailed', e)),
       });
   }
 
   private load() {
     this.users.list().subscribe({
       next: (accounts) => this.accounts.set(accounts),
-      error: (e) => this.error.set(`Failed to load the accounts: ${message(e)}`),
+      error: (e) => this.error.set(failure('accounts.failedToLoadAccounts', e)),
     });
   }
 
@@ -225,8 +235,8 @@ export class List {
   }
 
   create() {
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.users
       .create({
         username: this.newUsername,
@@ -243,32 +253,40 @@ export class List {
           this.newPassword = '';
           this.newRole = 'viewer';
           this.newIsAdmin = false;
-          this.status.set('アカウントを作成しました');
+          this.status.set(t('accounts.created'));
           this.load();
         },
-        error: (e) => this.error.set(`Could not create the account: ${message(e)}`),
+        error: (e) => this.error.set(failure('accounts.createFailed', e)),
       });
   }
 
   setRole(user: CurrentUser, role: Role) {
-    this.change(user, { permission: permissionFor(role) }, `${user.email} のロールを変更しました`);
+    this.change(
+      user,
+      { permission: permissionFor(role) },
+      t('accounts.roleChanged', { user: user.email }),
+    );
   }
 
   setAdmin(user: CurrentUser, isAdmin: boolean) {
-    this.change(user, { is_admin: isAdmin }, `${user.email} の管理者権限を変更しました`);
+    this.change(
+      user,
+      { is_admin: isAdmin },
+      t('accounts.adminChanged', { user: user.email }),
+    );
   }
 
   setActive(user: CurrentUser, isActive: boolean) {
     this.change(
       user,
       { is_active: isActive },
-      isActive ? `${user.email} を有効にしました` : `${user.email} を無効にしました`,
+      t(isActive ? 'accounts.activated' : 'accounts.deactivated', { user: user.email }),
     );
   }
 
-  private change(user: CurrentUser, change: Parameters<UsersService['update']>[1], note: string) {
-    this.error.set('');
-    this.status.set('');
+  private change(user: CurrentUser, change: Parameters<UsersService['update']>[1], note: Message) {
+    this.error.set(null);
+    this.status.set(null);
     this.users.update(user.id, change).subscribe({
       next: () => {
         this.status.set(note);
@@ -276,37 +294,37 @@ export class List {
       },
       error: (e) => {
         // The server refuses changes that would leave nobody able to manage the CMS.
-        this.error.set(`Could not change ${user.email}: ${message(e)}`);
+        this.error.set(failure('accounts.changeFailed', e, { user: user.email }));
         this.load();
       },
     });
   }
 
   resetPassword(user: CurrentUser) {
-    const password = prompt(`${user.email} の新しいパスワード(8 文字以上)`);
+    const password = prompt(this.i18n.translate('accounts.newPasswordPrompt', { user: user.email }));
     if (!password) {
       return;
     }
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.users.resetPassword(user.id, password).subscribe({
-      next: () => this.status.set(`${user.email} のパスワードを再設定しました`),
-      error: (e) => this.error.set(`Could not reset the password: ${message(e)}`),
+      next: () => this.status.set(t('accounts.passwordReset', { user: user.email })),
+      error: (e) => this.error.set(failure('accounts.resetPasswordFailed', e)),
     });
   }
 
   remove(user: CurrentUser) {
-    if (!confirm(`${user.email} を削除しますか?`)) {
+    if (!confirm(this.i18n.translate('accounts.deleteConfirm', { user: user.email }))) {
       return;
     }
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.users.remove(user.id).subscribe({
       next: () => {
-        this.status.set(`${user.email} を削除しました`);
+        this.status.set(t('accounts.deleted', { user: user.email }));
         this.load();
       },
-      error: (e) => this.error.set(`Could not delete the account: ${message(e)}`),
+      error: (e) => this.error.set(failure('accounts.deleteFailed', e)),
     });
   }
 

@@ -1,7 +1,4 @@
-<p class="hint">
-  Drag the handle (or use the arrows) to set the order, and choose a width to control how
-  the fields are laid out on the content editing screen.
-</p>
+<p class="hint">{{ 'schema.orderHint' | transloco }}</p>
 
 <div class="field-grid" cdkDropList (cdkDropListDropped)="drop($event)">
   @for (field of Schema; track $index) {
@@ -9,18 +6,30 @@
       <div class="schema-field-header">
         <!-- Only the handle starts a drag: the tile contains text inputs, so making the
              whole tile draggable would break selecting text inside them. -->
-        <button matIconButton type="button" cdkDragHandle aria-label="Drag to reorder">
+        <button
+          matIconButton
+          type="button"
+          cdkDragHandle
+          [attr.aria-label]="'labels.dragToReorder' | transloco"
+        >
           <mat-icon>drag_indicator</mat-icon>
         </button>
-        <span class="schema-field-name">{{ field.name || '(unnamed field)' }}</span>
-        <span class="schema-field-size">{{ field.width }}/12 · min&nbsp;{{ field.height }}×</span>
+        <span class="schema-field-name">
+          {{ field.name || ('schema.unnamedField' | transloco) }}
+        </span>
+        <span class="schema-field-size">
+          {{
+            'schema.fieldSize'
+              | transloco: { width: field.width, height: field.height }
+          }}
+        </span>
         <span class="spacer"></span>
         <button
           matIconButton
           type="button"
           (click)="moveUp($index)"
           [disabled]="$index === 0"
-          aria-label="Move field up"
+          [attr.aria-label]="'labels.moveFieldUp' | transloco"
         >
           <mat-icon>arrow_upward</mat-icon>
         </button>
@@ -29,7 +38,7 @@
           type="button"
           (click)="moveDown($index)"
           [disabled]="$index === Schema.length - 1"
-          aria-label="Move field down"
+          [attr.aria-label]="'labels.moveFieldDown' | transloco"
         >
           <mat-icon>arrow_downward</mat-icon>
         </button>
@@ -38,7 +47,7 @@
           type="button"
           color="warn"
           (click)="removeField($index)"
-          aria-label="Remove field"
+          [attr.aria-label]="'labels.removeField' | transloco"
         >
           <mat-icon>delete</mat-icon>
         </button>
@@ -56,7 +65,7 @@
       <span
         class="resize-handle resize-handle-right"
         role="separator"
-        aria-label="Drag to change width"
+        [attr.aria-label]="'labels.resizeWidth' | transloco"
         (pointerdown)="startResize(field, 'width', $event)"
         (pointermove)="onResizeMove($event)"
         (pointerup)="endResize()"
@@ -65,7 +74,7 @@
       <span
         class="resize-handle resize-handle-bottom"
         role="separator"
-        aria-label="Drag to change minimum height"
+        [attr.aria-label]="'labels.resizeHeight' | transloco"
         (pointerdown)="startResize(field, 'height', $event)"
         (pointermove)="onResizeMove($event)"
         (pointerup)="endResize()"
@@ -78,11 +87,11 @@
 <div class="schema-actions">
   <button matButton type="button" (click)="addField()">
     <mat-icon>add</mat-icon>
-    Add field
+    {{ 'schema.addField' | transloco }}
   </button>
   <button matButton type="button" color="primary" (click)="requestSave()">
     <mat-icon>save</mat-icon>
-    Save schema
+    {{ 'schema.saveSchema' | transloco }}
   </button>
   <button
     matButton
@@ -91,6 +100,6 @@
     [attr.aria-pressed]="preview()"
   >
     <mat-icon>{{ preview() ? 'edit' : 'preview' }}</mat-icon>
-    {{ preview() ? 'Edit fields' : 'Preview layout' }}
+    {{ (preview() ? 'schema.editFields' : 'schema.previewLayout') | transloco }}
   </button>
 </div>

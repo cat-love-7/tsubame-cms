@@ -251,6 +251,27 @@ async function waitForRows(count) {
 }
 
 try {
+  // -------------------------------------------------------------- the language switch
+  // The harness pins the interface to English; this is the one check that leaves it, and puts it
+  // back, so every other check reads the language it expects.
+  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
+  // The catalog arrives through an observable, so the title changes a moment after the click:
+  // wait for the text rather than reading it once.
+  const titleSays = (expected) =>
+    page
+      .waitForFunction(
+        (text) => document.querySelector('mat-card-title')?.textContent?.includes(text) ?? false,
+        expected,
+        { timeout: 10000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+
+  await page.locator('app-language-switcher button', { hasText: '日本語' }).click();
+  check('日本語に切り替えられる', await titleSays('サインイン'));
+  await page.locator('app-language-switcher button', { hasText: 'English' }).click();
+  check('英語に戻せる', await titleSays('Sign in to'));
+
   // -------------------------------------------------------------- sign in through the form
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await page.fill('input[name=username]', USERNAME);
@@ -555,7 +576,7 @@ try {
 
   // ...while the preview link shows the working copy.
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
-  await page.locator('button:has-text("プレビュー URL")').click();
+  await page.locator('button:has-text("Preview link")').click();
   const previewAnchor = page.locator('.preview-link a');
   await previewAnchor.waitFor({ timeout: 10000 });
   const previewUrl = await previewAnchor.getAttribute('href');
@@ -657,7 +678,7 @@ try {
   );
   check(
     '閲覧ロール: 閲覧のみと案内される',
-    (await viewer.page.locator('.note', { hasText: '権限がありません' }).count()) === 1,
+    (await viewer.page.locator('.note', { hasText: 'may not edit' }).count()) === 1,
   );
   check(
     '閲覧ロール: 自分のパスワードは変更できる',
@@ -743,7 +764,7 @@ try {
   check('アカウント画面にリソース権限の一覧が出る', (await page.locator('.resource').count()) >= 2);
 
   await grant.click();
-  await page.locator('mat-option', { hasText: '公開(編集 + 公開)' }).click();
+  await page.locator('mat-option', { hasText: 'Publisher' }).click();
   await page.click('button:has-text("Save permissions")');
   await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
   const scopedAfterSave = (await api('GET', '/auth/users', undefined, token)).find(
@@ -838,7 +859,7 @@ try {
   await resetPage.goto(resetUrl, { waitUntil: 'networkidle' });
   await resetPage.fill('input[name=next]', 'chosen-by-the-owner');
   await resetPage.fill('input[name=repeated]', 'chosen-by-the-owner');
-  await resetPage.click('button:has-text("パスワードを設定")');
+  await resetPage.click('button:has-text("Set password")');
   await resetPage
     .waitForFunction(() => !location.pathname.includes('/reset-password'), null, { timeout: 15000 })
     .catch(() => {});

@@ -4,9 +4,11 @@ import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
-import { errorMessage as message } from 'app/core/http-error';
+import { DateTimeFormat } from 'app/core/i18n/date-format';
+import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemEntry } from 'app/models/values/collection';
@@ -19,13 +21,23 @@ const DEFAULT_PAGE_SIZE = 25;
 
 @Component({
   selector: 'app-collection-items',
-  imports: [MatButtonModule, MatIconModule, MatPaginatorModule, RouterLink, ItemStatusBadge],
+  imports: [
+    ItemStatusBadge,
+    MatButtonModule,
+    MatIconModule,
+    MatPaginatorModule,
+    MessagePipe,
+    RouterLink,
+    TranslocoPipe,
+  ],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
 export class List {
   private route = inject(ActivatedRoute);
   private collectionsService = inject(CollectionsService);
+  private i18n = inject(TranslocoService);
+  private dates = inject(DateTimeFormat);
   /** What the signed-in account may do; the server enforces the same rules. */
   public auth = inject(AuthService);
 
@@ -38,7 +50,8 @@ export class List {
    * bindings unapplied (empty cells) when the last page went from 25 rows to one.
    */
   public items = signal<CollectionItemEntry[]>([]);
-  public error = signal('');
+  /** The failure to show, as a key or as the server's own words. */
+  public error = signal<Message | null>(null);
   /** Draft/published state per item id; the server sends drafts for untouched items. */
   public metadata = signal<ItemMetadataMap>({});
 
@@ -59,7 +72,7 @@ export class List {
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
       next: (schema) => this.schema.set(schema),
-      error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
 
     // Rows, their status and the total are fetched together: the table and the pager both
@@ -82,7 +95,7 @@ export class List {
           this.total.set(page.total);
           this.metadata.set(metadata);
         },
-        error: (e) => this.error.set(`Failed to load the items: ${message(e)}`),
+        error: (e) => this.error.set(failure('content.failedToLoadItems', e)),
       });
   }
 
@@ -114,8 +127,7 @@ export class List {
 
   /** When the item's values were last saved, or a dash when that was never recorded. */
   updatedAt(id: number): string {
-    const updated = this.metadata()[String(id)]?.updated_at;
-    return updated ? new Date(updated).toLocaleString() : '—';
+    return this.dates.format(this.metadata()[String(id)]?.updated_at);
   }
 
   /** Publish or unpublish one item, without leaving the list. */
@@ -127,23 +139,23 @@ export class List {
 
     request.subscribe({
       next: (metadata) => {
-        this.error.set('');
+        this.error.set(null);
         this.metadata.set({ ...this.metadata(), [String(id)]: metadata });
       },
-      error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
     });
   }
 
   delete(id: number) {
-    if (!confirm(`Delete item ${id}?`)) {
+    if (!confirm(this.i18n.translate('content.deleteItemConfirm', { id }))) {
       return;
     }
     this.collectionsService.deleteCollectionItem(this.collectionName, id).subscribe({
       next: () => {
-        this.error.set('');
+        this.error.set(null);
         this.stepBackIfPageIsGone();
       },
-      error: (e) => this.error.set(`Delete failed: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.deleteFailed', e)),
     });
   }
 

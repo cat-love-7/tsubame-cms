@@ -28,6 +28,6 @@ describe('List', () => {
   it('refuses a blank id instead of creating one', () => {
     component.newId = '  ';
     component.create();
-    expect(component.error()).toBe('Composite field id is required');
+    expect(component.error()).toEqual({ key: 'content.requiredCompositeId' });
   });
 });

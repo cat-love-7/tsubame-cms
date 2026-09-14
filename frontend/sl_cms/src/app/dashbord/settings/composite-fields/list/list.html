@@ -1,32 +1,29 @@
-<h2>Composite fields</h2>
+<h2>{{ 'content.compositeFields' | transloco }}</h2>
 
-<p class="hint">
-  A composite field is a reusable group of fields. Collection and single page schemas can
-  reference one by id, and its fields then appear inside that form.
-</p>
+<p class="hint">{{ 'content.compositeFieldsHint' | transloco }}</p>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
 <div class="new-field">
   <mat-form-field appearance="fill">
-    <mat-label>New composite field id</mat-label>
+    <mat-label>{{ 'content.newCompositeFieldId' | transloco }}</mat-label>
     <input matInput [(ngModel)]="newId" name="newCompositeId" (keyup.enter)="create()" />
   </mat-form-field>
   <button matButton color="primary" (click)="create()">
     <mat-icon>add</mat-icon>
-    Add composite field
+    {{ 'content.addCompositeField' | transloco }}
   </button>
 </div>
 
 <table mat-table [dataSource]="definitions" class="mat-elevation-z8">
   <ng-container matColumnDef="id">
-    <th mat-header-cell *matHeaderCellDef>Id</th>
+    <th mat-header-cell *matHeaderCellDef>{{ 'common.id' | transloco }}</th>
     <td mat-cell *matCellDef="let row">{{ row.id }}</td>
   </ng-container>
   <ng-container matColumnDef="fields">
-    <th mat-header-cell *matHeaderCellDef>Fields</th>
+    <th mat-header-cell *matHeaderCellDef>{{ 'content.fields' | transloco }}</th>
     <td mat-cell *matCellDef="let row">{{ row.fields }}</td>
   </ng-container>
   <ng-container matColumnDef="schema">
@@ -35,7 +32,7 @@
       <button
         matIconButton
         [routerLink]="['/settings/composite-fields', row.id, 'schema']"
-        [attr.aria-label]="'edit schema of ' + row.id"
+        [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: row.id }"
       >
         <mat-icon>view_column</mat-icon>
       </button>
@@ -44,7 +41,11 @@
   <ng-container matColumnDef="delete">
     <th mat-header-cell *matHeaderCellDef></th>
     <td mat-cell *matCellDef="let row">
-      <button matIconButton (click)="delete(row.id)" [attr.aria-label]="'delete ' + row.id">
+      <button
+        matIconButton
+        (click)="delete(row.id)"
+        [attr.aria-label]="'labels.deleteOf' | transloco: { name: row.id }"
+      >
         <mat-icon>delete</mat-icon>
       </button>
     </td>

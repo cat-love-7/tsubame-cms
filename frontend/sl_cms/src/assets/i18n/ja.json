@@ -30,7 +30,8 @@
     "backToSignIn": "サインインに戻る",
     "passwordChangedOwn": "パスワードを変更しました(他の端末のセッションは終了しました)",
     "changePasswordFailed": "パスワードを変更できませんでした: {{message}}",
-    "setPasswordFailed": "パスワードを設定できませんでした: {{message}}"
+    "setPasswordFailed": "パスワードを設定できませんでした: {{message}}",
+    "signInFailed": "サインインできませんでした。もう一度お試しください。"
   },
   "accounts": {
     "title": "アカウント",
@@ -203,7 +204,8 @@
     "deleteImageConfirm": "{{name}} を削除しますか?",
     "requiredCollectionName": "コレクション名を入力してください",
     "requiredPageName": "ページ名を入力してください",
-    "requiredCompositeId": "複合フィールド ID を入力してください"
+    "requiredCompositeId": "複合フィールド ID を入力してください",
+    "failedToLoadComposite": "複合フィールド {{id}} を読み込めませんでした: {{message}}"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",

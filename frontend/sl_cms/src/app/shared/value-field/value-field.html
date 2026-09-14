@@ -13,9 +13,9 @@
       [disabled]="disabled"
       [ngModel]="arrayText"
       (ngModelChange)="onArrayTextChange($event)"
-      placeholder="JSON array, e.g. [1, 2]"
+      [placeholder]="'content.jsonArrayPlaceholder' | transloco"
     ></textarea>
-    <mat-hint>Array values are edited as JSON.</mat-hint>
+    <mat-hint>{{ 'content.jsonArrayHint' | transloco }}</mat-hint>
   </mat-form-field>
 </ng-template>
 
@@ -62,7 +62,7 @@
       [ngModel]="value"
       (ngModelChange)="update($event)"
     >
-      Yes
+      {{ 'common.yes' | transloco }}
     </mat-checkbox>
   }
   @case ('Date') {
@@ -113,7 +113,11 @@
           @for (image of arrayImages(); track $index) {
             <figure class="array-item">
               @if (image.url) {
-                <img [src]="imageUrl(image.url)" [alt]="'image ' + image.id" loading="lazy" />
+                <img
+                  [src]="imageUrl(image.url)"
+                  [alt]="'labels.imageAlt' | transloco: { id: image.id }"
+                  loading="lazy"
+                />
               } @else {
                 <!-- A bare id has no URL to show until the item is saved and read back. -->
                 <span class="placeholder">id {{ image.id ?? '?' }}</span>
@@ -125,7 +129,9 @@
                     type="button"
                     (click)="moveImage($index, -1)"
                     [disabled]="$first"
-                    [attr.aria-label]="'move image ' + $index + ' earlier'"
+                    [attr.aria-label]="
+                      'labels.moveImageEarlier' | transloco: { index: $index }
+                    "
                   >
                     <mat-icon>chevron_left</mat-icon>
                   </button>
@@ -134,7 +140,7 @@
                     type="button"
                     (click)="moveImage($index, 1)"
                     [disabled]="$last"
-                    [attr.aria-label]="'move image ' + $index + ' later'"
+                    [attr.aria-label]="'labels.moveImageLater' | transloco: { index: $index }"
                   >
                     <mat-icon>chevron_right</mat-icon>
                   </button>
@@ -142,7 +148,7 @@
                     matIconButton
                     type="button"
                     (click)="removeImageAt($index)"
-                    [attr.aria-label]="'remove image ' + $index"
+                    [attr.aria-label]="'labels.removeImage' | transloco: { index: $index }"
                   >
                     <mat-icon>close</mat-icon>
                   </button>
@@ -150,7 +156,7 @@
               }
             </figure>
           } @empty {
-            <span class="note">No images yet.</span>
+            <span class="note">{{ 'content.noImages' | transloco }}</span>
           }
         </div>
 
@@ -167,14 +173,14 @@
             />
             <button matButton type="button" class="array-add" (click)="openLibrary(true)">
               <mat-icon>photo_library</mat-icon>
-              Add images
+              {{ 'content.addImages' | transloco }}
             </button>
             <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
-              {{ jsonMode() ? 'Hide JSON' : 'Edit as JSON' }}
+              {{ (jsonMode() ? 'content.hideJson' : 'content.editAsJson') | transloco }}
             </button>
           </div>
           @if (uploading()) {
-            <span class="note">Uploading…</span>
+            <span class="note">{{ 'content.uploading' | transloco }}</span>
           }
         }
 
@@ -202,12 +208,12 @@
           />
           <button matButton type="button" (click)="openLibrary(false)">
             <mat-icon>photo_library</mat-icon>
-            Choose existing
+            {{ 'content.chooseExisting' | transloco }}
           </button>
         </div>
       }
       @if (uploading()) {
-        <span>Uploading…</span>
+        <span>{{ 'content.uploading' | transloco }}</span>
       }
     </div>
   }
@@ -227,13 +233,12 @@
       </fieldset>
     } @else {
       <p class="note">
-        Composite field '{{ compositeId() }}' is not defined, so this value cannot be
-        edited. Its existing value is kept.
+        {{ 'content.compositeUndefined' | transloco: { id: compositeId() } }}
       </p>
     }
   }
   @default {
-    <p class="note">Unsupported field type.</p>
+    <p class="note">{{ 'content.unsupportedFieldType' | transloco }}</p>
   }
 }
 
@@ -246,7 +251,9 @@
         class="thumb"
         [class.selected]="isSelected(image.id)"
         (click)="onThumbnail(image)"
-        [attr.aria-label]="(pickerMulti() ? 'select image ' : 'use image ') + image.id"
+        [attr.aria-label]="
+          (pickerMulti() ? 'labels.selectImage' : 'labels.useImage') | transloco: { id: image.id }
+        "
         [title]="image.original_filename"
       >
         <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
@@ -255,7 +262,7 @@
         }
       </button>
     } @empty {
-      <span class="note">No images yet — upload one first.</span>
+      <span class="note">{{ 'content.noImagesUploadFirst' | transloco }}</span>
     }
   </div>
 
@@ -268,9 +275,14 @@
         [disabled]="selected().length === 0"
         (click)="addSelectedImages()"
       >
-        Add {{ selected().length }} image{{ selected().length === 1 ? '' : 's' }}
+        {{
+          (selected().length === 1 ? 'content.addImageOne' : 'content.addImageOther')
+            | transloco: { count: selected().length }
+        }}
       </button>
-      <button matButton type="button" (click)="closePicker()">Cancel</button>
+      <button matButton type="button" (click)="closePicker()">
+        {{ 'common.cancel' | transloco }}
+      </button>
     </div>
   }
 }

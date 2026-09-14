@@ -1,10 +1,12 @@
 import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { apiUrl } from 'app/core/api-url';
-import { errorMessage as message } from 'app/core/http-error';
+import { DateTimeFormat } from 'app/core/i18n/date-format';
+import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
 
@@ -17,17 +19,19 @@ import { ImagesService } from 'app/services/media/images.service';
  */
 @Component({
   selector: 'app-image-library',
-  imports: [MatButtonModule, MatIconModule],
+  imports: [MatButtonModule, MatIconModule, MessagePipe, TranslocoPipe],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
 export class List {
   private images = inject(ImagesService);
+  private i18n = inject(TranslocoService);
+  private dates = inject(DateTimeFormat);
   /** Uploading and deleting images is an editing action. */
   public auth = inject(AuthService);
 
   public library = signal<ImageEntry[]>([]);
-  public error = signal('');
+  public error = signal<Message | null>(null);
   public uploading = signal(false);
   /** Exposed for the template. */
   public imageUrl = apiUrl;
@@ -39,7 +43,7 @@ export class List {
   private load() {
     this.images.listImages().subscribe({
       next: (images) => this.library.set(images),
-      error: (e) => this.error.set(`Failed to load the images: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadImages', e)),
     });
   }
 
@@ -50,7 +54,7 @@ export class List {
       return;
     }
     this.uploading.set(true);
-    this.error.set('');
+    this.error.set(null);
     this.images.uploadImage(file).subscribe({
       next: () => {
         this.uploading.set(false);
@@ -61,25 +65,27 @@ export class List {
       error: (e) => {
         this.uploading.set(false);
         input.value = '';
-        this.error.set(`Upload failed: ${message(e)}`);
+        this.error.set(failure('content.uploadFailed', e));
       },
     });
   }
 
   uploadedAt(image: ImageEntry): string {
-    return new Date(image.uploaded_at).toLocaleString();
+    return this.dates.format(image.uploaded_at);
   }
 
   delete(image: ImageEntry) {
-    if (!confirm(`Delete ${image.original_filename}?`)) {
+    if (
+      !confirm(this.i18n.translate('content.deleteImageConfirm', { name: image.original_filename }))
+    ) {
       return;
     }
     this.images.deleteImage(image.id).subscribe({
       next: () => {
-        this.error.set('');
+        this.error.set(null);
         this.load();
       },
-      error: (e) => this.error.set(`Delete failed: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.deleteFailed', e)),
     });
   }
 }

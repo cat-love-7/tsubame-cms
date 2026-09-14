@@ -8,6 +8,8 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
+import { t } from 'app/core/i18n/message';
+
 import { Edit } from './edit';
 
 class StubSinglePagesService {
@@ -116,12 +118,13 @@ describe('Edit', () => {
     const component = fresh.componentInstance;
     component.setFieldError(
       { name: 'body', field_type: 'Number', required: false, width: 12, height: 1 },
-      "Field 'body': invalid JSON",
+      t('content.invalidJson', { field: 'body' }),
     );
 
     component.save();
 
-    expect(component.error()).toContain('invalid JSON');
+    // The message is held as a key, so the wording is the catalog's business.
+    expect(component.error()).toEqual({ key: 'content.invalidJson', params: { field: 'body' } });
   });
 
   it('publishes the page without saving the form', () => {

@@ -109,7 +109,7 @@ describe('Image library', () => {
     expect(stub.deleted).toEqual([1]);
     // The list is reloaded, so the deleted image is gone from the grid.
     expect(images().length).toBe(0);
-    expect(fixture.componentInstance.error()).toBe('');
+    expect(fixture.componentInstance.error()).toBeNull();
   });
 
   it('leaves the image alone when the confirmation is declined', () => {
@@ -155,6 +155,10 @@ describe('Image library', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.uploading()).toBe(false);
-    expect(fixture.componentInstance.error()).toContain('Upload failed');
+    // Our own sentence around the server's, in the reader's language.
+    expect(fixture.componentInstance.error()).toEqual({
+      key: 'content.uploadFailed',
+      params: { message: 'upload failed' },
+    });
   });
 });

@@ -1,8 +1,9 @@
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { TranslocoPipe } from '@jsverse/transloco';
 
-import { errorMessage as message } from 'app/core/http-error';
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { FieldSchema } from 'app/models/schema/fields';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
@@ -10,7 +11,7 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
 /** Schema editor for one single page. Reuses the schema editor the collections use. */
 @Component({
   selector: 'app-single-page-schema',
-  imports: [RouterLink, MatButtonModule, EditSchema],
+  imports: [EditSchema, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe],
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })
@@ -20,25 +21,25 @@ export class Schema {
 
   public pageName: string = this.route.snapshot.params['name'];
   public schema = signal<FieldSchema[]>([]);
-  public status = signal('');
-  public error = signal('');
+  public status = signal<Message | null>(null);
+  public error = signal<Message | null>(null);
 
   constructor() {
     this.pages.getPageSchema(this.pageName).subscribe({
       next: (schema) => this.schema.set(schema),
-      error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
   }
 
   save(schema: FieldSchema[]) {
     this.pages.updatePageSchema(this.pageName, schema).subscribe({
       next: () => {
-        this.error.set('');
-        this.status.set('Saved');
+        this.error.set(null);
+        this.status.set(t('common.saved'));
       },
       error: (e) => {
-        this.status.set('');
-        this.error.set(`Save failed: ${message(e)}`);
+        this.status.set(null);
+        this.error.set(failure('content.saveFailed', e));
       },
     });
   }

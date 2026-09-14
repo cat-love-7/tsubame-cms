@@ -9,7 +9,10 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
+import { t } from 'app/core/i18n/message';
+
 import { Edit } from './edit';
+import { formatDateTime } from 'app/core/i18n/date-format';
 
 class StubCollectionsService {
   public published: number[] = [];
@@ -55,7 +58,7 @@ class StubCollectionsService {
 
 function previewButton(element: HTMLElement): HTMLButtonElement {
   return Array.from(element.querySelectorAll('button')).find((button) =>
-    button.textContent?.includes('プレビュー URL'),
+    button.textContent?.includes('Preview link'),
   ) as HTMLButtonElement;
 }
 
@@ -137,12 +140,13 @@ describe('Edit', () => {
     const component = fresh.componentInstance;
     component.setFieldError(
       { name: 'numbers', field_type: 'Number', required: false, width: 12, height: 1 },
-      "Field 'numbers': invalid JSON",
+      t('content.invalidJson', { field: 'numbers' }),
     );
 
     component.save();
 
-    expect(component.error()).toContain('invalid JSON');
+    // The message is held as a key, so the wording is the catalog's business.
+    expect(component.error()).toEqual({ key: 'content.invalidJson', params: { field: 'numbers' } });
   });
 
   it('says that a saved change is not published yet', () => {
@@ -152,7 +156,7 @@ describe('Edit', () => {
     fresh.detectChanges();
 
     expect(fresh.nativeElement.querySelector('.draft-note')).toBeTruthy();
-    expect(fresh.nativeElement.textContent).toContain('まだ公開されていません');
+    expect(fresh.nativeElement.textContent).toContain('is not published yet');
   });
 
   /** Asking for a shareable link shows it, so it can be copied even if the clipboard says no. */
@@ -173,7 +177,12 @@ describe('Edit', () => {
     // The link is rendered as a real anchor as well as offered to the clipboard.
     const anchor = fresh.nativeElement.querySelector('.preview-link a') as HTMLAnchorElement;
     expect(anchor.getAttribute('href')).toBe(component.previewUrl());
-    expect(component.notice()).toContain('有効期限');
+    // The expiry is part of the message, in the language on screen. The clipboard is
+    // unavailable here, so the message is the one that offers the link to copy by hand.
+    expect(component.notice()).toEqual({
+      key: 'content.previewNotCopied',
+      params: { expires: formatDateTime('2026-09-13T12:00:00Z', 'en') },
+    });
   });
 
   it('publishes the item it is editing without saving the form', () => {

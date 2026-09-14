@@ -28,6 +28,6 @@ describe('List', () => {
   it('refuses a blank page name instead of creating one', () => {
     component.newName = '   ';
     component.create();
-    expect(component.error()).toBe('Page name is required');
+    expect(component.error()).toEqual({ key: 'content.requiredPageName' });
   });
 });

@@ -7,10 +7,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
-import { errorMessage as message } from 'app/core/http-error';
+import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
   isArrayFieldSchema,
@@ -58,6 +59,7 @@ type FieldKind =
     MatInputModule,
     MatSelectModule,
     NgTemplateOutlet,
+    TranslocoPipe,
     ValueField,
   ],
   templateUrl: './value-field.html',
@@ -75,7 +77,7 @@ export class ValueField implements OnInit, OnChanges {
    * The parent refuses to save while any field reports one, so bad input is never quietly
    * dropped or replaced by a stale value.
    */
-  @Output() errorChange = new EventEmitter<string | null>();
+  @Output() errorChange = new EventEmitter<Message | null>();
 
   private images = inject(ImagesService);
   private compositeFields = inject(CompositeFieldsService);
@@ -107,7 +109,7 @@ export class ValueField implements OnInit, OnChanges {
   private lastEmitted: FieldValue = null;
 
   /** Problems reported by sub-fields, so one clearing does not clear another's. */
-  private subErrors: { [field: string]: string } = {};
+  private subErrors: { [field: string]: Message } = {};
 
   ngOnInit() {
     this.syncArrayBuffer();
@@ -197,13 +199,13 @@ export class ValueField implements OnInit, OnChanges {
     try {
       const parsed = JSON.parse(trimmed);
       if (!Array.isArray(parsed)) {
-        this.errorChange.emit(`Field '${this.field.name}': expected a JSON array`);
+        this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
         return;
       }
       this.errorChange.emit(null);
       this.update(parsed as FieldValue);
     } catch {
-      this.errorChange.emit(`Field '${this.field.name}': invalid JSON`);
+      this.errorChange.emit(t('content.invalidJson', { field: this.field.name }));
     }
   }
 
@@ -214,14 +216,15 @@ export class ValueField implements OnInit, OnChanges {
     this.update({ ...this.compositeValues });
   }
 
-  forwardCompositeError(subField: FieldSchema, problem: string | null) {
+  forwardCompositeError(subField: FieldSchema, problem: Message | null) {
     if (problem) {
       this.subErrors[subField.name] = problem;
     } else {
       delete this.subErrors[subField.name];
     }
-    const remaining = Object.values(this.subErrors);
-    this.errorChange.emit(remaining.length > 0 ? remaining.join('; ') : null);
+    // One at a time: the parent shows the first problem and refuses to save until none remain,
+    // so naming the others too would only lengthen the message.
+    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
   }
 
   onFileSelected(event: Event) {
@@ -243,7 +246,7 @@ export class ValueField implements OnInit, OnChanges {
       },
       error: (e) => {
         this.uploading.set(false);
-        this.errorChange.emit(`Upload failed: ${message(e)}`);
+        this.errorChange.emit(failure('content.uploadFailed', e));
       },
     });
   }
@@ -261,7 +264,7 @@ export class ValueField implements OnInit, OnChanges {
         this.libraryLoaded = true;
         this.library.set(images);
       },
-      error: (e) => this.errorChange.emit(`Failed to load the images: ${message(e)}`),
+      error: (e) => this.errorChange.emit(failure('content.failedToLoadImages', e)),
     });
   }
 
@@ -334,7 +337,7 @@ export class ValueField implements OnInit, OnChanges {
         error: (e) => {
           this.uploading.set(false);
           input.value = '';
-          this.errorChange.emit(`Upload failed: ${message(e)}`);
+          this.errorChange.emit(failure('content.uploadFailed', e));
         },
       });
   }
@@ -408,7 +411,7 @@ export class ValueField implements OnInit, OnChanges {
         this.compositeSchema.set(schema);
         this.compositeValues = schema ? withDefaults(schema, this.innerCompositeValue(schema)) : {};
       },
-      error: (e) => this.errorChange.emit(`Failed to load composite field '${id}': ${message(e)}`),
+      error: (e) => this.errorChange.emit(failure('content.failedToLoadComposite', e, { id })),
     });
   }
 

@@ -3,13 +3,17 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIcon, MatIconModule } from '@angular/material/icon';
 import { MatTreeModule } from '@angular/material/tree';
 import { RouterLink } from '@angular/router';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 import { map, Observable, combineLatest} from 'rxjs';
 
 interface SidebarItem {
+  /** Data: a collection or page name comes from the API and is shown as it is. */
   name: string;
+  /** Our own navigation label, which lives in the catalogs instead of here. */
+  nameKey?: string;
   children?: SidebarItem[];
   link? : string;
 }
@@ -22,6 +26,7 @@ interface SidebarItem {
     MatButtonModule,
     MatIconModule,
     RouterLink,
+    TranslocoPipe,
   ],
 })
 export class Sidebar {
@@ -52,47 +57,57 @@ export class Sidebar {
     return [
       {
         name: 'Documents',
+        nameKey: 'nav.documents',
         children: [
           {
-          name: 'Collections',
-          children: collectionNames.map((name: string) => ({
-            name: name,
-            link: `/collections/${name}`,
-          })),
+            name: 'Collections',
+            nameKey: 'content.collections',
+            children: collectionNames.map((name: string) => ({
+              name: name,
+              link: `/collections/${name}`,
+            })),
           },
           {
-            name: 'Single Documents',
+            name: 'Single pages',
+            nameKey: 'content.singlePages',
             children: singlePageLinks,
             link: singlePageLinks.length === 0 ? '/settings/single-pages' : undefined,
           },
-        ]
+        ],
       },
       {
         name: 'Settings',
+        nameKey: 'nav.settings',
         children: [
           {
             name: 'Schemas',
+            nameKey: 'nav.schemas',
             children: [
               {
                 name: 'Collections',
+                nameKey: 'content.collections',
                 link: '/settings/schemas/collections',
               },
               {
-                name: 'Single Documents',
+                name: 'Single pages',
+                nameKey: 'content.singlePages',
                 link: '/settings/single-pages',
               },
               {
-                name: 'Composite Fields',
+                name: 'Composite fields',
+                nameKey: 'content.compositeFields',
                 link: '/settings/composite-fields',
               },
               {
                 name: 'Images',
+                nameKey: 'content.images',
                 link: '/settings/images',
               },
               ...(isAdmin
                 ? [
                     {
                       name: 'Accounts',
+                      nameKey: 'accounts.title',
                       link: '/settings/users',
                     },
                   ]

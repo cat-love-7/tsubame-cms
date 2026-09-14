@@ -70,7 +70,10 @@ describe('PasswordReset', () => {
         statusText: 'Forbidden',
       });
 
-    expect(component.error()).toContain('already been used');
+    // The link itself was refused, so the server's own answer is what the screen shows.
+    expect(component.error()).toEqual({
+      text: 'this password reset link has already been used or is no longer valid',
+    });
     expect(component.busy()).toBe(false);
   });
 
@@ -81,12 +84,12 @@ describe('PasswordReset', () => {
     component.next = 'short';
     component.repeated = 'short';
     component.save();
-    expect(component.error()).toContain('8 文字以上');
+    expect(component.error()).toEqual({ key: 'auth.passwordTooShort' });
 
     component.next = 'long-enough';
     component.repeated = 'not-the-same';
     component.save();
-    expect(component.error()).toContain('一致しません');
+    expect(component.error()).toEqual({ key: 'auth.passwordMismatch' });
 
     httpMock.verify();
   });

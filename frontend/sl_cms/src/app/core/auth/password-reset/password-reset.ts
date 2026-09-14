@@ -5,9 +5,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from '../auth.service';
-import { errorMessage as message } from 'app/core/http-error';
+import { Message, MessagePipe, apiMessage, t } from 'app/core/i18n/message';
 
 /**
  * Set a new password with a link an administrator issued.
@@ -17,7 +18,16 @@ import { errorMessage as message } from 'app/core/http-error';
  */
 @Component({
   selector: 'app-password-reset',
-  imports: [FormsModule, MatButtonModule, MatCardModule, MatFormFieldModule, MatInputModule, RouterLink],
+  imports: [
+    FormsModule,
+    MatButtonModule,
+    MatCardModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MessagePipe,
+    RouterLink,
+    TranslocoPipe,
+  ],
   templateUrl: './password-reset.html',
   styleUrl: './password-reset.scss',
 })
@@ -29,7 +39,7 @@ export class PasswordReset {
   private token = this.route.snapshot.queryParamMap.get('token') ?? '';
   public next = '';
   public repeated = '';
-  public error = signal('');
+  public error = signal<Message | null>(null);
   public busy = signal(false);
 
   save() {
@@ -37,15 +47,15 @@ export class PasswordReset {
       return;
     }
     if (this.next.length < 8) {
-      this.error.set('新しいパスワードは 8 文字以上にしてください');
+      this.error.set(t('auth.passwordTooShort'));
       return;
     }
     if (this.next !== this.repeated) {
-      this.error.set('新しいパスワードが一致しません');
+      this.error.set(t('auth.passwordMismatch'));
       return;
     }
 
-    this.error.set('');
+    this.error.set(null);
     this.busy.set(true);
     this.auth.completePasswordReset(this.token, this.next).subscribe({
       next: () => {
@@ -55,11 +65,9 @@ export class PasswordReset {
       },
       error: (e) => {
         this.busy.set(false);
-        this.error.set(
-          typeof e?.error === 'string' && e.error
-            ? e.error
-            : `Could not set the password: ${message(e)}`,
-        );
+        // The link itself was refused (used already, past its expiry): the server's answer is
+        // the whole story, and it is the only thing this screen can honestly say.
+        this.error.set(apiMessage(e));
       },
     });
   }

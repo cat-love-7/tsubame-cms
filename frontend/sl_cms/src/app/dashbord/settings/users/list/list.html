@@ -1,14 +1,19 @@
 <div class="toolbar">
-  <h2>Accounts</h2>
+  <h2>{{ 'accounts.title' | transloco }}</h2>
   <span class="spacer"></span>
-  <span class="count">{{ accounts().length }} account{{ accounts().length === 1 ? '' : 's' }}</span>
+  <span class="count">
+    {{
+      (accounts().length === 1 ? 'accounts.countOne' : 'accounts.countOther')
+        | transloco: { count: accounts().length }
+    }}
+  </span>
 </div>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
-@if (status()) {
-  <p class="status" role="status">{{ status() }}</p>
+@if (status(); as note) {
+  <p class="status" role="status">{{ note | message }}</p>
 }
 @if (resetLink()) {
   <p class="reset-link">
@@ -19,45 +24,49 @@
 
 <div class="create">
   <mat-form-field appearance="fill">
-    <mat-label>ID</mat-label>
+    <mat-label>{{ 'accounts.username' | transloco }}</mat-label>
     <input matInput type="text" name="username" [(ngModel)]="newUsername" />
   </mat-form-field>
   <mat-form-field appearance="fill">
-    <mat-label>Email (任意)</mat-label>
+    <mat-label>{{ 'accounts.email' | transloco }}</mat-label>
     <input matInput type="email" name="email" [(ngModel)]="newEmail" />
   </mat-form-field>
   @if (passwordLogin()) {
     <mat-form-field appearance="fill">
-      <mat-label>Password</mat-label>
+      <mat-label>{{ 'auth.password' | transloco }}</mat-label>
       <input matInput type="password" name="password" [(ngModel)]="newPassword" />
     </mat-form-field>
   }
   <mat-form-field appearance="fill">
-    <mat-label>Role</mat-label>
+    <mat-label>{{ 'accounts.role' | transloco }}</mat-label>
     <mat-select name="role" [(ngModel)]="newRole" [disabled]="newIsAdmin">
       @for (role of roles; track role.value) {
-        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+        <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
       }
     </mat-select>
   </mat-form-field>
-  <mat-checkbox name="isAdmin" [(ngModel)]="newIsAdmin">管理者</mat-checkbox>
-  <button matButton color="primary" (click)="create()">Add account</button>
+  <mat-checkbox name="isAdmin" [(ngModel)]="newIsAdmin">
+    {{ 'accounts.administrator' | transloco }}
+  </mat-checkbox>
+  <button matButton color="primary" (click)="create()">{{ 'accounts.add' | transloco }}</button>
 </div>
 
 <p class="hint">
   @for (role of roles; track role.value) {
-    <span class="role-hint"><strong>{{ role.label }}</strong>: {{ role.hint }}</span>
+    <span class="role-hint">
+      <strong>{{ role.labelKey | transloco }}</strong>: {{ role.hintKey | transloco }}
+    </span>
   }
 </p>
 
 <table class="accounts">
   <thead>
     <tr>
-      <th>ID</th>
-      <th>Role</th>
-      <th>Administrator</th>
-      <th>Active</th>
-      <th>Last sign-in</th>
+      <th>{{ 'common.id' | transloco }}</th>
+      <th>{{ 'accounts.role' | transloco }}</th>
+      <th>{{ 'accounts.administrator' | transloco }}</th>
+      <th>{{ 'accounts.active' | transloco }}</th>
+      <th>{{ 'accounts.lastSignIn' | transloco }}</th>
       <th></th>
     </tr>
   </thead>
@@ -67,10 +76,10 @@
         <td>
           {{ user.username }}
           @if (isMe(user)) {
-            <span class="you">you</span>
+            <span class="you">{{ 'accounts.you' | transloco }}</span>
           }
           @if (user.email) {
-            <span class="contact" title="連絡先(サインインには使いません)">{{ user.email }}</span>
+            <span class="contact" [title]="'accounts.contactHint' | transloco">{{ user.email }}</span>
           }
         </td>
         <td>
@@ -78,27 +87,29 @@
             [value]="roleOf(user)"
             [disabled]="user.is_admin"
             (selectionChange)="setRole(user, $event.value)"
-            [attr.aria-label]="'role of ' + user.username"
+            [attr.aria-label]="'labels.roleOf' | transloco: { username: user.username }"
           >
             @for (role of roles; track role.value) {
-              <mat-option [value]="role.value">{{ role.label }}</mat-option>
+              <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
             }
           </mat-select>
           <!-- Per-resource overrides on top of the account-wide role above. -->
-          <span class="overrides" title="コレクション / 単一ページごとの許可">{{ resourceSummary(user) }}</span>
+          <span class="overrides" [title]="'accounts.overridesHint' | transloco">
+            {{ resourceSummary(user) }}
+          </span>
         </td>
         <td>
           <mat-checkbox
             [checked]="user.is_admin"
             (change)="setAdmin(user, $event.checked)"
-            [attr.aria-label]="'administrator ' + user.username"
+            [attr.aria-label]="'labels.administratorOf' | transloco: { username: user.username }"
           />
         </td>
         <td>
           <mat-checkbox
             [checked]="user.is_active"
             (change)="setActive(user, $event.checked)"
-            [attr.aria-label]="'active ' + user.username"
+            [attr.aria-label]="'labels.activeOf' | transloco: { username: user.username }"
           />
         </td>
         <td>{{ user.last_login ? user.last_login : '—' }}</td>
@@ -107,7 +118,9 @@
             <button
               matIconButton
               (click)="issuePasswordResetLink(user)"
-              [attr.aria-label]="'issue a password reset link for ' + user.username"
+              [attr.aria-label]="
+                'labels.issueResetLinkOf' | transloco: { username: user.username }
+              "
             >
               <mat-icon>link</mat-icon>
             </button>
@@ -115,7 +128,7 @@
           <button
             matIconButton
             (click)="openResources(user)"
-            [attr.aria-label]="'resource permissions of ' + user.username"
+            [attr.aria-label]="'labels.permissionsOf' | transloco: { username: user.username }"
           >
             <mat-icon>tune</mat-icon>
           </button>
@@ -123,7 +136,7 @@
             <button
               matIconButton
               (click)="resetPassword(user)"
-              [attr.aria-label]="'reset password of ' + user.username"
+              [attr.aria-label]="'labels.resetPasswordOf' | transloco: { username: user.username }"
             >
               <mat-icon>key</mat-icon>
             </button>
@@ -131,7 +144,7 @@
           <button
             matIconButton
             (click)="remove(user)"
-            [attr.aria-label]="'delete account ' + user.username"
+            [attr.aria-label]="'labels.deleteAccountOf' | transloco: { username: user.username }"
           >
             <mat-icon>delete</mat-icon>
           </button>
@@ -139,43 +152,50 @@
         @if (editingResources() === user.id) {
           <tr class="resource-row">
             <td colspan="6">
-              <p class="hint">
-                アカウント共通のロールに加えて、コレクション / 単一ページごとに許可を上書きできます。
-                「なし」はそのリソースだけ拒否します。
-              </p>
+              <p class="hint">{{ 'accounts.resourcesHint' | transloco }}</p>
               <div class="resource-grid">
                 @for (name of collections; track name) {
                   <label class="resource">
-                    <span class="resource-name">collection: {{ name }}</span>
+                    <span class="resource-name">
+                      {{ 'accounts.resourceCollection' | transloco: { name } }}
+                    </span>
                     <mat-select
                       [ngModel]="draftCollections[name]"
                       (ngModelChange)="draftCollections[name] = $event"
-                      [attr.aria-label]="'permission for collection ' + name"
+                      [attr.aria-label]="
+                        'labels.permissionForCollection' | transloco: { name }
+                      "
                     >
                       @for (role of resourceRoles; track role.value) {
-                        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+                        <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
                       }
                     </mat-select>
                   </label>
                 }
                 @for (name of pages; track name) {
                   <label class="resource">
-                    <span class="resource-name">single page: {{ name }}</span>
+                    <span class="resource-name">
+                      {{ 'accounts.resourceSinglePage' | transloco: { name } }}
+                    </span>
                     <mat-select
                       [ngModel]="draftPages[name]"
                       (ngModelChange)="draftPages[name] = $event"
-                      [attr.aria-label]="'permission for single page ' + name"
+                      [attr.aria-label]="'labels.permissionForPage' | transloco: { name }"
                     >
                       @for (role of resourceRoles; track role.value) {
-                        <mat-option [value]="role.value">{{ role.label }}</mat-option>
+                        <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
                       }
                     </mat-select>
                   </label>
                 }
               </div>
               <div class="resource-actions">
-                <button matButton color="primary" (click)="saveResources(user)">Save permissions</button>
-                <button matButton (click)="editingResources.set(null)">Cancel</button>
+                <button matButton color="primary" (click)="saveResources(user)">
+                  {{ 'accounts.savePermissions' | transloco }}
+                </button>
+                <button matButton (click)="editingResources.set(null)">
+                  {{ 'common.cancel' | transloco }}
+                </button>
               </div>
             </td>
           </tr>
@@ -183,7 +203,7 @@
       </tr>
     } @empty {
       <tr>
-        <td colspan="6" class="empty">No accounts yet.</td>
+        <td colspan="6" class="empty">{{ 'accounts.noAccounts' | transloco }}</td>
       </tr>
     }
   </tbody>

@@ -18,8 +18,8 @@
           }}</a>
         }
       } @else {
-        @if (error()) {
-          <p class="error" role="alert">{{ error() | transloco: errorParams() }}</p>
+        @if (error(); as problem) {
+          <p class="error" role="alert">{{ problem | message }}</p>
         }
         <mat-form-field appearance="fill" class="full-width">
           <!-- The identifier, which may or may not be an address: hence a plain text field. -->

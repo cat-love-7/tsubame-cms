@@ -9,6 +9,7 @@ import {
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import {
   FIELD_ROW_UNIT,
@@ -50,6 +51,7 @@ interface ResizeState {
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
+    TranslocoPipe,
     ValueField,
   ],
   templateUrl: './edit-schema.html',

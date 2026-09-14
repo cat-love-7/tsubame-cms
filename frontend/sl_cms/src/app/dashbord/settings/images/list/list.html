@@ -1,27 +1,28 @@
 <div class="toolbar">
-  <h2>Images</h2>
+  <h2>{{ 'content.images' | transloco }}</h2>
   <span class="spacer"></span>
   <span class="count">
-    {{ library().length }} image{{ library().length === 1 ? '' : 's' }}
+    {{
+      (library().length === 1 ? 'content.imageCountOne' : 'content.imageCountOther')
+        | transloco: { count: library().length }
+    }}
   </span>
   @if (auth.canEdit()) {
     <button matButton (click)="uploadInput.click()" [disabled]="uploading()">
       <mat-icon>add_photo_alternate</mat-icon>
-      {{ uploading() ? 'Uploading…' : 'Upload image' }}
+      {{ (uploading() ? 'content.uploading' : 'content.uploadImage') | transloco }}
     </button>
   }
   <!-- Hidden: the button above is what a user clicks. -->
   <input #uploadInput type="file" accept="image/*" hidden (change)="onFileSelected($event)" />
 </div>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
 @if (library().length === 0) {
-  <p class="note">
-    No images yet. Upload one here, or from an image field while editing content.
-  </p>
+  <p class="note">{{ 'content.imagesEmptyHint' | transloco }}</p>
 }
 
 <div class="library">
@@ -30,14 +31,16 @@
       <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
       <figcaption>
         <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
-        <span class="meta">id {{ image.id }} · {{ uploadedAt(image) }}</span>
+        <span class="meta">
+          {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
+        </span>
       </figcaption>
       @if (auth.canEdit()) {
         <button
           matIconButton
           class="remove"
           (click)="delete(image)"
-          [attr.aria-label]="'delete image ' + image.id"
+          [attr.aria-label]="'labels.deleteImage' | transloco: { id: image.id }"
         >
           <mat-icon>delete</mat-icon>
         </button>

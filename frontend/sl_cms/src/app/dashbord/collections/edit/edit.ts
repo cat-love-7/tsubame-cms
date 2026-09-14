@@ -1,10 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
-import { errorMessage as message } from 'app/core/http-error';
+import { DateTimeFormat } from 'app/core/i18n/date-format';
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
@@ -28,7 +30,7 @@ import { ValueField } from 'app/shared/value-field/value-field';
  */
 @Component({
   selector: 'app-item-edit',
-  imports: [RouterLink, MatButtonModule, ItemStatusBadge, ValueField],
+  imports: [ItemStatusBadge, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe, ValueField],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
@@ -36,6 +38,7 @@ export class Edit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private collectionsService = inject(CollectionsService);
+  private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
@@ -56,7 +59,8 @@ export class Edit {
    */
   public schema = signal<CollectionSchema>([]);
   public values = signal<CollectionValue>({});
-  public error = signal('');
+  /** The failure to show, as a key or as the server's own words. */
+  public error = signal<Message | null>(null);
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
@@ -66,7 +70,7 @@ export class Edit {
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
-  public notice = signal('');
+  public notice = signal<Message | null>(null);
   /** Places each field on the shared 12-column grid, mirroring the schema editor. */
   public cellStyle = fieldCellStyle;
 
@@ -75,7 +79,7 @@ export class Edit {
    * Saving is refused while any remain, so bad input is neither sent nor replaced by a
    * stale value without the user noticing.
    */
-  private fieldErrors: { [field: string]: string } = {};
+  private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
@@ -88,21 +92,21 @@ export class Edit {
           this.loadMetadata(this.itemId);
         }
       },
-      error: (e) => this.error.set(`Failed to load the schema: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
   }
 
   private loadItem(schema: CollectionSchema, id: number) {
     this.collectionsService.getCollectionItem(this.collectionName, id).subscribe({
       next: (values) => this.values.set(withDefaults(schema, values)),
-      error: (e) => this.error.set(`Failed to load the item: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadItem', e)),
     });
   }
 
   private loadMetadata(id: number) {
     this.collectionsService.getItemMetadata(this.collectionName, id).subscribe({
       next: (metadata) => this.metadata.set(metadata),
-      error: (e) => this.error.set(`Failed to load the published state: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
   }
 
@@ -119,10 +123,10 @@ export class Edit {
 
     request.subscribe({
       next: (metadata) => {
-        this.error.set('');
+        this.error.set(null);
         this.metadata.set(metadata);
       },
-      error: (e) => this.error.set(`Could not change the published state: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
     });
   }
 
@@ -132,7 +136,7 @@ export class Edit {
     this.values.update((values) => ({ ...values, [field.name]: value }));
   }
 
-  setFieldError(field: FieldSchema, message: string | null) {
+  setFieldError(field: FieldSchema, message: Message | null) {
     if (message) {
       this.fieldErrors[field.name] = message;
     } else {
@@ -150,21 +154,21 @@ export class Edit {
     if (this.isNew) {
       return;
     }
-    this.error.set('');
-    this.notice.set('');
+    this.error.set(null);
+    this.notice.set(null);
     this.collectionsService.createPreviewLink(this.collectionName, this.itemId as number).subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
         const copied = await copyToClipboard(url);
-        const expires = new Date(link.expires_at).toLocaleString();
+        const expires = this.dates.format(link.expires_at);
         this.notice.set(
           copied
-            ? `プレビュー URL をコピーしました(有効期限: ${expires})`
-            : `プレビュー URL を作成しました(有効期限: ${expires})。コピーできなかったので下から手動でコピーしてください`,
+            ? t('content.previewCopied', { expires })
+            : t('content.previewNotCopied', { expires }),
         );
       },
-      error: (e) => this.error.set(`Could not create a preview link: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.failedToCreatePreviewLink', e)),
     });
   }
 
@@ -175,7 +179,7 @@ export class Edit {
       return;
     }
 
-    this.error.set('');
+    this.error.set(null);
     const values: CollectionValue = { ...this.values() };
 
     // Subscribe per branch: the create and update calls return different observable
@@ -184,12 +188,12 @@ export class Edit {
     if (id === null) {
       this.collectionsService.createCollectionItem(this.collectionName, values).subscribe({
         next: () => this.goBackToList(),
-        error: (e) => this.error.set(`Save failed: ${message(e)}`),
+        error: (e) => this.error.set(failure('content.saveFailed', e)),
       });
     } else {
       this.collectionsService.updateCollectionItem(this.collectionName, id, values).subscribe({
         next: () => this.goBackToList(),
-        error: (e) => this.error.set(`Save failed: ${message(e)}`),
+        error: (e) => this.error.set(failure('content.saveFailed', e)),
       });
     }
   }

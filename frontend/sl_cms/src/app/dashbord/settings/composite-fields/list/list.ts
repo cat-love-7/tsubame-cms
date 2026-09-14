@@ -8,7 +8,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatTableModule } from '@angular/material/table';
 
-import { errorMessage as message } from 'app/core/http-error';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
+
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 
 interface DefinitionRow {
@@ -20,12 +22,14 @@ interface DefinitionRow {
   selector: 'app-composite-field-list',
   imports: [
     FormsModule,
-    RouterLink,
     MatButtonModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
     MatTableModule,
+    MessagePipe,
+    RouterLink,
+    TranslocoPipe,
   ],
   templateUrl: './list.html',
   styleUrl: './list.scss',
@@ -33,6 +37,7 @@ interface DefinitionRow {
 export class List {
   private compositeFields = inject(CompositeFieldsService);
   private router = inject(Router);
+  private i18n = inject(TranslocoService);
 
   /** Re-issues the list request after a change. */
   private refresh = new BehaviorSubject<void>(undefined);
@@ -48,15 +53,15 @@ export class List {
   public displayedColumns: string[] = ['id', 'fields', 'schema', 'delete'];
 
   public newId = '';
-  public error = signal('');
+  public error = signal<Message | null>(null);
 
   create() {
     const id = this.newId.trim();
     if (!id) {
-      this.error.set('Composite field id is required');
+      this.error.set(t('content.requiredCompositeId'));
       return;
     }
-    this.error.set('');
+    this.error.set(null);
     // Start from an empty definition; fields are added on the screen this navigates to.
     this.compositeFields.createCompositeField(id, []).subscribe({
       next: () => {
@@ -64,23 +69,23 @@ export class List {
         this.newId = '';
         this.router.navigate(['/settings/composite-fields', id, 'schema']);
       },
-      error: (e) => this.error.set(`Create failed: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.createFailed', e)),
     });
   }
 
   delete(id: string) {
-    if (!confirm(`Delete the composite field "${id}"?`)) {
+    if (!confirm(this.i18n.translate('content.deleteCompositeConfirm', { id }))) {
       return;
     }
     this.compositeFields.deleteCompositeField(id).subscribe({
       next: () => {
-        this.error.set('');
+        this.error.set(null);
         // Drop the cached definitions before re-reading, or the list would serve the
         // deleted entry from the cache.
         this.compositeFields.invalidate();
         this.refresh.next();
       },
-      error: (e) => this.error.set(`Delete failed: ${message(e)}`),
+      error: (e) => this.error.set(failure('content.deleteFailed', e)),
     });
   }
 }

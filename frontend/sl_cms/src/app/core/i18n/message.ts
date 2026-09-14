@@ -25,14 +25,19 @@ export function t(key: string, params?: Record<string, unknown>): Message {
  *
  * A situational code is the whole reason, so its own wording is shown. Otherwise the server's
  * message — the sentence that says which input was wrong, which item was missing — is kept, and
- * only the screen's own context is translated around it.
+ * only the screen's own context is translated around it. `params` adds anything else the site's
+ * wording needs (`{id}` for "composite field X").
  */
-export function failure(siteKey: string, error: unknown): Message {
+export function failure(
+  siteKey: string,
+  error: unknown,
+  params?: Record<string, unknown>,
+): Message {
   const key = errorKey(error);
   if (key && !isStatusError(error)) {
     return { key };
   }
-  return { key: siteKey, params: { message: errorMessage(error) } };
+  return { key: siteKey, params: { ...params, message: errorMessage(error) } };
 }
 
 /**

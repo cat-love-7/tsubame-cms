@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -37,6 +38,7 @@ import { FieldWidthPresets } from 'app/core/field-layout';
     MatChipsModule,
     MatIconModule,
     IsTextFieldSchema,
+    TranslocoPipe,
     IsMarkdownFieldSchema,
     IsCompositeFieldSchemaPipe,
     IsArrayFieldSchemaPipe,

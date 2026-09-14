@@ -2,20 +2,24 @@ import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatToolbarModule } from '@angular/material/toolbar';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { RouterLink } from '@angular/router';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { LanguageSwitcher } from '../../shared/language-switcher/language-switcher';
 
 @Component({
   selector: 'app-header',
   templateUrl: './header.html',
   styleUrl: './header.scss',
   imports: [
+    LanguageSwitcher,
     MatButtonModule,
     MatIconModule,
     MatToolbarModule,
-    RouterLink
+    RouterLink,
+    TranslocoPipe,
   ],
 })
 export class Header {

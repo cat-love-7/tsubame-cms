@@ -1,23 +1,23 @@
-<h2>Single documents</h2>
+<h2>{{ 'content.singlePages' | transloco }}</h2>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
 <div class="new-page">
   <mat-form-field appearance="fill">
-    <mat-label>New page name</mat-label>
+    <mat-label>{{ 'content.newPageName' | transloco }}</mat-label>
     <input matInput [(ngModel)]="newName" name="newPageName" (keyup.enter)="create()" />
   </mat-form-field>
   <button matButton color="primary" (click)="create()">
     <mat-icon>add</mat-icon>
-    Add page
+    {{ 'content.addPage' | transloco }}
   </button>
 </div>
 
 <table mat-table [dataSource]="pageNames" class="mat-elevation-z8">
   <ng-container matColumnDef="name">
-    <th mat-header-cell *matHeaderCellDef>Page</th>
+    <th mat-header-cell *matHeaderCellDef>{{ 'common.page' | transloco }}</th>
     <td mat-cell *matCellDef="let page">{{ page }}</td>
   </ng-container>
   <ng-container matColumnDef="content">
@@ -26,7 +26,7 @@
       <button
         matIconButton
         [routerLink]="['/single-pages', page]"
-        [attr.aria-label]="'edit content of ' + page"
+        [attr.aria-label]="'labels.editContentOf' | transloco: { name: page }"
       >
         <mat-icon>edit_note</mat-icon>
       </button>
@@ -38,7 +38,7 @@
       <button
         matIconButton
         [routerLink]="['/settings/single-pages', page, 'schema']"
-        [attr.aria-label]="'edit schema of ' + page"
+        [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: page }"
       >
         <mat-icon>view_column</mat-icon>
       </button>
@@ -47,7 +47,11 @@
   <ng-container matColumnDef="delete">
     <th mat-header-cell *matHeaderCellDef></th>
     <td mat-cell *matCellDef="let page">
-      <button matIconButton (click)="delete(page)" [attr.aria-label]="'delete ' + page">
+      <button
+        matIconButton
+        (click)="delete(page)"
+        [attr.aria-label]="'labels.deleteOf' | transloco: { name: page }"
+      >
         <mat-icon>delete</mat-icon>
       </button>
     </td>

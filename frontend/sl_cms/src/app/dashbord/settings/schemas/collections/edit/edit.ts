@@ -5,11 +5,11 @@ import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { ActivatedRoute } from '@angular/router';
 
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+
 @Component({
   selector: 'app-edit',
-  imports: [
-    EditSchema,
-  ],
+  imports: [EditSchema, MessagePipe],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
@@ -23,25 +23,26 @@ export class Edit {
    * resolves, discarding fields the user had already added.
    */
   public collectionSchema = signal<FieldSchema[]>([]);
-  public status = signal('');
-  public error = signal('');
+  /** What the last save did, or the failure to show: keys, so they follow a language change. */
+  public status = signal<Message | null>(null);
+  public error = signal<Message | null>(null);
 
   constructor() {
     this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
       next: (schema: CollectionSchema) => this.collectionSchema.set(schema),
-      error: (e) => this.error.set(`Load failed: ${e?.error ?? e?.message ?? e}`),
+      error: (e) => this.error.set(failure('content.loadFailed', e)),
     });
   }
 
   save(schema: FieldSchema[]) {
     this.collectionsService.updateCollectionSchema(this.collectionName, schema).subscribe({
       next: () => {
-        this.error.set('');
-        this.status.set('Saved');
+        this.error.set(null);
+        this.status.set(t('common.saved'));
       },
       error: (e) => {
-        this.status.set('');
-        this.error.set(`Save failed: ${e?.error ?? e?.message ?? e}`);
+        this.status.set(null);
+        this.error.set(failure('content.saveFailed', e));
       },
     });
   }

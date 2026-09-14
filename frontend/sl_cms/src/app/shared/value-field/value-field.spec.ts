@@ -8,6 +8,7 @@ import { FieldSchema, FieldType } from 'app/models/schema/fields';
 import { FieldValue } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { ValueField } from './value-field';
 
@@ -184,17 +185,17 @@ describe('ValueField', () => {
   it('reports invalid array JSON without emitting a value', () => {
     const component = create(field('numbers', { Array: ['Number'] }), []);
     const values: FieldValue[] = [];
-    const errors: (string | null)[] = [];
+    const errors: (Message | null)[] = [];
     component.valueChange.subscribe((value) => values.push(value));
     component.errorChange.subscribe((error) => errors.push(error));
 
     component.onArrayTextChange('[1, 2');
-    expect(errors.at(-1)).toContain('invalid JSON');
+    expect(errors.at(-1)).toEqual(t('content.invalidJson', { field: 'numbers' }));
     // Nothing is emitted, so the previously valid value is what the parent still holds.
     expect(values).toHaveLength(0);
 
     component.onArrayTextChange('{"not":"an array"}');
-    expect(errors.at(-1)).toContain('expected a JSON array');
+    expect(errors.at(-1)).toEqual(t('content.expectedJsonArray', { field: 'numbers' }));
 
     component.onArrayTextChange('[1, 2]');
     expect(errors.at(-1)).toBeNull();

@@ -44,8 +44,7 @@ describe('Login', () => {
     expect(component.busy()).toBe(false);
     // The component holds the key and the values; the wording is the catalog's business, and
     // the catalog test is what checks it reads well.
-    expect(component.error()).toBe('auth.tooManyAttempts');
-    expect(component.errorParams()).toEqual({ seconds: 600 });
+    expect(component.error()).toEqual({ key: 'auth.tooManyAttempts', params: { seconds: 600 } });
   });
 
   it('shows where to sign in when the deployment leaves it to an identity provider', async () => {

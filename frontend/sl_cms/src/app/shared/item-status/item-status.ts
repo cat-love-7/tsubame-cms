@@ -1,4 +1,5 @@
 import { Component, input } from '@angular/core';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { ItemStatus } from 'app/models/item-status';
 
@@ -8,6 +9,7 @@ import { ItemStatus } from 'app/models/item-status';
  */
 @Component({
   selector: 'app-item-status',
+  imports: [TranslocoPipe],
   templateUrl: './item-status.html',
   styleUrl: './item-status.scss',
 })

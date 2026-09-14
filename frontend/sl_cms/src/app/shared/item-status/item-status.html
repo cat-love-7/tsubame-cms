@@ -1,3 +1,3 @@
 <span class="badge" [class.published]="status() === 'published'">
-  {{ status() === 'published' ? 'Published' : 'Draft' }}
+  {{ (status() === 'published' ? 'content.published' : 'content.draft') | transloco }}
 </span>

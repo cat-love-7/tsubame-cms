@@ -3,9 +3,10 @@ import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
-import { errorMessage as message } from 'app/core/http-error';
+import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 
 /**
@@ -16,7 +17,14 @@ import { UsersService } from 'app/services/auth/users.service';
  */
 @Component({
   selector: 'app-password',
-  imports: [FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule],
+  imports: [
+    FormsModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MessagePipe,
+    TranslocoPipe,
+  ],
   templateUrl: './password.html',
   styleUrl: './password.scss',
 })
@@ -28,21 +36,22 @@ export class Password {
   public current = '';
   public next = '';
   public repeated = '';
-  public error = signal('');
-  public status = signal('');
+  /** The failure or the outcome, as keys, so the screen follows a language change. */
+  public error = signal<Message | null>(null);
+  public status = signal<Message | null>(null);
 
   save() {
     if (this.next.length < 8) {
-      this.error.set('新しいパスワードは 8 文字以上にしてください');
+      this.error.set(t('auth.passwordTooShort'));
       return;
     }
     if (this.next !== this.repeated) {
-      this.error.set('新しいパスワードが一致しません');
+      this.error.set(t('auth.passwordMismatch'));
       return;
     }
 
-    this.error.set('');
-    this.status.set('');
+    this.error.set(null);
+    this.status.set(null);
     this.users.changeOwnPassword(this.current, this.next).subscribe({
       next: (changed) => {
         // Every session from before the change is gone, this one included; the server hands
@@ -51,9 +60,9 @@ export class Password {
         this.current = '';
         this.next = '';
         this.repeated = '';
-        this.status.set('パスワードを変更しました(他の端末のセッションは終了しました)');
+        this.status.set(t('auth.passwordChangedOwn'));
       },
-      error: (e) => this.error.set(`Could not change the password: ${message(e)}`),
+      error: (e) => this.error.set(failure('auth.changePasswordFailed', e)),
     });
   }
 }

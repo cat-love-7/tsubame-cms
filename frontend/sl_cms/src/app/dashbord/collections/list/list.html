@@ -4,13 +4,13 @@
   @if (canEdit()) {
     <button matButton [routerLink]="['/collections', collectionName, 'create']">
       <mat-icon>add</mat-icon>
-      New item
+      {{ 'content.newItem' | transloco }}
     </button>
   }
 </div>
 
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
 <!-- A plain table (rather than mat-table) because the columns are defined by the
@@ -18,12 +18,12 @@
 <table class="items">
   <thead>
     <tr>
-      <th>ID</th>
+      <th>{{ 'common.id' | transloco }}</th>
       @for (field of schema(); track field.name) {
         <th>{{ field.name }}</th>
       }
-      <th>Status</th>
-      <th>Updated</th>
+      <th>{{ 'common.status' | transloco }}</th>
+      <th>{{ 'common.updated' | transloco }}</th>
       <th></th>
     </tr>
   </thead>
@@ -37,10 +37,12 @@
         <td>
           <app-item-status [status]="statusOf(item[0])" />
           @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
-            <span class="draft-note" title="公開するまで、サイトには反映されません">変更あり</span>
+            <span class="draft-note" [title]="'content.unsavedHint' | transloco">
+              {{ 'content.unsaved' | transloco }}
+            </span>
           }
           @if (publishedBy(item[0]); as publisher) {
-            <span class="publisher" title="公開したアカウント">{{ publisher }}</span>
+            <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher }}</span>
           }
         </td>
         <td class="updated">{{ updatedAt(item[0]) }}</td>
@@ -50,7 +52,8 @@
               matIconButton
               (click)="togglePublished(item[0])"
               [attr.aria-label]="
-                (statusOf(item[0]) === 'published' ? 'unpublish item ' : 'publish item ') + item[0]
+                (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                  | transloco: { id: item[0] }
               "
             >
               <mat-icon>{{ statusOf(item[0]) === 'published' ? 'visibility_off' : 'publish' }}</mat-icon>
@@ -59,12 +62,16 @@
           <button
             matIconButton
             [routerLink]="['/collections', collectionName, 'edit', item[0]]"
-            [attr.aria-label]="'edit item ' + item[0]"
+            [attr.aria-label]="'labels.editItem' | transloco: { id: item[0] }"
           >
             <mat-icon>edit</mat-icon>
           </button>
           @if (canPublish()) {
-            <button matIconButton (click)="delete(item[0])" [attr.aria-label]="'delete item ' + item[0]">
+            <button
+              matIconButton
+              (click)="delete(item[0])"
+              [attr.aria-label]="'labels.deleteItem' | transloco: { id: item[0] }"
+            >
               <mat-icon>delete</mat-icon>
             </button>
           }
@@ -72,7 +79,7 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema().length + 4" class="empty">No items yet.</td>
+        <td [attr.colspan]="schema().length + 4" class="empty">{{ 'content.noItems' | transloco }}</td>
       </tr>
     }
   </tbody>
@@ -88,6 +95,6 @@
     [pageSizeOptions]="pageSizeOptions"
     showFirstLastButtons
     (page)="onPage($event)"
-    aria-label="Select page of items"
+    [attr.aria-label]="'labels.selectPage' | transloco"
   />
 }

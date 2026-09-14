@@ -11,6 +11,7 @@ import { CollectionItemEntry, CollectionItemPage } from 'app/models/values/colle
 import { CollectionsService } from 'app/services/schema/collections.service';
 
 import { List } from './list';
+import { formatDateTime } from 'app/core/i18n/date-format';
 
 /**
  * A fake collection holding as many items as a test needs. Paging is what is under test
@@ -196,7 +197,7 @@ describe('List', () => {
 
     // The wording is locale dependent, so compare against the same formatting.
     const cell = fresh.nativeElement.querySelector('.updated') as HTMLElement;
-    expect(cell.textContent?.trim()).toBe(new Date('2024-05-06T07:08:09Z').toLocaleString());
+    expect(cell.textContent?.trim()).toBe(formatDateTime('2024-05-06T07:08:09Z', 'en'));
   });
 
   it('marks an item whose changes are not published yet', () => {
@@ -206,7 +207,7 @@ describe('List', () => {
 
     expect(fresh.componentInstance.hasDraft(1)).toBe(true);
     const note = fresh.nativeElement.querySelector('.draft-note') as HTMLElement;
-    expect(note.textContent).toContain('変更あり');
+    expect(note.textContent).toContain('Unsaved changes');
   });
 
   /** Content saved before the CMS recorded timestamps has nothing to show. */

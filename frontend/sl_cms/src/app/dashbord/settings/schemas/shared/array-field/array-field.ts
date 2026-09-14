@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-array-field',
@@ -17,6 +18,7 @@ import { MatSelectModule } from '@angular/material/select';
     MatCheckboxModule,
     MatChipsModule,
     MatIconModule,
+    TranslocoPipe,
   ],
   templateUrl: './array-field.html',
   styleUrl: './array-field.scss',

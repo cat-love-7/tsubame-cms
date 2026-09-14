@@ -1,5 +1,5 @@
 <mat-form-field appearance="fill" class="full-width">
-  <mat-label>Composite Field Type</mat-label>
+  <mat-label>{{ 'schema.compositeFieldType' | transloco }}</mat-label>
   <mat-select name="compositeFieldType" [(ngModel)]="field" >
     @for (compositeField of (compositeFields | async) | keyvalue; track compositeField.key) {
       <mat-option [value]="compositeField.key">{{ compositeField.key }}</mat-option>

@@ -1,17 +1,17 @@
 <button matIconButton [routerLink]="['/settings/schemas/collections/create']">
   <mat-icon>add</mat-icon>
 </button>
-@if (error()) {
-  <p class="error">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error">{{ problem | message }}</p>
 }
 <table mat-table [dataSource]="collectionNames" class="mat-elevation-z8">
   <ng-container matColumnDef="name">
-      <th mat-header-cell *matHeaderCellDef> Collection Name </th>
+      <th mat-header-cell *matHeaderCellDef> {{ 'content.collectionName' | transloco }} </th>
       <td mat-cell *matCellDef="let collection"> {{collection}} </td>
   </ng-container>
   <ng-container matColumnDef="edit">
     <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let collection"> 
+    <td mat-cell *matCellDef="let collection">
       <button matIconButton [routerLink]="['/settings/schemas/collections/edit/', collection]">
         <mat-icon>edit</mat-icon>
       </button>
@@ -19,13 +19,17 @@
   </ng-container>
   <ng-container matColumnDef="delete">
     <th mat-header-cell *matHeaderCellDef></th>
-    <td mat-cell *matCellDef="let collection"> 
-      <button matIconButton (click)="delete(collection)" [attr.aria-label]="'delete ' + collection">
+    <td mat-cell *matCellDef="let collection">
+      <button
+        matIconButton
+        (click)="delete(collection)"
+        [attr.aria-label]="'labels.deleteOf' | transloco: { name: collection }"
+      >
         <mat-icon>delete</mat-icon>
       </button>
     </td>
   </ng-container>
-  
+
   <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
   <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
 </table>

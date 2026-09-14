@@ -1,14 +1,16 @@
 <div class="toolbar">
-  <h2>Composite field — {{ compositeId }}</h2>
+  <h2>{{ 'content.compositeFieldTitle' | transloco: { id: compositeId } }}</h2>
   <span class="spacer"></span>
-  <button matButton [routerLink]="['/settings/composite-fields']">All composite fields</button>
+  <button matButton [routerLink]="['/settings/composite-fields']">
+    {{ 'content.allCompositeFields' | transloco }}
+  </button>
 </div>
 
-@if (status()) {
-  <p class="status">{{ status() }}</p>
+@if (status(); as note) {
+  <p class="status">{{ note | message }}</p>
 }
-@if (error()) {
-  <p class="error" role="alert">{{ error() }}</p>
+@if (error(); as problem) {
+  <p class="error" role="alert">{{ problem | message }}</p>
 }
 
 <app-edit-schema [Schema]="schema()" (save)="save($event)"></app-edit-schema>

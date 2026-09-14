@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 import { AsyncPipe, KeyValuePipe } from '@angular/common';
+import { TranslocoPipe } from '@jsverse/transloco';
 
 @Component({
   selector: 'app-composite-field',
@@ -21,6 +22,7 @@ import { AsyncPipe, KeyValuePipe } from '@angular/common';
     MatIconModule,
     AsyncPipe,
     KeyValuePipe,
+    TranslocoPipe,
   ],
   templateUrl: './composite-field.html',
   styleUrl: './composite-field.scss',

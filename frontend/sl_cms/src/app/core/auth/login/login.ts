@@ -8,6 +8,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
 import { CapabilitiesService } from '../../capabilities/capabilities.service';
+import { Message, MessagePipe, apiMessage, t } from '../../i18n/message';
 import { LanguageSwitcher } from '../../../shared/language-switcher/language-switcher';
 import { AuthService } from '../auth.service';
 
@@ -16,6 +17,7 @@ import { AuthService } from '../auth.service';
   imports: [
     FormsModule,
     LanguageSwitcher,
+    MessagePipe,
     MatButtonModule,
     MatCardModule,
     MatFormFieldModule,
@@ -40,10 +42,8 @@ export class Login {
 
   public username = '';
   public password = '';
-  /** The message key, not the message: the wording lives in the catalogs. */
-  public error = signal('');
-  /** What the message needs filled in, if anything (`{seconds}`). */
-  public errorParams = signal<Record<string, unknown>>({});
+  /** The failure to show, as a key or as the server's own words: the wording lives in the catalogs. */
+  public error = signal<Message | null>(null);
   public busy = signal(false);
 
   constructor() {
@@ -54,8 +54,7 @@ export class Login {
     if (this.busy()) {
       return;
     }
-    this.error.set('');
-    this.errorParams.set({});
+    this.error.set(null);
     this.busy.set(true);
 
     this.auth.login(this.username.trim(), this.password).subscribe({
@@ -69,19 +68,19 @@ export class Login {
           // Too many failures: `Retry-After` says how long the wait is, so the message can be
           // about waiting rather than about the password.
           const seconds = Number(response.headers?.get('Retry-After'));
-          this.error.set('auth.tooManyAttempts');
-          this.errorParams.set({
-            seconds: Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 0,
-          });
+          this.error.set(
+            t('auth.tooManyAttempts', {
+              seconds: Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 0,
+            }),
+          );
           return;
         }
-        // The API answers with a plain-text English message; it is shown as it came, which is
-        // what a client that does not know the reason can honestly do.
-        this.error.set(
-          typeof response?.error === 'string' && response.error
-            ? response.error
-            : 'auth.signInFailed',
-        );
+        // Otherwise the API's own answer: the wording of a code this client knows, or the
+        // English message as it came, which is what a client that does not know the reason can
+        // honestly show. Nothing at all means the request never reached the server.
+        const body = response?.error;
+        const answered = (typeof body === 'string' && body !== '') || typeof body === 'object';
+        this.error.set(answered ? apiMessage(response) : t('auth.signInFailed'));
       },
     });
   }

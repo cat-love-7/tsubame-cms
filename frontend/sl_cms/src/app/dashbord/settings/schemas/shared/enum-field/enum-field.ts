@@ -5,6 +5,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipEditedEvent, MatChipsModule, MatChipInputEvent } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
@@ -18,6 +19,7 @@ import { MatSelectModule } from '@angular/material/select';
     MatCheckboxModule,
     MatChipsModule,
     MatIconModule,
+    TranslocoPipe,
   ],
   templateUrl: './enum-field.html',
   styleUrl: './enum-field.scss',
