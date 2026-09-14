@@ -7,6 +7,25 @@ use crate::models::item_status::ItemMetadata;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
+/// One value a schema declares unique, as the index compares it.
+///
+/// `value` is whatever the collection compares, so the caller trims it and drops the empty
+/// ones: an optional unique field left blank must not collide with another blank one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UniqueValue {
+    pub field: String,
+    pub value: String,
+}
+
+/// What claiming a unique value did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reservation {
+    /// The item holds it now: nobody did, or it already did.
+    Held,
+    /// Another item holds it, so the write that wanted it cannot go ahead.
+    Taken { owner: CollectionItemId },
+}
+
 /// The `offset`/`limit` half of the windowed list methods, shared by the default
 /// implementations so every backend cuts a list the same way.
 pub(crate) fn cut<T>(items: Vec<T>, offset: usize, limit: Option<usize>) -> Vec<T> {
@@ -114,5 +133,29 @@ pub trait CollectionRepository:Send + Sync + 'static {
         item_id: &CollectionItemId,
         draft: Option<&CollectionItem>,
         metadata: &ItemMetadata,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// Claim a unique value for `item_id`, or report who already holds it.
+    ///
+    /// A point read and a conditional write, never a scan: this is the same shape as the
+    /// username reservation, and it is what makes two saves of one value settle into one
+    /// winner rather than both succeeding. Claiming a value the item already holds succeeds,
+    /// so re-saving an item is not a conflict with itself.
+    fn reserve_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
+    ) -> impl Future<Output = Result<Reservation, BoxError>> + Send;
+
+    /// Give a value up, but only while `item_id` still holds it.
+    ///
+    /// Another item may have claimed it since (a reservation is released after the write that
+    /// stopped holding it), and deleting that claim would hand the value to whoever asks next.
+    fn release_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }

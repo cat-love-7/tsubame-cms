@@ -673,6 +673,299 @@ async fn invalid_schemas_are_rejected_when_saved() {
     }
 }
 
+/// A field declared unique is checked by an index, not by a scan: the same value cannot be
+/// stored twice, and the refusal names the field so a form can mark it.
+#[tokio::test]
+async fn a_unique_field_refuses_a_value_another_item_holds() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let schema = json!([{
+        "name": "slug",
+        "field_type": { "Text": {} },
+        "required": false,
+        "width": 12,
+        "height": 1,
+        "unique": true
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let create = |slug: serde_json::Value| {
+        let token = token.clone();
+        let router = app.router.clone();
+        async move {
+            send_raw(
+                &router,
+                Method::POST,
+                "/models/collections/pages/item",
+                Some(&token),
+                Some(json!({ "slug": slug })),
+            )
+            .await
+        }
+    };
+
+    let (status, body) = create(json!("intro")).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = create(json!("guide")).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // The value is taken, and the refusal says which field and which item.
+    let (status, body) = create(json!("intro")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let refusal: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(refusal["code"], "value_taken");
+    assert_eq!(refusal["field"], "slug");
+    assert!(
+        refusal["message"].as_str().unwrap_or_default().contains("item 1"),
+        "who holds it belongs in the message: {refusal}"
+    );
+
+    // An empty value is "not set": two items may leave an optional unique field blank.
+    let (status, body) = create(json!("")).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = create(json!("")).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // Saving an item with the value it already has is not a conflict with itself.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/items/1",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // Changing it gives the old value up...
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/items/1",
+        Some(&token),
+        Some(json!({ "slug": "welcome" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = create(json!("intro")).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the value it no longer holds is free: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // ...and so does deleting the item.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::DELETE,
+        "/models/collections/pages/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = create(json!("welcome")).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "deleting frees what the item held: {}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+/// A published item keeps its published value reserved while a draft edits it: the live copy is
+/// still what the delivery API serves, so another item must not be able to take its value.
+#[tokio::test]
+async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let schema = json!([{
+        "name": "slug",
+        "field_type": { "Text": {} },
+        "required": false,
+        "width": 12,
+        "height": 1,
+        "unique": true
+    }]);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/items/1/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The draft moves the item to another value; both are held.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/items/1",
+        Some(&token),
+        Some(json!({ "slug": "welcome" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    for taken in ["intro", "welcome"] {
+        let (status, _) = send_raw(
+            &app.router,
+            Method::POST,
+            "/models/collections/pages/item",
+            Some(&token),
+            Some(json!({ "slug": taken })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "{taken} is still in use by the published copy or the working one"
+        );
+    }
+
+    // Releasing the draft gives up the old published value and keeps the new one.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/items/1/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the released value is free again: {}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+/// Making a field unique indexes what is already stored, and refuses while items would break it.
+#[tokio::test]
+async fn making_a_field_unique_indexes_the_items_already_stored() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let plain = json!([{
+        "name": "slug", "field_type": { "Text": {} },
+        "required": false, "width": 12, "height": 1
+    }]);
+    let unique = json!([{
+        "name": "slug", "field_type": { "Text": {} },
+        "required": false, "width": 12, "height": 1, "unique": true
+    }]);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(plain.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let item = |slug: &str| {
+        let token = token.clone();
+        let router = app.router.clone();
+        let slug = slug.to_string();
+        async move {
+            send_raw(
+                &router,
+                Method::POST,
+                "/models/collections/pages/item",
+                Some(&token),
+                Some(json!({ "slug": slug })),
+            )
+            .await
+        }
+    };
+    assert_eq!(item("intro").await.0, StatusCode::OK);
+    assert_eq!(item("guide").await.0, StatusCode::OK);
+
+    // Nothing is duplicated, so the constraint can be switched on...
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(unique.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // ...and the items stored before it are in the index.
+    let (status, body) = item("intro").await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["field"],
+        "slug"
+    );
+
+    // A duplicate that already exists is refused rather than silently indexed half-way.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(plain),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(item("intro").await.0, StatusCode::OK);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(unique),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap()["code"],
+        "value_taken"
+    );
+}
+
 /// A missing resource is a 404 and a duplicate is a 409; both used to be reported as 400,
 /// which made "you asked for something that is not there" indistinguishable from "your
 /// request was malformed".

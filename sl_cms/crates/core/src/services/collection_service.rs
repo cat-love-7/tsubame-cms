@@ -8,8 +8,12 @@ use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
-use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
-use crate::repositories::collection_repository::CollectionRepository;
+use crate::models::schema::{
+    has_unique_fields, unique_values,
+    SchemaScope,validate_composite_references, validate_schema, CompositeFieldId};
+use crate::repositories::collection_repository::{
+    CollectionRepository, Reservation, UniqueValue,
+};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
 use crate::webhook::{ContentEvent, Notifier};
@@ -49,7 +53,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
         if self
             .collection_repository
@@ -62,9 +66,22 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 collection_name
             )));
         }
-        self.collection_repository
+        // A schema that declares a unique field has to bring the index up to date with the
+        // items that are already stored, and refuse to be saved while they share a value.
+        let claimed = self.backfill_unique_values(collection_name, schema).await?;
+        if let Err(e) = self
+            .collection_repository
             .add_collection_schema(collection_name, schema)
-            .await.map_err(map_internal_error)
+            .await
+        {
+            // The field is not unique yet, so nothing should be held for it.
+            for (id, value) in &claimed {
+                self.release_unique_values(collection_name, id, std::slice::from_ref(value))
+                    .await;
+            }
+            return Err(map_internal_error(e));
+        }
+        Ok(())
     }
     pub async fn get_all_collections(&self) -> Result<Vec<CollectionName>, HttpError> {
         self.collection_repository
@@ -88,7 +105,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
         if self
             .collection_repository
@@ -176,7 +193,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collection_repository
             .get_collection_schema(collection_name)
             .await.map_err(map_internal_error)?;
-        match schema {
+        let schema = match schema {
             None => {
                 return Err(HttpError::NotFound(&format!(
                     "Collection with id '{}' does not exist",
@@ -190,13 +207,32 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .await.map_err(map_internal_error)?;
                 item_data.validate_to_schema(&composite_schema_map, &schema)
                     .map_err(|e| HttpError::BadRequest(&e.to_string()))?;
+                schema
             }
-        }
+        };
         let item_id = CollectionItemId::from_u64(
             self.collection_repository
                 .add_collection_item(collection_name, item_data)
                 .await.map_err(map_internal_error)?,
         );
+        // The id only exists once the item does, so this is claimed immediately after: a value
+        // someone else took in the meantime takes the new item with it rather than leaving a
+        // half-created one behind.
+        let held = Self::held_unique_values(&schema, [Some(item_data)]);
+        if let Err(refusal) = self
+            .reserve_unique_values(collection_name, &item_id, &held)
+            .await
+        {
+            let _ = self
+                .collection_repository
+                .delete_collection_item(collection_name, &item_id)
+                .await;
+            let _ = self
+                .collection_repository
+                .set_item_metadata(collection_name, &item_id, &ItemMetadata::default())
+                .await;
+            return Err(refusal);
+        }
         // The new item starts as a working copy; publishing is what puts it in front of
         // the delivery API.
         self.collection_repository
@@ -242,15 +278,226 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     &schema,
                 ).map_err(|e| HttpError::BadRequest(&e.to_string()))?;
 
+                // The index has to follow both copies: the published one still holds its value
+                // while the working copy holds the new one, and a save only gives up a value
+                // when neither copy uses it any more.
+                let published = self
+                    .collection_repository
+                    .get_collection_item(collection_name, &item_id)
+                    .await.map_err(map_internal_error)?;
+                let previous_draft = self
+                    .collection_repository
+                    .get_collection_item_draft(collection_name, &item_id)
+                    .await.map_err(map_internal_error)?;
+                // A save never changes the status, so one status covers both sides.
+                let is_published = self
+                    .collection_repository
+                    .get_item_metadata(collection_name, &item_id)
+                    .await.map_err(map_internal_error)?
+                    .unwrap_or_default()
+                    .is_published();
+                let before = Self::held_unique_values_for_status(
+                    &schema,
+                    is_published,
+                    published.as_ref(),
+                    previous_draft.as_ref(),
+                );
+                let after = Self::held_unique_values_for_status(
+                    &schema,
+                    is_published,
+                    published.as_ref(),
+                    Some(item_data),
+                );
+                let (reserve, release) = Self::unique_difference(&before, &after);
+                self.reserve_unique_values(collection_name, &item_id, &reserve)
+                    .await?;
+
                 // Saved into the working copy: the published item keeps serving the live
                 // site until this version is published.
-                self.collection_repository
+                if let Err(e) = self
+                    .collection_repository
                     .set_collection_item_draft(collection_name, &item_id, item_data)
-                    .await.map_err(|e| HttpError::InternalServerError(&e.to_string()))?;
+                    .await
+                {
+                    // Nothing was made visible, so give back what this call claimed.
+                    self.release_unique_values(collection_name, &item_id, &reserve)
+                        .await;
+                    return Err(map_internal_error(e));
+                }
+                self.release_unique_values(collection_name, &item_id, &release)
+                    .await;
                 self.stamp_item(collection_name, item_id, false).await?;
                 Ok(())
             }
         }
+    }
+
+    /// Claim the unique values a write is about to make visible.
+    ///
+    /// Claimed before the write, so a failure leaves a value reserved that nothing holds yet -
+    /// which refuses one value too early - rather than two items holding the same value. The
+    /// caller releases what this claimed if the write itself fails.
+    async fn reserve_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        values: &[UniqueValue],
+    ) -> Result<(), HttpError> {
+        for value in values {
+            let reservation = self
+                .collection_repository
+                .reserve_unique_value(collection_name, item_id, value)
+                .await
+                .map_err(map_internal_error)?;
+            if let Reservation::Taken { owner } = reservation {
+                return Err(HttpError::Conflict(&format!(
+                    "field '{}': the value '{}' is already used by item {}",
+                    value.field, value.value, owner
+                ))
+                .with_code("value_taken")
+                .with_field(&value.field));
+            }
+        }
+        Ok(())
+    }
+
+    /// Give up values the item no longer holds, after the write that stopped holding them.
+    async fn release_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        values: &[UniqueValue],
+    ) {
+        for value in values {
+            // A release that fails only leaves a value blocked, which is visible and fixable;
+            // failing the request here would report a save that did happen as an error.
+            if let Err(e) = self
+                .collection_repository
+                .release_unique_value(collection_name, item_id, value)
+                .await
+            {
+                tracing::warn!(
+                    "failed to release unique value {}={:?}: {e}",
+                    value.field,
+                    value.value
+                );
+            }
+        }
+    }
+
+    /// Claim what `before` did not hold and give up what `after` does not hold.
+    ///
+    /// The two halves are split across the write by the caller: claiming happens before it (so
+    /// the value is never twice-held), releasing after (so it is never unheld while in use).
+    fn unique_difference(
+        before: &[UniqueValue],
+        after: &[UniqueValue],
+    ) -> (Vec<UniqueValue>, Vec<UniqueValue>) {
+        let reserve = after
+            .iter()
+            .filter(|value| !before.contains(value))
+            .cloned()
+            .collect();
+        let release = before
+            .iter()
+            .filter(|value| !after.contains(value))
+            .cloned()
+            .collect();
+        (reserve, release)
+    }
+
+    /// The unique values an item holds, given its status and its two copies.
+    ///
+    /// The working copy is what an editor sees and what a publish would release, so it always
+    /// counts. The published copy counts only while the item is published: a draft keeps the
+    /// copy it was created from, and holding that value would block one that nothing serves.
+    fn held_unique_values_for_status(
+        schema: &CollectionSchema,
+        published_status: bool,
+        published: Option<&CollectionItem>,
+        working: Option<&CollectionItem>,
+    ) -> Vec<UniqueValue> {
+        let effective = working.or(published);
+        if published_status {
+            Self::held_unique_values(schema, [published, effective])
+        } else {
+            Self::held_unique_values(schema, [effective])
+        }
+    }
+
+    /// Every unique value the given copies of one item hold, counted once.
+    fn held_unique_values<'a>(
+        schema: &CollectionSchema,
+        copies: impl IntoIterator<Item = Option<&'a CollectionItem>>,
+    ) -> Vec<UniqueValue> {
+        let mut held: Vec<UniqueValue> = Vec::new();
+        for copy in copies.into_iter().flatten() {
+            for value in unique_values(schema, copy) {
+                if !held.contains(&value) {
+                    held.push(value);
+                }
+            }
+        }
+        held
+    }
+
+    /// Refuse to make a field unique while items already share a value, and index what is there
+    /// when they do not.
+    ///
+    /// Called when a schema with a unique field is saved: the collection is scanned once, which
+    /// is the honest moment to pay for it - the alternative is an index that is silently missing
+    /// the items that were stored before the constraint existed.
+    async fn backfill_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        schema: &CollectionSchema,
+    ) -> Result<Vec<(CollectionItemId, UniqueValue)>, HttpError> {
+        if !has_unique_fields(schema) {
+            return Ok(Vec::new());
+        }
+        let items = self
+            .collection_repository
+            .list_collection_items(collection_name)
+            .await
+            .map_err(map_internal_error)?;
+        let drafts: HashMap<CollectionItemId, CollectionItem> = self
+            .collection_repository
+            .list_collection_item_drafts(collection_name)
+            .await
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
+
+        let mut claimed: Vec<(CollectionItemId, UniqueValue)> = Vec::new();
+        for (item_id, published) in items {
+            let working = drafts.get(&item_id);
+            let held = Self::held_unique_values(schema, [Some(&published), working]);
+            for value in held {
+                match self
+                    .collection_repository
+                    .reserve_unique_value(collection_name, &item_id, &value)
+                    .await
+                    .map_err(map_internal_error)?
+                {
+                    Reservation::Held => claimed.push((item_id.clone(), value)),
+                    Reservation::Taken { owner } => {
+                        // The schema cannot be made unique while these exist, so put back
+                        // everything this attempt claimed before saying so.
+                        for (id, value) in &claimed {
+                            self.release_unique_values(collection_name, id, std::slice::from_ref(value))
+                                .await;
+                        }
+                        return Err(HttpError::Conflict(&format!(
+                            "field '{}': the value '{}' is already used by item {}",
+                            value.field, value.value, owner
+                        ))
+                        .with_code("value_taken")
+                        .with_field(&value.field));
+                    }
+                }
+            }
+        }
+        Ok(claimed)
     }
 
     /// Record when the item's values were last saved.
@@ -299,21 +546,47 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 collection_name
             )));
         }
-        if self
+        let published = self
             .collection_repository
             .get_collection_item(collection_name, &item_id)
-            .await.map_err(map_internal_error)?
-            .is_none()
-        {
+            .await.map_err(map_internal_error)?;
+        if published.is_none() {
             return Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
                 item_id.to_string(), collection_name
             )));
         }
 
+        // Read what the item holds before removing it: afterwards there is nothing left to say
+        // which values it was using.
+        let schema = self
+            .collection_repository
+            .get_collection_schema(collection_name)
+            .await.map_err(map_internal_error)?
+            .unwrap_or_default();
+        let working = self
+            .collection_repository
+            .get_collection_item_draft(collection_name, &item_id)
+            .await.map_err(map_internal_error)?;
+        let is_published = self
+            .collection_repository
+            .get_item_metadata(collection_name, &item_id)
+            .await.map_err(map_internal_error)?
+            .unwrap_or_default()
+            .is_published();
+        let held = Self::held_unique_values_for_status(
+            &schema,
+            is_published,
+            published.as_ref(),
+            working.as_ref(),
+        );
+
         self.collection_repository
             .delete_collection_item(collection_name, &item_id)
             .await.map_err(map_internal_error)?;
+        // After the delete: a value is never given up while a copy still holds it.
+        self.release_unique_values(collection_name, &item_id, &held)
+            .await;
         Ok(())
     }
 
@@ -559,12 +832,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.require_item(collection_name, &item_id).await?;
         // Built from the stored record so publishing keeps the first publication date and the
         // content timestamps.
-        let mut metadata = self
+        let stored = self
             .collection_repository
             .get_item_metadata(collection_name, &item_id)
             .await.map_err(map_internal_error)?
-            .unwrap_or_default()
-            .with_status(status, Some(actor));
+            .unwrap_or_default();
+        let was_published = stored.is_published();
+        let mut metadata = stored.with_status(status, Some(actor));
 
         // Publishing *is* the copy: whatever the editor has been working on replaces the
         // published item and stops being a separate draft. With nothing pending, publishing only
@@ -584,9 +858,40 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             // The content the site serves just changed, so the release moves `updated_at`.
             metadata = metadata.released(chrono::Utc::now());
         }
-        self.collection_repository
+        // Releasing a working copy moves the unique index: the working value becomes the
+        // published one, so the value the *old* published copy held is given up. Unpublishing
+        // keeps both copies, so it changes nothing here.
+        let schema = self
+            .collection_repository
+            .get_collection_schema(collection_name)
+            .await.map_err(map_internal_error)?
+            .unwrap_or_default();
+        let (reserve, release) = match &pending {
+            Some(pending) if has_unique_fields(&schema) => {
+                let published = self
+                    .collection_repository
+                    .get_collection_item(collection_name, &item_id)
+                    .await.map_err(map_internal_error)?;
+                let before =
+                    Self::held_unique_values(&schema, [published.as_ref(), Some(pending)]);
+                let after = Self::held_unique_values(&schema, [Some(pending)]);
+                Self::unique_difference(&before, &after)
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        self.reserve_unique_values(collection_name, &item_id, &reserve)
+            .await?;
+        if let Err(e) = self
+            .collection_repository
             .apply_item_status(collection_name, &item_id, pending.as_ref(), &metadata)
-            .await.map_err(map_internal_error)?;
+            .await
+        {
+            self.release_unique_values(collection_name, &item_id, &reserve)
+                .await;
+            return Err(map_internal_error(e));
+        }
+        self.release_unique_values(collection_name, &item_id, &release)
+            .await;
         // Only after the status is stored: a receiver that reacts by reading the delivery
         // API must not see the previous state.
         self.notifier
@@ -724,6 +1029,7 @@ mod tests {
     use crate::repositories::image_repository::ImageRepository;
 
     use super::*;
+    use crate::repositories::collection_repository::{Reservation, UniqueValue};
     use crate::webhook::NotifyFuture;
     use crate::webhook::NoopNotifier;
 
@@ -733,6 +1039,8 @@ mod tests {
         item_counter: Arc<RwLock<u64>>,
         item_metadata: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), ItemMetadata>>>,
         drafts: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), CollectionItem>>>,
+        /// The unique index: (collection, field, value) to the item that holds it.
+        unique: Arc<RwLock<HashMap<(CollectionName, String, String), CollectionItemId>>>,
     }
     impl CollectionRepository for MockCollectionRepository {
         async fn get_collection_schema(
@@ -924,6 +1232,38 @@ mod tests {
                 .insert((collection_name.clone(), item_id.clone()), metadata.clone());
             Ok(())
         }
+        /// An in-memory index, so the service's bookkeeping can be tested without a backend.
+        async fn reserve_unique_value(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            unique: &UniqueValue,
+        ) -> Result<Reservation, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            let mut index = self.unique.write().unwrap();
+            let key = (collection_name.clone(), unique.field.clone(), unique.value.clone());
+            match index.get(&key) {
+                Some(owner) if owner != item_id => Ok(Reservation::Taken { owner: owner.clone() }),
+                _ => {
+                    index.insert(key, item_id.clone());
+                    Ok(Reservation::Held)
+                }
+            }
+        }
+
+        async fn release_unique_value(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            unique: &UniqueValue,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            let mut index = self.unique.write().unwrap();
+            let key = (collection_name.clone(), unique.field.clone(), unique.value.clone());
+            if index.get(&key) == Some(item_id) {
+                index.remove(&key);
+            }
+            Ok(())
+        }
+
         async fn list_item_metadata(
             &self,
             collection_name: &CollectionName,
@@ -1027,6 +1367,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1095,6 +1436,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1111,6 +1453,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "count".to_string(),
@@ -1118,6 +1461,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
         ]
     }
@@ -1166,6 +1510,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
 
@@ -1189,6 +1534,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_collection_schema(&"test_collection".into(), &initial_schema).await.unwrap();
@@ -1200,6 +1546,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.update_collection_schema(&"test_collection".into(), &updated_schema).await;
@@ -1219,6 +1566,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_collection_schema(&"test_collection".into(), &schema).await.unwrap();
@@ -1230,6 +1578,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.add_collection_schema(&"test_collection".into(), &duplicate_schema).await;
@@ -1250,6 +1599,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_collection_schema(&"test_collection".into(), &schema).await.unwrap();
@@ -1273,6 +1623,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 }
             ],
         ).await;
@@ -1288,6 +1639,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1321,6 +1673,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1350,6 +1703,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1372,6 +1726,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1406,6 +1761,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1434,6 +1790,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1476,6 +1833,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1507,6 +1865,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(2)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1544,6 +1903,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(1)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1569,6 +1929,7 @@ mod tests {
             item_counter: Arc::new(RwLock::new(0)),
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

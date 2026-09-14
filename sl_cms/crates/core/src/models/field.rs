@@ -289,6 +289,7 @@ fn parse_array_element(
             required: false,
             width: 0,
             height: 0,
+            unique: false,
         };
         if let Ok(value) = parse_field_value(&probe, raw, composite_schemas) {
             return Ok(value);
@@ -311,7 +312,7 @@ mod untyped_parsing_tests {
     use serde_json::json;
 
     fn field(name: &str, field_type: FieldType, required: bool) -> FieldSchema {
-        FieldSchema { name: name.to_string(), field_type, required, width: 12, height: 1 }
+        FieldSchema { name: name.to_string(), field_type, required, width: 12, height: 1, unique: false }
     }
 
     fn schema() -> CollectionSchema {
@@ -1037,6 +1038,7 @@ mod tests {
             required,
             width: 12,
             height: 1,
+            unique: false,
         }]
     }
 
@@ -1069,6 +1071,7 @@ mod tests {
             required: true,
             width: 12,
             height: 1,
+            unique: false,
         };
         let valid_value = FieldValue::Array(vec![
             FieldValue::Text("Hello".to_string()),
@@ -1111,6 +1114,7 @@ mod tests {
             required: true,
             width: 12,
             height: 1,
+            unique: false,
         };
         let valid_composite_value = FieldValue::Array(vec![
             FieldValue::CompositeField(Some(create_composite_value(
@@ -1157,6 +1161,7 @@ mod tests {
             required: false,
             width: 12,
             height: 1,
+            unique: false,
         };
 
         // What a read looks like: the wrapper names the definition, so the second candidate is
@@ -1225,6 +1230,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         }],
                     ),
                     (
@@ -1236,6 +1242,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                             FieldSchema {
                                 name: "sub_field3".to_string(),
@@ -1243,6 +1250,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                         ],
                     ),
@@ -1378,6 +1386,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             };
             let formatted_value = field_value.format_field_value(&scheme, &composite_schema);
             assert_eq!(
@@ -1398,6 +1407,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema = r#"{"name":"title","field_type":{"Text":{"max_length":null,"min_length":null}},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
@@ -1409,6 +1419,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema =
                         r#"{"name":"description","field_type":{"Markdown":{"max_length":null,"min_length":null}},"required":true,"width":12,"height":1}"#;
@@ -1421,6 +1432,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema = r#"{"name":"age","field_type":"Number","required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
@@ -1432,6 +1444,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema =
                         r#"{"name":"is_active","field_type":"Boolean","required":true,"width":12,"height":1}"#;
@@ -1444,6 +1457,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema =
                         r#"{"name":"create_date","field_type":"Date","required":true,"width":12,"height":1}"#;
@@ -1456,6 +1470,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema =
                         r#"{"name":"update_time","field_type":"DateTime","required":true,"width":12,"height":1}"#;
@@ -1468,6 +1483,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema =
                         r#"{"name":"profile_image","field_type":"Image","required":true,"width":12,"height":1}"#;
@@ -1482,6 +1498,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema = r#"{"name":"address","field_type":{"CompositeField":{"id":"address_1"}},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
@@ -1493,6 +1510,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema = r#"{"name":"tags","field_type":{"Array":[{"Text":{"max_length":null,"min_length":null}},"Number"]},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
@@ -1507,6 +1525,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     };
                     let json_schema = r#"{"name":"status","field_type":{"TextEnum":["Active","Inactive"]},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
@@ -1628,6 +1647,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             };
             let default_value = test_schema.get_default_value();
             match field_type {
@@ -1661,6 +1681,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Text("Hello".to_string()),
@@ -1672,6 +1693,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Markdown("**Bold Text**".to_string()),
@@ -1683,6 +1705,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Number(Some(25.0)),
@@ -1694,6 +1717,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Boolean(true),
@@ -1705,6 +1729,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Date(Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())),
@@ -1716,6 +1741,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::DateTime(Some(
@@ -1729,6 +1755,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Image(Some(ImageID::from_u64(1))),
@@ -1742,6 +1769,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::from([(
                         "address_1".into(),
@@ -1752,6 +1780,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                             FieldSchema {
                                 name: "city".to_string(),
@@ -1759,6 +1788,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                             FieldSchema {
                                 name: "zip".to_string(),
@@ -1766,6 +1796,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                         ],
                     )]),
@@ -1788,6 +1819,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::Array(vec![
@@ -1805,6 +1837,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     HashMap::new(),
                     FieldValue::TextEnum(vec!["Active".to_string()]),
@@ -1848,6 +1881,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Text("".to_string()),
                 ),
@@ -1858,6 +1892,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Number(None),
                 ),
@@ -1868,6 +1903,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Date(None),
                 ),
@@ -1878,6 +1914,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::DateTime(None),
                 ),
@@ -1888,6 +1925,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Image(None),
                 ),
@@ -1898,6 +1936,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Array(vec![]),
                 ),
@@ -1911,6 +1950,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::TextEnum(vec![]),
                 ),
@@ -1932,6 +1972,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Text("".to_string()),
                 ),
@@ -1942,6 +1983,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Number(None),
                 ),
@@ -1952,6 +1994,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Date(None),
                 ),
@@ -1962,6 +2005,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::DateTime(None),
                 ),
@@ -1972,6 +2016,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Image(None),
                 ),
@@ -1982,6 +2027,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::Array(vec![]),
                 ),
@@ -1995,6 +2041,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldValue::TextEnum(vec![]),
                 ),
@@ -2017,6 +2064,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 },
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
@@ -2026,6 +2074,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     }],
                 )]),
                 FieldValue::CompositeField(None),
@@ -2040,6 +2089,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 },
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
@@ -2049,6 +2099,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     }],
                 )]),
                 FieldValue::CompositeField(Some(CompositeFieldValue {
@@ -2069,6 +2120,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 },
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
@@ -2078,6 +2130,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     }],
                 )]),
                 FieldValue::CompositeField(Some(CompositeFieldValue {
@@ -2128,6 +2181,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             };
             let result = field_value.validate_field_value(&test_schema, &HashMap::new());
             assert_eq!(
@@ -2187,6 +2241,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                         FieldSchema {
                             name: "extra_field".to_string(),
@@ -2194,6 +2249,7 @@ mod tests {
                             required: false,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                     ],
                 )]),
@@ -2224,6 +2280,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                         FieldSchema {
                             name: "sub_field2".to_string(),
@@ -2231,6 +2288,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                     ],
                 )]),
@@ -2266,6 +2324,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                         FieldSchema {
                             name: "sub_field2".to_string(),
@@ -2273,6 +2332,7 @@ mod tests {
                             required: true,
                             width: 12,
                             height: 1,
+                            unique: false,
                         },
                     ],
                 )]),
@@ -2462,6 +2522,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     }],
                 )]),
                 FieldValue::Array(vec![
@@ -2561,6 +2622,7 @@ mod tests {
                 required,
                 width: 12,
                 height: 1,
+                unique: false,
             };
             let result = value.validate_field_value(&schema, &composite_schemas);
             assert_eq!(
@@ -2636,6 +2698,7 @@ mod tests {
                                 required: true,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                             FieldSchema {
                                 name: "extra_field".to_string(),
@@ -2643,6 +2706,7 @@ mod tests {
                                 required: false,
                                 width: 12,
                                 height: 1,
+                                unique: false,
                             },
                         ],
                     )]),
@@ -2693,6 +2757,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             };
             let formatted_value = field_value.format_field_value(&scheme, &composite_schemas);
             assert_eq!(
@@ -2734,6 +2799,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "age".to_string(),
@@ -2741,6 +2807,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "profile".to_string(),
@@ -2750,6 +2817,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "tags".to_string(),
@@ -2762,6 +2830,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
         ];
         let composite_schemas = HashMap::from([
@@ -2774,6 +2843,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldSchema {
                         name: "avatar".to_string(),
@@ -2781,6 +2851,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                 ],
             ),
@@ -2792,6 +2863,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 }],
             ),
         ]);
@@ -2871,6 +2943,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldSchema {
                         name: "age".to_string(),
@@ -2878,6 +2951,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                 ],
                 FieldValueMap(HashMap::from([
@@ -2894,6 +2968,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldSchema {
                         name: "age".to_string(),
@@ -2901,6 +2976,7 @@ mod tests {
                         required: false,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                 ],
                 FieldValueMap(HashMap::from([("title".to_string(), FieldValue::Text("Hello".to_string()))]), PhantomData),
@@ -2914,6 +2990,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                     FieldSchema {
                         name: "age".to_string(),
@@ -2921,6 +2998,7 @@ mod tests {
                         required: true,
                         width: 12,
                         height: 1,
+                        unique: false,
                     },
                 ],
                 FieldValueMap(HashMap::from([("title".to_string(), FieldValue::Text("Hello".to_string()))]), PhantomData),
@@ -2947,6 +3025,7 @@ mod tests {
             required: true,
             width: 12,
             height: 1,
+            unique: false,
         };
         let valid_value = FieldValue::TextEnum(vec!["Option1".to_string()]);
         let invalid_value = FieldValue::TextEnum(vec!["InvalidOption".to_string()]);

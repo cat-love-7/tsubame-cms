@@ -2,9 +2,12 @@ use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, Collecti
 use sl_cms_core::models::item_status::ItemMetadata;
 use crate::repository::{
     collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
-    collection_metadata_prefix, Repository, DRAFT_STORE, METADATA_STORE,
+    collection_metadata_prefix, unique_key, Repository, DRAFT_STORE, METADATA_STORE,
+    UNIQUE_STORE,
 };
-use sl_cms_core::repositories::collection_repository::CollectionRepository;
+use sl_cms_core::repositories::collection_repository::{
+    CollectionRepository, Reservation, UniqueValue,
+};
 use rkv::{StoreOptions, Value};
 use std::error::Error;
 
@@ -374,6 +377,55 @@ impl CollectionRepository for Repository {
         let mut writer = env.write()?;
         store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(item_data)?))?;
         writer.commit()?;
+        Ok(())
+    }
+
+    async fn reserve_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
+    ) -> Result<Reservation, Box<dyn Error + Send + Sync + 'static>> {
+        // The storage lock is what makes check-then-write one step here: this adapter has a
+        // single writer, so no other save can slip between the read and the write.
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(UNIQUE_STORE, StoreOptions::create())?;
+        let key = unique_key(collection_name.as_str(), unique);
+        let reader = env.read()?;
+        match store.get(&reader, key.as_bytes())? {
+            // Already ours: a save that keeps its value is not a conflict with itself.
+            Some(Value::Str(owner)) if owner == item_id.to_string() => Ok(Reservation::Held),
+            Some(Value::Str(owner)) => Ok(Reservation::Taken {
+                owner: CollectionItemId::from_u64(owner.parse()?),
+            }),
+            _ => {
+                let mut writer = env.write()?;
+                store.put(&mut writer, key.as_bytes(), &Value::Str(&item_id.to_string()))?;
+                writer.commit()?;
+                Ok(Reservation::Held)
+            }
+        }
+    }
+
+    async fn release_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(UNIQUE_STORE, StoreOptions::create())?;
+        let key = unique_key(collection_name.as_str(), unique);
+        let reader = env.read()?;
+        // Only if it is still ours: the value may have been claimed by another item since this
+        // one stopped holding it.
+        if store.get(&reader, key.as_bytes())? == Some(Value::Str(&item_id.to_string())) {
+            let mut writer = env.write()?;
+            store.delete(&mut writer, key.as_bytes())?;
+            writer.commit()?;
+        }
         Ok(())
     }
 

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::identity::StringId;
 
-use super::field::{FieldValue};
+use super::field::FieldValue;
+use crate::repositories::collection_repository::UniqueValue;
 
 #[cfg(test)]
 use strum_macros::EnumIter;
@@ -12,11 +13,26 @@ pub struct FieldSchema {
     pub name: String,
     pub field_type: FieldType,
     pub required: bool,
+    /// Whether this field's value has to be unique inside its collection.
+    ///
+    /// Held by an index of value to item (see `UniqueValue`), so the check costs a point read
+    /// rather than a scan, and two saves of the same value cannot both succeed. Only text fields
+    /// may set it; a slug needs normalising, which is a separate field type's job.
+    ///
+    /// Omitted from the wire when false, so a schema that uses no unique fields reads exactly as
+    /// it did before this existed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unique: bool,
     /// in colspan units (1-12)
     pub width: u32,
     /// in rowspan units (1-)
     pub height: u32,
 }
+/// `#[serde(skip_serializing_if)]` takes a predicate, and `bool` has no `is_false`.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 pub type CompositeFieldId = StringId<CompositeFieldSchema>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
@@ -122,11 +138,23 @@ impl FieldSchema {
     }
 }
 
+/// What a schema is for, which decides what `unique` can mean.
+///
+/// A collection holds many items, so a value can be compared across them. A single page holds
+/// exactly one, and a composite definition's fields are embedded in whatever item uses them, so
+/// neither has anything to compare against.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SchemaScope {
+    Collection,
+    SinglePage,
+    CompositeDefinition,
+}
+
 /// Validate a field schema before it is stored.
 ///
 /// Without this an unusable schema can be saved and only fails later, when someone tries
 /// to write content against it (or, worse, cannot interpret what is already stored).
-pub fn validate_schema(fields: &[FieldSchema]) -> Result<(), String> {
+pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(), String> {
     let mut seen = std::collections::HashSet::new();
     for field in fields {
         let name = field.name.trim();
@@ -135,6 +163,26 @@ pub fn validate_schema(fields: &[FieldSchema]) -> Result<(), String> {
         }
         if !seen.insert(name.to_string()) {
             return Err(format!("duplicate field name '{name}'"));
+        }
+        if field.unique {
+            match scope {
+                SchemaScope::Collection => {}
+                SchemaScope::SinglePage => {
+                    return Err(format!(
+                        "field '{name}': a single page has one item, so 'unique' would compare                          nothing"
+                    ));
+                }
+                SchemaScope::CompositeDefinition => {
+                    return Err(format!(
+                        "field '{name}': a composite's values are stored inside the item that                          uses it, so 'unique' is not tracked for its fields"
+                    ));
+                }
+            }
+            if !matches!(field.field_type, FieldType::Text(_)) {
+                return Err(format!(
+                    "field '{name}': only a text field can be unique"
+                ));
+            }
         }
         if !(1..=12).contains(&field.width) {
             return Err(format!(
@@ -180,6 +228,41 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
         ));
     }
     Ok(())
+}
+
+/// The unique values `item` holds, ready for the index.
+///
+/// Trimmed, and blank ones left out: an optional unique field that nobody filled in must not
+/// collide with every other item that left it blank either. A field the item does not have is
+/// the same as blank.
+pub fn unique_values(
+    fields: &[FieldSchema],
+    item: &crate::models::field::FieldValueMap<Vec<FieldSchema>>,
+) -> Vec<UniqueValue> {
+    let mut values = Vec::new();
+    for field in fields {
+        if !field.unique {
+            continue;
+        }
+        let Some(FieldValue::Text(text)) = item.get(&field.name) else {
+            continue;
+        };
+        let value = text.trim();
+        if value.is_empty() {
+            continue;
+        }
+        values.push(UniqueValue {
+            field: field.name.clone(),
+            value: value.to_string(),
+        });
+    }
+    values
+}
+
+/// Whether any field declares `unique`, so a caller can skip the bookkeeping (and the reads it
+/// needs) for the collections that do not.
+pub fn has_unique_fields(fields: &[FieldSchema]) -> bool {
+    fields.iter().any(|field| field.unique)
 }
 
 /// Every composite id referenced by `fields`, including inside array item types.
@@ -284,6 +367,7 @@ mod tests {
             required: false,
             width: 12,
             height: 1,
+            unique: false,
         }
     }
 
@@ -294,40 +378,40 @@ mod tests {
             field("count", FieldType::Number),
             field("covers", FieldType::Array(vec![FieldType::Image])),
         ];
-        assert!(validate_schema(&schema).is_ok());
+        assert!(validate_schema(&schema, SchemaScope::Collection).is_ok());
         // An empty schema is allowed: a collection can be created before its fields.
-        assert!(validate_schema(&[]).is_ok());
+        assert!(validate_schema(&[], SchemaScope::Collection).is_ok());
     }
 
     #[test]
     fn rejects_empty_and_duplicate_names() {
-        assert!(validate_schema(&[field("  ", FieldType::Number)])
+        assert!(validate_schema(&[field("  ", FieldType::Number)], SchemaScope::Collection)
             .unwrap_err()
             .contains("must not be empty"));
 
         let duplicate = vec![field("title", FieldType::Number), field("title", FieldType::Boolean)];
-        assert!(validate_schema(&duplicate).unwrap_err().contains("duplicate field name"));
+        assert!(validate_schema(&duplicate, SchemaScope::Collection).unwrap_err().contains("duplicate field name"));
     }
 
     #[test]
     fn rejects_out_of_range_layout() {
         let mut too_wide = field("a", FieldType::Number);
         too_wide.width = 13;
-        assert!(validate_schema(&[too_wide]).unwrap_err().contains("width"));
+        assert!(validate_schema(&[too_wide], SchemaScope::Collection).unwrap_err().contains("width"));
 
         let mut too_narrow = field("a", FieldType::Number);
         too_narrow.width = 0;
-        assert!(validate_schema(&[too_narrow]).unwrap_err().contains("width"));
+        assert!(validate_schema(&[too_narrow], SchemaScope::Collection).unwrap_err().contains("width"));
 
         let mut no_height = field("a", FieldType::Number);
         no_height.height = 0;
-        assert!(validate_schema(&[no_height]).unwrap_err().contains("height"));
+        assert!(validate_schema(&[no_height], SchemaScope::Collection).unwrap_err().contains("height"));
     }
 
     #[test]
     fn an_image_array_is_allowed_on_its_own() {
         let schema = vec![field("covers", FieldType::Array(vec![FieldType::Image]))];
-        assert!(validate_schema(&schema).is_ok());
+        assert!(validate_schema(&schema, SchemaScope::Collection).is_ok());
     }
 
     #[test]
@@ -336,31 +420,37 @@ mod tests {
             "mixed",
             FieldType::Array(vec![FieldType::Number, FieldType::Image]),
         )];
-        let error = validate_schema(&schema).unwrap_err();
+        let error = validate_schema(&schema, SchemaScope::Collection).unwrap_err();
         assert!(error.contains("both Number and Image"), "unexpected error: {error}");
     }
 
     #[test]
     fn rejects_empty_nested_and_composite_array_items() {
-        assert!(validate_schema(&[field("a", FieldType::Array(vec![]))])
+        assert!(validate_schema(&[field("a", FieldType::Array(vec![]))], SchemaScope::Collection)
             .unwrap_err()
             .contains("at least one item type"));
 
-        assert!(validate_schema(&[field(
-            "a",
-            FieldType::Array(vec![FieldType::Array(vec![FieldType::Number])])
-        )])
+        assert!(validate_schema(
+            &[field(
+                "a",
+                FieldType::Array(vec![FieldType::Array(vec![FieldType::Number])])
+            )],
+            SchemaScope::Collection
+        )
         .unwrap_err()
         .contains("nested arrays"));
 
         // A composite as an array item is allowed: it is an object on the wire, so it cannot be
         // confused with a scalar, and the reference is checked like any other.
-        validate_schema(&[field(
-            "a",
-            FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
-                id: CompositeFieldId::from("seo"),
-            })])
-        )])
+        validate_schema(
+            &[field(
+                "a",
+                FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
+                    id: CompositeFieldId::from("seo"),
+                })])
+            )],
+            SchemaScope::Collection,
+        )
         .expect("an array of composites is a usable schema");
     }
 

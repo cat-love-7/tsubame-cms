@@ -121,6 +121,7 @@ mod tests {
             required: true,
             width: 12,
             height: 1,
+            unique: false,
             }
         ];
         let id2 = "schema2".into();
@@ -130,6 +131,7 @@ mod tests {
             required: false,
             width: 12,
             height: 1,
+            unique: false,
         }];
         repository.add_composite_field_schema(&id1, &schema1).await.unwrap();
         repository.add_composite_field_schema(&id2, &schema2).await.unwrap();

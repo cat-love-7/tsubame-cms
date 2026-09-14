@@ -15,6 +15,8 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "weak_password",
     "username_taken",
     "last_administrator",
+    // A value a field declared unique already holds.
+    "value_taken",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -49,6 +51,7 @@ pub const ERROR_CODES: &[&str] = &[
     "weak_password",
     "username_taken",
     "last_administrator",
+    "value_taken",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -90,6 +93,11 @@ pub struct HttpError {
     /// their wording off this (see [`ERROR_CODES`]).
     pub code: &'static str,
     pub message: String,
+    /// Which field the refusal is about, when it is about one.
+    ///
+    /// A form can mark that input rather than showing a sentence about nothing in particular;
+    /// codes and messages alone leave it guessing.
+    pub field: Option<String>,
     /// Set by the 429 answers so the response can carry `Retry-After`.
     pub retry_after_seconds: Option<u64>,
 }
@@ -100,11 +108,18 @@ impl HttpError {
         self
     }
 
+    /// Name the field the refusal is about.
+    pub fn with_field(mut self, field: &str) -> Self {
+        self.field = Some(field.to_string());
+        self
+    }
+
     pub fn new(status_code: u16, message: &str) -> Self {
         HttpError {
             code: default_code(status_code),
             status_code,
             message: message.to_string(),
+            field: None,
             retry_after_seconds: None,
         }
     }
@@ -149,6 +164,7 @@ impl HttpError {
         HttpError {
             code: default_code(STATUS_TOO_MANY_REQUESTS),
             status_code: STATUS_TOO_MANY_REQUESTS,
+            field: None,
             message: format!("too many failed attempts; try again in {seconds} seconds"),
             retry_after_seconds: Some(seconds),
         }

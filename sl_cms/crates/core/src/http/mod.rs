@@ -248,11 +248,12 @@ impl IntoResponse for HttpError {
         let retry_after = self.retry_after_seconds;
         // A code the client can translate, and the English message for anyone reading a log or
         // curling the API. Plain text would leave a client with nothing but English to show.
-        let mut response = (
-            status,
-            axum::Json(serde_json::json!({ "code": self.code, "message": self.message })),
-        )
-            .into_response();
+        // `field` is only there when the refusal is about one, so a form can mark that input.
+        let mut body = serde_json::json!({ "code": self.code, "message": self.message });
+        if let Some(field) = &self.field {
+            body["field"] = serde_json::Value::String(field.clone());
+        }
+        let mut response = (status, axum::Json(body)).into_response();
         // Only the 429 answers set this, and a client that knows when to come back does not
         // have to guess.
         if let Some(seconds) = retry_after {

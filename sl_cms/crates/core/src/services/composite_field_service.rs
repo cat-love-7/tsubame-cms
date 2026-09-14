@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::field::{CompositeFieldSchema, FieldSchema};
 use crate::models::schema::{
+    SchemaScope,
     validate_composite_references, validate_no_composite_cycles, validate_schema, CompositeFieldId,
 };
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -57,7 +58,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
     }
     pub async fn add_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::CompositeDefinition).map_err(|e| HttpError::BadRequest(&e))?;
         self.validate_composite_graph(field_name, schema).await?;
         let s = self.composite_field_repository.get_composite_field_schema(&field_name)
             .await.map_err(map_internal_error)?;
@@ -72,7 +73,7 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         }
     }
     pub async fn update_composite_field_schema(&self, field_name: &CompositeFieldId, schema: &Vec<FieldSchema>) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::CompositeDefinition).map_err(|e| HttpError::BadRequest(&e))?;
         self.validate_composite_graph(field_name, schema).await?;
         let s = self.composite_field_repository.get_composite_field_schema(field_name)
             .await.map_err(map_internal_error)?;
@@ -188,6 +189,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
 
@@ -210,6 +212,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_composite_field_schema(&"test_field".into(), &initial_schema).await.unwrap();
@@ -221,6 +224,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.update_composite_field_schema(&"test_field".into(), &updated_schema).await;
@@ -240,6 +244,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_composite_field_schema(&"test_field".into(), &schema).await.unwrap();
@@ -251,6 +256,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.add_composite_field_schema(&"test_field".into(), &duplicate_schema).await;
@@ -271,6 +277,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_composite_field_schema(&"test_field".into(), &schema).await.unwrap();
@@ -294,6 +301,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 }
             ],
         ).await;

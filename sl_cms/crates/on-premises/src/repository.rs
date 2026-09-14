@@ -35,6 +35,27 @@ pub(crate) const CREDENTIAL_STORE: &str = "credential";
 /// token, so it is an index rather than a scan.
 pub(crate) const IDENTITY_STORE: &str = "identity";
 
+/// Store holding the unique-value index: `collection:field:value` to the item that holds it.
+///
+/// A field declared unique is checked on every save, so the check has to be a point read. The
+/// key holds the value rather than the item, which is what makes two saves of one value settle
+/// into one winner under the storage lock this adapter already takes.
+pub(crate) const UNIQUE_STORE: &str = "unique";
+
+/// Index key for one unique value: which collection and field it belongs to, and the value.
+///
+/// `\u{1f}` as the separator: a field name or a value may contain most characters, and this one
+/// cannot appear in a field name at all, so two different pairs cannot build the same key.
+pub(crate) fn unique_key(
+    collection_name: &str,
+    unique: &sl_cms_core::repositories::collection_repository::UniqueValue,
+) -> String {
+    format!(
+        "unique:{}\u{1f}{}\u{1f}{}",
+        collection_name, unique.field, unique.value
+    )
+}
+
 /// The side stores (metadata, draft) key an item as `collection:<name>:<id>`, so
 /// everything belonging to one collection can be scanned and purged by prefix.
 fn collection_prefix(collection_name: &str) -> String {

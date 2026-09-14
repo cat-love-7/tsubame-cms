@@ -6,7 +6,8 @@ use chrono::Utc;
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
-use crate::models::schema::{validate_composite_references, validate_schema, CompositeFieldId};
+use crate::models::schema::{
+    SchemaScope,validate_composite_references, validate_schema, CompositeFieldId};
 use crate::models::single_page::{SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -48,7 +49,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         name: &SinglePageName,
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
         if self
             .single_page_repository
@@ -87,7 +88,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         name: &SinglePageName,
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
-        validate_schema(schema).map_err(|e| HttpError::BadRequest(&e))?;
+        validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
         if self
             .single_page_repository
@@ -648,6 +649,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "count".to_string(),
@@ -655,6 +657,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
         ]
     }
@@ -703,6 +706,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
 
@@ -725,6 +729,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_single_page_schema(&"test_page".into(), &initial_schema).await.unwrap();
@@ -736,6 +741,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.update_single_page_schema(&"test_page".into(), &updated_schema).await;
@@ -755,6 +761,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
@@ -766,6 +773,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         let result = service.add_single_page_schema(&"test_page".into(), &duplicate_schema).await;
@@ -786,6 +794,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
@@ -806,6 +815,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             }
         ];
         service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
@@ -830,6 +840,7 @@ mod tests {
                     required: true,
                     width: 12,
                     height: 1,
+                    unique: false,
                 }
             ],
         ).await;

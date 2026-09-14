@@ -12,7 +12,9 @@ use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 use crate::settings::AwsSettings;
 use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use sl_cms_core::models::item_status::ItemMetadata;
-use sl_cms_core::repositories::collection_repository::CollectionRepository;
+use sl_cms_core::repositories::collection_repository::{
+    CollectionRepository, Reservation, UniqueValue,
+};
 use sl_cms_core::repositories::image_repository::BoxError;
 
 mod composite_fields;
@@ -368,6 +370,11 @@ pub mod key {
     pub fn collection(name: &CollectionName) -> String {
         format!("collection#{}", name.as_str())
     }
+    /// Where the unique values of one field live: the value is the sort key, so claiming one is
+    /// a point read and a conditional write, and no scan is involved.
+    pub fn unique(collection_name: &str, field: &str) -> String {
+        format!("unique#{collection_name}#{field}")
+    }
     pub fn item(id: u64) -> String {
         format!("item#{}", padded(id))
     }
@@ -694,6 +701,83 @@ impl CollectionRepository for AwsRepository {
             }
         }
         Ok((window, total))
+    }
+
+    async fn reserve_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
+    ) -> Result<Reservation, BoxError> {
+        let inner = self.inner.clone();
+        let collection = collection_name.clone();
+        let unique = unique.clone();
+        let id = item_id.clone();
+        let partition = key::unique(collection.as_str(), &unique.field);
+        let answer = inner
+            .client
+            .put_item()
+            .table_name(&inner.table)
+            .item("pk", AttributeValue::S(partition.clone()))
+            .item("sk", AttributeValue::S(unique.value.clone()))
+            .item("data", AttributeValue::S(id.to_string()))
+            // Absent, or already ours: a save that keeps its own value is not a conflict.
+            .condition_expression("attribute_not_exists(pk) OR #data = :id")
+            .expression_attribute_names("#data", "data")
+            .expression_attribute_values(":id", AttributeValue::S(id.to_string()))
+            .send()
+            .await;
+        match answer {
+            Ok(_) => Ok(Reservation::Held),
+            Err(e)
+                if e.as_service_error().and_then(|e| e.code())
+                    == Some("ConditionalCheckFailedException") =>
+            {
+                // Say who holds it, so the refusal can name the item rather than only the value.
+                match read(&inner, &partition, &unique.value).await? {
+                    Some(owner) => Ok(Reservation::Taken {
+                        owner: CollectionItemId::from_u64(owner.parse()?),
+                    }),
+                    // Released between the two calls; the caller may retry.
+                    None => Ok(Reservation::Held),
+                }
+            }
+            Err(e) => Err(format!("dynamodb put_item failed: {}", describe(&e)).into()),
+        }
+    }
+
+    async fn release_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        unique: &UniqueValue,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let partition = key::unique(collection_name.as_str(), &unique.field);
+        // Only while it is still ours: the value may have been claimed by another item since
+        // this one stopped holding it, and deleting that claim would hand it to a third.
+        let answer = inner
+            .client
+            .delete_item()
+            .table_name(&inner.table)
+            .key("pk", AttributeValue::S(partition))
+            .key("sk", AttributeValue::S(unique.value.clone()))
+            .condition_expression("#data = :id")
+            .expression_attribute_names("#data", "data")
+            .expression_attribute_values(":id", AttributeValue::S(item_id.to_string()))
+            .send()
+            .await;
+        match answer {
+            Ok(_) => Ok(()),
+            // Not ours any more, or already gone: nothing to release.
+            Err(e)
+                if e.as_service_error().and_then(|e| e.code())
+                    == Some("ConditionalCheckFailedException") =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(format!("dynamodb delete_item failed: {}", describe(&e)).into()),
+        }
     }
 
     async fn apply_item_status(

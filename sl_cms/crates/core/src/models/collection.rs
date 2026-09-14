@@ -26,6 +26,7 @@ mod tests {
                 required: true,
                 width: 12,
                 height: 1,
+                unique: false,
             },
             FieldSchema {
                 name: "tags".to_string(),
@@ -37,6 +38,7 @@ mod tests {
                 required: false,
                 width: 12,
                 height: 1,
+                unique: false,
             },
         ]
     }

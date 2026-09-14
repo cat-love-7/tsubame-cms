@@ -24,6 +24,7 @@
 | アイテム(公開コピー) | `collection#<name>` | `item#<id:020>` | 配信 API が見る唯一のコピー |
 | アイテム(作業コピー) | `collection#<name>` | `draft#<id:020>` | |
 | アイテムメタデータ | `collection#<name>` | `meta#<id:020>` | status / published_at / last_published_at / created_at / updated_at / published_by |
+| 一意な値の予約 | `unique#<collection>#<field>` | `<value>` | その値を握っているアイテム id(条件付き put で確保、`attribute_not_exists(pk) OR data = :id`) |
 | コレクションの ID カウンタ | `collection#<name>` | `counter` | `UpdateItem ADD` で原子的に採番 |
 | コレクション名一覧 | `collections` | `<name>` | 名前だけの小さなアイテム |
 | 単一ページスキーマ | `page#<name>` | `schema` | |
