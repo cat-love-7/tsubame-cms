@@ -41,8 +41,19 @@ pub enum ItemStatus {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct ItemMetadata {
     pub status: ItemStatus,
-    /// When it was last published; cleared when it is unpublished.
+    /// When it was **first** published.
+    ///
+    /// The publication date belongs to the item, so publishing again does not move it and
+    /// unpublishing does not erase it. When the live copy last went out is
+    /// [`ItemMetadata::last_published_at`], and when the content last changed is `updated_at`.
     pub published_at: Option<DateTime<Utc>>,
+    /// When it was last published; cleared when it is unpublished.
+    ///
+    /// This is the one a build should compare: the published copy only changes when an item is
+    /// published, so it answers "could what you built be out of date?" without the unpublished
+    /// edits that `updated_at` also tracks.
+    #[serde(default)]
+    pub last_published_at: Option<DateTime<Utc>>,
     /// When the values were first saved.
     ///
     /// Optional because content that predates this field has no record of it, and because
@@ -50,11 +61,10 @@ pub struct ItemMetadata {
     /// lets a metadata record written before timestamps existed still be read.
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
-    /// When the values were last saved.
+    /// When the content last changed: a save, or a publish that released a working copy.
     ///
-    /// Tracks **content edits only**: publishing does not change it (that is what
-    /// `published_at` is for), so a build can tell whether the content itself moved on
-    /// since the last one.
+    /// Publishing an item with nothing waiting does not change it, so a build can still tell an
+    /// edit from a publish that had nothing to release.
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
     /// Who published it last; cleared when it is unpublished, like `published_at`.
@@ -68,19 +78,31 @@ pub struct ItemMetadata {
 impl ItemMetadata {
     /// Change the published state, leaving the content timestamps alone.
     ///
-    /// Publishing is not an edit, and it must not erase when the content was written: a
-    /// record that was never published has no timestamps to lose, but an existing one
-    /// does. The publisher is only meaningful while the item is published, so
-    /// unpublishing forgets it just as it forgets `published_at`.
+    /// The first publication date is kept: publishing again records nothing new there (see
+    /// [`ItemMetadata::released`] for the release time). The publisher is who put the version
+    /// that is live on the site, so unpublishing forgets it - unlike the publication date,
+    /// which stays a fact about the item.
     pub fn with_status(&self, status: ItemStatus, actor: Option<PublishedBy>) -> Self {
-        let (published_at, published_by) = match status {
+        let (last_published_at, published_by) = match status {
             ItemStatus::Published => (Some(Utc::now()), actor),
             ItemStatus::Draft => (None, None),
         };
         ItemMetadata {
             status,
-            published_at,
+            published_at: self.published_at.or(last_published_at),
+            last_published_at,
             published_by,
+            ..self.clone()
+        }
+    }
+
+    /// Record that a publish released a working copy: the content the site serves just changed.
+    ///
+    /// Separate from [`ItemMetadata::with_status`] because only a release moves the content
+    /// clock; publishing when nothing was waiting changes nothing but the publisher.
+    pub fn released(&self, now: DateTime<Utc>) -> Self {
+        ItemMetadata {
+            updated_at: Some(now),
             ..self.clone()
         }
     }
@@ -117,18 +139,29 @@ mod tests {
     }
 
     #[test]
-    fn publishing_records_when_and_unpublishing_forgets_it() {
+    fn publishing_records_when_and_unpublishing_keeps_the_date() {
         let published = ItemMetadata::default().with_status(ItemStatus::Published, None);
         assert!(published.is_published());
-        assert!(published.published_at.is_some());
+        let first_date = published.published_at.expect("記録されている");
+        assert_eq!(published.last_published_at, Some(first_date));
 
         let unpublished = published.with_status(ItemStatus::Draft, None);
         assert!(!unpublished.is_published());
-        assert!(unpublished.published_at.is_none());
+        // Taking the item down does not change when it was published...
+        assert_eq!(unpublished.published_at, Some(first_date));
+        // ...but it is no longer out on the site, so nothing was "last published".
+        assert!(unpublished.last_published_at.is_none());
+
+        // Publishing it again keeps the original date rather than resetting it, and records the
+        // moment this copy went out.
+        let again = unpublished.with_status(ItemStatus::Published, None);
+        assert_eq!(again.published_at, Some(first_date));
+        assert!(again.last_published_at.is_some_and(|at| at >= first_date));
     }
 
     /// The audit trail: the publisher is stored with the item, and unpublishing - which
-    /// takes the item off the site - forgets it along with the publication time.
+    /// takes the item off the site - forgets who put it there (unlike the publication date,
+    /// which stays).
     #[test]
     fn publishing_records_who_did_it_and_unpublishing_forgets_that_too() {
         let admin = User::new(
@@ -166,12 +199,44 @@ mod tests {
 
         assert!(published.is_published());
         assert_eq!(published.created_at, Some(written));
-        assert_eq!(published.updated_at, Some(written));
+        assert_eq!(published.updated_at, Some(written), "publishing is not an edit");
 
         let draft = published.with_status(ItemStatus::Draft, None);
-        assert!(draft.published_at.is_none());
         assert_eq!(draft.created_at, Some(written));
         assert_eq!(draft.updated_at, Some(written));
+        // The publication date stays: the item was published, and taking it down does not
+        // change when that was.
+        assert_eq!(draft.published_at, published.published_at);
+    }
+
+    /// The publication date is the *first* one; later releases are content changes.
+    #[test]
+    fn publishing_again_keeps_the_first_publication_date() {
+        let first = Utc::now();
+        let published = ItemMetadata::default()
+            .with_status(ItemStatus::Published, None)
+            .released(first);
+
+        let later = first + chrono::Duration::days(30);
+        let again = published.released(later).with_status(ItemStatus::Published, None);
+
+        assert_eq!(again.published_at, published.published_at);
+        assert_eq!(again.updated_at, Some(later), "the release is a content change");
+        assert_eq!(again.created_at, published.created_at);
+        assert!(
+            again.last_published_at.is_some_and(|at| at > first),
+            "the release time moves, unlike the publication date"
+        );
+    }
+
+    /// Publishing with nothing waiting only records who did it.
+    #[test]
+    fn publishing_without_a_release_does_not_move_the_content_clock() {
+        let published = ItemMetadata::default().with_status(ItemStatus::Published, None);
+        let unchanged = published.with_status(ItemStatus::Published, None);
+
+        assert_eq!(unchanged.updated_at, published.updated_at);
+        assert_eq!(unchanged.published_at, published.published_at);
     }
 
     #[test]

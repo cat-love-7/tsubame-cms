@@ -647,6 +647,7 @@ try {
   );
   check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
 
+  const beforeRelease = await api('GET', `/content/collections/${COLLECTION}/items/1`);
   await releaseInList.click();
   await page
     .waitForFunction(
@@ -660,6 +661,17 @@ try {
     '一覧から変更を公開できる',
     releasedCopy.values.title === previewWording,
     `${releasedCopy.values.title}`,
+  );
+  // 公開日は初回のまま。公開物が変わった時刻だけが進む(差分ビルドが見るのはこちら)。
+  check(
+    '再公開しても公開日は初回のまま',
+    releasedCopy.published_at === beforeRelease.published_at,
+    `${beforeRelease.published_at} → ${releasedCopy.published_at}`,
+  );
+  check(
+    '公開物が変わった時刻は進む',
+    Date.parse(releasedCopy.last_published_at) > Date.parse(beforeRelease.last_published_at),
+    `${beforeRelease.last_published_at} → ${releasedCopy.last_published_at}`,
   );
   check(
     '公開したまま変更が反映される（配信は止まらない）',

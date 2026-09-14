@@ -35,7 +35,12 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
   `published_at` というフィールドがあっても衝突しない。
 - コレクション / 単一ページ / アイテムを削除すると、作業コピーとメタデータも一緒に消える。
 - 未公開の内容への `/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
-- `published_at` は publish 時に記録し、unpublish すると `null` に戻る(公開日時は保持しない)。
+- `published_at` は**最初に公開した日時**。再公開では動かさず、unpublish しても保持する
+  (「この記事を公開した日」は現在の状態ではなくアイテムの事実のため)。**更新を公開した日時**は
+  `updated_at` が持つ。
+- `created_at` は最初に保存した日時、`updated_at` は**内容が最後に変わった日時**(保存、または
+  変更を公開したとき)。何も待っていない状態での publish はどちらも動かさない
+  (`published_by` だけが更新される)。
 - 管理 API のメタデータは `has_draft` を返す。公開済み + `has_draft: true` が
   「公開中だが、未公開の変更がある」状態で、管理画面はこれを「変更あり」と表示する。
 - **公開中のアイテムにもう一度 `publish` してよい。** それが保留中の変更を反映する操作で、
@@ -51,9 +56,9 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 |---|---|---|
 | GET | `/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
 | GET | `/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
-| GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "values": {...} }` |
+| GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
 | GET | `/content/single-pages` | 公開済み単一ページ名の配列 |
-| GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "values": {...} }` |
+| GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
 
 ### 管理(要トークン。`publish` / `unpublish` は編集権限が必要)
 
@@ -169,16 +174,20 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 | フィールド | 出る場所 | 意味 |
 |---|---|---|
 | `created_at` | 管理 API | 値が最初に保存された時刻 |
-| `updated_at` | 管理 API | **作業コピー**が最後に保存された時刻 |
-| `published_at` | 両方 | 最後に公開された時刻(unpublish で `null` に戻る) |
+| `updated_at` | 管理 API | **内容が最後に変わった**時刻(保存、または変更を公開したとき) |
+| `published_at` | 両方 | **最初に公開した**時刻(unpublish しても保持) |
+| `last_published_at` | 両方 | **最後に公開した**時刻(unpublish で `null` に戻る) |
 | `published_by` | 管理 API | 最後に公開した**アカウント**(`{ id, username }`)。unpublish で `null` に戻る |
 
 公開 API に `updated_at` は**出しません**。2 コピーでは「編集した時刻」と「公開物が変わった
 時刻」が別で、未公開の編集を `lastmod` として見せてしまうためです。公開物の最終更新は
 `published_at` を使ってください(公開コピーが変わるのは publish のときだけ)。
 
-- **`updated_at` は「作業コピーが変わった時刻」**。publish / unpublish では動かない。
-- サイトの差分ビルドに使うのは **`published_at`**(公開物が変わった時刻)。
+- **`updated_at` は「内容が最後に変わった時刻」**。保存で進み、**変更を公開したとき**にも進む
+  (何も待っていない状態での publish では動かない)。未公開の編集でも進むので、公開 API には
+  出しません。
+- サイトの差分ビルドに使うのは **`last_published_at`**(公開物が変わった時刻)。`published_at` は
+  初回公開日なので、再公開では動きません(記事の公開日として表示する用)。
 - 値を保存すると `updated_at` だけが進み、`created_at` と公開状態は変わらない
   (公開済みのアイテムを編集しても draft に戻らない)。
 - この機能より前に保存された内容は `created_at` / `updated_at` が `null` になる(移行不要)。

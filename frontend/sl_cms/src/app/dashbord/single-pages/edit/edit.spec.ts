@@ -18,6 +18,7 @@ class StubSinglePagesService {
   public metadata: ItemMetadata = {
     status: 'draft',
     published_at: null,
+    last_published_at: null,
     published_by: null,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -38,12 +39,14 @@ class StubSinglePagesService {
 
   publishPage(name: string): Observable<ItemMetadata> {
     this.published.push(name);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     this.unpublished.push(name);
-    return of({ status: 'draft', published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({ status: 'draft', published_at: null,
+    last_published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 }
 
@@ -152,6 +155,7 @@ describe('Edit', () => {
     stub.metadata = {
       status: 'published',
       published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z',
       published_by: { id: 'u1', username: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
@@ -175,6 +179,7 @@ describe('Edit', () => {
     stub.metadata = {
       status: 'published',
       published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z',
       published_by: { id: 'u1', username: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-02T00:00:00Z',

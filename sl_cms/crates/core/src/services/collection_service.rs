@@ -257,7 +257,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ///
     /// `created` distinguishes the first save from a later one: a new item starts as a
     /// draft with both timestamps, while an edit only moves `updated_at` and leaves the
-    /// status and `published_at` exactly as they were.
+    /// status and the published dates exactly as they were.
     async fn stamp_item(
         &self,
         collection_name: &CollectionName,
@@ -557,8 +557,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         actor: PublishedBy,
     ) -> Result<ItemMetadata, HttpError> {
         self.require_item(collection_name, &item_id).await?;
-        // Built from the stored record so publishing keeps the content timestamps.
-        let metadata = self
+        // Built from the stored record so publishing keeps the first publication date and the
+        // content timestamps.
+        let mut metadata = self
             .collection_repository
             .get_item_metadata(collection_name, &item_id)
             .await.map_err(map_internal_error)?
@@ -566,8 +567,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .with_status(status, Some(actor));
 
         // Publishing *is* the copy: whatever the editor has been working on replaces the
-        // published item and stops being a separate draft. With nothing pending, publishing
-        // only refreshes the timestamp.
+        // published item and stops being a separate draft. With nothing pending, publishing only
+        // records who did it.
         //
         // Read first, then hand the whole change over in one call: the storage adapter applies
         // the copy, the removal and the status as one step, so no reader catches the item
@@ -579,6 +580,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         } else {
             None
         };
+        if pending.is_some() {
+            // The content the site serves just changed, so the release moves `updated_at`.
+            metadata = metadata.released(chrono::Utc::now());
+        }
         self.collection_repository
             .apply_item_status(collection_name, &item_id, pending.as_ref(), &metadata)
             .await.map_err(map_internal_error)?;

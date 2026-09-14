@@ -24,15 +24,24 @@ export interface PublishedBy {
  */
 export interface ItemMetadata {
   status: ItemStatus;
-  /** When it was last published; `null` while it is a draft. */
+  /**
+   * When the item was **first** published, kept even while it is a draft.
+   *
+   * The publication date belongs to the item; a later release does not move it (that is what
+   * `last_published_at` records).
+   */
   published_at: string | null;
-  /** Who published it last; `null` while it is a draft, like `published_at`. */
+  /** When the live copy last went out; `null` while it is a draft. */
+  last_published_at: string | null;
+  /** Who published the version that is live; `null` while it is a draft. */
   published_by: PublishedBy | null;
   /** When the values were first saved; `null` for content saved before this was recorded. */
   created_at: string | null;
   /**
-   * When the values were last saved. Publishing does not change it, so it answers "did the
-   * content itself change?" rather than "was it released?".
+   * When the content last changed: a save, or a publish that released a working copy.
+   *
+   * Publishing with nothing waiting does not move it, so it still answers "did the content
+   * change?" rather than "was the button pressed?".
    */
   updated_at: string | null;
   /**

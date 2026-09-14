@@ -1507,7 +1507,8 @@ async fn only_published_collection_items_reach_the_content_api() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    // Unpublishing removes it from the public API and forgets the timestamp.
+    // Unpublishing removes it from the public API. The publication date stays: the item was
+    // published, and that does not stop being true.
     let (status, body) = send(
         &app.router,
         Method::POST,
@@ -1518,7 +1519,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "draft");
-    assert_eq!(body["published_at"], Value::Null);
+    assert!(body["published_at"].is_string());
 
     let (status, _) = send(
         &app.router,
@@ -1980,7 +1981,9 @@ async fn publishing_notifies_the_configured_webhook() {
     );
     let body: Value = serde_json::from_slice(&deliveries[1].body).unwrap();
     assert_eq!(body["status"], "draft");
-    assert_eq!(body["published_at"], Value::Null);
+    // The publication date stays part of the record; the publisher does not.
+    assert!(body["published_at"].is_string());
+    assert!(body["published_by"].is_null());
 }
 
 // ------------------------------------------------------------------- preview links
@@ -2685,8 +2688,8 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
         "the publisher must not reach the public API: {body}"
     );
 
-    // Unpublishing takes the item off the site, so it forgets the publisher along with
-    // the publication time.
+    // Unpublishing takes the item off the site, so it forgets who put it there. The
+    // publication date stays: it is a fact about the item, not about the current state.
     let (status, body) = send(
         &app.router,
         Method::POST,
@@ -2697,7 +2700,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["published_by"].is_null());
-    assert!(body["published_at"].is_null());
+    assert!(body["published_at"].is_string());
 }
 
 #[tokio::test]
@@ -3012,8 +3015,13 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+/// The content clock and the publication date answer different questions.
+///
+/// `updated_at` is when the content last changed - a save, or a publish that released a working
+/// copy - and `published_at` is when the item was first published, which later releases do not
+/// move.
 #[tokio::test]
-async fn saving_records_when_content_changed_but_publishing_does_not() {
+async fn saving_records_when_content_changed_and_releasing_does_too() {
     let app = test_app().await;
     let token = app.admin_token.clone();
     let item_id = create_sample_item(&app, "blog").await;
@@ -3028,7 +3036,9 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
         "a new item is created and updated at the same moment"
     );
 
-    // Publishing changes the status, not the content.
+    // The first publish releases the working copy a new item is written to, so the content the
+    // site serves changes with it.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     let (status, _) = send(
         &app.router,
         Method::POST,
@@ -3039,10 +3049,15 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let (_, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert!(
+        timestamp(&body["updated_at"]) > updated_at,
+        "releasing the first version changes the content"
+    );
+    let first_published = timestamp(&body["published_at"]);
+    let first_release = timestamp(&body["last_published_at"]);
     assert_eq!(
-        timestamp(&body["updated_at"]),
-        updated_at,
-        "publishing is not an edit"
+        first_release, first_published,
+        "the first release is also the first publication"
     );
 
     // An edit moves `updated_at`, keeps `created_at`, and does not unpublish.
@@ -3069,7 +3084,16 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
         "created_at must not move"
     );
     assert_eq!(body["status"], "published");
-    assert!(body["published_at"].is_string());
+    assert_eq!(
+        timestamp(&body["published_at"]),
+        first_published,
+        "an edit does not move the publication date"
+    );
+    assert_eq!(
+        timestamp(&body["last_published_at"]),
+        first_release,
+        "and it does not move the release time either"
+    );
 
     // The edit is waiting in the working copy: the live site keeps serving what was
     // published until the item is published again.
@@ -3104,7 +3128,86 @@ async fn saving_records_when_content_changed_but_publishing_does_not() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Edited");
-    assert!(body["published_at"].is_string());
+    assert_eq!(
+        timestamp(&body["published_at"]),
+        first_published,
+        "the publication date is the first one"
+    );
+
+    // Releasing the edit moved the content clock and the release time, not the publication date.
+    let (_, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    let released_at = timestamp(&body["updated_at"]);
+    assert!(
+        released_at > updated_at,
+        "releasing an edit changes the content"
+    );
+    assert!(
+        timestamp(&body["last_published_at"]) > first_release,
+        "and it is a release"
+    );
+    assert_eq!(timestamp(&body["published_at"]), first_published);
+
+    // ...while publishing again with nothing waiting moves neither.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{item_id}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(
+        timestamp(&body["updated_at"]),
+        released_at,
+        "publishing with nothing to release is not a change"
+    );
+    assert_eq!(timestamp(&body["published_at"]), first_published);
+}
+
+/// The delivery API carries both dates: the publication date a site shows, and the release time
+/// an incremental build compares.
+#[tokio::test]
+async fn the_delivery_api_reports_the_publication_date_and_the_release_time() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let item_id = create_sample_item(&app, "blog").await;
+    let item_url = format!("/models/collections/blog/items/{item_id}");
+    let content_url = format!("/content/collections/blog/items/{item_id}");
+
+    let (status, body) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let first_date = timestamp(&body["published_at"]);
+
+    let (_, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(timestamp(&body["published_at"]), first_date);
+    let first_release = timestamp(&body["last_published_at"]);
+    assert_eq!(first_release, first_date);
+
+    // A release moves the last-published time, and the publication date is still the first one.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Second", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Second");
+    assert_eq!(timestamp(&body["published_at"]), first_date, "公開日は初回のまま");
+    assert!(
+        timestamp(&body["last_published_at"]) > first_release,
+        "公開物が変わった時刻は進む"
+    );
 }
 
 #[tokio::test]

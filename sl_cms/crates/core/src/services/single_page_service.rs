@@ -305,8 +305,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         actor: PublishedBy,
     ) -> Result<ItemMetadata, HttpError> {
         self.get_single_page_schema(name).await?;
-        // Built from the stored record so publishing keeps the content timestamps.
-        let metadata = self
+        // Built from the stored record so publishing keeps the first publication date and the
+        // content timestamps.
+        let mut metadata = self
             .single_page_repository
             .get_page_metadata(name)
             .await.map_err(map_internal_error)?
@@ -322,6 +323,10 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         } else {
             None
         };
+        if pending.is_some() {
+            // The content the site serves just changed, so the release moves `updated_at`.
+            metadata = metadata.released(chrono::Utc::now());
+        }
         self.single_page_repository
             .apply_page_status(name, pending.as_ref(), &metadata)
             .await.map_err(map_internal_error)?;

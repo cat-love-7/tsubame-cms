@@ -23,7 +23,7 @@
 | コレクションスキーマ | `collection#<name>` | `schema` | 存在確認も兼ねる |
 | アイテム(公開コピー) | `collection#<name>` | `item#<id:020>` | 配信 API が見る唯一のコピー |
 | アイテム(作業コピー) | `collection#<name>` | `draft#<id:020>` | |
-| アイテムメタデータ | `collection#<name>` | `meta#<id:020>` | status / published_at / created_at / updated_at / published_by |
+| アイテムメタデータ | `collection#<name>` | `meta#<id:020>` | status / published_at / last_published_at / created_at / updated_at / published_by |
 | コレクションの ID カウンタ | `collection#<name>` | `counter` | `UpdateItem ADD` で原子的に採番 |
 | コレクション名一覧 | `collections` | `<name>` | 名前だけの小さなアイテム |
 | 単一ページスキーマ | `page#<name>` | `schema` | |
