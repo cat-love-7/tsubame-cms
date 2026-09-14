@@ -42,6 +42,8 @@ const IMAGE_COLLECTION = process.env.IMAGE_COLLECTION ?? 'e2e_images';
 const COMPOSITE_COLLECTION = process.env.COMPOSITE_COLLECTION ?? 'e2e_composite';
 /** The collection this run builds through the schema editor, then uses as content. */
 const SCHEMA_COLLECTION = process.env.SCHEMA_COLLECTION ?? 'e2e_schema_editor';
+/** The composite definition its array field holds. */
+const SCHEMA_BLOCK = process.env.SCHEMA_BLOCK ?? 'e2e_block';
 const COMPOSITE_ID = process.env.COMPOSITE_ID ?? 'e2e_gallery_block';
 
 /** A 1x1 PNG: enough for the upload path to be exercised for real. */
@@ -159,6 +161,16 @@ async function seedComposite(token) {
 
 async function seed() {
   const login = await api('POST', '/auth/login', { username: USERNAME, password: PASSWORD });
+  // A composite the schema editor's array field can hold. Nothing references it yet, so it can
+  // be replaced; `e2e_schema_editor` is deleted before it is used again.
+  await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, login.token);
+  await deleteIfPresent(`/models/composite_fields/${SCHEMA_BLOCK}`, login.token);
+  await api(
+    'POST',
+    `/models/composite_fields/${SCHEMA_BLOCK}`,
+    [{ name: 'line', field_type: { Text: {} }, required: false, width: 12, height: 1 }],
+    login.token,
+  );
   await seedComposite(login.token);
   await seedCollection(COLLECTION, TOTAL, login.token);
   await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
@@ -878,6 +890,23 @@ try {
   await enumField.locator('mat-chip-row').first().locator('button[matChipRemove]').click();
   check('Enum の値を画面から削除できる', await enumHasChips(1));
 
+  // A third field: an array whose items are composites. The definitions are chosen in their
+  // own control; the declared order is what the elements are read back against.
+  await page.click('button:has-text("Add field")');
+  const arrayField = page.locator('.schema-field').nth(2);
+  await arrayField.locator('input[name=fieldName]').fill('blocks');
+  await arrayField.locator('mat-select[name=fieldType]').click();
+  await page.locator('mat-option', { hasText: 'Array' }).click();
+  await arrayField.locator('mat-select[name=arrayCompositeTypes]').click();
+  await page.locator('mat-option', { hasText: SCHEMA_BLOCK }).click();
+  await page.keyboard.press('Escape');
+  check(
+    '複合を配列の要素型として選べる',
+    (await arrayField.locator('mat-select[name=arrayCompositeTypes]').textContent())?.includes(
+      SCHEMA_BLOCK,
+    ) ?? false,
+  );
+
   // Half of the 12-column grid, from the presets rather than the number input.
   await textField.locator('.width-presets button', { hasText: '1/2' }).click();
 
@@ -886,11 +915,13 @@ try {
   const builtSchema = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/schema`, undefined, token);
   const builtText = builtSchema.find((field) => field.name === 'title');
   const builtEnum = builtSchema.find((field) => field.name === 'state');
+  const builtArray = builtSchema.find((field) => field.name === 'blocks');
   check(
     '画面で組んだスキーマが保存される',
     builtText?.width === 6 &&
       builtText?.field_type?.Text !== undefined &&
-      builtEnum?.field_type?.TextEnum?.join() === 'published',
+      builtEnum?.field_type?.TextEnum?.join() === 'published' &&
+      builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK,
     JSON.stringify(builtSchema),
   );
 
@@ -900,7 +931,7 @@ try {
     (await page.locator('table td', { hasText: SCHEMA_COLLECTION }).count()) === 1,
   );
 
-  // The field the author defined is usable straight away: content, not just a definition.
+  // The fields the author defined are usable straight away: content, not just a definition.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/create`, { waitUntil: 'networkidle' });
   const titleInput = page.locator('app-value-field input').first();
   await titleInput.waitFor({ timeout: 15000 });
@@ -909,6 +940,36 @@ try {
   await page.locator('mat-option', { hasText: 'published' }).click();
   // A multiple select keeps its panel open; the Save button is behind it until it closes.
   await page.keyboard.press('Escape');
+
+  // The composite array is edited element by element, each by the definition it holds.
+  await page.click('button:has-text("Add element")');
+  await page.click('button:has-text("Add element")');
+  const elements = page.locator('.composite-element');
+  await elements.nth(0).locator('input').first().fill('first block');
+  await elements.nth(1).locator('input').first().fill('second block');
+  check('複合配列の要素が 2 つ出る', (await elements.count()) === 2, `${await elements.count()} 件`);
+  const typedFirst = await elements.nth(0).locator('input').first().inputValue();
+  const typedSecond = await elements.nth(1).locator('input').first().inputValue();
+  check(
+    '複合配列の要素に入力できる',
+    typedFirst === 'first block' && typedSecond === 'second block',
+    `${typedFirst} / ${typedSecond}`,
+  );
+
+  // Order is what the array means, so it can be changed from the element header.
+  await elements.nth(1).locator('button[aria-label="move element 1 earlier"]').click();
+  // The view follows a moment after the click (no zone to flush it synchronously), so wait for
+  // the value to move rather than reading it once.
+  const reordered = await page
+    .waitForFunction(
+      () => document.querySelectorAll('.composite-element input')[0]?.value === 'second block',
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('複合配列の要素を並べ替えられる', reordered);
+
   await page.click('button:has-text("Save")');
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
@@ -923,6 +984,25 @@ try {
     'Enum フィールドをコンテンツで選べる',
     JSON.stringify(builtItem?.state) === '["published"]',
     JSON.stringify(builtItem?.state),
+  );
+  check(
+    '複合配列が要素ごとに保存される',
+    JSON.stringify(builtItem?.blocks) ===
+      JSON.stringify([
+        { id: SCHEMA_BLOCK, values: { line: 'second block' } },
+        { id: SCHEMA_BLOCK, values: { line: 'first block' } },
+      ]),
+    JSON.stringify(builtItem?.blocks),
+  );
+
+  // Opening it again shows what was stored: the round trip through the form, not just the API.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('.composite-element').first().waitFor({ timeout: 15000 });
+  check(
+    '保存した複合配列がフォームに出る',
+    (await page.locator('.composite-element').nth(0).locator('input').first().inputValue()) ===
+      'second block',
+    await page.locator('.composite-element').nth(0).locator('input').first().inputValue(),
   );
 
   // Through the API rather than the screen: this collection exists only for this scenario.
