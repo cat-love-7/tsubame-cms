@@ -103,7 +103,8 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         if !is_plausible_username(&username) {
             return Err(HttpError::BadRequest(
                 "a username of up to 128 letters, digits or + = , . @ _ - is required",
-            ));
+            )
+            .with_code("invalid_username"));
         }
         let email = request
             .email
@@ -125,7 +126,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             .map_err(internal)?
             .is_some()
         {
-            return Err(HttpError::Conflict("a user with that username already exists"));
+            return Err(HttpError::Conflict("a user with that username already exists").with_code("username_taken"));
         }
 
         if let Some(provisioner) = &self.provisioner {
@@ -162,17 +163,18 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
                     .get_user_from_id(&user_id)
                     .await
                     .map_err(internal)?
-                    .ok_or_else(|| HttpError::Unauthorized("invalid or expired token"))?;
+                    .ok_or_else(|| HttpError::Unauthorized("invalid or expired token").with_code("invalid_token"))?;
 
                 // A password change ends every session that was issued before it. The check is
                 // against the stored account, so it holds however long the token has left.
                 if token_version != user.token_version {
-                    return Err(HttpError::Unauthorized(
-                        "this session ended when the password changed",
-                    ));
+                    return Err(
+                        HttpError::Unauthorized("this session ended when the password changed")
+                            .with_code("session_ended"),
+                    );
                 }
                 if !user.is_active {
-                    return Err(HttpError::Forbidden("account is disabled"));
+                    return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
                 }
                 Ok(user)
             }
@@ -208,7 +210,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             .map_err(internal)?
         {
             if !user.is_active {
-                return Err(HttpError::Forbidden("account is disabled"));
+                return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
             }
             return Ok(user);
         }
@@ -223,7 +225,8 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             return Err(HttpError::Forbidden(
                 "this account has not been given access to the CMS; an administrator has to \
                  create it first",
-            ));
+            )
+            .with_code("not_provisioned"));
         }
 
         let mut user = User::new(&username, true, Permission::admin());
@@ -309,7 +312,8 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         if others == 0 {
             return Err(HttpError::Conflict(
                 "the last administrator cannot be demoted, disabled or deleted",
-            ));
+            )
+            .with_code("last_administrator"));
         }
         Ok(())
     }
@@ -349,7 +353,7 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
 
         let Some(mut user) = user else {
             self.throttle.record_failure(&username, Instant::now());
-            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS).with_code("invalid_credentials"));
         };
 
         if !self
@@ -359,10 +363,10 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .map_err(internal)?
         {
             self.throttle.record_failure(&username, Instant::now());
-            return Err(HttpError::Unauthorized(BAD_CREDENTIALS));
+            return Err(HttpError::Unauthorized(BAD_CREDENTIALS).with_code("invalid_credentials"));
         }
         if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled"));
+            return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
         }
         self.throttle.record_success(&username);
 
@@ -388,7 +392,7 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         let user = self.require_user(id).await?;
         // A disabled account cannot sign in, so a link for it would only mislead.
         if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled"));
+            return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
         }
         Ok(self.password_resets.issue(&user, chrono::Utc::now()))
     }
@@ -437,7 +441,7 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             return Err(HttpError::Forbidden(PasswordResetError::AlreadyUsed.message()));
         }
         if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled"));
+            return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
         }
         validate_password(new_password)?;
 
@@ -457,7 +461,8 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         if !is_plausible_username(&username) {
             return Err(HttpError::BadRequest(
                 "a username of up to 128 letters, digits or + = , . @ _ - is required",
-            ));
+            )
+            .with_code("invalid_username"));
         }
         // The address is optional; when it is given it has to look like one.
         let email = request
@@ -481,7 +486,7 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .map_err(internal)?
             .is_some()
         {
-            return Err(HttpError::Conflict("a user with that username already exists"));
+            return Err(HttpError::Conflict("a user with that username already exists").with_code("username_taken"));
         }
 
         let permission = if request.is_admin {
@@ -588,7 +593,8 @@ fn validate_password(password: &str) -> Result<(), HttpError> {
     if password.len() < MIN_PASSWORD_LENGTH {
         return Err(HttpError::BadRequest(&format!(
             "password must be at least {MIN_PASSWORD_LENGTH} characters"
-        )));
+        ))
+        .with_code("weak_password"));
     }
     Ok(())
 }
@@ -1204,12 +1210,12 @@ mod tests {
 
         // Unknown and not named in advance: refused, not created. A pool anyone in the
         // organisation can sign in to must not mean anyone can edit the site.
+        // Asserted by status and code rather than by the sentence: the wording is allowed to
+        // change, the code is what a client keys its own wording off.
+        let refused = stranger.user_from_token("token").await.unwrap_err();
         assert_eq!(
-            stranger.user_from_token("token").await.unwrap_err(),
-            HttpError::Forbidden(
-                "this account has not been given access to the CMS; an administrator has to \
-                 create it first"
-            )
+            (refused.status_code, refused.code),
+            (403, "not_provisioned")
         );
         assert!(repository.users.read().unwrap().is_empty());
 

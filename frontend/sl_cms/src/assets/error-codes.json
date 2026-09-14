@@ -1,4 +1,13 @@
 [
+  "invalid_credentials",
+  "invalid_token",
+  "session_ended",
+  "account_disabled",
+  "not_provisioned",
+  "invalid_username",
+  "weak_password",
+  "username_taken",
+  "last_administrator",
   "bad_request",
   "unauthorized",
   "forbidden",

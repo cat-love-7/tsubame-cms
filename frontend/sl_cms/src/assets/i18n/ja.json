@@ -93,6 +93,15 @@
     "minHeight": "最小の高さ(行)"
   },
   "errors": {
+    "invalid_credentials": "ID またはパスワードが違います。",
+    "invalid_token": "セッションが無効です。もう一度サインインしてください。",
+    "session_ended": "パスワード変更によりセッションが終了しました。もう一度サインインしてください。",
+    "account_disabled": "このアカウントは無効化されています。",
+    "not_provisioned": "このアカウントには CMS へのアクセスが許可されていません。",
+    "invalid_username": "ID は 128 文字までの英数字と + = , . @ _ - で指定してください。",
+    "weak_password": "パスワードが短すぎます。",
+    "username_taken": "その ID はすでに使われています。",
+    "last_administrator": "最後の管理者は降格・無効化・削除できません。",
     "bad_request": "リクエストが受け付けられませんでした。",
     "unauthorized": "続けるにはサインインしてください。",
     "forbidden": "その操作を行う権限がありません。",

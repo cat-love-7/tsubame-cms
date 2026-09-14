@@ -93,6 +93,15 @@
     "minHeight": "Min height (rows)"
   },
   "errors": {
+    "invalid_credentials": "That ID and password do not match.",
+    "invalid_token": "Your session is not valid. Sign in again.",
+    "session_ended": "This session ended when the password changed. Sign in again.",
+    "account_disabled": "This account has been disabled.",
+    "not_provisioned": "This account has not been given access to the CMS.",
+    "invalid_username": "An ID of up to 128 letters, digits or + = , . @ _ - is required.",
+    "weak_password": "The password is too short.",
+    "username_taken": "That ID is already taken.",
+    "last_administrator": "The last administrator cannot be demoted, disabled or deleted.",
     "bad_request": "The request was not accepted.",
     "unauthorized": "Sign in to continue.",
     "forbidden": "You do not have permission to do that.",

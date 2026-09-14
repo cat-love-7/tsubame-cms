@@ -8,6 +8,17 @@ use std::error::Error;
 /// keeps `frontend/sl_cms/src/assets/error-codes.json` equal to it, and a frontend test keeps
 /// its translations covering that file.
 pub const ERROR_CODES: &[&str] = &[
+    // What went wrong, where the status alone is too coarse to say anything useful to a user.
+    "invalid_credentials",
+    "invalid_token",
+    "session_ended",
+    "account_disabled",
+    "not_provisioned",
+    "invalid_username",
+    "weak_password",
+    "username_taken",
+    "last_administrator",
+    // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
     "forbidden",
