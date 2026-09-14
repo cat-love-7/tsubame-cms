@@ -210,6 +210,40 @@ describe('List', () => {
     expect(note.textContent).toContain('Unsaved changes');
   });
 
+  /** Pending changes on a published row can be released without taking it down first. */
+  it('releases the waiting changes of a published row', () => {
+    stub.metadata = { '1': metadata({ status: 'published', has_draft: true }) };
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    const release = fresh.nativeElement.querySelector(
+      'button[aria-label="publish the changes of item 1"]',
+    ) as HTMLButtonElement;
+    expect(release).toBeTruthy();
+    release.click();
+    fresh.detectChanges();
+
+    expect(stub.published).toEqual([1]);
+    expect(stub.unpublished).toEqual([]);
+    // The row still offers to take the item down.
+    expect(
+      fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]'),
+    ).toBeTruthy();
+  });
+
+  it('offers no release button when a published row has nothing waiting', () => {
+    stub.metadata = { '1': metadata({ status: 'published' }) };
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    expect(
+      fresh.nativeElement.querySelector('button[aria-label="publish the changes of item 1"]'),
+    ).toBeNull();
+    expect(
+      fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]'),
+    ).toBeTruthy();
+  });
+
   /** Content saved before the CMS recorded timestamps has nothing to show. */
   it('shows a dash when the update time is unknown', () => {
     const fresh = TestBed.createComponent(List);

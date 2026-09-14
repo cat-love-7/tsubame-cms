@@ -64,6 +64,8 @@ export class Edit {
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** A published item with an unpublished working copy: the site is behind the editor. */
+  public hasDraft = computed(() => this.metadata()?.has_draft ?? false);
   /** What this account may do *with this collection*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName));
   public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName));
@@ -110,16 +112,31 @@ export class Edit {
     });
   }
 
-  /** Publish or unpublish without saving the form (the two are independent acts). */
-  togglePublished() {
+  /**
+   * Publish, or release the changes waiting on a published item.
+   *
+   * The server treats publishing as the copy: it replaces the published item with the working
+   * copy. Doing it again on a published item is therefore exactly "make the site match the
+   * editor" - there is no need to take the item down first.
+   */
+  publish() {
+    this.setPublished(true);
+  }
+
+  /** Take the item off the site. Its working copy is kept. */
+  unpublish() {
+    this.setPublished(false);
+  }
+
+  private setPublished(published: boolean) {
     const id = this.itemId;
     if (id === null) {
       return;
     }
 
-    const request = this.published()
-      ? this.collectionsService.unpublishItem(this.collectionName, id)
-      : this.collectionsService.publishItem(this.collectionName, id);
+    const request = published
+      ? this.collectionsService.publishItem(this.collectionName, id)
+      : this.collectionsService.unpublishItem(this.collectionName, id);
 
     request.subscribe({
       next: (metadata) => {

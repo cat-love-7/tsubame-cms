@@ -10,9 +10,18 @@
       <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher.username }}</span>
     }
     @if (canPublish()) {
-      <button matButton (click)="togglePublished()">
-        {{ (published() ? 'content.unpublish' : 'content.publish') | transloco }}
-      </button>
+      <!-- A published page with pending changes needs both acts: release the changes, or take
+           the page off the site. -->
+      @if (published() && hasDraft()) {
+        <button matButton color="primary" (click)="publish()">
+          {{ 'content.publishChanges' | transloco }}
+        </button>
+        <button matButton (click)="unpublish()">{{ 'content.unpublish' | transloco }}</button>
+      } @else {
+        <button matButton (click)="published() ? unpublish() : publish()">
+          {{ (published() ? 'content.unpublish' : 'content.publish') | transloco }}
+        </button>
+      }
     }
     @if (canEdit()) {
       <button matButton (click)="sharePreview()">

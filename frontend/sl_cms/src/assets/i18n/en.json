@@ -147,7 +147,7 @@
     "publish": "Publish",
     "unsaved": "Unsaved changes",
     "unsavedHint": "Not on the site until you publish.",
-    "draftNotPublished": "The saved content is not published yet. It reaches the site when you press Publish.",
+    "draftNotPublished": "The saved content is not published yet. Press Publish changes to put it on the site.",
     "publishedBy": "Account that published this",
     "previewLink": "Preview link",
     "previewCopied": "The preview link was copied (valid until {{expires}}).",
@@ -209,7 +209,8 @@
     "element": "Element {{index}}",
     "addElement": "Add element",
     "elementType": "Element type",
-    "noElements": "No elements yet."
+    "noElements": "No elements yet.",
+    "publishChanges": "Publish changes"
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",
@@ -296,6 +297,7 @@
     "imageAlt": "image {{id}}",
     "moveElementEarlier": "move element {{index}} earlier",
     "moveElementLater": "move element {{index}} later",
-    "removeElement": "remove element {{index}}"
+    "removeElement": "remove element {{index}}",
+    "publishChangesOf": "publish the changes of item {{id}}"
   }
 }

@@ -47,6 +47,8 @@ export class Edit {
   public error = signal<Message | null>(null);
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
+  /** A published page with an unpublished working copy: the site is behind the editor. */
+  public hasDraft = computed(() => this.metadata()?.has_draft ?? false);
   /** What this account may do *with this page*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName));
   public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName));
@@ -81,11 +83,25 @@ export class Edit {
     });
   }
 
-  /** Publish or unpublish without saving the form (the two are independent acts). */
-  togglePublished() {
-    const request = this.published()
-      ? this.pages.unpublishPage(this.pageName)
-      : this.pages.publishPage(this.pageName);
+  /**
+   * Publish, or release the changes waiting on a published page.
+   *
+   * Publishing is the copy on the server, so publishing a published page again is exactly
+   * "make the site match the editor" - no need to take the page down first.
+   */
+  publish() {
+    this.setPublished(true);
+  }
+
+  /** Take the page off the site. Its working copy is kept. */
+  unpublish() {
+    this.setPublished(false);
+  }
+
+  private setPublished(published: boolean) {
+    const request = published
+      ? this.pages.publishPage(this.pageName)
+      : this.pages.unpublishPage(this.pageName);
 
     request.subscribe({
       next: (metadata) => {

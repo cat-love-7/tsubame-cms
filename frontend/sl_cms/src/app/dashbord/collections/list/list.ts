@@ -131,11 +131,19 @@ export class List {
   }
 
   /** Publish or unpublish one item, without leaving the list. */
-  togglePublished(id: number) {
-    const request =
-      this.statusOf(id) === 'published'
-        ? this.collectionsService.unpublishItem(this.collectionName, id)
-        : this.collectionsService.publishItem(this.collectionName, id);
+  /** Publish a draft, or release the changes waiting on a published item. */
+  publish(id: number) {
+    this.setPublished(id, true);
+  }
+
+  unpublish(id: number) {
+    this.setPublished(id, false);
+  }
+
+  private setPublished(id: number, published: boolean) {
+    const request = published
+      ? this.collectionsService.publishItem(this.collectionName, id)
+      : this.collectionsService.unpublishItem(this.collectionName, id);
 
     request.subscribe({
       next: (metadata) => {

@@ -48,9 +48,20 @@
         <td class="updated">{{ updatedAt(item[0]) }}</td>
         <td class="actions">
           @if (canPublish()) {
+            <!-- A published row with pending changes offers to release them; the toggle beside it
+                 stays available for taking the row off the site. -->
+            @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
+              <button
+                matIconButton
+                (click)="publish(item[0])"
+                [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: item[0] }"
+              >
+                <mat-icon>publish</mat-icon>
+              </button>
+            }
             <button
               matIconButton
-              (click)="togglePublished(item[0])"
+              (click)="statusOf(item[0]) === 'published' ? unpublish(item[0]) : publish(item[0])"
               [attr.aria-label]="
                 (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
                   | transloco: { id: item[0] }

@@ -147,7 +147,7 @@
     "publish": "公開する",
     "unsaved": "未公開の変更あり",
     "unsavedHint": "公開するまで、サイトには反映されません",
-    "draftNotPublished": "保存した内容はまだ公開されていません。「公開する」を押すまでサイトには反映されません。",
+    "draftNotPublished": "保存した内容はまだ公開されていません。「変更を公開」を押すまでサイトには反映されません。",
     "publishedBy": "公開したアカウント",
     "previewLink": "プレビュー URL",
     "previewCopied": "プレビュー URL をコピーしました(有効期限: {{expires}})",
@@ -209,7 +209,8 @@
     "element": "要素 {{index}}",
     "addElement": "要素を追加",
     "elementType": "要素の型",
-    "noElements": "まだ要素がありません。"
+    "noElements": "まだ要素がありません。",
+    "publishChanges": "変更を公開"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",
@@ -296,6 +297,7 @@
     "imageAlt": "画像 {{id}}",
     "moveElementEarlier": "要素 {{index}} を前へ",
     "moveElementLater": "要素 {{index}} を後ろへ",
-    "removeElement": "要素 {{index}} を削除"
+    "removeElement": "要素 {{index}} を削除",
+    "publishChangesOf": "アイテム {{id}} の変更を公開"
   }
 }

@@ -628,6 +628,45 @@ try {
     `status=${tamperedResponse.status()}`,
   );
 
+  // The item is published with changes waiting, so both acts are offered: release them, or take
+  // the item down. Before this the screen only offered "Unpublish", which took the item off the
+  // site on the way to releasing them.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  const toolbar = page.locator('.toolbar');
+  check(
+    '公開済みで変更があると「変更を公開」が出る',
+    (await toolbar.locator('button:has-text("Publish changes")').count()) === 1 &&
+      (await toolbar.locator('button:has-text("Unpublish")').count()) === 1,
+  );
+
+  // The list offers the same release beside the row's state.
+  await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await dataRows().first().waitFor({ timeout: 15000 });
+  const releaseInList = page.locator(
+    `button[aria-label="publish the changes of item ${'1'}"]`,
+  );
+  check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
+
+  await releaseInList.click();
+  await page
+    .waitForFunction(
+      () => !document.querySelector(`button[aria-label="publish the changes of item 1"]`),
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const releasedCopy = await api('GET', `/content/collections/${COLLECTION}/items/1`);
+  check(
+    '一覧から変更を公開できる',
+    releasedCopy.values.title === previewWording,
+    `${releasedCopy.values.title}`,
+  );
+  check(
+    '公開したまま変更が反映される（配信は止まらない）',
+    releasedCopy.id === 1 && (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token)).has_draft === false,
+  );
+
+
   // -------------------------------------------------------------- roles decide what is offered
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
   const roleAccounts = [

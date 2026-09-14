@@ -47,6 +47,13 @@ class StubSinglePagesService {
   }
 }
 
+/** Whether the screen offers a button with this label (the label is what a user reads). */
+function hasButton(element: HTMLElement, label: string): boolean {
+  return Array.from(element.querySelectorAll('button')).some((button) =>
+    button.textContent?.includes(label),
+  );
+}
+
 function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   const button = Array.from(element.querySelectorAll('button')).find((candidate) =>
     candidate.textContent?.includes(label),
@@ -162,5 +169,27 @@ describe('Edit', () => {
 
     expect(stub.unpublished).toEqual(['home']);
     expect(fresh.componentInstance.published()).toBe(false);
+  });
+
+  it('offers to release the changes waiting on a published page', () => {
+    stub.metadata = {
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      published_by: { id: 'u1', username: 'admin@example.com' },
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      has_draft: true,
+    };
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    expect(publishButton(fresh.nativeElement, 'Publish changes')).toBeTruthy();
+    publishButton(fresh.nativeElement, 'Publish changes').click();
+    fresh.detectChanges();
+
+    expect(stub.published).toEqual(['home']);
+    expect(stub.unpublished).toEqual([]);
+    expect(fresh.componentInstance.published()).toBe(true);
+    expect(hasButton(fresh.nativeElement, 'Publish changes')).toBe(false);
   });
 });

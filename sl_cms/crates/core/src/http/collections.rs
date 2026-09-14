@@ -220,12 +220,17 @@ async fn set_collection_item_status<R: Storage>(
     actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(
-        module
-            .collection_service
-            .set_item_status(&name, CollectionItemId::from_u64(id), status, actor)
-            .await?,
-    ))
+    let item_id = CollectionItemId::from_u64(id);
+    let metadata = module
+        .collection_service
+        .set_item_status(&name, item_id, status, actor)
+        .await?;
+    // The same shape the metadata endpoint answers with: the screens take this reply as the new
+    // state, and after publishing what they need to know is whether anything is still waiting.
+    Ok(Json(ItemStatusResponse {
+        metadata,
+        has_draft: module.collection_service.has_draft(&name, item_id).await?,
+    }))
 }
 
 async fn get_collections<R: Storage>(

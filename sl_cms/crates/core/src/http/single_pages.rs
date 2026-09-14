@@ -167,12 +167,15 @@ async fn set_single_page_status<R: Storage>(
     actor: PublishedBy,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    Ok(Json(
-        module
-            .single_page_service
-            .set_page_status(&name, status, actor)
-            .await?,
-    ))
+    let metadata = module
+        .single_page_service
+        .set_page_status(&name, status, actor)
+        .await?;
+    // The same shape the metadata endpoint answers with (see the collection equivalent).
+    Ok(Json(PageStatusResponse {
+        metadata,
+        has_draft: module.single_page_service.page_has_draft(&name).await?,
+    }))
 }
 
 async fn get_single_pages<R: Storage>(

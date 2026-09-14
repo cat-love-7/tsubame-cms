@@ -3585,6 +3585,51 @@ async fn edits_wait_in_the_working_copy_until_they_are_published() {
     let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Edited");
+
+    // Publishing again *while still published* releases the waiting edit without the item ever
+    // leaving the site - which is what the "publish changes" control in the admin screens does.
+    // The reply carries the new state, including whether anything is still waiting, because the
+    // screens take it as the state they should show next.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Released", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "published");
+    assert_eq!(body["has_draft"], false, "the release clears the working copy");
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK, "the item never left the site");
+    assert_eq!(body["values"]["title"], "Released");
+
+    // Taking it down keeps whatever was being worked on, and publishing after that restores it.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Waiting", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::POST, &format!("{item_url}/unpublish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body["has_draft"], true, "the working copy is kept");
+    assert_eq!(
+        send(&app.router, Method::GET, &content_url, None, None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    let (status, _) = send(&app.router, Method::POST, &format!("{item_url}/publish"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Waiting");
 }
 
 // ------------------------------------------------------------------- account management
