@@ -205,7 +205,11 @@
     "requiredCollectionName": "Collection name is required",
     "requiredPageName": "Page name is required",
     "requiredCompositeId": "Composite field id is required",
-    "failedToLoadComposite": "Failed to load composite field {{id}}: {{message}}"
+    "failedToLoadComposite": "Failed to load composite field {{id}}: {{message}}",
+    "element": "Element {{index}}",
+    "addElement": "Add element",
+    "elementType": "Element type",
+    "noElements": "No elements yet."
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",
@@ -252,7 +256,10 @@
     "editFields": "Edit fields",
     "previewLayout": "Preview layout",
     "editEnumValue": "edit {{value}}",
-    "removeEnumValue": "remove {{value}}"
+    "removeEnumValue": "remove {{value}}",
+    "arrayCompositeTypes": "Composite item types",
+    "arrayCompositeHint": "Which composite definitions this array may hold.",
+    "arrayNoCompositeTypes": "No composite fields are defined yet."
   },
   "labels": {
     "toggleNavigation": "Toggle navigation",
@@ -286,6 +293,9 @@
     "removeField": "Remove field",
     "resizeWidth": "Drag to change width",
     "resizeHeight": "Drag to change minimum height",
-    "imageAlt": "image {{id}}"
+    "imageAlt": "image {{id}}",
+    "moveElementEarlier": "move element {{index}} earlier",
+    "moveElementLater": "move element {{index}} later",
+    "removeElement": "remove element {{index}}"
   }
 }

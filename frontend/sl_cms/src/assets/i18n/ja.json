@@ -205,7 +205,11 @@
     "requiredCollectionName": "コレクション名を入力してください",
     "requiredPageName": "ページ名を入力してください",
     "requiredCompositeId": "複合フィールド ID を入力してください",
-    "failedToLoadComposite": "複合フィールド {{id}} を読み込めませんでした: {{message}}"
+    "failedToLoadComposite": "複合フィールド {{id}} を読み込めませんでした: {{message}}",
+    "element": "要素 {{index}}",
+    "addElement": "要素を追加",
+    "elementType": "要素の型",
+    "noElements": "まだ要素がありません。"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",
@@ -252,7 +256,10 @@
     "editFields": "フィールドを編集",
     "previewLayout": "レイアウトをプレビュー",
     "editEnumValue": "{{value}} を編集",
-    "removeEnumValue": "{{value}} を削除"
+    "removeEnumValue": "{{value}} を削除",
+    "arrayCompositeTypes": "複合の要素型",
+    "arrayCompositeHint": "この配列に要素として入れられる複合フィールドです。",
+    "arrayNoCompositeTypes": "まだ複合フィールドが定義されていません。"
   },
   "labels": {
     "toggleNavigation": "ナビゲーションを開閉",
@@ -286,6 +293,9 @@
     "removeField": "フィールドを削除",
     "resizeWidth": "ドラッグして幅を変更",
     "resizeHeight": "ドラッグして最小の高さを変更",
-    "imageAlt": "画像 {{id}}"
+    "imageAlt": "画像 {{id}}",
+    "moveElementEarlier": "要素 {{index}} を前へ",
+    "moveElementLater": "要素 {{index}} を後ろへ",
+    "removeElement": "要素 {{index}} を削除"
   }
 }

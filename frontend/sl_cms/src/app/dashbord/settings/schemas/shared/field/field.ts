@@ -1,4 +1,13 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnInit,
+  Output,
+  SimpleChanges,
+  inject,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -20,12 +29,14 @@ import {
   IsMarkdownFieldSchema,
   IsTextFieldSchema,
   isArrayFieldSchema,
+  isCompositeFieldSchema,
   reconcileArrayItemTypes,
 } from 'app/models/schema/fields';
 import { EnumField } from "../enum-field/enum-field";
 import { CompositeField } from '../composite-field/composite-field';
 import { TextField } from "../text-field/text-field";
 import { FieldWidthPresets } from 'app/core/field-layout';
+import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
 
 @Component({
   selector: 'app-field',
@@ -51,7 +62,9 @@ import { FieldWidthPresets } from 'app/core/field-layout';
   templateUrl: './field.html',
   styleUrl: './field.scss',
 })
-export class Field {
+export class Field implements OnInit, OnChanges {
+  private compositeFields = inject(CompositeFieldsService);
+
   @Input() field: FieldSchema = {
     name: '',
     field_type: FieldDefaults.Text,
@@ -59,6 +72,31 @@ export class Field {
     ...DefaultFieldLayout,
   };
   @Output() fieldChange = new EventEmitter<FieldSchema>();
+
+  /**
+   * The composite definitions an array may hold, by id.
+   *
+   * Asked for only when the field is an array: the control that needs it is the only one that
+   * would show it, and a schema's text fields have no reason to fetch the list.
+   */
+  public compositeIds: string[] = [];
+
+  /**
+   * The two halves of an array's item types.
+   *
+   * Cached rather than computed in the template: a method that returned a fresh array would
+   * hand the multi-select a new value on every change detection pass, and the binding would
+   * never settle.
+   */
+  public scalarTypes: FieldType[] = [];
+  public compositeTypeIds: string[] = [];
+
+  private compositeIdsRequested = false;
+
+  ngOnInit() {
+    this.refreshItemTypes();
+    this.loadCompositeIds();
+  }
   public typeOptions = Object.keys(FieldDefaults);
   public arrayItemTypeOptions = ArrayItemTypeOptions;
   public widthPresets = FieldWidthPresets;
@@ -71,20 +109,81 @@ export class Field {
 
   public onFieldTypeChange(value: keyof typeof FieldDefaults) {
     this.field.field_type = FieldDefaults[value];
+    this.refreshItemTypes();
+    // Switching *to* an array is how most arrays are made, and the input object does not
+    // change identity when the type does, so `ngOnChanges` never sees it.
+    this.loadCompositeIds();
     this.fieldChange.emit(this.field);
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['field']) {
+      this.refreshItemTypes();
+      this.loadCompositeIds();
+    }
+  }
+
+  /**
+   * Ask for the definitions an array's item types may name, once.
+   *
+   * The service caches the list, so a schema with several array fields asks for it once; a
+   * field that is not an array never asks at all.
+   */
+  private loadCompositeIds() {
+    if (this.compositeIdsRequested || !isArrayFieldSchema(this.field.field_type)) {
+      return;
+    }
+    this.compositeIdsRequested = true;
+    this.compositeFields.getAllCompositeFields().subscribe({
+      next: (definitions) => (this.compositeIds = Object.keys(definitions)),
+      // Without the list the picker is empty; the rest of the editor still works, and a
+      // schema that already references a composite keeps that reference.
+      error: () => (this.compositeIds = []),
+    });
+  }
+
+  private refreshItemTypes() {
+    const items = this.arrayItemTypes();
+    this.scalarTypes = items.filter((item) => typeof item === 'string');
+    this.compositeTypeIds = items
+      .filter(isCompositeFieldSchema)
+      .map((item) => item.CompositeField.id);
+  }
+
+  private arrayItemTypes(): FieldType[] {
+    const fieldType = this.field.field_type;
+    return isArrayFieldSchema(fieldType) ? fieldType.Array : [];
   }
 
   /**
    * Array item types are untyped on the wire, so `Number` and `Image` cannot be combined
    * (an image id is a number). The binding is one-way, so `field.field_type.Array` is
-   * still the previous selection here.
+   * still the previous selection here. The composite references are carried over: they are
+   * chosen in their own control, and dropping them here would lose them silently.
    */
-  public onArrayItemTypesChange(selected: FieldType[]) {
+  public onScalarItemTypesChange(selected: FieldType[]) {
     const fieldType = this.field.field_type;
     if (!isArrayFieldSchema(fieldType)) {
       return;
     }
-    fieldType.Array = reconcileArrayItemTypes(fieldType.Array, selected);
+    // Read the previous selection from the field, not from the cached binding: the cache is
+    // for the control, and this decision is about what the field holds right now.
+    const previous = fieldType.Array.filter((item) => typeof item === 'string');
+    const composites = fieldType.Array.filter(isCompositeFieldSchema);
+    fieldType.Array = [...reconcileArrayItemTypes(previous, selected), ...composites];
+    this.refreshItemTypes();
+    this.fieldChange.emit(this.field);
+  }
+
+  /** Declare which composite definitions this array holds. */
+  public onCompositeItemTypesChange(ids: string[]) {
+    const fieldType = this.field.field_type;
+    if (!isArrayFieldSchema(fieldType)) {
+      return;
+    }
+    const scalars = fieldType.Array.filter((item) => typeof item === 'string');
+    fieldType.Array = [...scalars, ...ids.map((id) => ({ CompositeField: { id } }))];
+    this.refreshItemTypes();
     this.fieldChange.emit(this.field);
   }
 }

@@ -162,3 +162,34 @@
   padding-right: 0;
   margin-left: 8px;
 }
+
+.composite-array {
+  margin-bottom: 12px;
+}
+
+.composite-element {
+  border: 1px solid var(--mat-sys-outline-variant, #ddd);
+  border-radius: 8px;
+  margin: 0 0 8px;
+  padding: 4px 12px 0;
+
+  legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .element-name {
+    color: var(--mat-sys-on-surface-variant, #666);
+    font-size: 0.875rem;
+  }
+
+  .element-actions {
+    display: inline-flex;
+  }
+}
+
+.element-type {
+  width: 12rem;
+}

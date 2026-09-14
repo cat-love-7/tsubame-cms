@@ -99,6 +99,20 @@ export class ValueField implements OnInit, OnChanges {
   /** An image array is shown as thumbnails unless the JSON view is asked for. */
   public jsonMode = signal(false);
 
+  /**
+   * The elements of a composite array, each with the definition it names and the value the
+   * child editor reads. Rebuilt when a value arrives from outside; kept as it is while the
+   * user edits, so a keystroke in one element cannot reset another.
+   */
+  public elementItems: { id: string; value: FieldValue }[] = [];
+  /** The schema each element editor needs, one per element and stable between rebuilds. */
+  public elementSchemas: FieldSchema[] = [];
+  /** The definition a new element uses, when the array allows more than one. */
+  public newElementType = signal('');
+  /** The composite definitions, for the defaults of a new element. */
+  private definitions = new Map<string, FieldSchema[]>();
+  private definitionsLoaded = false;
+
   /** The referenced composite's sub-schema, or null when it is not defined. */
   public compositeSchema = signal<FieldSchema[] | null>(null);
   public compositeId = signal('');
@@ -113,14 +127,19 @@ export class ValueField implements OnInit, OnChanges {
 
   ngOnInit() {
     this.syncArrayBuffer();
+    this.loadDefinitions();
+    this.syncElements();
   }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['field']) {
       this.loadCompositeSchema();
+      this.loadDefinitions();
+      this.syncElements();
     } else if (changes['value']) {
       this.syncArrayBuffer();
       this.syncCompositeValues();
+      this.syncElements();
     }
   }
 
@@ -217,14 +236,9 @@ export class ValueField implements OnInit, OnChanges {
   }
 
   forwardCompositeError(subField: FieldSchema, problem: Message | null) {
-    if (problem) {
-      this.subErrors[subField.name] = problem;
-    } else {
-      delete this.subErrors[subField.name];
-    }
     // One at a time: the parent shows the first problem and refuses to save until none remain,
     // so naming the others too would only lengthen the message.
-    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
+    this.reportSubError(subField.name, problem);
   }
 
   onFileSelected(event: Event) {
@@ -342,6 +356,75 @@ export class ValueField implements OnInit, OnChanges {
       });
   }
 
+  /** The composite definitions this array declares as item types. */
+  compositeItemTypes(): string[] {
+    const type = this.field.field_type;
+    if (!isArrayFieldSchema(type)) {
+      return [];
+    }
+    return type.Array.filter(isCompositeFieldSchema).map((item) => item.CompositeField.id);
+  }
+
+  /**
+   * A composite array is edited element by element.
+   *
+   * Only when *every* declared item type is a composite: an element carries no type tag, so a
+   * mixed array (say a text and a composite) has nothing that says which editor an element
+   * needs. Those keep the JSON view, which does accept composite elements.
+   */
+  isCompositeArray(): boolean {
+    const type = this.field.field_type;
+    return (
+      isArrayFieldSchema(type) &&
+      type.Array.length > 0 &&
+      type.Array.every((item) => isCompositeFieldSchema(item))
+    );
+  }
+
+  /** Add an element of the chosen definition, with that definition's defaults. */
+  addElement() {
+    const id = this.newElementType() || this.compositeItemTypes()[0];
+    if (!id) {
+      return;
+    }
+    const schema = this.definitions.get(id);
+    const values = schema ? withDefaults(schema, {}) : {};
+    this.setElements([...this.arrayItems(), { id, values }]);
+  }
+
+  removeElementAt(index: number) {
+    const items = this.arrayItems();
+    items.splice(index, 1);
+    // The reported problems are keyed by position, so they mean nothing after this.
+    this.clearElementErrors();
+    this.setElements(items);
+  }
+
+  moveElement(index: number, delta: number) {
+    const items = this.arrayItems();
+    const target = index + delta;
+    if (target < 0 || target >= items.length) {
+      return;
+    }
+    [items[index], items[target]] = [items[target], items[index]];
+    this.clearElementErrors();
+    this.setElements(items);
+  }
+
+  /** One element changed: keep the definition it names and store the new sub-values. */
+  setElementValues(index: number, values: FieldValue) {
+    const items = this.arrayItems();
+    const id = this.elementItems[index]?.id ?? this.compositeItemTypes()[0] ?? '';
+    items[index] = { id, values };
+    this.elementItems[index] = { id, value: { id, values } };
+    this.arrayText = JSON.stringify(items);
+    this.update(items as FieldValue);
+  }
+
+  reportElementError(index: number, problem: Message | null) {
+    this.reportSubError(`element:${index}`, problem);
+  }
+
   /** An array of images, which is edited with thumbnails instead of raw JSON. */
   isImageArray(): boolean {
     const type = this.field.field_type;
@@ -390,6 +473,97 @@ export class ValueField implements OnInit, OnChanges {
 
   private arrayItems(): unknown[] {
     return Array.isArray(this.value) ? [...(this.value as unknown[])] : [];
+  }
+
+  /** Replace a composite array's value and keep the JSON view and the element editors in step. */
+  private setElements(items: unknown[]) {
+    this.elementItems = items.map((item, index) => ({
+      id: this.idOf(item, index),
+      value: (item ?? null) as FieldValue,
+    }));
+    this.elementSchemas = this.elementItems.map((element) => this.schemaFor(element));
+    this.arrayText = JSON.stringify(items);
+    this.update(items as FieldValue);
+  }
+
+  /** Rebuild the element editors from `value`, unless they already match it. */
+  private syncElements() {
+    if (!this.isCompositeArray()) {
+      return;
+    }
+    // The chosen definition for a new element: the first one until the user picks otherwise.
+    this.newElementType.update((current) => current || this.compositeItemTypes()[0] || '');
+    const items = this.arrayItems();
+    const matches =
+      this.elementItems.length === items.length &&
+      this.elementItems.every((element, index) => element.value === items[index]);
+    if (matches) {
+      return;
+    }
+    this.elementItems = items.map((item, index) => ({
+      id: this.idOf(item, index),
+      value: (item ?? null) as FieldValue,
+    }));
+    this.elementSchemas = this.elementItems.map((element) => this.schemaFor(element));
+  }
+
+  /**
+   * The definition an element uses: the one it names, or the first the array declares.
+   *
+   * A read names it (`{id, values}`); a value written by an older client may be the bare object
+   * of sub-values, which leaves the first declared definition as the only reading.
+   */
+  private idOf(item: unknown, _index: number): string {
+    const record = (item ?? {}) as { id?: unknown };
+    const declared = typeof record.id === 'string' && record.id ? record.id : '';
+    return declared || this.compositeItemTypes()[0] || '';
+  }
+
+  /** The schema an element editor needs: the composite it names, at the array's height. */
+  private schemaFor(element: { id: string; value: FieldValue }): FieldSchema {
+    return {
+      name: `${this.field.name}[${element.id}]`,
+      field_type: { CompositeField: { id: element.id } },
+      required: false,
+      width: 12,
+      height: this.field.height || 1,
+    };
+  }
+
+  /** The definitions an element may use, for a new element's defaults. */
+  private loadDefinitions() {
+    if (this.definitionsLoaded || this.compositeItemTypes().length === 0) {
+      return;
+    }
+    // The service caches the list, so a form with several composite arrays asks for it once.
+    this.compositeFields.getAllCompositeFields().subscribe({
+      next: (all) => {
+        this.definitions = new Map(Object.entries(all));
+        this.definitionsLoaded = true;
+      },
+      // An element editor loads the definition it needs and reports it if it is missing, so a
+      // failure here is not a reason to hide values that are already stored.
+      error: () => {},
+    });
+  }
+
+  /** One place for the problems the sub-editors report, so one clearing does not clear another. */
+  private reportSubError(key: string, problem: Message | null) {
+    if (problem) {
+      this.subErrors[key] = problem;
+    } else {
+      delete this.subErrors[key];
+    }
+    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
+  }
+
+  private clearElementErrors() {
+    for (const key of Object.keys(this.subErrors)) {
+      if (key.startsWith('element:')) {
+        delete this.subErrors[key];
+      }
+    }
+    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
   }
 
   /** Replace the array value and keep the JSON view in step with it. */

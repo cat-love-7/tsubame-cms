@@ -1,4 +1,5 @@
 import { provideHttpClient } from '@angular/common/http';
+import { By } from '@angular/platform-browser';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
@@ -415,5 +416,104 @@ describe('ValueField', () => {
         { id: 4, url: '/images/photo.png' },
       ],
     });
+  });
+
+  it('edits a composite array element by element', () => {
+    const component = create(field('blocks', { Array: [{ CompositeField: { id: 'seo' } }] }), [
+      { id: 'seo', values: { description: 'first' } },
+    ] as unknown as FieldValue);
+    // A second pass, as the other composite tests do: the sub-editor resolves its definition
+    // while the first one runs.
+    fixture.detectChanges();
+
+    expect(component.isCompositeArray()).toBe(true);
+    // The element gets the composite's own editor with the stored value, not a JSON box.
+    const element = fixture.nativeElement.querySelector('.composite-element') as HTMLElement;
+    expect(element).toBeTruthy();
+    expect(element.textContent).toContain('Element 1');
+
+    // The element is edited by the definition's own editor, and it was handed the stored
+    // sub-values rather than the read wrapper, which the storage layer unwraps.
+    // The first descendant editor is the element's; `queryAll` does not include the root, so
+    // the root's own editor is not in this list.
+    const editor = fixture.debugElement.queryAll(By.directive(ValueField))[0]
+      .componentInstance as ValueField;
+    expect(editor.field?.field_type).toEqual({ CompositeField: { id: 'seo' } });
+    expect(editor.compositeValues).toEqual({ description: 'first' });
+  });
+
+  it('adds an element with its definition defaults, and removes it again', () => {
+    const component = create(field('blocks', { Array: [{ CompositeField: { id: 'seo' } }] }), []);
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    component.addElement();
+    expect(changes.at(-1)).toEqual([{ id: 'seo', values: { description: '' } }]);
+
+    /** What a parent does with an emission: hand it straight back as the input. */
+    const accept = () => {
+      fixture.componentRef.setInput('value', changes.at(-1));
+      fixture.detectChanges();
+    };
+
+    accept();
+    expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(1);
+
+    component.addElement();
+    accept();
+    expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(2);
+
+    component.removeElementAt(0);
+    accept();
+    expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(1);
+    expect((changes.at(-1) as unknown[]).length).toBe(1);
+  });
+
+  it('keeps the definition each element names, and their order', () => {
+    const component = create(
+      field('blocks', {
+        Array: [{ CompositeField: { id: 'seo' } }, { CompositeField: { id: 'gallery' } }],
+      }),
+      [
+        { id: 'gallery', values: { images: [] } },
+        { id: 'seo', values: { description: 'second' } },
+      ] as unknown as FieldValue,
+    );
+    fixture.detectChanges();
+
+    // One element per definition, each edited by that definition's schema.
+    expect(component.elementItems.map((element) => element.id)).toEqual(['gallery', 'seo']);
+    expect(component.elementSchemas[0].field_type).toEqual({ CompositeField: { id: 'gallery' } });
+
+    component.moveElement(0, 1);
+
+    expect(component.value).toEqual([
+      { id: 'seo', values: { description: 'second' } },
+      { id: 'gallery', values: { images: [] } },
+    ]);
+  });
+
+  it('stores what an element editor emits under the definition the element names', () => {
+    const component = create(field('blocks', { Array: [{ CompositeField: { id: 'seo' } }] }), []);
+    const changes: FieldValue[] = [];
+    component.valueChange.subscribe((value) => changes.push(value));
+
+    component.addElement();
+    component.setElementValues(0, { description: 'typed' } as unknown as FieldValue);
+
+    expect(changes.at(-1)).toEqual([{ id: 'seo', values: { description: 'typed' } }]);
+  });
+
+  it('leaves a mixed array to the JSON view, which accepts composite elements', () => {
+    // Nothing in a bare element says which of the two editors it needs, so guessing is not an
+    // option; the JSON view is unambiguous and the server reads composites there.
+    const component = create(
+      field('mixed', { Array: ['Number', { CompositeField: { id: 'seo' } }] }),
+      [],
+    );
+
+    expect(component.isCompositeArray()).toBe(false);
+    expect(query('textarea')).toBeTruthy();
+    expect(query('.composite-element')).toBeNull();
   });
 });

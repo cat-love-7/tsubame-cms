@@ -1,3 +1,6 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
@@ -21,7 +24,9 @@ describe('Field', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Field]
+      imports: [Field],
+      // An array field asks for the composite definitions the item types may name.
+      providers: [provideHttpClient(), provideHttpClientTesting()],
     })
     .compileComponents();
 
@@ -65,7 +70,7 @@ describe('Field', () => {
     // The wire carries bare values, so an image id and a number cannot be told apart.
     component.field = field({ field_type: { Array: ['Number'] } });
 
-    component.onArrayItemTypesChange(['Number', 'Image']);
+    component.onScalarItemTypesChange(['Number', 'Image']);
 
     expect(component.field.field_type).toEqual({ Array: ['Image'] });
   });
@@ -73,7 +78,7 @@ describe('Field', () => {
   it('drops Image when Number is the one just added', () => {
     component.field = field({ field_type: { Array: ['Image'] } });
 
-    component.onArrayItemTypesChange(['Image', 'Number']);
+    component.onScalarItemTypesChange(['Image', 'Number']);
 
     expect(component.field.field_type).toEqual({ Array: ['Number'] });
   });
@@ -81,7 +86,7 @@ describe('Field', () => {
   it('leaves the item types of a field that is not an array alone', () => {
     component.field = field({ field_type: 'Number' });
 
-    component.onArrayItemTypesChange(['Image']);
+    component.onScalarItemTypesChange(['Image']);
 
     expect(component.field.field_type).toBe('Number');
   });
@@ -113,6 +118,52 @@ describe('Field', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('mat-select[name="arrayItemTypes"]')).toBeTruthy();
+  });
+
+  it('offers the composite definitions as array item types', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('field', field({ field_type: { Array: ['Number'] } }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The list is only asked for once an array is being edited.
+    http.expectOne('/api/models/composite_fields').flush({ seo: [], gallery: [] });
+    fixture.detectChanges();
+
+    const compositeControl = fixture.nativeElement.querySelector(
+      'mat-select[name="arrayCompositeTypes"]',
+    );
+    expect(compositeControl).toBeTruthy();
+
+    component.onCompositeItemTypesChange(['gallery']);
+    expect(component.field.field_type).toEqual({
+      Array: ['Number', { CompositeField: { id: 'gallery' } }],
+    });
+
+    // Changing the scalars must not drop the composite the user chose in the other control...
+    component.onScalarItemTypesChange(['Number', 'Boolean']);
+    expect(component.field.field_type).toEqual({
+      Array: ['Number', 'Boolean', { CompositeField: { id: 'gallery' } }],
+    });
+
+    // ...and changing the composites must not drop the scalars.
+    component.onCompositeItemTypesChange(['seo', 'gallery']);
+    expect(component.field.field_type).toEqual({
+      Array: [
+        'Number',
+        'Boolean',
+        { CompositeField: { id: 'seo' } },
+        { CompositeField: { id: 'gallery' } },
+      ],
+    });
+  });
+
+  it('does not ask for composite definitions unless the field is an array', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('field', field({ field_type: { Text: {} } }));
+    await fixture.whenStable();
+
+    http.expectNone('/api/models/composite_fields');
   });
 
   it('brings the enum editor in when the field is an enum', async () => {
