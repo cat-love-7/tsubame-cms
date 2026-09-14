@@ -40,6 +40,8 @@ const LAST_PAGE_TOTAL = Number(process.env.LAST_PAGE_TOTAL ?? 26);
 const IMAGE_COLLECTION = process.env.IMAGE_COLLECTION ?? 'e2e_images';
 /** One item whose field is a composite that itself holds an image array. */
 const COMPOSITE_COLLECTION = process.env.COMPOSITE_COLLECTION ?? 'e2e_composite';
+/** The collection this run builds through the schema editor, then uses as content. */
+const SCHEMA_COLLECTION = process.env.SCHEMA_COLLECTION ?? 'e2e_schema_editor';
 const COMPOSITE_ID = process.env.COMPOSITE_ID ?? 'e2e_gallery_block';
 
 /** A 1x1 PNG: enough for the upload path to be exercised for real. */
@@ -808,6 +810,123 @@ try {
   });
   check('拒否したコレクションは API でも 403', denied.status() === 403, `status=${denied.status()}`);
   await scopedSession.context.close();
+
+  // ------------------------------------------- the schema editor, driven from the screen
+  // Every collection above is created through the API, so this screen - where an author
+  // builds the content model - would otherwise never be exercised in a browser.
+  await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
+  await page.goto(`${BASE}/settings/schemas/collections/create`, { waitUntil: 'networkidle' });
+  await page.fill('input[name=name]', SCHEMA_COLLECTION);
+  await page.click('button:has-text("Create")');
+  await page
+    .waitForURL(`**/settings/schemas/collections/edit/${SCHEMA_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+
+  // A text field, which starts full width.
+  await page.click('button:has-text("Add field")');
+  const textField = page.locator('.schema-field').first();
+  await textField.locator('input[name=fieldName]').fill('title');
+  check(
+    'フィールド編集のラベルが訳される',
+    ((await textField.locator('mat-label').first().textContent()) ?? '').includes('Field Name'),
+  );
+
+  // A second field of another type: an enum, whose values are chips.
+  await page.click('button:has-text("Add field")');
+  const enumField = page.locator('.schema-field').nth(1);
+  await enumField.locator('input[name=fieldName]').fill('state');
+  await enumField.locator('mat-select[name=fieldType]').click();
+  await page.locator('mat-option', { hasText: 'TextEnum' }).click();
+
+  const chipInput = enumField.locator('mat-chip-grid input');
+  await chipInput.fill('draft');
+  await chipInput.press('Enter');
+  await chipInput.fill('published');
+  await chipInput.press('Enter');
+
+  // The chip list is rendered from the model, so the chips appear a moment after the input
+  // event: wait for the count rather than reading it once.
+  const enumHasChips = (expected) =>
+    page
+      .waitForFunction(
+        (count) => {
+          const tiles = document.querySelectorAll('.field-grid .schema-field');
+          return tiles.length >= 2 && tiles[1].querySelectorAll('mat-chip-row').length === count;
+        },
+        expected,
+        { timeout: 10000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+
+  check('Enum の値を画面から追加できる', await enumHasChips(2));
+
+  // The chip's own label carries the value; a message that lost its placeholder would read
+  // "remove {{value}}".
+  const removeLabel =
+    (await enumField
+      .locator('mat-chip-row')
+      .first()
+      .locator('button[matChipRemove]')
+      .getAttribute('aria-label')) ?? '';
+  check(
+    'Enum の値を消すボタンに値が入る',
+    removeLabel.includes('draft') && !removeLabel.includes('{{'),
+    removeLabel,
+  );
+
+  await enumField.locator('mat-chip-row').first().locator('button[matChipRemove]').click();
+  check('Enum の値を画面から削除できる', await enumHasChips(1));
+
+  // Half of the 12-column grid, from the presets rather than the number input.
+  await textField.locator('.width-presets button', { hasText: '1/2' }).click();
+
+  await page.click('button:has-text("Save schema")');
+  await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
+  const builtSchema = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/schema`, undefined, token);
+  const builtText = builtSchema.find((field) => field.name === 'title');
+  const builtEnum = builtSchema.find((field) => field.name === 'state');
+  check(
+    '画面で組んだスキーマが保存される',
+    builtText?.width === 6 &&
+      builtText?.field_type?.Text !== undefined &&
+      builtEnum?.field_type?.TextEnum?.join() === 'published',
+    JSON.stringify(builtSchema),
+  );
+
+  await page.goto(`${BASE}/settings/schemas/collections`, { waitUntil: 'networkidle' });
+  check(
+    'スキーマ一覧に新しいコレクションが出る',
+    (await page.locator('table td', { hasText: SCHEMA_COLLECTION }).count()) === 1,
+  );
+
+  // The field the author defined is usable straight away: content, not just a definition.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/create`, { waitUntil: 'networkidle' });
+  const titleInput = page.locator('app-value-field input').first();
+  await titleInput.waitFor({ timeout: 15000 });
+  await titleInput.fill('first item');
+  await page.locator('app-value-field mat-select').click();
+  await page.locator('mat-option', { hasText: 'published' }).click();
+  // A multiple select keeps its panel open; the Save button is behind it until it closes.
+  await page.keyboard.press('Escape');
+  await page.click('button:has-text("Save")');
+  await page
+    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+  const builtItem = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  check(
+    'Enum フィールドをコンテンツで選べる',
+    JSON.stringify(builtItem?.state) === '["published"]',
+    JSON.stringify(builtItem?.state),
+  );
+
+  // Through the API rather than the screen: this collection exists only for this scenario.
+  await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
 
   // ------------------------------- an administrator hands out a password reset link
   const resetUsername = `e2e-reset-${Date.now()}`;

@@ -58,6 +58,7 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 | `IMAGE_COLLECTION` | `e2e_images` | 画像フィールド(単一 + 配列)を持つコレクション |
 | `COMPOSITE_COLLECTION` | `e2e_composite` | 複合フィールドの中に画像配列を持つコレクション |
 | `COMPOSITE_ID` | `e2e_gallery_block` | その複合フィールド定義の id |
+| `SCHEMA_COLLECTION` | `e2e_schema_editor` | スキーマ編集画面から組み立てるコレクション(実行の最後に削除する) |
 
 ## 言語
 
@@ -82,6 +83,10 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 - コンテンツ編集中に既存画像を選んで保存できる(選んだ id がアイテムに残る)
 - 画像配列に**複数まとめて**追加でき、**その場でアップロード**もでき、その順序で保存される
 - **複合フィールドの中の画像配列**でも同じことができる
+- **スキーマ編集を画面から**通す: コレクションを作り、フィールドを足し(名前・型・幅プリセット)、
+  Enum の値をチップで追加・削除し、保存して API で読み戻す(他のコレクションは API で作っているので、
+  ここがこの画面をブラウザで通す唯一の経路)
+- そうやって定義した Enum フィールドを、**コンテンツ編集画面で選んで保存**できる
 - **ロールごとに出し分け**: 編集ロールには公開・削除・アカウント管理を出さず、閲覧ロールには保存も出さない
 - 一覧から公開すると、**誰が公開したか**がその行に出る
 - **自分のパスワードを変更**すると、変更前のトークンは 401 になり、変更した本人のセッションは
@@ -99,6 +104,8 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 ## データ
 
 実行のたびに `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` と複合フィールド定義
-`e2e_gallery_block`、ロックを見るための使い捨てアカウント `e2e-throttle-<時刻>@example.com` を作り直す
+`e2e_gallery_block`、ロックを見るための使い捨てアカウント `e2e-throttle-<時刻>@example.com` を作り直す。
+スキーマ編集の確認に使う `e2e_schema_editor` は、その場で作って最後に消す(前回の実行が途中で
+落ちていた場合に備えて、開始時にも消す)
 (既にあれば削除する)。開発用のデータには触れず、何度実行しても
 同じ結果になる。アップロードした画像も実行の最後に削除する。
