@@ -836,6 +836,159 @@ async fn composite_values_round_trip_and_references_are_validated() {
     assert!(String::from_utf8_lossy(&body).contains("cannot reference itself"));
 }
 
+/// An array whose items are composites.
+///
+/// The element types are tried in the declared order and the first that accepts the JSON wins,
+/// so a composite element is written either bare or with the `{id, values}` wrapper a read
+/// produces. The wrapper is what keeps a value with two plausible definitions unambiguous.
+#[tokio::test]
+async fn composite_arrays_round_trip() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let definition = |field: &str| {
+        json!([
+            { "name": field, "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])
+    };
+    for (id, field) in [("block_a", "heading"), ("block_b", "body")] {
+        let (status, body) = send_raw(
+            &app.router,
+            Method::POST,
+            &format!("/models/composite_fields/{id}"),
+            Some(&token),
+            Some(definition(field)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    }
+
+    let schema = json!([{
+        "name": "blocks",
+        "field_type": { "Array": [
+            { "CompositeField": { "id": "block_a" } },
+            { "CompositeField": { "id": "block_b" } }
+        ] },
+        "required": false,
+        "width": 12,
+        "height": 1
+    }]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/page/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // One element names its definition, one leaves it off (the first declared type then wins).
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/page/item",
+        Some(&token),
+        Some(json!({ "blocks": [
+            { "id": "block_b", "values": { "body": "second" } },
+            { "heading": "first" }
+        ] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/models/collections/page/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["blocks"][0]["id"], "block_b");
+    assert_eq!(body["blocks"][0]["values"]["body"], "second");
+    assert_eq!(body["blocks"][1]["id"], "block_a");
+    assert_eq!(body["blocks"][1]["values"]["heading"], "first");
+
+    // What a read produced is accepted back unchanged, which is what lets an editor load an
+    // item, change one field and save it.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/page/items/1",
+        Some(&token),
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // A definition the array does not declare is refused rather than read as another one.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/page/item",
+        Some(&token),
+        Some(json!({ "blocks": [{ "id": "block_c", "values": { "heading": "x" } }] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("does not match any declared array item type"), "unexpected body: {text}");
+
+    // An element that is not an object at all is refused the same way.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/page/item",
+        Some(&token),
+        Some(json!({ "blocks": [7] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A composite may hold an array of another composite, but not of itself: parsing and the
+    // editor both follow references, so a cycle would never terminate.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/composite_fields/loop",
+        Some(&token),
+        Some(json!([{
+            "name": "again",
+            "field_type": { "Array": [{ "CompositeField": { "id": "loop" } }] },
+            "required": false, "width": 12, "height": 1
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8_lossy(&body).contains("cannot reference itself"),
+        "unexpected body: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // And a composite array item that does not exist is refused when the schema is saved.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/unknown/schema",
+        Some(&token),
+        Some(json!([{
+            "name": "blocks",
+            "field_type": { "Array": [{ "CompositeField": { "id": "missing" } }] },
+            "required": false, "width": 12, "height": 1
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8_lossy(&body).contains("does not exist"),
+        "unexpected body: {}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
 #[tokio::test]
 async fn deleting_a_collection_without_items_succeeds() {    let app = test_app().await;
     let token = app.admin_token.clone();

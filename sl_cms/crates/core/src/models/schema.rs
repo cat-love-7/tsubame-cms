@@ -164,16 +164,8 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
         ));
     }
     for item in items {
-        match item {
-            FieldType::Array(_) => {
-                return Err(format!("field '{name}': nested arrays are not supported"));
-            }
-            FieldType::CompositeField(_) => {
-                return Err(format!(
-                    "field '{name}': composite fields cannot be used as array items"
-                ));
-            }
-            _ => {}
+        if let FieldType::Array(_) = item {
+            return Err(format!("field '{name}': nested arrays are not supported"));
         }
     }
 
@@ -339,14 +331,15 @@ mod tests {
         .unwrap_err()
         .contains("nested arrays"));
 
-        assert!(validate_schema(&[field(
+        // A composite as an array item is allowed: it is an object on the wire, so it cannot be
+        // confused with a scalar, and the reference is checked like any other.
+        validate_schema(&[field(
             "a",
             FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
                 id: CompositeFieldId::from("seo"),
             })])
         )])
-        .unwrap_err()
-        .contains("composite fields cannot be used as array items"));
+        .expect("an array of composites is a usable schema");
     }
 
     fn composite_ref(id: &str) -> FieldType {

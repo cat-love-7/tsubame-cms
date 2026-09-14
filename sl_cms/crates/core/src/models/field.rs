@@ -133,7 +133,13 @@ fn parse_field_value(
             let items = raw.as_array().ok_or_else(|| mismatch(field, "an array"))?;
             let mut values = Vec::with_capacity(items.len());
             for (index, item) in items.iter().enumerate() {
-                values.push(parse_array_element(field, allowed, index, item)?);
+                values.push(parse_array_element(
+                    field,
+                    allowed,
+                    index,
+                    item,
+                    composite_schemas,
+                )?);
             }
             Ok(FieldValue::Array(values))
         }
@@ -258,13 +264,25 @@ fn parse_untagged_scalar(
 /// Array elements are untyped too, so the declared element types are tried in order and
 /// the first one that accepts the JSON value wins. This keeps interpretation
 /// deterministic given the schema.
+///
+/// A composite element is an object, and reads wrap it as `{"id": …, "values": {…}}`. When
+/// that wrapper names a definition, only the candidate with that id is tried: two composites
+/// can accept the same object of sub-values, and the id is what says which one this is.
 fn parse_array_element(
     field: &FieldSchema,
     allowed: &[FieldType],
     index: usize,
     raw: &serde_json::Value,
+    composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
 ) -> Result<FieldValue, String> {
+    // `CompositeFieldId` is a named string, so the comparison is on the string it holds.
+    let declared_id = raw.get("id").and_then(|id| id.as_str());
     for candidate in allowed {
+        if let (Some(id), FieldType::CompositeField(reference)) = (declared_id, candidate) {
+            if reference.id.as_str() != id {
+                continue;
+            }
+        }
         let probe = FieldSchema {
             name: format!("{}[{index}]", field.name),
             field_type: candidate.clone(),
@@ -272,7 +290,7 @@ fn parse_array_element(
             width: 0,
             height: 0,
         };
-        if let Ok(value) = parse_untagged_scalar(&probe, candidate, raw) {
+        if let Ok(value) = parse_field_value(&probe, raw, composite_schemas) {
             return Ok(value);
         }
     }
@@ -1008,6 +1026,7 @@ impl FieldValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use strum::IntoEnumIterator;
 
     // Test helper functions
@@ -1119,6 +1138,58 @@ mod tests {
                 .is_err()
         );
     }
+
+    /// Reading is the other half of the round trip: an array of composites has to come back
+    /// from JSON as the values it was written from.
+    #[test]
+    fn reads_an_array_of_composites() {
+        let composite_schemas = create_composite_schemas_map();
+        let field = FieldSchema {
+            name: "blocks".to_string(),
+            field_type: FieldType::Array(vec![
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                }),
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_2".into(),
+                }),
+            ]),
+            required: false,
+            width: 12,
+            height: 1,
+        };
+
+        // What a read looks like: the wrapper names the definition, so the second candidate is
+        // chosen even though the first would also accept an object of sub-values.
+        let wrapped = json!([{ "id": "comp_2", "values": { "sub_field2": "Value2" } }]);
+        assert_eq!(
+            parse_field_value(&field, &wrapped, &composite_schemas).unwrap(),
+            FieldValue::Array(vec![FieldValue::CompositeField(Some(create_composite_value(
+                "comp_2",
+                "sub_field2",
+                "Value2"
+            )))])
+        );
+
+        // A write may leave the wrapper off; then the first declared type that accepts the
+        // object wins, which is the documented rule.
+        let bare = json!([{ "sub_field": "Value1" }]);
+        assert_eq!(
+            parse_field_value(&field, &bare, &composite_schemas).unwrap(),
+            FieldValue::Array(vec![FieldValue::CompositeField(Some(create_composite_value(
+                "comp_1",
+                "sub_field",
+                "Value1"
+            )))])
+        );
+
+        // A definition the array does not declare is not silently read as another one.
+        let unknown = json!([{ "id": "comp_9", "values": { "sub_field": "Value1" } }]);
+        assert!(parse_field_value(&field, &unknown, &composite_schemas)
+            .unwrap_err()
+            .contains("does not match any declared array item type"));
+    }
+
     #[test]
     fn test_format_array_type_field() {
         let pattern = vec![
