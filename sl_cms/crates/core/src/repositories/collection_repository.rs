@@ -148,6 +148,15 @@ pub trait CollectionRepository:Send + Sync + 'static {
         unique: &UniqueValue,
     ) -> impl Future<Output = Result<Reservation, BoxError>> + Send;
 
+    /// The item holding a unique value, if any.
+    ///
+    /// The same point read the reservation uses, so a lookup by slug is not a scan either.
+    fn find_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        unique: &UniqueValue,
+    ) -> impl Future<Output = Result<Option<CollectionItemId>, BoxError>> + Send;
+
     /// Give a value up, but only while `item_id` still holds it.
     ///
     /// Another item may have claimed it since (a reservation is released after the write that

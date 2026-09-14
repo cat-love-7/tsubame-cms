@@ -3,7 +3,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { provideRouter } from '@angular/router';
-import { Observable, of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
@@ -17,6 +17,8 @@ import { formatDateTime } from 'app/core/i18n/date-format';
 class StubCollectionsService {
   public published: number[] = [];
   public unpublished: number[] = [];
+  /** Set to refuse a save the way the server refuses a value another item holds. */
+  public saveRefusal: unknown = null;
   public metadata: ItemMetadata = {
     status: 'draft',
     published_at: null,
@@ -26,6 +28,10 @@ class StubCollectionsService {
     updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,
   };
+
+  updateCollectionItem(): Observable<void> {
+    return this.saveRefusal ? throwError(() => this.saveRefusal) : of(void 0);
+  }
 
   getCollectionSchema(): Observable<unknown> {
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
@@ -170,6 +176,26 @@ describe('Edit', () => {
   });
 
   /** Asking for a shareable link shows it, so it can be copied even if the clipboard says no. */
+  it('marks the field a refusal is about', () => {
+    // The server names the field it refused, so the form can point at that input instead of
+    // leaving the reader to work out which one it meant.
+    stub.saveRefusal = {
+      status: 409,
+      error: { code: 'value_taken', message: "field 'title': the value is taken", field: 'title' },
+    };
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    fresh.componentInstance.save();
+    fresh.detectChanges();
+
+    expect(fresh.componentInstance.problemField()).toBe('title');
+    expect(fresh.nativeElement.querySelectorAll('.field-cell.problem').length).toBe(1);
+    expect((fresh.nativeElement.querySelector('.error') as HTMLElement).textContent).toContain(
+      'title',
+    );
+  });
+
   it('mints a preview link and shows it with its expiry', async () => {
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();

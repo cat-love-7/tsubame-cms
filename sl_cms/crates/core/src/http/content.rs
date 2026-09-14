@@ -38,6 +38,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/content/collections/{collection_name}/items/{id}",
             get(get_collection_item::<R>),
         )
+        .route(
+            "/content/collections/{collection_name}/items/by/{field}/{value}",
+            get(get_collection_item_by_unique_value::<R>),
+        )
         .route("/content/single-pages", get(list_single_pages::<R>))
         .route(
             "/content/single-pages/{page_name}",
@@ -68,6 +72,28 @@ struct PublishedItem {
     /// this is what an incremental build should compare.
     last_published_at: Option<DateTime<Utc>>,
     values: CollectionItemResponse,
+}
+
+/// The published item whose published copy holds a unique value: what a site resolves a URL
+/// against.
+///
+/// The published copy decides, not the index: a value a draft is about to use answers "not
+/// found" until the change is released, and the value still being served keeps resolving.
+async fn get_collection_item_by_unique_value<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, field, value)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let (id, metadata, values) = module
+        .collection_service
+        .get_published_item_by_unique_value(&name, &field, &value)
+        .await?;
+    Ok(Json(PublishedItem {
+        id,
+        published_at: metadata.published_at,
+        last_published_at: metadata.last_published_at,
+        values,
+    }))
 }
 
 #[derive(serde::Serialize)]

@@ -46,3 +46,10 @@
   overflow-wrap: anywhere;
   font-size: 0.8rem;
 }
+
+// The field the server refused: the message names it, and this shows which input that is.
+.field-cell.problem {
+  outline: 2px solid var(--mat-sys-error, #b3261e);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

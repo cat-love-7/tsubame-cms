@@ -6,7 +6,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
-import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
@@ -45,6 +45,8 @@ export class Edit {
   public values = signal<ContentValue>({});
   /** The failure to show, as a key or as the server's own words. */
   public error = signal<Message | null>(null);
+  /** The field the last refusal was about, so the form can mark that one input. */
+  public problemField = signal<string | null>(null);
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
   /** A published page with an unpublished working copy: the site is behind the editor. */
@@ -154,12 +156,16 @@ export class Edit {
     }
 
     this.error.set(null);
+    this.problemField.set(null);
     this.pages.updatePageItem(this.pageName, { ...this.values() }).subscribe({
       next: () => {
         this.error.set(null);
         this.router.navigate(['/settings/single-pages']);
       },
-      error: (e) => this.error.set(failure('content.saveFailed', e)),
+      error: (e) => {
+        this.problemField.set(fieldOf(e));
+        this.error.set(failure('content.saveFailed', e));
+      },
     });
   }
 }

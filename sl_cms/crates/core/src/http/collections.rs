@@ -49,6 +49,10 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
                 .delete(delete_collection_item::<R>),
         )
         .route(
+            "/models/collections/{collection_name}/items/by/{field}/{value}",
+            get(get_collection_item_by_unique_value::<R>),
+        )
+        .route(
             "/models/collections/{collection_name}/items/{id}/metadata",
             get(get_collection_item_metadata::<R>),
         )
@@ -115,6 +119,31 @@ struct ItemStatusResponse {
 
 /// What the item would look like if it were published now: the working copy, with the
 /// schema. Authenticated, because that copy is unpublished content.
+/// The item holding a unique value, for a screen that wants to open whoever already has it.
+///
+/// The index answers, so a draft that is changing its value does not hide the item: the value
+/// it is *about* to use is held too.
+async fn get_collection_item_by_unique_value<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, field, value)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let (id, values) = module
+        .collection_service
+        .get_item_by_unique_value(&name, &field, &value)
+        .await?;
+    Ok(Json(ItemLookup {
+        id: *id,
+        values,
+    }))
+}
+
+#[derive(serde::Serialize)]
+struct ItemLookup {
+    id: u64,
+    values: crate::models::collection::CollectionItemResponse,
+}
+
 async fn preview_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
     Path((collection_name, id)): Path<(String, u64)>,

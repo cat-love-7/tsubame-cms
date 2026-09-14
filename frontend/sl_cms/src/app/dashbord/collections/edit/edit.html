@@ -60,7 +60,11 @@
      the same in both screens. -->
 <div class="field-grid">
   @for (field of schema(); track field.name) {
-    <div class="field-cell" [style]="cellStyle(field)">
+    <div
+      class="field-cell"
+      [class.problem]="problemField() === field.name"
+      [style]="cellStyle(field)"
+    >
       <app-value-field
         [field]="field"
         [value]="values()[field.name]"

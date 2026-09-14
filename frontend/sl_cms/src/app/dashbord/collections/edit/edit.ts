@@ -6,7 +6,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
-import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
@@ -61,6 +61,8 @@ export class Edit {
   public values = signal<CollectionValue>({});
   /** The failure to show, as a key or as the server's own words. */
   public error = signal<Message | null>(null);
+  /** The field the last refusal was about, so the form can mark that one input. */
+  public problemField = signal<string | null>(null);
   /** Draft/published state; `null` for an item that has not been saved yet. */
   public metadata = signal<ItemMetadata | null>(null);
   public published = computed(() => this.metadata()?.status === 'published');
@@ -197,6 +199,7 @@ export class Edit {
     }
 
     this.error.set(null);
+    this.problemField.set(null);
     const values: CollectionValue = { ...this.values() };
 
     // Subscribe per branch: the create and update calls return different observable
@@ -205,14 +208,20 @@ export class Edit {
     if (id === null) {
       this.collectionsService.createCollectionItem(this.collectionName, values).subscribe({
         next: () => this.goBackToList(),
-        error: (e) => this.error.set(failure('content.saveFailed', e)),
+        error: (e) => this.refuse(e),
       });
     } else {
       this.collectionsService.updateCollectionItem(this.collectionName, id, values).subscribe({
         next: () => this.goBackToList(),
-        error: (e) => this.error.set(failure('content.saveFailed', e)),
+        error: (e) => this.refuse(e),
       });
     }
+  }
+
+  /** A save the server refused: remember which field it was about, and mark it. */
+  private refuse(error: unknown) {
+    this.problemField.set(fieldOf(error));
+    this.error.set(failure('content.saveFailed', error));
   }
 
   private goBackToList() {

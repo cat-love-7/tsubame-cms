@@ -28,6 +28,17 @@ export function t(key: string, params?: Record<string, unknown>): Message {
  * only the screen's own context is translated around it. `params` adds anything else the site's
  * wording needs (`{id}` for "composite field X").
  */
+/**
+ * The field a refusal is about, when the server named one.
+ *
+ * Screens use it to mark the input; the message wording fills the same name in, so the reader
+ * gets told and shown the same thing.
+ */
+export function fieldOf(error: unknown): string | null {
+  const field = (error as { error?: { field?: unknown } })?.error?.field;
+  return typeof field === 'string' && field ? field : null;
+}
+
 export function failure(
   siteKey: string,
   error: unknown,
@@ -37,10 +48,8 @@ export function failure(
   if (key && !isStatusError(error)) {
     // A refusal that is about one field names it, so the wording can point at the input
     // rather than leaving the reader to find which one it meant.
-    const field = (error as { error?: { field?: unknown } })?.error?.field;
-    return typeof field === 'string' && field
-      ? { key, params: { field, ...params } }
-      : { key };
+    const field = fieldOf(error);
+    return field ? { key, params: { field, ...params } } : { key };
   }
   return { key: siteKey, params: { ...params, message: errorMessage(error) } };
 }

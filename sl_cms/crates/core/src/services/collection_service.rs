@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{HttpError, map_internal_error};
+use crate::models::field::FieldValue;
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
@@ -330,6 +331,50 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 Ok(())
             }
         }
+    }
+
+    /// The item holding `value` in `field`, which the schema must declare unique.
+    ///
+    /// The index is what is asked, so this is a point read rather than a scan - and it is the
+    /// same answer a save would get, so "is this value free?" and "who has it?" cannot disagree.
+    /// What comes back is the item an editor sees (its working copy when it has one).
+    pub async fn get_item_by_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        field: &str,
+        value: &str,
+    ) -> Result<(CollectionItemId, CollectionItemResponse), HttpError> {
+        let schema = self.get_collection_schema(collection_name).await?;
+        let declared = schema
+            .iter()
+            .any(|candidate| candidate.name == field && candidate.unique);
+        if !declared {
+            return Err(HttpError::BadRequest(&format!(
+                "field '{field}' is not unique, so a value does not name one item"
+            )));
+        }
+        let value = value.trim();
+        if value.is_empty() {
+            return Err(HttpError::BadRequest("a value to look up is required"));
+        }
+        let unique = crate::repositories::collection_repository::UniqueValue {
+            field: field.to_string(),
+            value: value.to_string(),
+        };
+        let item_id = self
+            .collection_repository
+            .find_unique_value(collection_name, &unique)
+            .await
+            .map_err(map_internal_error)?
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!("no item holds {field} = '{value}'"))
+            })?;
+        let item = self
+            .working_item(collection_name, &item_id)
+            .await?
+            .ok_or_else(|| HttpError::NotFound("the item holding that value is gone"))?;
+        let values = self.format_item(collection_name, &item).await?;
+        Ok((item_id, values))
     }
 
     /// Claim the unique values a write is about to make visible.
@@ -858,26 +903,48 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             // The content the site serves just changed, so the release moves `updated_at`.
             metadata = metadata.released(chrono::Utc::now());
         }
-        // Releasing a working copy moves the unique index: the working value becomes the
-        // published one, so the value the *old* published copy held is given up. Unpublishing
-        // keeps both copies, so it changes nothing here.
+        // The index follows the copies. Publishing promotes the working copy, so the value the
+        // *old* published copy held is given up; unpublishing gives it up too, because the item
+        // is off the site and what is left is the working copy.
         let schema = self
             .collection_repository
             .get_collection_schema(collection_name)
             .await.map_err(map_internal_error)?
             .unwrap_or_default();
-        let (reserve, release) = match &pending {
-            Some(pending) if has_unique_fields(&schema) => {
-                let published = self
+        let (reserve, release) = if has_unique_fields(&schema) {
+            let published = self
+                .collection_repository
+                .get_collection_item(collection_name, &item_id)
+                .await.map_err(map_internal_error)?;
+            let working = match &pending {
+                Some(pending) => Some(pending.clone()),
+                None => self
                     .collection_repository
-                    .get_collection_item(collection_name, &item_id)
-                    .await.map_err(map_internal_error)?;
-                let before =
-                    Self::held_unique_values(&schema, [published.as_ref(), Some(pending)]);
-                let after = Self::held_unique_values(&schema, [Some(pending)]);
-                Self::unique_difference(&before, &after)
-            }
-            _ => (Vec::new(), Vec::new()),
+                    .get_collection_item_draft(collection_name, &item_id)
+                    .await
+                    .map_err(map_internal_error)?,
+            };
+            let before = Self::held_unique_values_for_status(
+                &schema,
+                was_published,
+                published.as_ref(),
+                working.as_ref(),
+            );
+            let after_published = pending.as_ref().or(published.as_ref());
+            let after_working = if metadata.is_published() {
+                None
+            } else {
+                working.as_ref()
+            };
+            let after = Self::held_unique_values_for_status(
+                &schema,
+                metadata.is_published(),
+                after_published,
+                after_working,
+            );
+            Self::unique_difference(&before, &after)
+        } else {
+            (Vec::new(), Vec::new())
         };
         self.reserve_unique_values(collection_name, &item_id, &reserve)
             .await?;
@@ -972,6 +1039,41 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 ))
             })?;
         Ok((metadata, self.format_item(collection_name, &item).await?))
+    }
+
+    /// The published item whose published copy holds `value`, for a site resolving a URL.
+    ///
+    /// The index names the candidate; the published copy is what decides. That keeps a draft
+    /// from publishing a value early: while a draft changes the value, the old one still
+    /// resolves (it is what the site serves) and the new one answers "not found" until the
+    /// change is released.
+    pub async fn get_published_item_by_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        field: &str,
+        value: &str,
+    ) -> Result<(CollectionItemId, ItemMetadata, CollectionItemResponse), HttpError> {
+        let (item_id, _) = self
+            .get_item_by_unique_value(collection_name, field, value)
+            .await?;
+        let (metadata, values) = self.get_published_item(collection_name, item_id).await?;
+        let value = value.trim();
+        let holds_it = self
+            .collection_repository
+            .get_collection_item(collection_name, &item_id)
+            .await
+            .map_err(map_internal_error)?
+            .and_then(|item| match item.get(field) {
+                Some(FieldValue::Text(text)) => Some(text.trim() == value),
+                _ => None,
+            })
+            .unwrap_or(false);
+        if !holds_it {
+            return Err(HttpError::NotFound(&format!(
+                "no published item holds {field} = '{value}'"
+            )));
+        }
+        Ok((item_id, metadata, values))
     }
 
     /// Collections that have at least one published item.
@@ -1248,6 +1350,17 @@ mod tests {
                     Ok(Reservation::Held)
                 }
             }
+        }
+
+        async fn find_unique_value(
+            &self,
+            collection_name: &CollectionName,
+            unique: &UniqueValue,
+        ) -> Result<Option<CollectionItemId>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
+            let index = self.unique.read().unwrap();
+            let key = (collection_name.clone(), unique.field.clone(), unique.value.clone());
+            Ok(index.get(&key).cloned())
         }
 
         async fn release_unique_value(

@@ -408,6 +408,22 @@ impl CollectionRepository for Repository {
         }
     }
 
+    async fn find_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        unique: &UniqueValue,
+    ) -> Result<Option<CollectionItemId>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(UNIQUE_STORE, StoreOptions::create())?;
+        let key = unique_key(collection_name.as_str(), unique);
+        let reader = env.read()?;
+        match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(owner)) => Ok(Some(CollectionItemId::from_u64(owner.parse()?))),
+            _ => Ok(None),
+        }
+    }
+
     async fn release_unique_value(
         &self,
         collection_name: &CollectionName,

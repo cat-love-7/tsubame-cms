@@ -57,6 +57,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | GET | `/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
 | GET | `/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
 | GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
+| GET | `/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
 | GET | `/content/single-pages` | 公開済み単一ページ名の配列 |
 | GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
 
@@ -128,6 +129,21 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 **削除は参照を検査しない。** 画像を id で参照しているアイテムはそのまま残り、参照先が解決しなくなる
 だけ(使用中チェックと参照の書き換えは行わない、という判断)。
+
+### 値からアイテムを引く
+
+一意なフィールドは**値が 1 件を指す**ので、両方の API に参照ルートがある(索引の点読みで、
+全件走査はしない)。
+
+| メソッド | パス | 返すもの |
+|---|---|---|
+| GET | `/models/collections/{name}/items/by/{field}/{value}` | `{ "id": 1, "values": {...} }`(要トークン、一意でないフィールドは 400) |
+| GET | `/content/collections/{name}/items/by/{field}/{value}` | 公開アイテム(上記と同じ形) |
+
+- **管理側は索引が答える**。下書きが値を変更中のアイテムも、公開コピーが使っている値と
+  これから使う値の**どちらでも引ける**(保存が衝突する値と同じ答えになる)。
+- **公開側は公開コピーが決める**。下書きが変更中の値は、公開されるまで 404。いま配信している値は
+  そのまま解決する。
 
 ### 一意なフィールド
 

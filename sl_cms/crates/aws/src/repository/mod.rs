@@ -746,6 +746,19 @@ impl CollectionRepository for AwsRepository {
         }
     }
 
+    async fn find_unique_value(
+        &self,
+        collection_name: &CollectionName,
+        unique: &UniqueValue,
+    ) -> Result<Option<CollectionItemId>, BoxError> {
+        let inner = self.inner.clone();
+        let partition = key::unique(collection_name.as_str(), &unique.field);
+        match read(&inner, &partition, &unique.value).await? {
+            Some(owner) => Ok(Some(CollectionItemId::from_u64(owner.parse()?))),
+            None => Ok(None),
+        }
+    }
+
     async fn release_unique_value(
         &self,
         collection_name: &CollectionName,

@@ -1133,6 +1133,11 @@ try {
   await refusal.waitFor({ timeout: 10000 }).catch(() => {});
   const refusalText = ((await refusal.textContent()) ?? '').trim();
   check('一意な値の重複はフォームで止まる', refusalText.includes('title'), refusalText);
+  check(
+    '拒否されたフィールドが強調される',
+    (await page.locator('.field-cell.problem').count()) === 1,
+    `${await page.locator('.field-cell.problem').count()} 件`,
+  );
 
   const afterRefusal = await api(
     'GET',
