@@ -1,0 +1,113 @@
+# Cognito is the identity provider: who someone is. What they may do is the CMS's own records
+# (doc/aws-plan.md, P4), so there are no groups to keep in step here.
+resource "aws_cognito_user_pool" "cms" {
+  name = local.name
+
+  # Accounts are named by a username, and an email address is optional — the same rule the CMS
+  # applies locally (crates/core/src/models/user.rs).
+  username_attributes      = []
+  auto_verified_attributes = []
+
+  username_configuration {
+    case_sensitive = false
+  }
+
+  # The same minimum the CMS enforces locally; the character classes are Cognito's default and
+  # stricter, which is fine — a password that satisfies Cognito satisfies the CMS.
+  password_policy {
+    minimum_length = 8
+  }
+
+  admin_create_user_config {
+    # An account an administrator creates has to change its password on first use.
+    allow_admin_create_user_only = true
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+}
+
+resource "aws_cognito_user_pool_client" "browser" {
+  name         = "${local.name}-browser"
+  user_pool_id = aws_cognito_user_pool.cms.id
+
+  # A browser cannot keep a secret, and this client is only ever used from one.
+  generate_secret = false
+
+  # SRP rather than sending the password to Cognito from JavaScript, plus refresh. The hosted
+  # UI needs the authorization-code flow, which the pool supports by default.
+  explicit_auth_flows = [
+    "ALLOW_USER_SRP_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
+
+  # Whether an account exists is none of a stranger's business: the same reason the CMS answers
+  # "invalid username or password" for both cases.
+  prevent_user_existence_errors = "ENABLED"
+
+  supported_identity_providers = ["COGNITO"]
+
+  token_validity_units {
+    access_token  = "hours"
+    id_token      = "hours"
+    refresh_token = "days"
+  }
+
+  access_token_validity  = 1
+  id_token_validity      = 1
+  refresh_token_validity = 30
+}
+
+resource "aws_cognito_user_pool_domain" "cms" {
+  domain       = local.cognito_domain_prefix
+  user_pool_id = aws_cognito_user_pool.cms.id
+}
+
+# Brute force is handled in two places, and neither is a per-account counter of ours: Cognito
+# locks an account after repeated failures, and this is the volume case that its documentation
+# points at WAF for.
+resource "aws_wafv2_web_acl" "sign_in" {
+  name  = "${local.name}-sign-in"
+  scope = "REGIONAL"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "rate-limit-sign-in"
+    priority = 1
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.waf_rate_limit
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${local.name}-waf"
+    sampled_requests_enabled   = true
+  }
+}
+
+resource "aws_wafv2_web_acl_association" "sign_in" {
+  resource_arn = aws_cognito_user_pool.cms.arn
+  web_acl_arn  = aws_wafv2_web_acl.sign_in.arn
+}

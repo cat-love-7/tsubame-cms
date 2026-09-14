@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and fill in. Never commit the real file.
+region     = "eu-west-1"
+project    = "sl-cms"
+environment = "staging"
+
+# Signs preview and reset links. At least 40 characters, and different per deployment.
+jwt_secret = "change-me-0123456789012345678901234567890123"
+
+# Who may become the first administrator by signing in.
+bootstrap_admin_usernames = ["ops@example.com"]
+
+cors_allowed_origins = ["https://cms.example.com"]
+
+# Cognito's hosted page has to be unique across the whole region.
+cognito_domain_prefix = "sl-cms-staging-example"
