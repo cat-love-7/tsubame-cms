@@ -6,6 +6,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use strum_macros::EnumIter;
 
 use crate::models::{
+    error::FieldRefusal,
     image::{Image, ImageID, ImageResponse},
     schema::CompositeFieldId,
 };
@@ -61,16 +62,30 @@ where
             .collect()
     }
     
+    /// Every field the schema names must hold something the schema accepts.
+    ///
+    /// A refusal carries the path to the input - `title`, `tags[2]`, `seo.description` - so the
+    /// screen can mark it and the wording can name it. `prefix` is that path so far, which is how
+    /// a refusal inside a composite or an array is still located once it surfaces.
     pub fn validate_to_schema(
         &self,
         composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
         schema: &T,
-    ) -> Result<(), String> {
+    ) -> Result<(), FieldRefusal> {
+        self.validate_at("", composite_schemas, schema)
+    }
+
+    fn validate_at(
+        &self,
+        prefix: &str,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        schema: &T,
+    ) -> Result<(), FieldRefusal> {
         for field in schema {
             if let Some(v) = self.0.get(&field.name) {
-                v.validate_field_value(field, composite_schemas)?;
+                v.validate_field_at(field, composite_schemas, prefix)?;
             } else if field.required {
-                return Err(format!("Field '{}' is missing", field.name));
+                return Err(FieldRefusal::required(&format!("{prefix}{}", field.name)));
             }
         }
         Ok(())
@@ -727,18 +742,32 @@ impl FieldValue {
         })
     }
 
+    /// Whether this value is one the field's schema accepts.
+    ///
+    /// `validate_field_at` does the work and knows where the value sits; this is the entry point
+    /// for a value at the top level of an item.
     pub fn validate_field_value(
         &self,
         schema: &FieldSchema,
         composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
-    ) -> Result<(), String> {
+    ) -> Result<(), FieldRefusal> {
+        self.validate_field_at(schema, composite_schemas, "")
+    }
+
+    fn validate_field_at(
+        &self,
+        schema: &FieldSchema,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        prefix: &str,
+    ) -> Result<(), FieldRefusal> {
+        let path = format!("{prefix}{}", schema.name);
         match (&schema.field_type, self) {
             (FieldType::Text(field_params), FieldValue::Text(text))
             | (FieldType::Markdown(field_params), FieldValue::Markdown(text)) => {
                 if schema.required && schema.field_type.test_required(self) == false {
-                    return Err(format!("field {} is required", schema.name));
+                    return Err(FieldRefusal::required(&path));
                 }
-                schema.validate_text_length(text, &field_params, None)?;
+                schema.validate_text_length(text, &field_params, &path)?;
                 Ok(())
             }
             (FieldType::Number, FieldValue::Number(_))
@@ -747,23 +776,23 @@ impl FieldValue {
             | (FieldType::DateTime, FieldValue::DateTime(_))
             | (FieldType::Image, FieldValue::Image(_)) => {
                 if schema.required && schema.field_type.test_required(self) == false {
-                    return Err(format!("field {} is required", schema.name));
+                    return Err(FieldRefusal::required(&path));
                 }
                 Ok(())
             }
             (FieldType::CompositeField(s), FieldValue::CompositeField(field_value)) => {
                 if schema.required && schema.field_type.test_required(self) == false {
-                    return Err(format!("field {} is required", schema.name));
+                    return Err(FieldRefusal::required(&path));
                 }
                 if let Some(v) = field_value {
                     if s.id != v.id {
-                        return Err(format!("Composite field id does not match schema id"));
+                        return Err(FieldRefusal::composite_mismatch(&path));
                     }
-                    let composite_schema = composite_schemas.get(&s.id).ok_or(format!(
-                        "Composite field schema not found for id: {}",
-                        &s.id
-                    ))?;
-                    v.values.validate_to_schema(&composite_schemas, &composite_schema)?;
+                    let composite_schema = composite_schemas
+                        .get(&s.id)
+                        .ok_or_else(|| FieldRefusal::unknown_composite(&path, &s.id))?;
+                    v.values
+                        .validate_at(&format!("{path}."), composite_schemas, &composite_schema)?;
                     Ok(())
                 } else {
                     Ok(())
@@ -771,9 +800,11 @@ impl FieldValue {
             }
             (FieldType::Array(schemas), FieldValue::Array(values)) => {
                 if schema.required && schema.field_type.test_required(self) == false {
-                    return Err(format!("field {} is required", schema.name));
+                    return Err(FieldRefusal::required(&path));
                 }
                 for (index, value) in values.iter().enumerate() {
+                    // An array item is named by the path plus its index: `tags[2]`.
+                    let item = format!("{path}[{index}]");
                     match value {
                         FieldValue::Text(value) => {
                             let option = Self::extract_text_options(&schemas, |ft| {
@@ -785,13 +816,10 @@ impl FieldValue {
                             });
                             match option {
                                 Some(options) => {
-                                    schema.validate_text_length(value, &options, Some(index))?;
+                                    schema.validate_text_length(value, &options, &item)?;
                                 }
                                 None => {
-                                    return Err(format!(
-                                        "field {}[{}] type does not match array item types",
-                                        schema.name, index
-                                    ));
+                                    return Err(FieldRefusal::type_mismatch(&item));
                                 }
                             }
                         }
@@ -805,13 +833,10 @@ impl FieldValue {
                             });
                             match option {
                                 Some(options) => {
-                                    schema.validate_text_length(value, &options, Some(index))?;
+                                    schema.validate_text_length(value, &options, &item)?;
                                 }
                                 None => {
-                                    return Err(format!(
-                                        "field {}[{}] type does not match array item types",
-                                        schema.name, index
-                                    ));
+                                    return Err(FieldRefusal::type_mismatch(&item));
                                 }
                             }
                         }
@@ -822,13 +847,10 @@ impl FieldValue {
                         | FieldValue::Image(_) => {
                             let value_type = value.get_type();
                             if schemas.contains(&value_type) == false {
-                                return Err(format!(
-                                    "field {}[{}] type does not match array item types",
-                                    schema.name, index
-                                ));
+                                return Err(FieldRefusal::type_mismatch(&item));
                             }
                             if value_type.test_required(value) == false {
-                                return Err(format!("field {}[{}] is required", schema.name, index));
+                                return Err(FieldRefusal::required(&item));
                             }
                         }
                         FieldValue::CompositeField(cv) => match cv {
@@ -845,30 +867,31 @@ impl FieldValue {
                                     });
                                 match schema {
                                     Some(s) => {
-                                        let composite_schema =
-                                            composite_schemas.get(&s.id).ok_or(format!(
-                                                "Composite field schema not found for id: {}",
-                                                &s.id
-                                            ))?;
+                                        let composite_schema = composite_schemas
+                                            .get(&s.id)
+                                            .ok_or_else(|| {
+                                                FieldRefusal::unknown_composite(&item, &s.id)
+                                            })?;
 
-                                        cv.values.validate_to_schema(
+                                        cv.values.validate_at(
+                                            &format!("{item}."),
                                             composite_schemas,
                                             &composite_schema,
                                         )?;
                                     }
                                     None => {
-                                        return Err(format!(
-                                            "Array item composite field schema not found"
-                                        ));
+                                        // The element names a definition this array does not
+                                        // declare, so the element itself is the wrong kind.
+                                        return Err(FieldRefusal::type_mismatch(&item));
                                     }
                                 }
                             }
                             None => {
-                                return Err(format!("field {}[{}] is required", schema.name, index));
+                                return Err(FieldRefusal::required(&item));
                             }
                         },
                         FieldValue::Array(_) => {
-                            return Err(format!("Nested arrays are not supported"));
+                            return Err(FieldRefusal::nested_array(&item));
                         }
                         FieldValue::TextEnum(vals) => {
                             let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
@@ -879,11 +902,11 @@ impl FieldValue {
                             });
                             for val in vals {
                                 if !option.contains(val) {
-                                    return Err(format!("Value '{}' not in enum options", val));
+                                    return Err(FieldRefusal::enum_value(&item, val));
                                 }
                             }
                             if vals.is_empty() && schema.required {
-                                return Err(format!("Array item enum values cannot be empty"));
+                                return Err(FieldRefusal::required(&item));
                             }
                         }
                     }
@@ -893,15 +916,15 @@ impl FieldValue {
             (FieldType::TextEnum(options), FieldValue::TextEnum(vals)) => {
                 for val in vals {
                     if !options.contains(val) {
-                        return Err(format!("Value '{}' not in enum options", val));
+                        return Err(FieldRefusal::enum_value(&path, val));
                     }
                 }
                 if vals.is_empty() && schema.required {
-                    return Err(format!("Enum values cannot be empty"));
+                    return Err(FieldRefusal::required(&path));
                 }
                 Ok(())
             }
-            _ => Err(format!("Field value type does not match field type")),
+            _ => Err(FieldRefusal::type_mismatch(&path)),
         }
     }
     pub fn format_field_value(

@@ -89,6 +89,41 @@ describe('EditSchema', () => {
     expect(component.Schema.map((f) => f.name)).toEqual(['a']);
   });
 
+  // Two fields added one after another must not share their type: the editor writes the limits
+  // straight into it, so sharing would apply one field's limit to the other.
+  it('gives a new field a type of its own', () => {
+    component.Schema = [];
+    component.addField();
+    component.addField();
+
+    const [first, second] = component.Schema;
+    expect(first.field_type).toEqual(second.field_type);
+    expect(first.field_type).not.toBe(second.field_type);
+
+    (first.field_type as { Text: { max_length?: number } }).Text.max_length = 20;
+    expect((second.field_type as { Text: { max_length?: number } }).Text.max_length).toBeUndefined();
+  });
+
+  // What the form held is not what the server reads: a limit typed into a text input arrives as a
+  // string, and the server refuses the whole schema over it.
+  it('saves the text limits as numbers, whatever the input handed back', () => {
+    const fresh = TestBed.createComponent(EditSchema);
+    fresh.componentInstance.Schema = [
+      {
+        name: 'title',
+        field_type: { Text: { max_length: '8' as unknown as number, min_length: '' as unknown as number } },
+        required: false,
+        ...DefaultFieldLayout,
+      },
+    ];
+    const saved: FieldSchema[][] = [];
+    fresh.componentInstance.save.subscribe((schema) => saved.push(schema));
+
+    fresh.componentInstance.requestSave();
+
+    expect(saved[0][0].field_type).toEqual({ Text: { max_length: 8, min_length: undefined } });
+  });
+
   it('places each field on the shared grid using its own width and height', () => {
     // A fresh fixture: the shared one has already been change-detected, and mutating an
     // input afterwards trips the dev-mode ExpressionChangedAfterItHasBeenChecked check.

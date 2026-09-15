@@ -541,6 +541,118 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// What a schema says about a value comes back as something a form can act on: the status says
+/// the input was wrong, the code says how, and the field says which input - a path, so a refusal
+/// inside a composite still points at something the screen can mark.
+#[tokio::test]
+async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let composite = json!([
+        { "name": "description", "field_type": { "Text": { "max_length": 5 } }, "required": false, "width": 12, "height": 1 }
+    ]);
+    send(&app.router, Method::POST, "/models/composite_fields/seo", Some(&token), Some(composite)).await;
+
+    let deep = json!([
+        { "name": "label", "field_type": { "Text": { "max_length": 3 } }, "required": false, "width": 12, "height": 1 }
+    ]);
+    send(&app.router, Method::POST, "/models/composite_fields/deep", Some(&token), Some(deep)).await;
+
+    let schema = json!([
+        { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1 },
+        { "name": "code", "field_type": { "Text": { "max_length": 5 } }, "required": false, "width": 12, "height": 1 },
+        { "name": "tags", "field_type": { "Array": [{ "Text": { "max_length": 3 } }] }, "required": false, "width": 12, "height": 1 },
+        { "name": "seo", "field_type": { "CompositeField": { "id": "seo" } }, "required": false, "width": 12, "height": 1 },
+        { "name": "parts", "field_type": { "Array": [{ "CompositeField": { "id": "deep" } }] }, "required": false, "width": 12, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // A required field left empty.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "field_required");
+    assert_eq!(body["field"], "title");
+
+    // Longer than the field allows. The limit counts characters: six Japanese characters are
+    // over a limit of five, and five are not, whatever they take in bytes.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "code": "あいうえおか" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "field_too_long");
+    assert_eq!(body["field"], "code");
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "code": "あいうえお" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // An array item is named by its index, so the reader knows which one to look at.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "tags": ["one", "toolong"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "field_too_long");
+    assert_eq!(body["field"], "tags[1]");
+
+    // A refusal inside a composite names the path down to it.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "seo": { "description": "toolong" } })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "field_too_long");
+    assert_eq!(body["field"], "seo.description");
+
+    // And one inside an element of an array of composites names the whole way there.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/limited/item",
+        Some(&token),
+        Some(json!({ "title": "ok", "parts": [{ "id": "deep", "values": { "label": "toolong" } }] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "field_too_long");
+    assert_eq!(body["field"], "parts[0].label");
+}
+
 /// Image arrays are allowed on their own; `Number` + `Image` together is not, because
 /// array items carry no type tag and an image id is a JSON number.
 #[tokio::test]

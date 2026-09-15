@@ -122,9 +122,33 @@ export class Edit {
   setFieldError(field: FieldSchema, message: Message | null) {
     if (message) {
       this.fieldErrors[field.name] = message;
+      // A problem the widget itself found (a text outside its lengths, unparseable JSON) marks
+      // its input exactly like a refusal from the server does.
+      this.problemField.set(field.name);
     } else {
       delete this.fieldErrors[field.name];
+      if (this.problemField() === field.name) {
+        this.problemField.set(null);
+      }
     }
+  }
+
+  /**
+   * Whether this cell is the one a refusal named.
+   *
+   * The server names the input as a path (`title`, `tags[2]`, `seo.description`), so a refusal
+   * about something inside a composite still marks the composite's cell rather than nothing.
+   */
+  isProblem(field: FieldSchema): boolean {
+    const problem = this.problemField();
+    if (problem === null) {
+      return false;
+    }
+    return (
+      problem === field.name ||
+      problem.startsWith(`${field.name}.`) ||
+      problem.startsWith(`${field.name}[`)
+    );
   }
 
   /** Mint a link that shows this working copy to someone without an account, and copy it

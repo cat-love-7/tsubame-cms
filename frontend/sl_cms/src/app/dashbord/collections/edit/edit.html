@@ -62,7 +62,7 @@
   @for (field of schema(); track field.name) {
     <div
       class="field-cell"
-      [class.problem]="problemField() === field.name"
+      [class.problem]="isProblem(field)"
       [style]="cellStyle(field)"
     >
       <app-value-field

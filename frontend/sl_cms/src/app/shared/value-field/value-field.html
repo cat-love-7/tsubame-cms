@@ -1,5 +1,12 @@
 <span class="field-label">
   {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
+  @if (field.unique) {
+    <!-- The value has to be the only one in the collection; the server is what checks it, so the
+         label says so rather than leaving the reader to find out from a refusal. -->
+    <span class="unique-mark" [title]="'schema.uniqueHint' | transloco">
+      {{ 'content.uniqueField' | transloco }}
+    </span>
+  }
 </span>
 
 <!-- Array values are edited as JSON: always for the plain array types, and for an image
@@ -26,9 +33,17 @@
         matInput
         [name]="field.name"
         [disabled]="disabled"
+        [attr.maxlength]="maxLength()"
+        [attr.minlength]="minLength()"
         [ngModel]="value"
         (ngModelChange)="update($event)"
       />
+      @if (lengthHintKey(); as key) {
+        <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+      }
+      @if (maxLength() !== null) {
+        <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
+      }
     </mat-form-field>
   }
   @case ('Markdown') {
@@ -38,9 +53,17 @@
         rows="6"
         [name]="field.name"
         [disabled]="disabled"
+        [attr.maxlength]="maxLength()"
+        [attr.minlength]="minLength()"
         [ngModel]="value"
         (ngModelChange)="update($event)"
       ></textarea>
+      @if (lengthHintKey(); as key) {
+        <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+      }
+      @if (maxLength() !== null) {
+        <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
+      }
     </mat-form-field>
   }
   @case ('Number') {

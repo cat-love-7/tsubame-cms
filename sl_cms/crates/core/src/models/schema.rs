@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::models::error::FieldRefusal;
 use crate::models::identity::StringId;
 
 use super::field::FieldValue;
@@ -86,38 +87,31 @@ impl FieldType {
     }
 }
 impl FieldSchema {
+    /// Whether `value` is within the lengths the field was given.
+    ///
+    /// `path` is where the value sits in the item (`body`, `tags[2]`, `seo.description`), which is
+    /// what the refusal names: the caller knows the path, including the array index, and this
+    /// knows the limits. An empty optional value is never below the minimum - a field that must
+    /// not be left empty says so with `required`.
+    ///
+    /// The limits are counted in **characters**, not bytes: a schema that says 20 means twenty
+    /// Japanese characters as much as twenty Latin ones, and the editor counts the same way (it
+    /// counts code points, which is one per character for everything but astral emoji).
     pub fn validate_text_length(
         &self,
         value: &str,
         options: &TextFieldOptions,
-        index: Option<usize>,
-    ) -> Result<(), String> {
+        path: &str,
+    ) -> Result<(), FieldRefusal> {
+        let length = value.chars().count();
         if let Some(max_length) = options.max_length {
-            if value.len() > max_length {
-                return Err(match index {
-                    Some(idx) => format!(
-                        "field {}[{}] exceeds maximum length of {}",
-                        self.name, idx, max_length
-                    ),
-                    None => format!(
-                        "field {} exceeds maximum length of {}",
-                        self.name, max_length
-                    ),
-                });
+            if length > max_length {
+                return Err(FieldRefusal::too_long(path, max_length));
             }
         }
         if let Some(min_length) = options.min_length {
-            if value.len() < min_length && !value.is_empty() {
-                return Err(match index {
-                    Some(idx) => format!(
-                        "field {}[{}] is below minimum length of {}",
-                        self.name, idx, min_length
-                    ),
-                    None => format!(
-                        "field {} is below minimum length of {}",
-                        self.name, min_length
-                    ),
-                });
+            if length < min_length && !value.is_empty() {
+                return Err(FieldRefusal::too_short(path, min_length));
             }
         }
         Ok(())
@@ -369,6 +363,38 @@ mod tests {
             height: 1,
             unique: false,
         }
+    }
+
+    /// The limits are characters, not bytes: a twenty-character Japanese title fits a schema
+    /// that says 20, and the refusal names the path the caller gave.
+    #[test]
+    fn a_text_limit_counts_characters() {
+        let options = TextFieldOptions {
+            max_length: Some(20),
+            min_length: Some(4),
+        };
+        let field = field("title", FieldType::Text(options));
+
+        // Twenty Japanese characters are twenty characters, however many bytes they take.
+        assert_eq!("あ".repeat(20).chars().count(), 20);
+        assert!(field.validate_text_length(&"あ".repeat(20), &options, "title").is_ok());
+        assert!(field.validate_text_length(&"あ".repeat(21), &options, "title").is_err());
+        assert!(field.validate_text_length("短い", &options, "title").is_err());
+
+        let refusal = field
+            .validate_text_length(&"あ".repeat(21), &options, "title")
+            .unwrap_err();
+        assert_eq!(refusal.code, "field_too_long");
+        assert_eq!(refusal.field, "title");
+
+        let refusal = field
+            .validate_text_length("短い", &options, "tags[2]")
+            .unwrap_err();
+        assert_eq!(refusal.code, "field_too_short");
+        assert_eq!(refusal.field, "tags[2]");
+
+        // An empty optional value is not below the minimum; `required` is what says that.
+        assert!(field.validate_text_length("", &options, "title").is_ok());
     }
 
     #[test]

@@ -18,7 +18,12 @@ import {
   resizeHeight,
   resizeWidth,
 } from 'app/core/field-layout';
-import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
+import {
+  DefaultFieldLayout,
+  FieldSchema,
+  newFieldType,
+  schemaForSaving,
+} from 'app/models/schema/fields';
 import { FieldValue, defaultValueForField } from 'app/models/values/fields';
 import { ValueField } from 'app/shared/value-field/value-field';
 import { Field } from '../field/field';
@@ -101,7 +106,8 @@ export class EditSchema {
   addField() {
     this.Schema.push({
       name: '',
-      field_type: FieldDefaults.Text,
+      // Its own copy of the default: the field editor writes into the type it is given.
+      field_type: newFieldType('Text'),
       required: false,
       ...DefaultFieldLayout,
     });
@@ -140,7 +146,9 @@ export class EditSchema {
   }
 
   requestSave() {
-    this.save.emit(this.Schema);
+    // Normalised on the way out: what the form held (strings, empty inputs) is not what the
+    // server reads.
+    this.save.emit(schemaForSaving(this.Schema));
   }
 
   /**

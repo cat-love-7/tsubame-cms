@@ -986,6 +986,14 @@ try {
     ) ?? false,
   );
 
+  // A fourth field carrying the schema's own text limits, which the content editor has to
+  // take as seriously as the schema editor does.
+  await page.click('button:has-text("Add field")');
+  const summaryField = page.locator('.schema-field').nth(3);
+  await summaryField.locator('input[name=fieldName]').fill('summary');
+  await summaryField.locator('input[name=maxLength]').fill('8');
+  await summaryField.locator('input[name=minLength]').fill('5');
+
   // Half of the 12-column grid, from the presets rather than the number input.
   await textField.locator('.width-presets button', { hasText: '1/2' }).click();
 
@@ -1016,6 +1024,7 @@ try {
   const titleInput = page.locator('app-value-field input').first();
   await titleInput.waitFor({ timeout: 15000 });
   await titleInput.fill('first item');
+  await page.locator('app-value-field input[name=summary]').fill('summary1');
   await page.locator('app-value-field mat-select').click();
   await page.locator('mat-option', { hasText: 'published' }).click();
   // A multiple select keeps its panel open; the Save button is behind it until it closes.
@@ -1125,13 +1134,50 @@ try {
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/create`, { waitUntil: 'networkidle' });
   const duplicateTitle = page.locator('app-value-field input').first();
   await duplicateTitle.waitFor({ timeout: 15000 });
+
+  // The schema's limits are the content editor's business too, not just the server's: the input
+  // carries them, the hint states them, and a value outside them stops the save before it is
+  // sent (the minimum cannot be enforced by the browser, which is the case this covers).
+  const summary = page.locator('app-value-field input[name=summary]');
+  await summary.waitFor({ timeout: 15000 });
+  // The unique field says so on the form: only the server can check it, but the reader is told
+  // before they find out from a refusal.
+  check(
+    '一意なフィールドだと画面に出る',
+    (await page.locator('app-value-field .unique-mark').count()) === 1,
+    `${await page.locator('app-value-field .unique-mark').count()} 件`,
+  );
+  check('スキーマの文字数が入力欄に効く', (await summary.getAttribute('maxlength')) === '8', 'maxlength');
+  check(
+    'スキーマの文字数がヒントに出る',
+    ((await summary.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
+      '5–8 characters',
+    ),
+  );
+
+  await summary.fill('ab');
+  await page.click('button:has-text("Save")');
+  await page.waitForTimeout(500);
+  const stillCreating = page.url().includes('/create');
+  const summaryProblem = await page.locator('.field-cell.problem').count();
+  check('短すぎる値は保存前に止まる', stillCreating && summaryProblem === 1, `${stillCreating} / ${summaryProblem}`);
+
+  // A value inside the limits is accepted again, so only the duplicate is left to refuse.
+  await summary.fill('summary1');
   await duplicateTitle.fill('first item');
   // The refusal is the point of this step, so its 409 is expected.
   expectConsoleError(/409 \(Conflict\)/);
   await page.click('button:has-text("Save")');
-  const refusal = page.locator('.error');
-  await refusal.waitFor({ timeout: 10000 }).catch(() => {});
-  const refusalText = ((await refusal.textContent()) ?? '').trim();
+  // The length check above left its own message in the banner, so this waits for the banner to
+  // say something new rather than for it to appear.
+  await page
+    .waitForFunction(
+      () => document.querySelector('.error')?.textContent?.includes('title') ?? false,
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const refusalText = ((await page.locator('.error').textContent()) ?? '').trim();
   check('一意な値の重複はフォームで止まる', refusalText.includes('title'), refusalText);
   check(
     '拒否されたフィールドが強調される',

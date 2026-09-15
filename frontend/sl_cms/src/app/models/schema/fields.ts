@@ -92,6 +92,76 @@ export type FieldSchema = {
 /** The layout a newly added field starts with: full width, single row. */
 export const DefaultFieldLayout = { width: 12, height: 1, unique: false } as const;
 
+/**
+ * A fresh copy of a default field type.
+ *
+ * `FieldDefaults` holds one object per type, and a field editor mutates the type it is handed -
+ * the text limits are typed straight into it, the enum options and array item types are written
+ * back into it. Handing that shared object to a field would make every field of the type share
+ * one set of options: setting a maximum length on one text field would set it on all of them, and
+ * on every text field added afterwards. Each field gets its own copy.
+ */
+export function newFieldType(type: keyof FieldTypeMap): FieldType {
+  // JSON rather than `structuredClone`: the default is plain JSON, and this works in the browser
+  // and in the tests alike.
+  return JSON.parse(JSON.stringify(FieldDefaults[type])) as FieldType;
+}
+
+/**
+ * A length as it goes on the wire: a whole number, or `undefined` for "no limit".
+ *
+ * The schema editor's inputs hand back whatever the form had - a string while it is being typed,
+ * `''` when it is cleared - and the server deserialises `Option<usize>` strictly, so a string
+ * there is a 422 about the JSON body rather than anything a reader could act on. Text limits are
+ * normalised to numbers before a schema is saved.
+ */
+export function numberOrUndefined(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return Math.trunc(parsed);
+}
+
+/**
+ * The schema as it is saved: the text limits of every field as numbers.
+ *
+ * A field that keeps its limits as strings would be refused by the server with a message about
+ * deserialisation, which is nothing an editor can act on; normalising here means the screens
+ * cannot save a schema the server will not read.
+ */
+export function schemaForSaving(fields: FieldSchema[]): FieldSchema[] {
+  return fields.map((field) => {
+    const type = field.field_type;
+    if (isTextFieldSchema(type)) {
+      return {
+        ...field,
+        field_type: {
+          Text: {
+            max_length: numberOrUndefined(type.Text.max_length),
+            min_length: numberOrUndefined(type.Text.min_length),
+          },
+        },
+      };
+    }
+    if (isMarkdownFieldSchema(type)) {
+      return {
+        ...field,
+        field_type: {
+          Markdown: {
+            max_length: numberOrUndefined(type.Markdown.max_length),
+            min_length: numberOrUndefined(type.Markdown.min_length),
+          },
+        },
+      };
+    }
+    return field;
+  });
+}
+
 export function isTextFieldSchema(field: FieldType): field is TextFieldSchema {
   return typeof field === 'object' && field !== null && 'Text' in field;
 }

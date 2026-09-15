@@ -15,9 +15,12 @@ import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
+  TextFieldOptions,
   isArrayFieldSchema,
   isCompositeFieldSchema,
   isEnumFieldSchema,
+  isMarkdownFieldSchema,
+  isTextFieldSchema,
 } from 'app/models/schema/fields';
 import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
@@ -132,6 +135,7 @@ export class ValueField implements OnInit, OnChanges {
     this.syncArrayBuffer();
     this.loadDefinitions();
     this.syncElements();
+    this.reportTextLength(this.value);
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -140,6 +144,7 @@ export class ValueField implements OnInit, OnChanges {
       this.loadDefinitions();
       this.syncElements();
     } else if (changes['value']) {
+      this.reportTextLength(this.value);
       this.syncArrayBuffer();
       this.syncCompositeValues();
       this.syncElements();
@@ -164,6 +169,49 @@ export class ValueField implements OnInit, OnChanges {
     return isEnumFieldSchema(this.field.field_type) ? this.field.field_type.TextEnum : [];
   }
 
+  /**
+   * The lengths the schema set for this field's text, when it is a text field.
+   *
+   * Both text kinds carry them, and the schema editor offers them for both, so the widget has to
+   * read the same place the server validates.
+   */
+  private textOptions(): TextFieldOptions | null {
+    const type = this.field.field_type;
+    if (isTextFieldSchema(type)) {
+      return type.Text;
+    }
+    if (isMarkdownFieldSchema(type)) {
+      return type.Markdown;
+    }
+    return null;
+  }
+
+  maxLength(): number | null {
+    return this.textOptions()?.max_length ?? null;
+  }
+
+  minLength(): number | null {
+    return this.textOptions()?.min_length ?? null;
+  }
+
+  /** How much has been typed, in the same characters the server counts. */
+  textLength(): number {
+    return typeof this.value === 'string' ? [...this.value].length : 0;
+  }
+
+  /** Which catalog line states the limits, or `null` when the field has none. */
+  lengthHintKey(): string | null {
+    const max = this.maxLength();
+    const min = this.minLength();
+    if (min !== null && max !== null) {
+      return 'content.lengthBetween';
+    }
+    if (max !== null) {
+      return 'content.lengthAtMost';
+    }
+    return min !== null ? 'content.lengthAtLeast' : null;
+  }
+
   imageId(): number | null {
     return imageIdOf(this.value);
   }
@@ -183,6 +231,32 @@ export class ValueField implements OnInit, OnChanges {
     this.value = value;
     this.lastEmitted = value;
     this.valueChange.emit(value);
+    this.reportTextLength(value);
+  }
+
+  /**
+   * Say so, before the save, when a text value is outside the lengths the schema set.
+   *
+   * The server answers the same refusal (`field_too_long` / `field_too_short`), but only after the
+   * whole form has been sent; reporting it here blocks the save and marks the input instead, and
+   * does it in the reader's language. The limits count characters, as the server counts them.
+   */
+  private reportTextLength(value: FieldValue) {
+    const max = this.maxLength();
+    const min = this.minLength();
+    // Nothing to say about a field the schema left unlimited, and nothing to clear either.
+    if (this.textOptions() === null || typeof value !== 'string' || (max === null && min === null)) {
+      return;
+    }
+    if (max !== null && [...value].length > max) {
+      this.errorChange.emit(t('content.valueTooLong', { field: this.field.name, max }));
+      return;
+    }
+    if (min !== null && value.length > 0 && [...value].length < min) {
+      this.errorChange.emit(t('content.valueTooShort', { field: this.field.name, min }));
+      return;
+    }
+    this.errorChange.emit(null);
   }
 
   /** `datetime-local` inputs want local wall time without a timezone. */

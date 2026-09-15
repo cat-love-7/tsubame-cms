@@ -195,4 +195,26 @@ describe('Field', () => {
     expect(enumEditor).toBeTruthy();
     expect(enumEditor.textContent).toContain('draft');
   });
+
+  // Switching type must not hand the field the shared default object: the widgets write into it.
+  it('gives the field a copy of the type it switches to', () => {
+    const fresh = TestBed.createComponent(Field);
+    fresh.componentInstance.field = {
+      name: 'title',
+      field_type: 'Number',
+      required: false,
+      width: 12,
+      height: 1,
+    };
+
+    fresh.componentInstance.onFieldTypeChange('Text');
+    const first = fresh.componentInstance.field.field_type as { Text: { max_length?: number } };
+    first.Text.max_length = 30;
+
+    fresh.componentInstance.onFieldTypeChange('Markdown');
+    fresh.componentInstance.onFieldTypeChange('Text');
+    const again = fresh.componentInstance.field.field_type as { Text: { max_length?: number } };
+
+    expect(again.Text.max_length).toBeUndefined();
+  });
 });

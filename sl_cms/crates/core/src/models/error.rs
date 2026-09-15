@@ -17,6 +17,15 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "last_administrator",
     // A value a field declared unique already holds.
     "value_taken",
+    // What a schema said about a value, named precisely enough to mark the input it belongs to.
+    "field_required",
+    "field_too_long",
+    "field_too_short",
+    "field_type_mismatch",
+    "invalid_enum_value",
+    "unknown_composite_field",
+    "composite_id_mismatch",
+    "nested_arrays",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -52,6 +61,14 @@ pub const ERROR_CODES: &[&str] = &[
     "username_taken",
     "last_administrator",
     "value_taken",
+    "field_required",
+    "field_too_long",
+    "field_too_short",
+    "field_type_mismatch",
+    "invalid_enum_value",
+    "unknown_composite_field",
+    "composite_id_mismatch",
+    "nested_arrays",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -85,6 +102,101 @@ pub const STATUS_NOT_FOUND: u16 = 404;
 pub const STATUS_CONFLICT: u16 = 409;
 pub const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 pub const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
+
+/// A value the schema refused.
+///
+/// The API publishes three parts of it: the `code` a client translates, the `field` the refusal
+/// is about — a path into the item, so a form can mark the input even when the problem is nested
+/// — and the English `message` an operator reads in a log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldRefusal {
+    pub code: &'static str,
+    /// Where the input is, from the item's own fields down into composites and array items:
+    /// `title`, `tags[2]`, `seo.description`.
+    pub field: String,
+    pub message: String,
+}
+
+impl FieldRefusal {
+    fn new(code: &'static str, field: &str, message: String) -> Self {
+        FieldRefusal {
+            code,
+            field: field.to_string(),
+            message,
+        }
+    }
+
+    /// A required field held nothing.
+    pub fn required(field: &str) -> Self {
+        Self::new("field_required", field, format!("field {field} is required"))
+    }
+
+    pub fn too_long(field: &str, max_length: usize) -> Self {
+        Self::new(
+            "field_too_long",
+            field,
+            format!("field {field} exceeds maximum length of {max_length}"),
+        )
+    }
+
+    pub fn too_short(field: &str, min_length: usize) -> Self {
+        Self::new(
+            "field_too_short",
+            field,
+            format!("field {field} is below minimum length of {min_length}"),
+        )
+    }
+
+    /// The value is of a kind the field does not accept (including an array item that matches
+    /// none of the declared item types).
+    pub fn type_mismatch(field: &str) -> Self {
+        Self::new(
+            "field_type_mismatch",
+            field,
+            format!("field {field} does not accept a value of this type"),
+        )
+    }
+
+    pub fn enum_value(field: &str, value: &str) -> Self {
+        Self::new(
+            "invalid_enum_value",
+            field,
+            format!("field {field} holds '{value}', which is not one of its options"),
+        )
+    }
+
+    pub fn unknown_composite(field: &str, id: &str) -> Self {
+        Self::new(
+            "unknown_composite_field",
+            field,
+            format!("field {field} refers to the composite field '{id}', which does not exist"),
+        )
+    }
+
+    pub fn composite_mismatch(field: &str) -> Self {
+        Self::new(
+            "composite_id_mismatch",
+            field,
+            format!("field {field} holds a composite field other than the one the schema names"),
+        )
+    }
+
+    pub fn nested_array(field: &str) -> Self {
+        Self::new(
+            "nested_arrays",
+            field,
+            format!("field {field} holds an array inside an array, which is not supported"),
+        )
+    }
+
+    /// The answer a form can act on: the status says the input was wrong, the code says how, and
+    /// the field says where.
+    pub fn into_http_error(self) -> HttpError {
+        HttpError::BadRequest(&self.message)
+            .with_code(self.code)
+            .with_field(&self.field)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpError {
@@ -199,6 +311,19 @@ mod tests {
         assert_eq!(HttpError::NotFound("x").status_code, 404);
         assert_eq!(HttpError::Conflict("x").status_code, 409);
         assert_eq!(HttpError::InternalServerError("x").status_code, 500);
+    }
+
+    /// A refused value becomes something a form can act on, not just a sentence: the code says
+    /// what is wrong and the field says which input to mark.
+    #[test]
+    fn a_field_refusal_becomes_a_bad_request_naming_the_field() {
+        let error = FieldRefusal::too_long("seo.description", 20).into_http_error();
+
+        assert_eq!(error.status_code, STATUS_BAD_REQUEST);
+        assert_eq!(error.code, "field_too_long");
+        assert_eq!(error.field.as_deref(), Some("seo.description"));
+        assert_eq!(error.message, "field seo.description exceeds maximum length of 20");
+        assert!(ERROR_CODES.contains(&error.code));
     }
 
     #[test]

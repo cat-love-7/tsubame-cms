@@ -30,6 +30,7 @@ import {
   IsTextFieldSchema,
   isArrayFieldSchema,
   isCompositeFieldSchema,
+  newFieldType,
   reconcileArrayItemTypes,
 } from 'app/models/schema/fields';
 import { EnumField } from "../enum-field/enum-field";
@@ -67,7 +68,8 @@ export class Field implements OnInit, OnChanges {
 
   @Input() field: FieldSchema = {
     name: '',
-    field_type: FieldDefaults.Text,
+    // A copy, not the shared default: this editor writes into the type.
+    field_type: newFieldType('Text'),
     required: false,
     ...DefaultFieldLayout,
   };
@@ -116,7 +118,8 @@ export class Field implements OnInit, OnChanges {
   }
 
   public onFieldTypeChange(value: keyof typeof FieldDefaults) {
-    this.field.field_type = FieldDefaults[value];
+    // A copy of the default: this editor writes its limits and item types into the type.
+    this.field.field_type = newFieldType(value);
     this.refreshItemTypes();
     // Switching *to* an array is how most arrays are made, and the input object does not
     // change identity when the type does, so `ngOnChanges` never sees it.

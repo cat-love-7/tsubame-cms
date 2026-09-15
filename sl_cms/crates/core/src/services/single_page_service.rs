@@ -208,7 +208,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                         .list_composite_field_schemas()
                         .await.map_err(map_internal_error)?,
                     &schema,
-                ).map_err(|e| HttpError::BadRequest(&e.to_string()))?;
+                ).map_err(|e| e.into_http_error())?;
 
                 // Saved into the working copy: the published page keeps serving the live
                 // site until this version is published.
@@ -898,7 +898,12 @@ mod tests {
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), PhantomData),
         ).await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        assert_eq!(
+                result.err().unwrap(),
+                HttpError::BadRequest("field title is required")
+                    .with_code("field_required")
+                    .with_field("title")
+            );
     }
 
     #[tokio::test]
@@ -1040,7 +1045,12 @@ mod tests {
         ]), PhantomData),
         ).await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        assert_eq!(
+                result.err().unwrap(),
+                HttpError::BadRequest("field title is required")
+                    .with_code("field_required")
+                    .with_field("title")
+            );
     }
 
     #[tokio::test]

@@ -207,7 +207,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .list_composite_field_schemas()
                     .await.map_err(map_internal_error)?;
                 item_data.validate_to_schema(&composite_schema_map, &schema)
-                    .map_err(|e| HttpError::BadRequest(&e.to_string()))?;
+                    .map_err(|e| e.into_http_error())?;
                 schema
             }
         };
@@ -277,7 +277,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                         .list_composite_field_schemas()
                         .await.map_err(|e| HttpError::InternalServerError(&e.to_string()))?,
                     &schema,
-                ).map_err(|e| HttpError::BadRequest(&e.to_string()))?;
+                ).map_err(|e| e.into_http_error())?;
 
                 // The index has to follow both copies: the published one still holds its value
                 // while the working copy holds the new one, and a save only gives up a value
@@ -1799,7 +1799,12 @@ mod tests {
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), std::marker::PhantomData),
         ).await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::BadRequest("field title is required")
+                .with_code("field_required")
+                .with_field("title")
+        );
     }
 
     #[tokio::test]
@@ -1960,7 +1965,12 @@ mod tests {
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(100.0)))]), std::marker::PhantomData),
         ).await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::BadRequest("Field 'title' is missing"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::BadRequest("field title is required")
+                .with_code("field_required")
+                .with_field("title")
+        );
     }
 
     #[tokio::test]

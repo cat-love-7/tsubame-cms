@@ -1,9 +1,9 @@
 
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.maxLength' | transloco }}</mat-label>
-  <input matInput [(ngModel)]="fieldOptions.max_length" name="maxLength" />
+  <input matInput type="number" min="0" [(ngModel)]="fieldOptions.max_length" name="maxLength" />
 </mat-form-field>
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.minLength' | transloco }}</mat-label>
-  <input matInput [(ngModel)]="fieldOptions.min_length" name="minLength" />
+  <input matInput type="number" min="0" [(ngModel)]="fieldOptions.min_length" name="minLength" />
 </mat-form-field>

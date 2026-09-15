@@ -192,6 +192,57 @@ describe('ValueField', () => {
     expect(component.value).toBe('new');
   });
 
+  // The schema's lengths used to be the schema editor's business only: the content editor let a
+  // value past them and the server refused the save after the fact.
+  it('states the lengths the schema set, and counts what has been typed', async () => {
+    create(field('title', { Text: { max_length: 5, min_length: 2 } }), 'abc');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const input = query('input[matinput]') as HTMLInputElement;
+    expect(input.getAttribute('maxlength')).toBe('5');
+    expect(input.getAttribute('minlength')).toBe('2');
+    expect(fixture.nativeElement.textContent).toContain('2–5 characters');
+    expect(fixture.nativeElement.textContent).toContain('3 / 5');
+  });
+
+  it('reports a value outside the lengths before the save, and clears it again', () => {
+    const component = create(field('title', { Text: { max_length: 5, min_length: 2 } }), 'abc');
+    const problems: (Message | null)[] = [];
+    component.errorChange.subscribe((problem) => problems.push(problem));
+
+    component.update('abcdef');
+    expect(problems[0]).toEqual(t('content.valueTooLong', { field: 'title', max: 5 }));
+
+    component.update('a');
+    expect(problems[1]).toEqual(t('content.valueTooShort', { field: 'title', min: 2 }));
+
+    component.update('ab');
+    expect(problems[2]).toBeNull();
+  });
+
+  // Characters, not bytes: five Japanese characters are five, which is what the server counts
+  // too, and what a schema that says 5 has to mean.
+  it('counts characters rather than bytes', () => {
+    const component = create(field('title', { Text: { max_length: 5 } }), '');
+    const problems: (Message | null)[] = [];
+    component.errorChange.subscribe((problem) => problems.push(problem));
+
+    component.update('あいうえお');
+    expect(problems).toEqual([null]);
+
+    component.update('あいうえおか');
+    expect(problems[1]).toEqual(t('content.valueTooLong', { field: 'title', max: 5 }));
+  });
+
+  it('says a field has to be unique, which only the server can check', () => {
+    create(field('slug', { Text: {} }, { unique: true }));
+    expect(query('.unique-mark')?.textContent?.trim()).toBe('unique');
+
+    create(field('title', { Text: {} }));
+    expect(query('.unique-mark')).toBeFalsy();
+  });
+
   it('seeds the JSON buffer from the incoming array', () => {
     const component = create(field('numbers', { Array: ['Number'] }), [1, 2]);
     expect(component.arrayText).toBe('[1,2]');

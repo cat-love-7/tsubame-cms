@@ -33,12 +33,18 @@ class StubCollectionsService {
     return this.saveRefusal ? throwError(() => this.saveRefusal) : of(void 0);
   }
 
+  /** What the collection's schema is, and the item being edited. */
+  public schema: unknown[] = [
+    { name: 'title', field_type: 'Text', required: false, width: 12, height: 1 },
+  ];
+  public item: unknown = { title: 'Hello' };
+
   getCollectionSchema(): Observable<unknown> {
-    return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
+    return of(this.schema);
   }
 
   getCollectionItem(): Observable<unknown> {
-    return of({ title: 'Hello' });
+    return of(this.item);
   }
 
   getItemMetadata(): Observable<ItemMetadata> {
@@ -194,6 +200,61 @@ describe('Edit', () => {
     expect((fresh.nativeElement.querySelector('.error') as HTMLElement).textContent).toContain(
       'title',
     );
+  });
+
+  // A refusal names the input as a path, so one about something inside a composite still marks
+  // the composite's cell rather than nothing at all.
+  it('marks the cell a refusal named, including one inside it', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.componentInstance.schema.set([
+      {
+        name: 'seo',
+        field_type: { CompositeField: { id: 'seo' } },
+        required: false,
+        width: 12,
+        height: 1,
+      },
+    ]);
+    fresh.detectChanges();
+
+    fresh.componentInstance.problemField.set('seo.description');
+    fresh.detectChanges();
+
+    expect(fresh.nativeElement.querySelectorAll('.field-cell.problem').length).toBe(1);
+  });
+
+  // A problem the widget found itself (a text outside its lengths) is the reader's to fix, so it
+  // marks the input exactly like a refusal from the server does.
+  it('marks the field a widget reported a problem for, and unmarks it when it is fixed', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+    const title = {
+      name: 'title',
+      field_type: { Text: { max_length: 5 } },
+      required: false,
+      width: 12,
+      height: 1,
+    };
+
+    component.setFieldError(title, t('content.valueTooLong', { field: 'title', max: 5 }));
+    expect(component.problemField()).toBe('title');
+
+    component.setFieldError(title, null);
+    expect(component.problemField()).toBeNull();
+  });
+
+  // A value stored before the limit was lowered is already too long; the form says so at once
+  // rather than letting the save fail.
+  it('marks a stored value that is longer than the schema now allows', () => {
+    stub.schema = [
+      { name: 'title', field_type: { Text: { max_length: 3 } }, required: false, width: 12, height: 1 },
+    ];
+    stub.item = { title: 'toolong' };
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    expect(fresh.componentInstance.problemField()).toBe('title');
   });
 
   it('mints a preview link and shows it with its expiry', async () => {

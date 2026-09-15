@@ -9,7 +9,15 @@
     "weak_password",
     "username_taken",
     "last_administrator",
-    "value_taken"
+    "value_taken",
+    "field_required",
+    "field_too_long",
+    "field_too_short",
+    "field_type_mismatch",
+    "invalid_enum_value",
+    "unknown_composite_field",
+    "composite_id_mismatch",
+    "nested_arrays"
   ],
   "status": [
     "bad_request",
