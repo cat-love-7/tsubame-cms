@@ -181,6 +181,8 @@
     "hideJson": "JSON を隠す",
     "jsonArrayPlaceholder": "JSON 配列(例: [1, 2])",
     "jsonArrayHint": "配列の値は JSON で編集します。",
+    "arrayItemTypes": "要素の型: {{types}}",
+    "arrayItemType": "'{{field}}' はこの配列が許可する要素の型({{types}})ではありません。",
     "uniqueField": "一意",
     "lengthAtMost": "最大 {{max}} 文字",
     "lengthAtLeast": "{{min}} 文字以上",

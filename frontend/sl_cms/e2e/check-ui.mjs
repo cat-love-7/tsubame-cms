@@ -52,6 +52,8 @@ const PNG_BASE64 =
 
 const TEXT_SCHEMA = [
   { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1 },
+  // A plain array: the JSON box is its whole editor, so the box has to say what it accepts.
+  { name: 'scores', field_type: { Array: ['Number'] }, required: false, width: 12, height: 1 },
 ];
 /** One single image, and one array of them: the two ways an image field is used. */
 const IMAGE_SCHEMA = [
@@ -316,6 +318,41 @@ try {
     .waitForFunction(() => !location.pathname.startsWith('/login'), null, { timeout: 15000 })
     .catch(() => {});
   check('ログインフォームからサインインできる', !page.url().includes('/login'), page.url());
+
+  // ------------------------------------------------- a plain array, edited as JSON
+  // An array's item types are decided in the schema editor and were invisible in the content
+  // editor, which left the JSON box looking like it accepted anything.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  const scores = page.locator('app-value-field textarea[name=scores]');
+  await scores.waitFor({ timeout: 15000 });
+  check(
+    '配列の要素型が画面に出る',
+    ((await scores.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
+      'Item types: Number',
+    ),
+  );
+
+  await scores.fill('[1, "two"]');
+  await page.click('button:has-text("Save")');
+  await page.waitForTimeout(600);
+  const stillEditing = page.url().includes('/edit/1');
+  const scoresProblem = await page.locator('.field-cell.problem').count();
+  const scoresError = ((await page.locator('.error').first().textContent()) ?? '').trim();
+  check(
+    '要素型に合わない値は保存前に止まる',
+    stillEditing && scoresProblem === 1 && scoresError.includes('scores[1]'),
+    `${stillEditing} / ${scoresProblem} / ${scoresError}`,
+  );
+
+  // Put it back so the rest of the run sees a valid item.
+  await scores.fill('[1, 2]');
+  await page.click('button:has-text("Save")');
+  await page
+    .waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+  const savedScores = await api('GET', `/models/collections/${COLLECTION}/items/1`, undefined, token);
+  check('配列の値がそのまま保存される', JSON.stringify(savedScores?.scores) === '[1,2]', JSON.stringify(savedScores?.scores));
+
 
   // -------------------------------------------------------------- first page
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });

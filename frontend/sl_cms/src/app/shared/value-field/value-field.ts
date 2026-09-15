@@ -194,6 +194,82 @@ export class ValueField implements OnInit, OnChanges {
     return this.textOptions()?.min_length ?? null;
   }
 
+  /**
+   * The item types the schema declared, named the way the schema editor names them.
+   *
+   * A plain kind is its own name; a text kind carries options and is named by its kind; a
+   * composite is named by the definition it holds. Without this the JSON box says nothing about
+   * what it accepts, which is the one thing the reader needs to know.
+   */
+  itemTypeNames(): string[] {
+    const type = this.field.field_type;
+    if (!isArrayFieldSchema(type)) {
+      return [];
+    }
+    return type.Array.map((item) => {
+      if (typeof item === 'string') {
+        return item;
+      }
+      if (isTextFieldSchema(item)) {
+        return 'Text';
+      }
+      if (isMarkdownFieldSchema(item)) {
+        return 'Markdown';
+      }
+      if (isEnumFieldSchema(item)) {
+        return 'TextEnum';
+      }
+      if (isCompositeFieldSchema(item)) {
+        return String(item.CompositeField.id);
+      }
+      return 'Unknown';
+    });
+  }
+
+  /**
+   * Whether a parsed item could be one of the declared item types.
+   *
+   * Deliberately permissive: it only rules out what *no* declared type could read - a string in
+   * an array of numbers, an object in an array of texts. The server tries each declared type in
+   * turn and its idea of "parses" is narrower than anything worth copying here, and refusing a
+   * value it would have taken is worse than letting it answer. What this buys is the obvious
+   * mistake being caught while the reader is still looking at the box.
+   */
+  private itemFitsDeclaredTypes(item: unknown): boolean {
+    const type = this.field.field_type;
+    if (!isArrayFieldSchema(type)) {
+      return true;
+    }
+    return type.Array.some((candidate) => {
+      if (typeof candidate === 'string') {
+        switch (candidate) {
+          case 'Number':
+            return typeof item === 'number';
+          case 'Boolean':
+            return typeof item === 'boolean';
+          case 'Image':
+            // An id, a response object, or nothing chosen.
+            return (
+              item === null ||
+              typeof item === 'number' ||
+              (typeof item === 'object' && item !== null && 'id' in item)
+            );
+          case 'Date':
+          case 'DateTime':
+            // Both travel as strings; a number is accepted here only because the server may.
+            return typeof item === 'string' || typeof item === 'number';
+          default:
+            return true;
+        }
+      }
+      if (isCompositeFieldSchema(candidate)) {
+        return typeof item === 'object' && item !== null;
+      }
+      // Text, Markdown and enums are all strings on the wire.
+      return typeof item === 'string';
+    });
+  }
+
   /** How much has been typed, in the same characters the server counts. */
   textLength(): number {
     return typeof this.value === 'string' ? [...this.value].length : 0;
@@ -296,6 +372,18 @@ export class ValueField implements OnInit, OnChanges {
       const parsed = JSON.parse(trimmed);
       if (!Array.isArray(parsed)) {
         this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
+        return;
+      }
+      // The declared item types are what the array accepts, so an item none of them could read is
+      // reported here rather than by the server after the whole form has been sent.
+      const unsuitable = parsed.findIndex((item) => !this.itemFitsDeclaredTypes(item));
+      if (unsuitable >= 0) {
+        this.errorChange.emit(
+          t('content.arrayItemType', {
+            field: `${this.field.name}[${unsuitable}]`,
+            types: this.itemTypeNames().join(', '),
+          }),
+        );
         return;
       }
       this.errorChange.emit(null);

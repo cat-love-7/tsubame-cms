@@ -181,6 +181,8 @@
     "hideJson": "Hide JSON",
     "jsonArrayPlaceholder": "JSON array, e.g. [1, 2]",
     "jsonArrayHint": "Array values are edited as JSON.",
+    "arrayItemTypes": "Item types: {{types}}",
+    "arrayItemType": "'{{field}}' is not one of the item types this array allows ({{types}}).",
     "uniqueField": "unique",
     "lengthAtMost": "at most {{max}} characters",
     "lengthAtLeast": "at least {{min}} characters",

@@ -235,6 +235,58 @@ describe('ValueField', () => {
     expect(problems[1]).toEqual(t('content.valueTooLong', { field: 'title', max: 5 }));
   });
 
+  it('names the item types a scalar array accepts', async () => {
+    // The JSON box is the whole editor for these, so what it accepts has to be on the screen.
+    create(field('tags', { Array: [{ Text: {} }, 'Number'] }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Item types: Text, Number');
+  });
+
+  // An array of composites is edited element by element, so the element's own fields say what it
+  // holds; the JSON view is the one that has to name the definition.
+  it('names the composite definition an array of composites holds, in the JSON view', async () => {
+    const component = create(field('blocks', { Array: [{ CompositeField: { id: 'seo' } }] }));
+    component.jsonMode.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Item types: seo');
+  });
+
+  // The server tries each declared type in turn; this only rules out what none of them could
+  // read, and it says so while the reader is looking at the box rather than after a save.
+  it('refuses an item no declared item type could read', () => {
+    const component = create(field('scores', { Array: ['Number'] }), []);
+    const problems: (Message | null)[] = [];
+    component.errorChange.subscribe((problem) => problems.push(problem));
+
+    component.onArrayTextChange('[1, "two", 3]');
+
+    expect(problems[0]).toEqual(
+      t('content.arrayItemType', { field: 'scores[1]', types: 'Number' }),
+    );
+    // The last good value is kept, as it is for JSON that does not parse.
+    expect(component.value).toEqual([]);
+  });
+
+  it('accepts what a declared item type could read, without second-guessing the server', () => {
+    const tags = create(field('tags', { Array: [{ Text: {} }] }), []);
+    const textProblems: (Message | null)[] = [];
+    tags.errorChange.subscribe((problem) => textProblems.push(problem));
+    tags.onArrayTextChange('["one", 2]');
+    expect(textProblems[0]).not.toBeNull();
+
+    // A date-shaped string is a string: an array of texts takes it.
+    const dates = create(field('notes', { Array: [{ Text: {} }] }), []);
+    const dateProblems: (Message | null)[] = [];
+    dates.errorChange.subscribe((problem) => dateProblems.push(problem));
+    dates.onArrayTextChange('["2026-01-01"]');
+    expect(dateProblems).toEqual([null]);
+    expect(dates.value).toEqual(['2026-01-01']);
+  });
+
   it('says a field has to be unique, which only the server can check', () => {
     create(field('slug', { Text: {} }, { unique: true }));
     expect(query('.unique-mark')?.textContent?.trim()).toBe('unique');

@@ -23,6 +23,11 @@
       [placeholder]="'content.jsonArrayPlaceholder' | transloco"
     ></textarea>
     <mat-hint>{{ 'content.jsonArrayHint' | transloco }}</mat-hint>
+    @if (itemTypeNames().length > 0) {
+      <mat-hint align="end">
+        {{ 'content.arrayItemTypes' | transloco: { types: itemTypeNames().join(', ') } }}
+      </mat-hint>
+    }
   </mat-form-field>
 </ng-template>
 
