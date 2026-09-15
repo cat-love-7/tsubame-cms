@@ -214,7 +214,8 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
 
 - core のサービスは `async fn`、on-prem の実装は「await しない async fn」。
 - `crates/aws/src/bridge.rs` は無くなり、AWS 実装は素の `async fn`。
-- 変換は rustc の提案 span から機械的に適用(`sl_cms/scripts/migration/`)。
+- 変換は rustc の提案 span から機械的に適用(使い捨ての道具は移行後に削除。教訓は
+  `doc/aws-dynamodb-design.md` §7)。
 - **契約スイート 43 件 × 2 バックエンドは変わらず緑**(`cargo test --workspace` で 281 件)。
   AWS 側の実行時間は 15 秒 → 3.5 秒になった(呼び出しごとのスレッド往復が消えたため)。
 
@@ -434,7 +435,8 @@ scripts/build-lambda.sh --arch arm64
 
 - 他 CMS からの移行スクリプト(別プロジェクトで HTTP を叩く方針で合意済み)。
   件数が多くて耐えられない場合のみ、**一括作成エンドポイントを CMS 側に足す**。
-- `doc/swagger.yaml` の更新。
+- ~~`doc/swagger.yaml` の更新~~ → **削除した**(実装の一部しか載っておらず、Petstore の
+  サンプル文が残っていた。契約は `doc/content-api.md` と契約テスト)。
 
 ## 3. テスト方針(要約)
 
