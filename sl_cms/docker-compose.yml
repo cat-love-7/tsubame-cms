@@ -1,10 +1,17 @@
-# Local stand-ins for the AWS services the `aws` backend will use, so its tests can run without
-# an account and without a network. Nothing here is used by the default (on-premises) build.
+# Local stand-ins for the AWS services the `aws` backend uses, so its tests can run without an
+# account and without a network. Nothing here is used by the on-premises backend: the two are
+# separate crates, not features of one binary.
 #
-#   docker compose up -d
-#   AWS_ENDPOINT_URL=http://localhost:8000 AWS_REGION=us-east-1 \
-#   AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
-#   cargo test --no-default-features --features aws
+#   docker compose -f sl_cms/docker-compose.yml up -d
+#   cargo test -p sl-cms-aws                # the adapter's own tests
+#   cargo test -p sl-cms-tests --test aws   # the shared contract suite against it
+#
+# `scripts/test-rust.sh` runs both, and skips them when nothing is listening on 8000 and 9000.
+# The tests point at these endpoints and use these credentials themselves (`test` /
+# `test-secret`, as below); `CMS_TEST_DYNAMODB_ENDPOINT`, `CMS_TEST_S3_ENDPOINT`,
+# `CMS_TEST_ACCESS_KEY_ID` and `CMS_TEST_SECRET_ACCESS_KEY` override them, so no `AWS_*` variable
+# has to be set to run these - a deployment gets its credentials from the execution role, and the
+# tests build their clients from the values above.
 #
 # The emulators reproduce the API, not the behaviour that depends on the real service:
 # capacity, throttling, the 400KB item and 1MB query limits, and GSI propagation delays are
@@ -16,8 +23,8 @@ services:
     # `-sharedDb` keeps every client on one database file, which is what a single test run
     # expects; without it each set of credentials gets its own.
     #
-    # It insists on *some* credentials, as the real service does: the SDK given
-    # AWS_ACCESS_KEY_ID=test and AWS_SECRET_ACCESS_KEY=test is happy, a bare curl is not.
+    # It insists on *some* signature, as the real service does: the tests hand it the
+    # credentials below (`test` / `test-secret`), while a bare curl is refused.
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
     ports:
       - "8000:8000"
