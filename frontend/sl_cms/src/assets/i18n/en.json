@@ -122,6 +122,7 @@
     "collections": "Collections",
     "singlePage": "Single page",
     "singlePages": "Single pages",
+    "managePages": "Manage pages",
     "compositeField": "Composite field",
     "compositeFields": "Composite fields",
     "field": "Field",
@@ -201,6 +202,7 @@
     "uploadFailed": "Upload failed: {{message}}",
     "failedToLoadImages": "Failed to load the images: {{message}}",
     "failedToLoadSchema": "Failed to load the schema: {{message}}",
+    "failedToLoadPages": "The page list could not be loaded: {{message}}",
     "failedToLoadItem": "Failed to load the item: {{message}}",
     "failedToLoadItems": "Failed to load the items: {{message}}",
     "failedToLoadContent": "Failed to load the content: {{message}}",
@@ -329,6 +331,9 @@
     "moveElementEarlier": "move element {{index}} earlier",
     "moveElementLater": "move element {{index}} later",
     "removeElement": "remove element {{index}}",
-    "publishChangesOf": "publish the changes of item {{id}}"
+    "publishChangesOf": "publish the changes of item {{id}}",
+    "publishPage": "publish page {{id}}",
+    "unpublishPage": "unpublish page {{id}}",
+    "publishChangesOfPage": "publish the changes of page {{id}}"
   }
 }

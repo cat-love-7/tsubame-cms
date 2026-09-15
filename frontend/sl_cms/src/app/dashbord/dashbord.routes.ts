@@ -6,7 +6,8 @@ import { Edit as SchemaEdit } from "./settings/schemas/collections/edit/edit";
 import { Create as SchemaCreate } from "./settings/schemas/collections/create/create";
 import { List as CollectionList } from "./collections/list/list";
 import { Edit as ItemEdit } from "./collections/edit/edit";
-import { List as SinglePageList } from "./settings/single-pages/list/list";
+import { List as SinglePageSchemaList } from "./settings/single-pages/list/list";
+import { List as SinglePageStatusList } from "./single-pages/list/list";
 import { Schema as SinglePageSchema } from "./settings/single-pages/schema/schema";
 import { Edit as SinglePageEdit } from "./single-pages/edit/edit";
 import { List as CompositeFieldList } from "./settings/composite-fields/list/list";
@@ -35,8 +36,13 @@ const dashbordRoutes: Routes = [
         path: 'collections/:name/edit/:id',
         component: ItemEdit
     },
-    // Single pages ("single documents"): one schema and exactly one item, so there is no
-    // list or create screen for the content itself.
+    // Single pages ("single documents"): one schema and exactly one item each, so there is no
+    // create screen - but the overview says what is live and what has unpublished changes, and
+    // releases content without opening the page.
+    {
+        path: 'single-pages',
+        component: SinglePageStatusList
+    },
     {
         path: 'single-pages/:name',
         component: SinglePageEdit
@@ -56,7 +62,7 @@ const dashbordRoutes: Routes = [
     },
     {
         path: 'settings/single-pages',
-        component: SinglePageList
+        component: SinglePageSchemaList
     },
     {
         path: 'settings/single-pages/:name/schema',

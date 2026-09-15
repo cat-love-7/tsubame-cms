@@ -162,9 +162,15 @@ mod tests {
         let holder = std::thread::spawn(move || {
             let guard = holder_repository.begin();
             let env = holder_repository.rkv.read().unwrap();
-            let _reader = env.read().unwrap();
+            let reader = env.read().unwrap();
             txn_open.send(()).unwrap();
             std::thread::sleep(Duration::from_millis(200));
+            // The transaction and the environment are dropped *before* the lock, which is the
+            // order they were taken in. Releasing the lock first would leave a live transaction
+            // for another thread to open a database under - exactly what LMDB refuses - and the
+            // sign-in that slipped into that window failed with `OpenAttemptedDuringTransaction`.
+            drop(reader);
+            drop(env);
             drop(guard);
         });
         txn_ready.recv().unwrap();

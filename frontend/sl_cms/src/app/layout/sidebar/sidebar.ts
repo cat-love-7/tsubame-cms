@@ -78,7 +78,7 @@ export class Sidebar {
             name: 'Single pages',
             nameKey: 'content.singlePages',
             children: singlePageLinks,
-            link: singlePageLinks.length === 0 ? '/settings/single-pages' : undefined,
+            link: '/single-pages',
           },
         ],
       },

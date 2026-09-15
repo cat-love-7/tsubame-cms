@@ -46,6 +46,11 @@ export class SinglePagesService {
     return this.pages.getPageMetadata(name);
   }
 
+  /** The state of every page, keyed by name, for the list screen. */
+  listItemMetadata(): Observable<{ [name: string]: ItemMetadata }> {
+    return this.pages.listItemMetadata();
+  }
+
   publishPage(name: string): Observable<ItemMetadata> {
     return this.pages.publishPage(name);
   }

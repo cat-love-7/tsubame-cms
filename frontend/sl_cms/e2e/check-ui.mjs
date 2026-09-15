@@ -1412,6 +1412,40 @@ try {
     servedBody.slice(0, 120),
   );
 
+  // The overview: every page, what state it is in, and publishing from the list.
+  await page.goto(`${BASE}/single-pages`, { waitUntil: 'networkidle' });
+  const pageRows = page.locator('table.items tbody tr');
+  await pageRows.first().waitFor({ timeout: 15000 });
+  const rowForPage = (name) => page.locator('table.items tbody tr', { hasText: name });
+  check(
+    '単一ページの一覧に状態が出る',
+    (await pageRows.count()) >= 2 &&
+      (await rowForPage(pageB).textContent())?.includes('Published') === true,
+    `${await pageRows.count()} 行 / ${(await rowForPage(pageB).textContent())?.trim()}`,
+  );
+
+  // A page that has never been published is a draft, and can be released from here.
+  await api(
+    'POST',
+    `/models/single_pages/${pageA}/publish`,
+    undefined,
+    token,
+  ).catch(() => {});
+  await page.reload({ waitUntil: 'networkidle' });
+  await rowForPage(pageA).locator('button[aria-label^="unpublish page"]').click();
+  const unpublished = await page
+    .waitForFunction(
+      (name) =>
+        Array.from(document.querySelectorAll('table.items tbody tr'))
+          .find((row) => row.textContent?.includes(name))
+          ?.textContent?.includes('Draft') ?? false,
+      pageA,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('一覧から非公開にできる', unpublished);
+
   for (const name of [pageA, pageB]) {
     await deleteIfPresent(`/models/single_pages/${name}`, token);
   }

@@ -51,6 +51,17 @@ export class SinglePageRepository {
     return this.http.get<ItemMetadata>(`/api/models/single_pages/${name}/item/metadata`);
   }
 
+  /**
+   * The state of every page, keyed by name, in one request.
+   *
+   * The list shows a status per page; asking one by one would be a request each.
+   */
+  listItemMetadata(): Observable<{ [name: string]: ItemMetadata }> {
+    return this.http.get<{ [name: string]: ItemMetadata }>(
+      '/api/models/single_pages/items/metadata',
+    );
+  }
+
   publishPage(name: string): Observable<ItemMetadata> {
     return this.http.post<ItemMetadata>(`/api/models/single_pages/${name}/publish`, null);
   }

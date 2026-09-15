@@ -276,6 +276,23 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     // ---- draft / published ---------------------------------------------------
 
+    /// Draft/published state of every page that can be read, keyed by name.
+    ///
+    /// The list screen shows a status per page, and asking per page would be one round trip each;
+    /// this answers with all of them at once, like the collection list does.
+    pub async fn list_page_statuses(
+        &self,
+        readable: &[SinglePageName],
+    ) -> Result<Vec<(SinglePageName, ItemMetadata, bool)>, HttpError> {
+        let mut statuses = Vec::with_capacity(readable.len());
+        for name in readable {
+            let metadata = self.get_page_metadata(name).await?;
+            let has_draft = self.page_has_draft(name).await?;
+            statuses.push((name.clone(), metadata, has_draft));
+        }
+        Ok(statuses)
+    }
+
     /// Draft/published state of one page. Absent metadata means "draft".
     pub async fn get_page_metadata(&self, name: &SinglePageName) -> Result<ItemMetadata, HttpError> {
         // Reuses the schema lookup so a missing page is a 404 rather than a default.

@@ -24,8 +24,16 @@
         {{ tree.isExpanded(node) ? 'expand_more' : 'chevron_right' }}
       </mat-icon>
     </button>
-    <span class="branch">
-      {{ node.nameKey ? (node.nameKey | transloco) : node.name }}
-    </span>
+    <!-- A branch that names a screen (the single-page overview) is a link as well as a twisty;
+         one that is only a heading is not. -->
+    @if (node.link) {
+      <a class="branch nav-link" [routerLink]="node.link" routerLinkActive="active">
+        {{ node.nameKey ? (node.nameKey | transloco) : node.name }}
+      </a>
+    } @else {
+      <span class="branch">
+        {{ node.nameKey ? (node.nameKey | transloco) : node.name }}
+      </span>
+    }
   </mat-tree-node>
 </mat-tree>

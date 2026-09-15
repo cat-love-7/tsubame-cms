@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -19,6 +21,12 @@ use crate::models::single_page::{
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
         .route("/models/single_pages", get(get_single_pages::<R>))
+        // Static segment, registered alongside `{page_name}`: axum prefers it, so the list can
+        // ask for every page's state in one request.
+        .route(
+            "/models/single_pages/items/metadata",
+            get(list_single_page_metadata::<R>),
+        )
         .route(
             "/models/single_pages/{page_name}/schema",
             get(get_single_page_schema::<R>)
@@ -53,6 +61,37 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/single_pages/{page_name}/unpublish",
             post(unpublish_single_page::<R>),
         )
+}
+
+/// Draft/published state of every page this account may read, keyed by name.
+///
+/// The list screen shows a status, when it last changed and who released it, and asking per page
+/// would be a request each.
+async fn list_single_page_metadata<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+) -> Result<impl IntoResponse, HttpError> {
+    // Only what this account may read, judged per page (a grant can name one).
+    let readable: Vec<SinglePageName> = module
+        .single_page_service
+        .get_all_page_names()
+        .await?
+        .into_iter()
+        .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
+        .collect();
+
+    let mut statuses = HashMap::new();
+    for (name, metadata, has_draft) in module
+        .single_page_service
+        .list_page_statuses(&readable)
+        .await?
+    {
+        statuses.insert(
+            name.to_string(),
+            PageStatusResponse { metadata, has_draft },
+        );
+    }
+    Ok(Json(statuses))
 }
 
 async fn get_single_page_item_metadata<R: Storage>(

@@ -122,6 +122,7 @@
     "collections": "コレクション",
     "singlePage": "単一ページ",
     "singlePages": "単一ページ",
+    "managePages": "ページの管理",
     "compositeField": "複合フィールド",
     "compositeFields": "複合フィールド",
     "field": "フィールド",
@@ -201,6 +202,7 @@
     "uploadFailed": "アップロードに失敗しました: {{message}}",
     "failedToLoadImages": "画像を読み込めませんでした: {{message}}",
     "failedToLoadSchema": "スキーマを読み込めませんでした: {{message}}",
+    "failedToLoadPages": "ページ一覧を読み込めませんでした: {{message}}",
     "failedToLoadItem": "アイテムを読み込めませんでした: {{message}}",
     "failedToLoadItems": "アイテムを読み込めませんでした: {{message}}",
     "failedToLoadContent": "内容を読み込めませんでした: {{message}}",
@@ -329,6 +331,9 @@
     "moveElementEarlier": "要素 {{index}} を前へ",
     "moveElementLater": "要素 {{index}} を後ろへ",
     "removeElement": "要素 {{index}} を削除",
-    "publishChangesOf": "アイテム {{id}} の変更を公開"
+    "publishChangesOf": "アイテム {{id}} の変更を公開",
+    "publishPage": "ページ {{id}} を公開",
+    "unpublishPage": "ページ {{id}} を非公開に",
+    "publishChangesOfPage": "ページ {{id}} の変更を公開"
   }
 }

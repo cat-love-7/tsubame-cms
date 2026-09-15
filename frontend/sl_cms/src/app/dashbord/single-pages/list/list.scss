@@ -1,0 +1,12 @@
+/// The screen's vertical rhythm: the shared vocabulary spaces nothing on its own.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/// The row of row-actions: never wrapped, and at the end of the line.
+.actions {
+  text-align: right;
+  white-space: nowrap;
+}
