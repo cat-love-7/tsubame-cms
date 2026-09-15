@@ -11,6 +11,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
+import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
@@ -86,6 +87,8 @@ export class ValueField implements OnInit, OnChanges {
   /** JSON buffer for Array fields, which are edited as raw JSON. */
   public arrayText = '';
   public imageUrl = apiUrl;
+  /** Places a composite's sub-fields in the same grid the top level uses. */
+  public cellStyle = fieldCellStyle;
 
   /** Images already uploaded, so one can be reused instead of uploaded again. */
   public library = signal<ImageEntry[]>([]);

@@ -302,17 +302,24 @@
   }
   @case ('CompositeField') {
     @if (compositeSchema(); as subSchema) {
-      <!-- Sub-fields are edited by this same component, so composites nest to any depth. -->
+      <!-- Sub-fields are edited by this same component, so composites nest to any depth.
+           They sit in the same 12-column grid as the top level: a composite definition has
+           widths and heights of its own, and the schema editor draws them, so the content
+           editor has to honour them or the two screens disagree. -->
       <fieldset class="composite" [disabled]="disabled">
-        @for (subField of subSchema; track subField.name) {
-          <app-value-field
-            [field]="subField"
-            [value]="compositeValues[subField.name]"
-            [disabled]="disabled"
-            (valueChange)="setCompositeValue(subField, $event)"
-            (errorChange)="forwardCompositeError(subField, $event)"
-          />
-        }
+        <div class="field-grid">
+          @for (subField of subSchema; track subField.name) {
+            <div class="field-cell" [style]="cellStyle(subField)">
+              <app-value-field
+                [field]="subField"
+                [value]="compositeValues[subField.name]"
+                [disabled]="disabled"
+                (valueChange)="setCompositeValue(subField, $event)"
+                (errorChange)="forwardCompositeError(subField, $event)"
+              />
+            </div>
+          }
+        </div>
       </fieldset>
     } @else {
       <p class="note">

@@ -13,14 +13,24 @@ import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { ValueField } from './value-field';
 
-function field(name: string, field_type: FieldType): FieldSchema {
-  return { name, field_type, required: false, width: 12, height: 1 };
+function field(
+  name: string,
+  field_type: FieldType,
+  layout: Partial<FieldSchema> = {},
+): FieldSchema {
+  return { name, field_type, required: false, width: 12, height: 1, ...layout };
 }
 
 /** The composite definitions the component reads, keyed by id. */
 const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
   seo: [field('description', { Text: {} })],
   gallery: [field('images', { Array: ['Image'] })],
+  // Parts with a layout of their own: the content editor has to lay them out the way the
+  // schema editor drew them, or the two screens disagree about the same definition.
+  layout: [
+    field('headline', { Text: {} }, { width: 8, height: 2 }),
+    field('aside', { Text: {} }, { width: 4 }),
+  ],
   // A block that holds blocks: the definition reaches itself through an array.
   tree: [field('line', { Text: {} }), field('children', { Array: [{ CompositeField: { id: 'tree' } }] })],
 };
@@ -138,6 +148,22 @@ describe('ValueField', () => {
     // The sub-field is rendered by another ValueField instance: the recursion works.
     expect(fixture.nativeElement.querySelector('app-value-field')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('description');
+  });
+
+  it('lays a composite’s sub-fields out with the widths and heights of the definition', () => {
+    create(field('page', { CompositeField: { id: 'layout' } }), {
+      id: 'layout',
+      values: { headline: 'Hello', aside: 'Sidebar' },
+    });
+    fixture.detectChanges();
+
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll('fieldset.composite .field-cell'),
+    ) as HTMLElement[];
+    expect(cells.length).toBe(2);
+    expect(cells[0].style.gridColumn).toBe('span 8');
+    expect(cells[0].style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 2)');
+    expect(cells[1].style.gridColumn).toBe('span 4');
   });
 
   it('emits the bare object for a composite value, unwrapping the read wrapper', () => {
