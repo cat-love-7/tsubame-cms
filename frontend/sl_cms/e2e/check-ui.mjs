@@ -1284,6 +1284,39 @@ try {
     `url=${page.url()} / ${await pageTitle.inputValue()}`,
   );
 
+  // Saving stays on the page, with the status appearing and the two acts in one click. It used to
+  // navigate to the schema list, which has no publish control at all.
+  await pageTitle.fill(`edited ${pageB}`);
+  await page.click('button:has-text("Save")');
+  await page.waitForTimeout(800);
+  const stayedOnPage = page.url().includes(`/single-pages/${pageB}`);
+  const savedNotice = ((await page.locator('.notice').first().textContent()) ?? '').trim();
+  const badgeAppeared = await page.locator('app-item-status .badge').count();
+  check(
+    '単一ページの保存後も画面に留まる',
+    stayedOnPage && savedNotice.length > 0 && badgeAppeared === 1,
+    `${stayedOnPage} / ${savedNotice} / ${badgeAppeared}`,
+  );
+
+  await page.click('button:has-text("Save and publish")');
+  const published = await page
+    .waitForFunction(
+      () => document.querySelector('app-item-status .badge')?.textContent?.includes('Published') ?? false,
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('保存して公開が 1 クリックでできる', published, await page.locator('app-item-status .badge').first().textContent());
+
+  const servedPage = await request.fetch(`${API}/content/single-pages/${pageB}`).catch(() => null);
+  const servedBody = servedPage?.ok() ? JSON.stringify(await servedPage.json()) : '';
+  check(
+    '保存して公開した内容が配信 API に出る',
+    servedPage?.ok() === true && servedBody.includes(`edited ${pageB}`),
+    servedBody.slice(0, 120),
+  );
+
   for (const name of [pageA, pageB]) {
     await deleteIfPresent(`/models/single_pages/${name}`, token);
   }

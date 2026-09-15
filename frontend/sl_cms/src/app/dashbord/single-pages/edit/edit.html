@@ -79,6 +79,12 @@
 @if (canEdit()) {
   <div class="actions">
     <button matButton color="primary" (click)="save()">{{ 'common.save' | transloco }}</button>
+    @if (canPublish()) {
+      <!-- The two acts an editor always does in sequence, in one click. -->
+      <button matButton (click)="saveAndPublish()">
+        {{ 'content.saveAndPublish' | transloco }}
+      </button>
+    }
   </div>
 } @else {
   <p class="note">{{ 'permissions.readOnly' | transloco }}</p>

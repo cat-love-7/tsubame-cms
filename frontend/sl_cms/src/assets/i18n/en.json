@@ -148,6 +148,7 @@
     "minHeight": "Min height (rows)",
     "publish": "Publish",
     "unsaved": "Unsaved changes",
+    "saveAndPublish": "Save and publish",
     "unsavedHint": "Not on the site until you publish.",
     "draftNotPublished": "The saved content is not published yet. Press Publish changes to put it on the site.",
     "publishedBy": "Account that published this",

@@ -148,6 +148,7 @@
     "minHeight": "最小の高さ(行)",
     "publish": "公開する",
     "unsaved": "未公開の変更あり",
+    "saveAndPublish": "保存して公開",
     "unsavedHint": "公開するまで、サイトには反映されません",
     "draftNotPublished": "保存した内容はまだ公開されていません。「変更を公開」を押すまでサイトには反映されません。",
     "publishedBy": "公開したアカウント",

@@ -30,6 +30,10 @@ class StubSinglePagesService {
     has_draft: false,
   };
 
+  /** Saves, and metadata reads, in order. */
+  public saved: unknown[] = [];
+  public metadataReads = 0;
+
   getPageSchema(name: string): Observable<unknown> {
     this.requested.push(name);
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
@@ -40,7 +44,15 @@ class StubSinglePagesService {
   }
 
   getPageMetadata(): Observable<ItemMetadata> {
+    this.metadataReads += 1;
     return of(this.metadata);
+  }
+
+  updatePageItem(_name: string, values: unknown): Observable<void> {
+    this.saved.push(values);
+    // The server records the first save as a draft, which is what the badge then shows.
+    this.metadata = { ...this.metadata, status: 'draft' };
+    return of(void 0);
   }
 
   publishPage(name: string): Observable<ItemMetadata> {
@@ -159,6 +171,56 @@ describe('Edit', () => {
 
     // The message is held as a key, so the wording is the catalog's business.
     expect(component.error()).toEqual({ key: 'content.invalidJson', params: { field: 'body' } });
+  });
+
+  // Saving used to navigate to the schema list, which has no publish control: the reader had to
+  // find the page again to put it on the site.
+  it('stays on the page after saving, and shows what was saved', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.componentInstance.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    fresh.componentInstance.save();
+    fresh.detectChanges();
+
+    expect(stub.saved).toEqual([{ title: 'About us' }]);
+    expect(fresh.componentInstance.notice()).toEqual(t('common.saved'));
+    // The status only exists once the page has been saved, so it is read again.
+    expect(stub.metadataReads).toBeGreaterThan(1);
+    expect(fresh.nativeElement.querySelector('app-item-status')).toBeTruthy();
+  });
+
+  it('saves and publishes in one act', () => {
+    const fresh = TestBed.createComponent(Edit);
+    fresh.componentInstance.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    fresh.componentInstance.saveAndPublish();
+    fresh.detectChanges();
+
+    expect(stub.saved).toEqual([{ title: 'About us' }]);
+    expect(stub.published).toEqual(['home']);
+    expect(fresh.componentInstance.published()).toBe(true);
+  });
+
+  it('offers no save-and-publish to an account that may not release content', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [Edit],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: stubActivatedRoute({ name: 'home' }) },
+        { provide: SinglePagesService, useValue: stub },
+        stubAuth(true, false, false),
+      ],
+    });
+    const fresh = TestBed.createComponent(Edit);
+    fresh.detectChanges();
+
+    expect(hasButton(fresh.nativeElement, 'Save')).toBe(true);
+    expect(hasButton(fresh.nativeElement, 'Save and publish')).toBe(false);
   });
 
   it('publishes the page without saving the form', () => {

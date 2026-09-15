@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
 
@@ -33,7 +33,6 @@ import { ValueField } from 'app/shared/value-field/value-field';
 })
 export class Edit {
   private route = inject(ActivatedRoute);
-  private router = inject(Router);
   private pages = inject(SinglePagesService);
   private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
@@ -100,10 +99,7 @@ export class Edit {
       error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
 
-    this.pages.getPageMetadata(name).subscribe({
-      next: (metadata) => this.metadata.set(metadata),
-      error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
-    });
+    this.loadMetadata();
   }
 
   private loadItem(schema: CollectionSchema) {
@@ -200,7 +196,24 @@ export class Edit {
     });
   }
 
+  /**
+   * Save the working copy, and stay here.
+   *
+   * A single page is one item with a publish control beside it, so leaving the screen after a
+   * save only meant finding the page again to publish it. Saving used to navigate to the schema
+   * list, which has no publish control at all. The metadata is re-read so the status and the
+   * publish controls appear as soon as the page exists on the server.
+   */
   save() {
+    this.saveThen();
+  }
+
+  /** Save and take the page live in one act: the two steps an editor always does in sequence. */
+  saveAndPublish() {
+    this.saveThen(() => this.publish());
+  }
+
+  private saveThen(then?: () => void) {
     const problems = Object.values(this.fieldErrors);
     if (problems.length > 0) {
       this.error.set(problems[0]);
@@ -208,16 +221,28 @@ export class Edit {
     }
 
     this.error.set(null);
+    this.notice.set(null);
     this.problemField.set(null);
     this.pages.updatePageItem(this.pageName(), { ...this.values() }).subscribe({
       next: () => {
         this.error.set(null);
-        this.router.navigate(['/settings/single-pages']);
+        this.notice.set(t('common.saved'));
+        // A page that has never been saved has no status on screen yet; this is what puts the
+        // badge and the publish controls there without a reload.
+        this.loadMetadata();
+        then?.();
       },
       error: (e) => {
         this.problemField.set(fieldOf(e));
         this.error.set(failure('content.saveFailed', e));
       },
+    });
+  }
+
+  private loadMetadata() {
+    this.pages.getPageMetadata(this.pageName()).subscribe({
+      next: (metadata) => this.metadata.set(metadata),
+      error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
   }
 }
