@@ -49,13 +49,31 @@ variable "cognito_domain_prefix" {
   default     = ""
 }
 
-variable "function_zip" {
+variable "function_architecture" {
   description = <<-EOT
-    The built Lambda artifact. `scripts/build-lambda.sh` writes it; the file only has to exist
-    when planning or applying, not for `validate`.
+    What the function runs on: `arm64` (Graviton, cheaper per GB-second) or `x86_64`.
+
+    The artifact has to be built for the same architecture -
+    `scripts/build-lambda.sh --arch <architecture>` - and the two names are kept in step by
+    `local.function_zip` below. A mismatch is only reported when the function is invoked.
   EOT
   type        = string
-  default     = "build/sl-cms-aws.zip"
+  default     = "arm64"
+
+  validation {
+    condition     = contains(["arm64", "x86_64"], var.function_architecture)
+    error_message = "The architecture must be arm64 or x86_64."
+  }
+}
+
+variable "function_zip" {
+  description = <<-EOT
+    The built Lambda artifact. Leave empty to use the one `scripts/build-lambda.sh` writes for
+    `function_architecture`; the file only has to exist when planning or applying, not for
+    `validate`.
+  EOT
+  type        = string
+  default     = ""
 }
 
 variable "function_memory_mb" {

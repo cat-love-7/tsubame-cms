@@ -382,6 +382,51 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
 - [ ] IAM 最小権限、ログ/メトリクス、コスト確認(オンデマンド、テストは TTL と接頭辞で掃除)
       → **完了条件**: ドキュメント化。
 
+#### 実行アーキテクチャ(2026-09: **arm64 / Graviton を既定**)
+
+Lambda は **arm64** で動かす。x86_64 より GB 秒あたりの単価が安く、この処理内容では速度も
+同等以上なので、選ばない理由がない。切り替えは次の 2 か所だけで済む。
+
+| どこ | 何 |
+|---|---|
+| `scripts/build-lambda.sh` | `--arch arm64`(既定)で `aarch64-unknown-linux-gnu` 向けにビルドし、`infra/build/sl-cms-aws-arm64.zip` を書く |
+| `infra` | `function_architecture`(既定 `arm64`)が `architectures` に入り、`local.function_zip` が**同じ名前の zip** を指す |
+
+**アーキテクチャの食い違いは invoke するまで分からない**(デプロイは成功する)。だから
+スクリプトが `file` で成果物を検査し、zip の名前にもアーキテクチャを入れ、Terraform 側は
+その名前を変数から導出している。
+
+x86_64 からクロスビルドするには**ターゲット用の C コンパイラ**が要る(`ring` が C を
+コンパイルするため。リンカだけでは足りない)。**zig を使う経路を既定の案内**にしている
+(システムに何も入れず、libc も zig が持つ。検証済み)。
+
+```
+cargo install cargo-zigbuild
+# zig は https://ziglang.org/download/ から(このリポジトリの CI は 0.13.0 を使う)
+scripts/build-lambda.sh --arch arm64 --zig
+```
+
+ディストリビューションのクロスツールチェーンでも同じことができる(`--zig` を付けない場合)。
+
+```
+apt-get install gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+rustup target add aarch64-unknown-linux-gnu
+scripts/build-lambda.sh --arch arm64
+```
+
+- スクリプトは先に**クロスツールチェーンが実際に動くか**を 1 行の C で確かめる。コンパイラが
+  あっても binutils が無いと、ホストの `as` を呼んで `as: unrecognized option '-EL'` という
+  分かりにくい失敗になるため(この確認は `--zig` では不要なので飛ばす)。
+- 成果物が本当にそのアーキテクチャかは `file` で検査する。ここで気付かないと、Lambda が
+  報告するのは invoke 時になる。
+- **CI に arm64 ビルドの job がある**(`lambda-artifact`)。zig を入れて `--zig` でビルドし、
+  zip の中身が aarch64 であることまで見る。ローカルの開発機が x86_64 でも、この経路は腐らない。
+- zig でビルドしたバイナリが要求する glibc は **2.28** まで(確認済み)で、`provided.al2023` の
+  2.34 で動く。
+- 実際に**起動できるか**は staging で確認する(下の P5 の E2E と同じ扱い)。
+- 同じターゲットは on-prem のバイナリにも使える(`cargo build --target aarch64-unknown-linux-gnu`、
+  ただし rkv/LMDB も C なので同じクロスツールチェーンが要る)。
+
 ### P6. 別トピック(今回は対象外)
 
 - **UI の多言語化**: 方針と用語の決定リストは [`doc/i18n.md`](i18n.md)。コンテンツの
@@ -398,7 +443,7 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
 | ルーター / ドメイン | `oneshot` + **共有契約スイート**(両バックエンド) | — |
 | DynamoDB | DynamoDB Local(`endpoint_url` 差し替え) | GSI の反映遅延、スロットリング、上限 |
 | S3 | **MinIO**(presign → PUT → GET。検証済み) | IAM、CloudFront、転送 |
-| Lambda 起動点 | localhost で `serve` して E2E / `cargo lambda watch` | イベント形状、コールドスタート、凍結 |
+| Lambda 起動点 | localhost で `serve` して E2E / `cargo lambda watch`。CI が **arm64 の成果物**をビルドして中身のアーキテクチャまで確認 | イベント形状、コールドスタート、凍結 |
 | Cognito | 鍵を生成して JWKS を注入(単体) | 実プールの設定 |
 | 全体 | — | 使い捨てスタック + 既存 E2E |
 

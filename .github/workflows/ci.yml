@@ -73,6 +73,38 @@ jobs:
       - run: npm ci
       - run: ../../scripts/test-frontend.sh
 
+  lambda-artifact:
+    name: Lambda artifact (arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The artifact is built for Graviton; nothing here runs it, but it has to build - and a
+          # cross build is the kind of thing that rots quietly when only one machine ever does it.
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sl_cms
+      # `ring` (the TLS provider the workspace chose over aws-lc-rs) compiles C, so a cross C
+      # compiler is needed, not only a linker. Zig brings its own, which is one download rather
+      # than a set of packages whose version has to match the runner.
+      - name: Zig
+        run: |
+          curl -fsSL -o /tmp/zig.tar.xz https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          mkdir -p /tmp/zig
+          tar -xJf /tmp/zig.tar.xz -C /tmp/zig --strip-components=1
+          echo "/tmp/zig" >> "$GITHUB_PATH"
+      - run: cargo install cargo-zigbuild --locked
+      - name: Build the artifact
+        run: scripts/build-lambda.sh --arch arm64 --zig
+      # The script checks the binary itself; this checks what actually gets deployed.
+      - name: The zip holds an arm64 bootstrap
+        run: |
+          unzip -p infra/build/sl-cms-aws-arm64.zip bootstrap > /tmp/bootstrap
+          file /tmp/bootstrap
+          file /tmp/bootstrap | grep -q 'ARM aarch64'
+
   e2e:
     name: Browser end-to-end
     runs-on: ubuntu-latest

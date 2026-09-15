@@ -6,6 +6,15 @@ locals {
   # Cognito wants a unique prefix across the whole region, so the default can be overridden.
   cognito_domain_prefix = var.cognito_domain_prefix == "" ? local.name : var.cognito_domain_prefix
 
+  # The artifact that matches the architecture the function is declared with: keeping the two in
+  # one place is what stops a zip built for one architecture from being deployed as the other,
+  # which Lambda only reports at invoke time.
+  function_zip = (
+    var.function_zip != ""
+    ? var.function_zip
+    : "${path.module}/build/sl-cms-aws-${var.function_architecture}.zip"
+  )
+
   # Where the browser signs in. `GET /auth/capabilities` reports it, so the client can send
   # someone there instead of describing where to go.
   login_url = "https://${aws_cognito_user_pool_domain.cms.domain}.auth.${var.region}.amazoncognito.com/login?client_id=${aws_cognito_user_pool_client.browser.id}&response_type=code&scope=openid+email"

@@ -64,10 +64,10 @@ resource "aws_lambda_function" "cms" {
   role          = aws_iam_role.function.arn
   handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = [var.function_architecture]
 
-  filename         = var.function_zip
-  source_code_hash = filebase64sha256(var.function_zip)
+  filename         = local.function_zip
+  source_code_hash = filebase64sha256(local.function_zip)
 
   memory_size = var.function_memory_mb
   timeout     = var.function_timeout_seconds
