@@ -71,6 +71,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | POST | `/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
 | POST | `/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
 | GET | `/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
+| GET | `/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
 | POST | `/models/single_pages/{name}/publish` | 更新後のメタデータ |
 | POST | `/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
 | GET | `/models/collections/{name}/items/{id}/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
