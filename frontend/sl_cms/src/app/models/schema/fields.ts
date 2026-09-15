@@ -8,6 +8,20 @@ export type TextFieldOptions = {
 export type TextFieldSchema = {
   Text: TextFieldOptions;
 }
+
+/**
+ * What a slug field can be told.
+ *
+ * The character rule and the length cap belong to the type (see `./slug`), so the only thing left
+ * is which field an editor is offered to generate the value from.
+ */
+export type SlugOptions = {
+  generate_from?: string;
+};
+
+export type SlugFieldSchema = {
+  Slug: SlugOptions;
+}
 export type MarkdownFieldSchema = {
   Markdown: TextFieldOptions;
 }
@@ -44,6 +58,7 @@ export type EnumFieldSchema = {
 
 export type FieldTypeMap = {
   Text: TextFieldSchema,
+  Slug: SlugFieldSchema,
   Markdown: MarkdownFieldSchema,
   Number: 'Number',
   Boolean: 'Boolean',
@@ -57,6 +72,7 @@ export type FieldTypeMap = {
 
 export const FieldDefaults: FieldTypeMap = {
   Text: { Text: {} },
+  Slug: { Slug: {} },
   Markdown: { Markdown: {} },
   Number: 'Number',
   Boolean: 'Boolean',
@@ -164,6 +180,10 @@ export function schemaForSaving(fields: FieldSchema[]): FieldSchema[] {
 
 export function isTextFieldSchema(field: FieldType): field is TextFieldSchema {
   return typeof field === 'object' && field !== null && 'Text' in field;
+}
+
+export function isSlugFieldSchema(field: FieldType): field is SlugFieldSchema {
+  return typeof field === 'object' && field !== null && 'Slug' in field;
 }
 
 export function isMarkdownFieldSchema(field: FieldType): field is MarkdownFieldSchema {

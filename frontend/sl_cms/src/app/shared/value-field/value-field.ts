@@ -20,8 +20,10 @@ import {
   isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
+  isSlugFieldSchema,
   isTextFieldSchema,
 } from 'app/models/schema/fields';
+import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
 import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
@@ -30,6 +32,7 @@ import { ImagesService } from 'app/services/media/images.service';
 
 type FieldKind =
   | 'Text'
+  | 'Slug'
   | 'Markdown'
   | 'Number'
   | 'Boolean'
@@ -74,6 +77,13 @@ export class ValueField implements OnInit, OnChanges {
   @Input() value: FieldValue = null;
   /** Renders the widget read-only, for the schema editor's preview. */
   @Input() disabled = false;
+  /**
+   * The other fields of the item, by name.
+   *
+   * A slug may be generated from one of them (its schema says which), and a widget only ever sees
+   * its own value - so the editor passes the whole set, and this reads the one it needs.
+   */
+  @Input() siblings: ContentValue = {};
   @Output() valueChange = new EventEmitter<FieldValue>();
   /**
    * Non-null while the field holds input that cannot be turned into a value (an array
@@ -158,6 +168,7 @@ export class ValueField implements OnInit, OnChanges {
       return type as FieldKind;
     }
     if ('Text' in type) return 'Text';
+    if ('Slug' in type) return 'Slug';
     if ('Markdown' in type) return 'Markdown';
     if ('TextEnum' in type) return 'TextEnum';
     if ('Array' in type) return 'Array';
@@ -270,6 +281,62 @@ export class ValueField implements OnInit, OnChanges {
     });
   }
 
+  /** Whether the value has to be the only one of its kind in the collection. */
+  isUniqueField(): boolean {
+    return this.field.unique || this.kind() === 'Slug';
+  }
+
+  /** The field a slug is offered to be generated from, when the schema names one. */
+  slugSource(): string | null {
+    const type = this.field.field_type;
+    if (!isSlugFieldSchema(type)) {
+      return null;
+    }
+    const source = type.Slug.generate_from?.trim();
+    return source ? source : null;
+  }
+
+  /** Whether there is something to generate from, and it would change the value. */
+  canGenerateSlug(): boolean {
+    const source = this.slugSource();
+    if (source === null || this.disabled) {
+      return false;
+    }
+    const value = this.siblings[source];
+    return typeof value === 'string' && value !== '' && normaliseSlug(value) !== this.value;
+  }
+
+  /**
+   * Take the slug from the field the schema names.
+   *
+   * A button rather than something automatic: a title that changes should not silently move a URL
+   * that is already published, so the editor decides when the address moves with it.
+   */
+  generateSlug() {
+    const source = this.slugSource();
+    const value = source === null ? undefined : this.siblings[source];
+    if (typeof value !== 'string') {
+      return;
+    }
+    this.update(normaliseSlug(value));
+  }
+
+  /**
+   * Rewrite what was typed into the canonical form, on the way out of the input.
+   *
+   * The server does this when it stores the value; doing it here as well means the form shows what
+   * will be stored, rather than one thing until the save and another after it.
+   */
+  canonicaliseSlug() {
+    if (this.kind() !== 'Slug' || typeof this.value !== 'string' || this.value === '') {
+      return;
+    }
+    const canonical = normaliseSlug(this.value);
+    if (canonical !== this.value) {
+      this.update(canonical);
+    }
+  }
+
   /** How much has been typed, in the same characters the server counts. */
   textLength(): number {
     return typeof this.value === 'string' ? [...this.value].length : 0;
@@ -318,6 +385,10 @@ export class ValueField implements OnInit, OnChanges {
    * does it in the reader's language. The limits count characters, as the server counts them.
    */
   private reportTextLength(value: FieldValue) {
+    if (this.kind() === 'Slug') {
+      this.reportSlug(value);
+      return;
+    }
     const max = this.maxLength();
     const min = this.minLength();
     // Nothing to say about a field the schema left unlimited, and nothing to clear either.
@@ -330,6 +401,30 @@ export class ValueField implements OnInit, OnChanges {
     }
     if (min !== null && value.length > 0 && [...value].length < min) {
       this.errorChange.emit(t('content.valueTooShort', { field: this.field.name, min }));
+      return;
+    }
+    this.errorChange.emit(null);
+  }
+
+  /**
+   * Say so, before the save, when a value cannot become a slug.
+   *
+   * The same two answers the server gives (`invalid_slug`, `field_too_long`), for the same reason
+   * the text lengths are checked here: a refusal after the whole form has been sent is a worse way
+   * to learn it.
+   */
+  private reportSlug(value: FieldValue) {
+    if (typeof value !== 'string') {
+      return;
+    }
+    if (value !== '' && !isUsableSlug(value)) {
+      this.errorChange.emit(t('errors.invalid_slug', { field: this.field.name }));
+      return;
+    }
+    if (normaliseSlug(value).length > SLUG_MAX_LENGTH) {
+      this.errorChange.emit(
+        t('content.valueTooLong', { field: this.field.name, max: SLUG_MAX_LENGTH }),
+      );
       return;
     }
     this.errorChange.emit(null);

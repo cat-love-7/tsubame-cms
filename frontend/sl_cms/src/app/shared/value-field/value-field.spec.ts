@@ -287,6 +287,84 @@ describe('ValueField', () => {
     expect(dates.value).toEqual(['2026-01-01']);
   });
 
+  // A slug is a type of its own: the rule belongs to it, and the editor can fill it from another
+  // field. What is stored is the server's normalisation of it.
+  it('edits a slug as a text input, and says what a slug is', async () => {
+    create(field('address', { Slug: {} }), 'hello-world');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const input = query('input[matinput]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('hello-world');
+    expect(fixture.nativeElement.textContent).toContain('Lower-case letters, digits and hyphens');
+    // Unique by being a slug, so the label says so without the schema asking.
+    expect(fixture.nativeElement.querySelector('.unique-mark')).toBeTruthy();
+  });
+
+  it('rewrites what was typed into canonical form when the input is left', () => {
+    const component = create(field('address', { Slug: {} }), '');
+    const values: FieldValue[] = [];
+    component.valueChange.subscribe((value) => values.push(value));
+
+    component.update('  Hello, World!  ');
+    // Nothing is rewritten while it is being typed: only on the way out.
+    expect(values).toEqual(['  Hello, World!  ']);
+
+    component.canonicaliseSlug();
+    expect(values[1]).toBe('hello-world');
+  });
+
+  it('offers to take the slug from the field the schema names', () => {
+    const component = create(
+      field('address', { Slug: { generate_from: 'title' } }),
+      '',
+    );
+    component.siblings = { title: 'Hello World' };
+    const values: FieldValue[] = [];
+    component.valueChange.subscribe((value) => values.push(value));
+
+    expect(component.canGenerateSlug()).toBe(true);
+    component.generateSlug();
+    expect(values).toEqual(['hello-world']);
+
+    // Nothing to generate from, or nothing that would change: no button worth pressing.
+    component.siblings = { title: '' };
+    expect(component.canGenerateSlug()).toBe(false);
+    component.siblings = { title: 'Hello World' };
+    component.update('hello-world');
+    expect(component.canGenerateSlug()).toBe(false);
+  });
+
+  it('has no generate option when the schema names no source', () => {
+    const component = create(field('address', { Slug: {} }), '');
+    component.siblings = { title: 'Hello World' };
+
+    expect(component.slugSource()).toBeNull();
+    expect(component.canGenerateSlug()).toBe(false);
+  });
+
+  // The same two answers the server gives, before the form is sent.
+  it('reports a slug that nothing a URL could use, or one that is too long', () => {
+    const component = create(field('address', { Slug: {} }), '');
+    const problems: (Message | null)[] = [];
+    component.errorChange.subscribe((problem) => problems.push(problem));
+
+    component.update('日本語');
+    expect(problems[0]).toEqual(t('errors.invalid_slug', { field: 'address' }));
+
+    component.update('a'.repeat(201));
+    expect(problems[1]).toEqual(
+      t('content.valueTooLong', { field: 'address', max: 200 }),
+    );
+
+    // Empty is allowed (unless the field is required), and the cap is the type's.
+    component.update('');
+    expect(problems[2]).toBeNull();
+    component.update('a'.repeat(200));
+    expect(problems[3]).toBeNull();
+  });
+
   it('says a field has to be unique, which only the server can check', () => {
     create(field('slug', { Text: {} }, { unique: true }));
     expect(query('.unique-mark')?.textContent?.trim()).toBe('unique');

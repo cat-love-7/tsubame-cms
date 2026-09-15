@@ -210,3 +210,14 @@
 .element-type {
   width: 12rem;
 }
+
+/// A slug: the input, and the button that fills it from another field.
+.slug-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+
+  .generate-slug {
+    margin-top: -4px;
+  }
+}

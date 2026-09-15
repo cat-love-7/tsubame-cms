@@ -187,6 +187,8 @@
     "hideJson": "JSON を隠す",
     "jsonArrayPlaceholder": "JSON 配列(例: [1, 2])",
     "jsonArrayHint": "配列の値は JSON で編集します。",
+    "slugRule": "小文字の英数字とハイフンで入力します。",
+    "generateSlugFrom": "{{field}} から生成",
     "arrayItemTypes": "要素の型: {{types}}",
     "arrayItemType": "'{{field}}' はこの配列が許可する要素の型({{types}})ではありません。",
     "uniqueField": "一意",
@@ -291,7 +293,10 @@
     "arrayCompositeHint": "この配列に要素として入れられる複合フィールドです。",
     "arrayNoCompositeTypes": "まだ複合フィールドが定義されていません。",
     "unique": "コレクション内で一意にする",
-    "uniqueHint": "スキーマの保存時に、既存のアイテムと重複していないか確認します。"
+    "uniqueHint": "スキーマの保存時に、既存のアイテムと重複していないか確認します。",
+    "slugGenerateFrom": "生成元",
+    "slugNoSource": "指定しない",
+    "slugGenerateHint": "内容編集で「〜から生成」に使う項目です(自動では動きません)。"
   },
   "labels": {
     "toggleNavigation": "ナビゲーションを開閉",

@@ -186,6 +186,42 @@ describe('Field', () => {
     expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
   });
 
+  // A slug's only option is where an editor may take the value from; the rule and the length cap
+  // belong to the type, so there is nothing else to configure.
+  it('offers the sibling text fields as a slug\u2019s source', async () => {
+    const address = field({ name: 'address', field_type: { Slug: {} } });
+    fixture.componentRef.setInput('field', address);
+    fixture.componentRef.setInput('siblingFields', [
+      field({ name: 'title' }),
+      field({ name: 'body', field_type: { Markdown: {} } }),
+      field({ name: 'count', field_type: 'Number' }),
+      address,
+    ]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.isSlug()).toBe(true);
+    expect(
+      fixture.componentInstance.slugSourceOptions().map((candidate) => candidate.name),
+    ).toEqual(['title', 'body']);
+
+    fixture.componentInstance.setGenerateFrom('title');
+    expect(address.field_type).toEqual({ Slug: { generate_from: 'title' } });
+
+    // Choosing "none" leaves the option out entirely, rather than naming an empty field.
+    fixture.componentInstance.setGenerateFrom('');
+    expect(address.field_type).toEqual({ Slug: {} });
+  });
+
+  it('offers no unique flag for a slug, which is unique by being one', async () => {
+    fixture.componentRef.setInput('field', field({ name: 'address', field_type: { Slug: {} } }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('mat-select[name="slugGenerateFrom"]')).toBeTruthy();
+  });
+
   it('brings the enum editor in when the field is an enum', async () => {
     fixture.componentRef.setInput('field', field({ field_type: { TextEnum: ['draft'] } }));
     await fixture.whenStable();

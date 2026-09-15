@@ -187,6 +187,8 @@
     "hideJson": "Hide JSON",
     "jsonArrayPlaceholder": "JSON array, e.g. [1, 2]",
     "jsonArrayHint": "Array values are edited as JSON.",
+    "slugRule": "Lower-case letters, digits and hyphens.",
+    "generateSlugFrom": "Generate from {{field}}",
     "arrayItemTypes": "Item types: {{types}}",
     "arrayItemType": "'{{field}}' is not one of the item types this array allows ({{types}}).",
     "uniqueField": "unique",
@@ -291,7 +293,10 @@
     "arrayCompositeHint": "Which composite definitions this array may hold.",
     "arrayNoCompositeTypes": "No composite fields are defined yet.",
     "unique": "Must be unique in this collection",
-    "uniqueHint": "Checked when the schema is saved, against the items already stored."
+    "uniqueHint": "Checked when the schema is saved, against the items already stored.",
+    "slugGenerateFrom": "Generate from",
+    "slugNoSource": "No suggestion",
+    "slugGenerateHint": "The field the content editor may fill the slug from, when asked."
   },
   "labels": {
     "toggleNavigation": "Toggle navigation",

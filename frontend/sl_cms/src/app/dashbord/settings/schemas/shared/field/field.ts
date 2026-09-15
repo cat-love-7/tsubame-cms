@@ -30,6 +30,9 @@ import {
   IsTextFieldSchema,
   isArrayFieldSchema,
   isCompositeFieldSchema,
+  isMarkdownFieldSchema,
+  isSlugFieldSchema,
+  isTextFieldSchema,
   newFieldType,
   reconcileArrayItemTypes,
 } from 'app/models/schema/fields';
@@ -81,6 +84,13 @@ export class Field implements OnInit, OnChanges {
    * server refuses it there and the control would only ever fail.
    */
   @Input() uniqueAllowed = true;
+  /**
+   * Every field of the schema this one belongs to.
+   *
+   * A slug may name one of them as the source its value is generated from, and the picker can only
+   * offer what the schema holds.
+   */
+  @Input() siblingFields: FieldSchema[] = [];
   @Output() fieldChange = new EventEmitter<FieldSchema>();
 
   /**
@@ -110,6 +120,38 @@ export class Field implements OnInit, OnChanges {
   public typeOptions = Object.keys(FieldDefaults);
   public arrayItemTypeOptions = ArrayItemTypeOptions;
   public widthPresets = FieldWidthPresets;
+
+  /** Whether this field is a slug, whose only option is where to generate the value from. */
+  isSlug(): boolean {
+    return isSlugFieldSchema(this.field.field_type);
+  }
+
+  /** The fields a slug could be generated from: text and markdown, and never itself. */
+  slugSourceOptions(): FieldSchema[] {
+    return this.siblingFields.filter(
+      (candidate) =>
+        candidate.name !== this.field.name &&
+        (isTextFieldSchema(candidate.field_type) ||
+          isMarkdownFieldSchema(candidate.field_type)),
+    );
+  }
+
+  /** The source the schema currently names, or `''` for none. */
+  currentGenerateFrom(): string {
+    const type = this.field.field_type;
+    return isSlugFieldSchema(type) ? type.Slug.generate_from ?? '' : '';
+  }
+
+  setGenerateFrom(name: string) {
+    const type = this.field.field_type;
+    if (!isSlugFieldSchema(type)) {
+      return;
+    }
+    // Undefined rather than an empty string: "no suggestion" is the absence of an option, and the
+    // server drops it from the wire.
+    type.Slug.generate_from = name === '' ? undefined : name;
+    this.fieldChange.emit(this.field);
+  }
 
   /** Typing a raw column count is not intuitive; the presets cover the common fractions. */
   public setWidth(width: number) {

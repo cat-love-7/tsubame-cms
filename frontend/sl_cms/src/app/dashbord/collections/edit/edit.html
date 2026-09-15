@@ -68,6 +68,7 @@
       <app-value-field
         [field]="field"
         [value]="values()[field.name]"
+        [siblings]="values()"
         [disabled]="!canEdit()"
         (valueChange)="setValue(field, $event)"
         (errorChange)="setFieldError(field, $event)"

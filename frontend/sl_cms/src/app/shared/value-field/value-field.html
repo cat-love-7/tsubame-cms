@@ -1,6 +1,6 @@
 <span class="field-label">
   {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
-  @if (field.unique) {
+  @if (isUniqueField()) {
     <!-- The value has to be the only one in the collection; the server is what checks it, so the
          label says so rather than leaving the reader to find out from a refusal. -->
     <span class="unique-mark" [title]="'schema.uniqueHint' | transloco">
@@ -50,6 +50,35 @@
         <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
       }
     </mat-form-field>
+  }
+  @case ('Slug') {
+    <div class="slug-field">
+      <mat-form-field appearance="fill" class="full-width">
+        <input
+          matInput
+          [name]="field.name"
+          [disabled]="disabled"
+          [ngModel]="value"
+          (ngModelChange)="update($event)"
+          (blur)="canonicaliseSlug()"
+        />
+        <mat-hint>{{ 'content.slugRule' | transloco }}</mat-hint>
+      </mat-form-field>
+      @if (slugSource(); as source) {
+        <!-- Explicit rather than automatic: a title that changes should not move a published
+             URL without the editor deciding that it should. -->
+        <button
+          matButton
+          type="button"
+          class="generate-slug"
+          [disabled]="!canGenerateSlug()"
+          (click)="generateSlug()"
+        >
+          <mat-icon>auto_fix_high</mat-icon>
+          {{ 'content.generateSlugFrom' | transloco: { field: source } }}
+        </button>
+      }
+    </div>
   }
   @case ('Markdown') {
     <mat-form-field appearance="fill" class="full-width">

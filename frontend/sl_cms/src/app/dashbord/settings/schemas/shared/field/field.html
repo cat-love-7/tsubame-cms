@@ -22,6 +22,24 @@
     }
   </mat-select>
 </mat-form-field>
+@if (isSlug()) {
+  <mat-form-field appearance="fill" class="full-width">
+    <mat-label>{{ 'schema.slugGenerateFrom' | transloco }}</mat-label>
+    <mat-select
+      name="slugGenerateFrom"
+      [ngModel]="currentGenerateFrom()"
+      (ngModelChange)="setGenerateFrom($event)"
+    >
+      <mat-option value="">{{ 'schema.slugNoSource' | transloco }}</mat-option>
+      @for (candidate of slugSourceOptions(); track candidate.name) {
+        <mat-option [value]="candidate.name">{{ candidate.name }}</mat-option>
+      }
+    </mat-select>
+    <!-- The suggestion is what the content editor's "generate" button offers; nothing is
+         generated on its own, so a published address does not move behind an editor's back. -->
+    <mat-hint>{{ 'schema.slugGenerateHint' | transloco }}</mat-hint>
+  </mat-form-field>
+}
 <div class="layout-section">
   <span class="layout-label">{{ 'schema.widthHint' | transloco }}</span>
   <div class="width-presets" role="group" [attr.aria-label]="'schema.widthGroup' | transloco">
