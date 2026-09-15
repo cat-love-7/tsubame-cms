@@ -43,6 +43,22 @@ pub struct CompositeFieldReference {
 
 pub type CompositeFieldSchema = Vec<FieldSchema>;
 
+/// What a slug field can be told.
+///
+/// A slug has no options in the usual sense: the character rule and the length cap belong to the
+/// type (`models::slug`), so that every slug in every collection means the same thing. What is left
+/// is the editor's convenience - which field to suggest as the source of the value.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct SlugOptions {
+    /// The field an editor is offered to generate the slug from, usually a title.
+    ///
+    /// Checked when the schema is saved: it has to name another text field in the same schema.
+    /// Nothing is generated without an editor pressing the button - a title that changes should
+    /// not silently move a URL that is already published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generate_from: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, Copy)]
 pub struct TextFieldOptions {
     pub max_length: Option<usize>,
@@ -53,6 +69,8 @@ pub struct TextFieldOptions {
 #[cfg_attr(test, derive(EnumIter))]
 pub enum FieldType {
     Text(TextFieldOptions),
+    /// A URL-safe, normalised, always-unique string (see `models::slug`).
+    Slug(SlugOptions),
     Markdown(TextFieldOptions),
     Number,
     Boolean,
@@ -72,7 +90,7 @@ impl Default for FieldType {
 impl FieldType {
     pub fn test_required(&self, value: &FieldValue) -> bool {
         match (self, value) {
-            (FieldType::Text(_), FieldValue::Text(text)) => !text.is_empty(),
+            (FieldType::Text(_) | FieldType::Slug(_), FieldValue::Text(text)) => !text.is_empty(),
             (FieldType::Markdown(_), FieldValue::Markdown(markdown)) => !markdown.is_empty(),
             (FieldType::Number, FieldValue::Number(num_opt)) => num_opt.is_some(),
             (FieldType::Boolean, FieldValue::Boolean(_)) => true,
@@ -87,6 +105,19 @@ impl FieldType {
     }
 }
 impl FieldSchema {
+    /// Whether this field's values are tracked for uniqueness.
+    ///
+    /// A field that asked for it, or a slug - which is unique by being a slug: `Hello World` and
+    /// `hello-world` are one slug, so the index is what keeps them from becoming two items.
+    pub fn is_unique(&self) -> bool {
+        self.unique || self.is_slug()
+    }
+
+    /// Whether this field is a slug (see `models::slug`).
+    pub fn is_slug(&self) -> bool {
+        matches!(self.field_type, FieldType::Slug(_))
+    }
+
     /// Whether `value` is within the lengths the field was given.
     ///
     /// `path` is where the value sits in the item (`body`, `tags[2]`, `seo.description`), which is
@@ -118,7 +149,7 @@ impl FieldSchema {
     }
     pub fn get_default_value(&self) -> FieldValue {
         match &self.field_type {
-            FieldType::Text(_) => FieldValue::Text(String::new()),
+            FieldType::Text(_) | FieldType::Slug(_) => FieldValue::Text(String::new()),
             FieldType::Markdown(_) => FieldValue::Markdown(String::new()),
             FieldType::Number => FieldValue::Number(None),
             FieldType::Boolean => FieldValue::Boolean(false),
@@ -172,11 +203,34 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
                     ));
                 }
             }
+            if field.is_slug() {
+                // Not a mistake worth refusing outright - the flag is simply already true - but
+                // saying so beats a schema that reads as if the two were unrelated.
+                return Err(format!(
+                    "field '{name}': a slug is unique already, so 'unique' is redundant"
+                ));
+            }
             if !matches!(field.field_type, FieldType::Text(_)) {
                 return Err(format!(
                     "field '{name}': only a text field can be unique"
                 ));
             }
+        }
+        if field.is_slug() {
+            match scope {
+                SchemaScope::Collection => {}
+                SchemaScope::SinglePage => {
+                    return Err(format!(
+                        "field '{name}': a single page's address is its name, so it needs no slug"
+                    ));
+                }
+                SchemaScope::CompositeDefinition => {
+                    return Err(format!(
+                        "field '{name}': a composite's values are stored inside the item that uses                          them, so a slug there would name nothing"
+                    ));
+                }
+            }
+            validate_slug_options(fields, field)?;
         }
         if !(1..=12).contains(&field.width) {
             return Err(format!(
@@ -191,6 +245,46 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
             ));
         }
         validate_field_type(name, &field.field_type)?;
+    }
+    Ok(())
+}
+
+/// A slug's `generate_from` has to name another field an editor could take a value from.
+///
+/// Checked here because nothing about the schema editor would notice: a name that matches nothing
+/// (or matches itself) leaves a button that does not work, and a field of a kind that is not text
+/// gives a value with nothing to make a slug out of.
+fn validate_slug_options(fields: &[FieldSchema], field: &FieldSchema) -> Result<(), String> {
+    let FieldType::Slug(options) = &field.field_type else {
+        return Ok(());
+    };
+    let Some(source) = options.generate_from.as_deref().map(str::trim) else {
+        return Ok(());
+    };
+    if source.is_empty() {
+        // Same as not naming one: the editor simply offers no button.
+        return Ok(());
+    }
+    if source == field.name.trim() {
+        return Err(format!(
+            "field '{}': a slug cannot be generated from itself",
+            field.name
+        ));
+    }
+    let Some(candidate) = fields.iter().find(|other| other.name.trim() == source) else {
+        return Err(format!(
+            "field '{}': generate_from names '{source}', which is not a field of this schema",
+            field.name
+        ));
+    };
+    if !matches!(
+        candidate.field_type,
+        FieldType::Text(_) | FieldType::Markdown(_)
+    ) {
+        return Err(format!(
+            "field '{}': a slug can only be generated from a text field, and '{source}' is not one",
+            field.name
+        ));
     }
     Ok(())
 }
@@ -235,7 +329,7 @@ pub fn unique_values(
 ) -> Vec<UniqueValue> {
     let mut values = Vec::new();
     for field in fields {
-        if !field.unique {
+        if !field.is_unique() {
             continue;
         }
         let Some(FieldValue::Text(text)) = item.get(&field.name) else {
@@ -256,7 +350,7 @@ pub fn unique_values(
 /// Whether any field declares `unique`, so a caller can skip the bookkeeping (and the reads it
 /// needs) for the collections that do not.
 pub fn has_unique_fields(fields: &[FieldSchema]) -> bool {
-    fields.iter().any(|field| field.unique)
+    fields.iter().any(|field| field.is_unique())
 }
 
 /// Every composite id referenced by `fields`, including inside array item types.
@@ -395,6 +489,89 @@ mod tests {
 
         // An empty optional value is not below the minimum; `required` is what says that.
         assert!(field.validate_text_length("", &options, "title").is_ok());
+    }
+
+    /// A slug is unique by being a slug, so the bookkeeping has to see it without the flag.
+    #[test]
+    fn a_slug_counts_as_a_unique_field() {
+        let schema = vec![field("address", FieldType::Slug(SlugOptions::default()))];
+
+        assert!(has_unique_fields(&schema));
+        assert!(schema[0].is_unique() && schema[0].is_slug());
+        assert!(!schema[0].unique);
+    }
+
+    #[test]
+    fn accepts_a_slug_generated_from_another_text_field() {
+        let schema = vec![
+            field("title", FieldType::Text(TextFieldOptions::default())),
+            field(
+                "address",
+                FieldType::Slug(SlugOptions {
+                    generate_from: Some("title".to_string()),
+                }),
+            ),
+        ];
+
+        assert!(validate_schema(&schema, SchemaScope::Collection).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_slug_that_cannot_be_generated_or_that_would_compare_nothing() {
+        let text = || field("title", FieldType::Text(TextFieldOptions::default()));
+        let slug = |from: Option<&str>| {
+            field(
+                "address",
+                FieldType::Slug(SlugOptions {
+                    generate_from: from.map(str::to_string),
+                }),
+            )
+        };
+
+        // Naming a field that is not there, itself, or something that is not text.
+        let missing = vec![text(), slug(Some("subtitle"))];
+        assert!(
+            validate_schema(&missing, SchemaScope::Collection)
+                .unwrap_err()
+                .contains("is not a field of this schema")
+        );
+        let itself = vec![text(), slug(Some("address"))];
+        assert!(
+            validate_schema(&itself, SchemaScope::Collection)
+                .unwrap_err()
+                .contains("cannot be generated from itself")
+        );
+        let number = vec![
+            field("count", FieldType::Number),
+            slug(Some("count")),
+        ];
+        assert!(
+            validate_schema(&number, SchemaScope::Collection)
+                .unwrap_err()
+                .contains("only be generated from a text field")
+        );
+
+        // A page's address is its name, and a composite's values live inside the item using it.
+        let page = vec![slug(None)];
+        assert!(
+            validate_schema(&page, SchemaScope::SinglePage)
+                .unwrap_err()
+                .contains("address is its name")
+        );
+        assert!(
+            validate_schema(&page, SchemaScope::CompositeDefinition)
+                .unwrap_err()
+                .contains("a slug there would name nothing")
+        );
+
+        // And the flag it does not need is refused rather than ignored.
+        let mut flagged = slug(None);
+        flagged.unique = true;
+        assert!(
+            validate_schema(&[flagged], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("a slug is unique already")
+        );
     }
 
     #[test]

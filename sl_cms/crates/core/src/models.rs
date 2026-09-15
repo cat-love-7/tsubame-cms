@@ -1,5 +1,6 @@
 pub mod capabilities;
 pub mod schema;
+pub mod slug;
 pub mod field;
 pub mod collection;
 pub mod single_page;

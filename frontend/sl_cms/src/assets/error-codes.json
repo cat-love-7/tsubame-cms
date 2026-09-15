@@ -17,7 +17,8 @@
     "invalid_enum_value",
     "unknown_composite_field",
     "composite_id_mismatch",
-    "nested_arrays"
+    "nested_arrays",
+    "invalid_slug"
   ],
   "status": [
     "bad_request",

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
-use crate::models::error::{HttpError, map_internal_error};
-use crate::models::field::FieldValue;
+use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
+use crate::models::field::{FieldValue, FieldValueMap};
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
@@ -194,7 +194,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collection_repository
             .get_collection_schema(collection_name)
             .await.map_err(map_internal_error)?;
-        let schema = match schema {
+        let (schema, item_data) = match schema {
             None => {
                 return Err(HttpError::NotFound(&format!(
                     "Collection with id '{}' does not exist",
@@ -206,11 +206,16 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .composite_field_repository
                     .list_composite_field_schemas()
                     .await.map_err(map_internal_error)?;
-                item_data.validate_to_schema(&composite_schema_map, &schema)
+                // Before validation, and before anything is reserved: what is stored, indexed and
+                // looked up later is the canonical slug, not what was typed.
+                let item_data = self.normalise_slugs(&schema, item_data)?;
+                item_data
+                    .validate_to_schema(&composite_schema_map, &schema)
                     .map_err(|e| e.into_http_error())?;
-                schema
+                (schema, item_data)
             }
         };
+        let item_data = &item_data;
         let item_id = CollectionItemId::from_u64(
             self.collection_repository
                 .add_collection_item(collection_name, item_data)
@@ -271,6 +276,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                         item_id.to_string(), collection_name
                     )));
                 }
+                // The same normalisation as a create: a save stores the canonical slug, so the
+                // index keeps holding what a URL will ask for.
+                let item_data = self.normalise_slugs(&schema, item_data)?;
                 item_data.validate_to_schema(
                     &self
                         .composite_field_repository
@@ -278,6 +286,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                         .await.map_err(|e| HttpError::InternalServerError(&e.to_string()))?,
                     &schema,
                 ).map_err(|e| e.into_http_error())?;
+                // Everything below works from the normalised copy.
+                let item_data = &item_data;
 
                 // The index has to follow both copies: the published one still holds its value
                 // while the working copy holds the new one, and a save only gives up a value
@@ -345,21 +355,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         value: &str,
     ) -> Result<(CollectionItemId, CollectionItemResponse), HttpError> {
         let schema = self.get_collection_schema(collection_name).await?;
-        let declared = schema
+        let known = schema
             .iter()
-            .any(|candidate| candidate.name == field && candidate.unique);
-        if !declared {
+            .any(|candidate| candidate.name == field && candidate.is_unique());
+        if !known {
             return Err(HttpError::BadRequest(&format!(
                 "field '{field}' is not unique, so a value does not name one item"
             )));
         }
-        let value = value.trim();
+        let value = Self::lookup_value(&schema, field, value);
         if value.is_empty() {
             return Err(HttpError::BadRequest("a value to look up is required"));
         }
         let unique = crate::repositories::collection_repository::UniqueValue {
             field: field.to_string(),
-            value: value.to_string(),
+            value: value.clone(),
         };
         let item_id = self
             .collection_repository
@@ -513,10 +523,48 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .into_iter()
             .collect();
 
+        // What each item *holds*, which depends on whether it is published - the same rule a save
+        // uses, so the index this builds is the index those saves maintain.
+        let statuses: HashMap<CollectionItemId, crate::models::item_status::ItemMetadata> = self
+            .collection_repository
+            .list_item_metadata(collection_name)
+            .await
+            .map_err(map_internal_error)?
+            .into_iter()
+            .collect();
+
         let mut claimed: Vec<(CollectionItemId, UniqueValue)> = Vec::new();
         for (item_id, published) in items {
             let working = drafts.get(&item_id);
-            let held = Self::held_unique_values(schema, [Some(&published), working]);
+            let is_published = statuses
+                .get(&item_id)
+                .map(|metadata| metadata.is_published())
+                .unwrap_or(false);
+            let held = Self::held_unique_values_for_status(
+                schema,
+                is_published,
+                Some(&published),
+                working,
+            );
+
+            // A slug is only a slug if what is held is canonical: the index would otherwise carry
+            // a spelling no lookup asks for, and the item would be invisible under its own address.
+            // Making a text field a slug, or adding one beside values that were typed freely, is
+            // refused here, and the refusal names the item to fix.
+            for value in &held {
+                let is_slug = schema
+                    .iter()
+                    .any(|candidate| candidate.name == value.field && candidate.is_slug());
+                if is_slug && crate::models::slug::normalise(&value.value) != value.value {
+                    return Err(HttpError::Conflict(&format!(
+                        "field '{}': item {} holds '{}', which is not a slug yet - make it one \
+                         (lower-case letters, digits and hyphens) before the field becomes a slug",
+                        value.field, item_id, value.value
+                    ))
+                    .with_code("invalid_slug")
+                    .with_field(&value.field));
+                }
+            }
             for value in held {
                 match self
                     .collection_repository
@@ -810,6 +858,53 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default())
     }
 
+    /// The value a unique lookup is asking about, in the form the index holds it.
+    ///
+    /// A slug is stored canonical, so the question has to be canonical too; everything else is
+    /// compared as it was typed, trimmed. A field that is not there, or not unique, answers with
+    /// the trimmed value and the caller refuses it a moment later.
+    fn lookup_value(schema: &CollectionSchema, field: &str, value: &str) -> String {
+        let is_slug = schema
+            .iter()
+            .any(|candidate| candidate.name == field && candidate.is_slug());
+        if is_slug {
+            crate::models::slug::normalise(value)
+        } else {
+            value.trim().to_string()
+        }
+    }
+
+    /// The item with its slug fields in canonical form.
+    ///
+    /// A slug is normalised when it is *written*, which is what makes the rest work: what is stored
+    /// is what the unique index holds and what a URL resolves. A value that leaves nothing usable -
+    /// a title in a script the rule cannot keep - is refused rather than stored as an empty slug;
+    /// silently turning content into nothing is the one outcome worse than a refusal.
+    fn normalise_slugs(
+        &self,
+        schema: &CollectionSchema,
+        item: &CollectionItem,
+    ) -> Result<CollectionItem, HttpError> {
+        let mut values = item.0.clone();
+        for field in schema {
+            if !field.is_slug() {
+                continue;
+            }
+            let Some(FieldValue::Text(text)) = values.get(&field.name) else {
+                continue;
+            };
+            if text.is_empty() {
+                continue;
+            }
+            let slug = crate::models::slug::normalise(text);
+            if slug.is_empty() {
+                return Err(FieldRefusal::invalid_slug(&field.name).into_http_error());
+            }
+            values.insert(field.name.clone(), FieldValue::Text(slug));
+        }
+        Ok(FieldValueMap(values, std::marker::PhantomData))
+    }
+
     /// Metadata for every item, so the admin list can show a status for items that were
     /// never published (those have no stored record).
     pub async fn list_item_metadata(
@@ -1057,7 +1152,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .get_item_by_unique_value(collection_name, field, value)
             .await?;
         let (metadata, values) = self.get_published_item(collection_name, item_id).await?;
-        let value = value.trim();
+        // Asked in the same form the index holds: for a slug that is the canonical spelling, so
+        // `Hello World` and `hello-world` are one question rather than two.
+        let value = Self::lookup_value(&self.get_collection_schema(collection_name).await?, field, value);
         let holds_it = self
             .collection_repository
             .get_collection_item(collection_name, &item_id)

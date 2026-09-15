@@ -203,7 +203,7 @@ fn parse_untagged_scalar(
     raw: &serde_json::Value,
 ) -> Result<FieldValue, String> {
     match field_type {
-        FieldType::Text(_) => raw
+        FieldType::Text(_) | FieldType::Slug(_) => raw
             .as_str()
             .map(|s| FieldValue::Text(s.to_string()))
             .ok_or_else(|| mismatch(field, "a string")),
@@ -770,6 +770,27 @@ impl FieldValue {
                 schema.validate_text_length(text, &field_params, &path)?;
                 Ok(())
             }
+            (FieldType::Slug(_), FieldValue::Text(slug)) => {
+                if schema.required && schema.field_type.test_required(self) == false {
+                    return Err(FieldRefusal::required(&path));
+                }
+                if slug.chars().count() > crate::models::slug::SLUG_MAX_LENGTH {
+                    return Err(FieldRefusal::too_long(
+                        &path,
+                        crate::models::slug::SLUG_MAX_LENGTH,
+                    ));
+                }
+                // Everything a slug may hold, and nothing else. A value that is not canonical is
+                // refused rather than rewritten here: normalising on this side would quietly store
+                // something other than what was sent, and the caller would never learn.
+                let canonical = slug
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+                if !canonical {
+                    return Err(FieldRefusal::invalid_slug(&path));
+                }
+                Ok(())
+            }
             (FieldType::Number, FieldValue::Number(_))
             | (FieldType::Boolean, FieldValue::Boolean(_))
             | (FieldType::Date, FieldValue::Date(_))
@@ -934,6 +955,7 @@ impl FieldValue {
     ) -> FieldValue {
         match (&schema.field_type, self) {
             (FieldType::Text(_), FieldValue::Text(_))
+            | (FieldType::Slug(_), FieldValue::Text(_))
             | (FieldType::Markdown(_), FieldValue::Markdown(_))
             | (FieldType::Number, FieldValue::Number(_))
             | (FieldType::Boolean, FieldValue::Boolean(_))
@@ -1448,6 +1470,21 @@ mod tests {
                         r#"{"name":"description","field_type":{"Markdown":{"max_length":null,"min_length":null}},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
                 }
+                FieldType::Slug(ref options) => {
+                    let field_schema = FieldSchema {
+                        name: "address".to_string(),
+                        field_type: FieldType::Slug(options.clone()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                        unique: false,
+                    };
+                    // A slug without a suggestion carries no options at all: the character rule
+                    // and the length cap belong to the type, not to the schema.
+                    let json_schema =
+                        r#"{"name":"address","field_type":{"Slug":{}},"required":true,"width":12,"height":1}"#;
+                    (field_schema, json_schema)
+                }
                 FieldType::Number => {
                     let field_schema = FieldSchema {
                         name: "age".to_string(),
@@ -1576,6 +1613,10 @@ mod tests {
         for field_type in FieldType::iter() {
             let (field_value, field_value_json) = match field_type {
                 FieldType::Text(_) => (FieldValue::Text("Hello".to_string()), r#"{"Text":"Hello"}"#),
+                FieldType::Slug(_) => (
+                    FieldValue::Text("hello".to_string()),
+                    r#"{"Text":"hello"}"#,
+                ),
                 FieldType::Markdown(_) => (
                     FieldValue::Markdown("**Bold Text**".to_string()),
                     r#"{"Markdown":"**Bold Text**"}"#,
@@ -1674,7 +1715,9 @@ mod tests {
             };
             let default_value = test_schema.get_default_value();
             match field_type {
-                FieldType::Text(_) => assert_eq!(default_value, FieldValue::Text(String::new())),
+                FieldType::Text(_) | FieldType::Slug(_) => {
+                    assert_eq!(default_value, FieldValue::Text(String::new()))
+                }
                 FieldType::Markdown(_) => {
                     assert_eq!(default_value, FieldValue::Markdown(String::new()))
                 }
@@ -1720,6 +1763,18 @@ mod tests {
                     },
                     HashMap::new(),
                     FieldValue::Markdown("**Bold Text**".to_string()),
+                ),
+                FieldType::Slug(ref options) => (
+                    FieldSchema {
+                        name: "address".to_string(),
+                        field_type: FieldType::Slug(options.clone()),
+                        required: true,
+                        width: 12,
+                        height: 1,
+                        unique: false,
+                    },
+                    HashMap::new(),
+                    FieldValue::Text("a-slug".to_string()),
                 ),
                 FieldType::Number => (
                     FieldSchema {
@@ -1874,7 +1929,9 @@ mod tests {
     fn test_field_type_test_required() {
         for field_type in FieldType::iter() {
             let value = match field_type {
-                FieldType::Text(_) => FieldValue::Text("Sample".to_string()),
+                FieldType::Text(_) | FieldType::Slug(_) => {
+                    FieldValue::Text("Sample".to_string())
+                }
                 FieldType::Markdown(_) => FieldValue::Markdown("**Sample**".to_string()),
                 FieldType::Number => FieldValue::Number(Some(10.0)),
                 FieldType::Boolean => FieldValue::Boolean(true),
@@ -2180,6 +2237,7 @@ mod tests {
         for field_type in FieldType::iter() {
             let (field_value, should_be_valid) = match field_type {
                 FieldType::Text(_) => (FieldValue::Text("Hello".to_string()), true),
+                FieldType::Slug(_) => (FieldValue::Text("hello".to_string()), true),
                 FieldType::Markdown(_) => (FieldValue::Markdown("**Bold Text**".to_string()), true),
                 FieldType::Number => (FieldValue::Number(Some(42.0)), true),
                 FieldType::Boolean => (FieldValue::Boolean(true), true),
@@ -2667,6 +2725,12 @@ mod tests {
                     HashMap::new(),
                     FieldValue::Text("Hello".to_string()),
                     FieldValue::Text("Hello".to_string()),
+                ),
+                FieldType::Slug(_) => (
+                    field_type,
+                    HashMap::new(),
+                    FieldValue::Text("hello".to_string()),
+                    FieldValue::Text("hello".to_string()),
                 ),
                 FieldType::Markdown(_) => (
                     field_type,

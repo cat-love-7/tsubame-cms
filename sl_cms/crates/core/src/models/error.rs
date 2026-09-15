@@ -26,6 +26,8 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "unknown_composite_field",
     "composite_id_mismatch",
     "nested_arrays",
+    // A slug with nothing usable in it: nothing survives normalisation (see `models::slug`).
+    "invalid_slug",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -69,6 +71,7 @@ pub const ERROR_CODES: &[&str] = &[
     "unknown_composite_field",
     "composite_id_mismatch",
     "nested_arrays",
+    "invalid_slug",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -178,6 +181,15 @@ impl FieldRefusal {
             "composite_id_mismatch",
             field,
             format!("field {field} holds a composite field other than the one the schema names"),
+        )
+    }
+
+    /// A slug that has nothing a URL could use in it.
+    pub fn invalid_slug(field: &str) -> Self {
+        Self::new(
+            "invalid_slug",
+            field,
+            format!("field {field} has no characters a slug can be made of"),
         )
     }
 
