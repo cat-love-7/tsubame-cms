@@ -85,7 +85,6 @@ export class List {
   public newUsername = '';
   /** Optional: the CMS works without an address, but an operator may want one on file. */
   public newEmail = '';
-  public newPassword = '';
   public newRole: Role = 'viewer';
   public newIsAdmin = false;
 
@@ -234,27 +233,38 @@ export class List {
     return roleOf(user);
   }
 
+  /**
+   * Create an account, and hand over a link for it.
+   *
+   * No password is asked for: the account has no credential until its owner sets one through the
+   * reset link, which is issued here and shown for copying. An administrator choosing someone
+   * else's password is a habit this screen does not have.
+   */
   create() {
     this.error.set(null);
     this.status.set(null);
+    this.resetLink.set('');
     this.users
       .create({
         username: this.newUsername,
-        password: this.newPassword,
         // Blank means "no address on file" rather than an empty one.
         email: this.newEmail.trim() === '' ? null : this.newEmail.trim(),
         is_admin: this.newIsAdmin,
         permission: this.newIsAdmin ? permissionFor('publisher') : permissionFor(this.newRole),
       })
       .subscribe({
-        next: () => {
+        next: (created) => {
           this.newUsername = '';
           this.newEmail = '';
-          this.newPassword = '';
           this.newRole = 'viewer';
           this.newIsAdmin = false;
-          this.status.set(t('accounts.created'));
           this.load();
+          if (this.passwordResetLinks()) {
+            // The only way in, so it is offered rather than left to be found in the row.
+            this.issuePasswordResetLink(created);
+          } else {
+            this.status.set(t('accounts.created'));
+          }
         },
         error: (e) => this.error.set(failure('accounts.createFailed', e)),
       });
@@ -297,19 +307,6 @@ export class List {
         this.error.set(failure('accounts.changeFailed', e, { user: user.username }));
         this.load();
       },
-    });
-  }
-
-  resetPassword(user: CurrentUser) {
-    const password = prompt(this.i18n.translate('accounts.newPasswordPrompt', { user: user.username }));
-    if (!password) {
-      return;
-    }
-    this.error.set(null);
-    this.status.set(null);
-    this.users.resetPassword(user.id, password).subscribe({
-      next: () => this.status.set(t('accounts.passwordReset', { user: user.username })),
-      error: (e) => this.error.set(failure('accounts.resetPasswordFailed', e)),
     });
   }
 

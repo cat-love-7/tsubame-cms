@@ -274,7 +274,14 @@ pub struct PasswordChangedResponse {
 #[derive(serde::Deserialize, Debug)]
 pub struct NewUserRequest {
     pub username: String,
-    pub password: String,
+    /// An initial password, when the caller has one to choose.
+    ///
+    /// Left out, the account exists with no credential: it cannot sign in until an administrator
+    /// issues a reset link and the person sets their own password. That is what the account screen
+    /// does - an administrator choosing someone else's password is a habit worth not having - and
+    /// the field stays for deployments that provision accounts from a script.
+    #[serde(default)]
+    pub password: Option<String>,
     /// Contact address, if the operator has one to record.
     #[serde(default)]
     pub email: Option<String>,
@@ -323,12 +330,6 @@ pub struct UpdateUserRequest {
 pub struct CompletePasswordResetRequest {
     pub token: String,
     pub new_password: String,
-}
-
-/// An administrator setting someone else's password.
-#[derive(serde::Deserialize, Debug)]
-pub struct ResetPasswordRequest {
-    pub password: String,
 }
 
 /// Changing your own password: the current one is required, because a stolen session

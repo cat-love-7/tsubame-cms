@@ -31,12 +31,6 @@
     <mat-label>{{ 'accounts.email' | transloco }}</mat-label>
     <input matInput type="email" name="email" [(ngModel)]="newEmail" />
   </mat-form-field>
-  @if (passwordLogin()) {
-    <mat-form-field appearance="fill">
-      <mat-label>{{ 'auth.password' | transloco }}</mat-label>
-      <input matInput type="password" name="password" [(ngModel)]="newPassword" />
-    </mat-form-field>
-  }
   <mat-form-field appearance="fill">
     <mat-label>{{ 'accounts.role' | transloco }}</mat-label>
     <mat-select name="role" [(ngModel)]="newRole" [disabled]="newIsAdmin">
@@ -132,15 +126,6 @@
           >
             <mat-icon>tune</mat-icon>
           </button>
-          @if (passwordLogin()) {
-            <button
-              matIconButton
-              (click)="resetPassword(user)"
-              [attr.aria-label]="'labels.resetPasswordOf' | transloco: { username: user.username }"
-            >
-              <mat-icon>key</mat-icon>
-            </button>
-          }
           <button
             matIconButton
             (click)="remove(user)"

@@ -48,10 +48,6 @@ class StubUsersService {
     this.removed.push(id);
     return of(void 0);
   };
-  resetPassword = (id: string) => {
-    this.reset.push(id);
-    return of(void 0);
-  };
   changeOwnPassword = () => of({ token: 'replacement-token', expires_at: '2024-01-01T00:00:00Z' });
   issuePasswordResetLink = (id: string) => {
     this.resetIssued.push(id);
@@ -149,9 +145,10 @@ describe('Accounts', () => {
     ]);
   });
 
-  it('creates an account with the chosen role', () => {
+  // No password is chosen here: the account has no credential until its owner follows the reset
+  // link this screen hands over, which is the only path that may set one.
+  it('creates an account with the chosen role, and offers a reset link for it', () => {
     fixture.componentInstance.newUsername = 'new-ops';
-    fixture.componentInstance.newPassword = 'user-password';
     fixture.componentInstance.newRole = 'viewer';
     fixture.componentInstance.create();
 
@@ -160,17 +157,17 @@ describe('Accounts', () => {
       {
         username: 'new-ops',
         email: null,
-        password: 'user-password',
         is_admin: false,
         permission: { can_view: true, can_edit: false, can_publish: false },
       },
     ]);
+    expect(stub.resetIssued).toEqual(['user-1']);
+    expect(fixture.componentInstance.resetLink()).toContain('/reset-password?token=');
   });
 
   /** An address, when the operator records one, is passed on as contact data. */
   it('records an optional contact address when one is given', () => {
     fixture.componentInstance.newUsername = 'new-ops';
-    fixture.componentInstance.newPassword = 'user-password';
     fixture.componentInstance.newEmail = ' ops@example.com ';
     fixture.componentInstance.create();
 
@@ -209,11 +206,4 @@ describe('Accounts', () => {
     expect(stub.removed).toEqual(['user-1']);
   });
 
-  it('resets a password with the one that was typed', () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('reset-password');
-
-    fixture.componentInstance.resetPassword(stub.accounts[0]);
-
-    expect(stub.reset).toEqual(['user-1']);
-  });
 });

@@ -19,7 +19,7 @@ use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
 use crate::models::user::{
     ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewUserRequest,
-    ResetPasswordRequest, UserId,
+    UserId,
 };
 use crate::repositories::local_credentials::LocalCredentials;
 
@@ -34,7 +34,6 @@ pub fn public_routes<R: Storage + LocalCredentials>() -> Router<AppState<R>> {
 pub fn protected_routes<R: Storage + LocalCredentials>() -> Router<AppState<R>> {
     Router::new()
         .route("/auth/users", post(create_user::<R>))
-        .route("/auth/users/{id}/password", post(reset_password::<R>))
         .route(
             "/auth/users/{id}/password-reset-link",
             post(issue_password_reset::<R>),
@@ -63,20 +62,6 @@ async fn create_user<R: Storage + LocalCredentials>(
     require_admin(&user)?;
     let created = module.auth_service.create_user(request).await?;
     Ok((StatusCode::CREATED, Json(created)))
-}
-
-async fn reset_password<R: Storage + LocalCredentials>(
-    State(module): State<AppState<R>>,
-    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
-    Path(id): Path<String>,
-    Json(request): Json<ResetPasswordRequest>,
-) -> Result<impl IntoResponse, HttpError> {
-    require_admin(&user)?;
-    module
-        .auth_service
-        .set_password(&UserId::from(id.as_str()), &request.password)
-        .await?;
-    Ok(StatusCode::OK)
 }
 
 /// Issue a link an administrator passes on, so the account sets its own new password.
@@ -137,7 +122,6 @@ pub fn unavailable_public<R: Storage>(message: &'static str) -> Router<AppState<
 pub fn unavailable_protected<R: Storage>(message: &'static str) -> Router<AppState<R>> {
     Router::new()
         .route("/auth/users", post(unavailable::<R>(message)))
-        .route("/auth/users/{id}/password", post(unavailable::<R>(message)))
         .route(
             "/auth/users/{id}/password-reset-link",
             post(unavailable::<R>(message)),

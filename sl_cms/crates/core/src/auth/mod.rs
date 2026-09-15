@@ -478,7 +478,9 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
                 }
             })
             .transpose()?;
-        validate_password(&request.password)?;
+        if let Some(password) = request.password.as_deref() {
+            validate_password(password)?;
+        }
         if self
             .repository
             .get_user_from_username(&username)
@@ -497,18 +499,24 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         let mut user = User::new(&username, request.is_admin, permission);
         user.email = email;
         self.repository.add_user(&user).await.map_err(internal)?;
-        // The credential goes with the record. A failure here leaves an account that cannot
-        // sign in, which an administrator can repair with a reset link.
-        self.repository
-            .set_password(&user.id, &request.password)
-            .await
-            .map_err(internal)?;
+        // The credential goes with the record, when there is one. Without it the account exists but
+        // cannot sign in - an administrator issues a reset link and the person chooses their own,
+        // which is the only way it should ever be chosen.
+        if let Some(password) = request.password.as_deref() {
+            self.repository
+                .set_password(&user.id, password)
+                .await
+                .map_err(internal)?;
+        }
         Ok(user.to_response())
     }
-    /// Set someone else's password (an administrator resetting an account).
-    /// Reset someone else's password, ending every session they have.
+    /// Set a password for an account, ending every session it has.
     ///
-    /// The caller keeps their own session: the version belongs to the account whose
+    /// Called by the two paths that are allowed to choose a password for someone: a reset link the
+    /// person completed themselves, and the initial account the deployment bootstraps from its
+    /// configuration. There is deliberately no administrator "set their password" route - an
+    /// administrator hands over a reset link instead, so the password is never known to anyone but
+    /// its owner. The caller keeps their own session: the version belongs to the account whose
     /// password changed, not to whoever changed it.
     pub async fn set_password(&self, id: &UserId, password: &str) -> Result<(), HttpError> {
         let mut user = self.require_user(id).await?;
@@ -579,7 +587,9 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         };
         let request = NewUserRequest {
             username: username.ok_or_else(missing)?.to_string(),
-            password: password.ok_or_else(missing)?.to_string(),
+            // The bootstrap administrator cannot hand over a reset link before anyone can sign in,
+            // so this is one of the two places a password is chosen for an account.
+            password: Some(password.ok_or_else(missing)?.to_string()),
             email: email.map(str::to_string),
             is_admin: true,
             permission: Permission::admin(),
@@ -717,7 +727,7 @@ mod tests {
     fn new_user(email: &str, password: &str, is_admin: bool) -> NewUserRequest {
         NewUserRequest {
             username: email.to_string(),
-            password: password.to_string(),
+            password: Some(password.to_string()),
             email: None,
             is_admin,
             permission: Permission::default(),
@@ -997,7 +1007,7 @@ mod tests {
         let admin = auth
             .create_user(NewUserRequest {
                 username: "admin@example.com".to_string(),
-                password: "supersecret".to_string(),
+                password: Some("supersecret".to_string()),
                 email: Some("admin@example.com".to_string()),
                 is_admin: true,
                 permission: Permission::admin(),
@@ -1024,7 +1034,7 @@ mod tests {
         let second = auth
             .create_user(NewUserRequest {
                 username: "second@example.com".to_string(),
-                password: "supersecret".to_string(),
+                password: Some("supersecret".to_string()),
                 email: None,
                 is_admin: true,
                 permission: Permission::admin(),

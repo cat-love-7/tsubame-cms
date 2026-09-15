@@ -32,10 +32,6 @@ export class UsersService {
     return this.users.remove(id);
   }
 
-  resetPassword(id: string, password: string): Observable<void> {
-    return this.users.resetPassword(id, password);
-  }
-
   issuePasswordResetLink(id: string): Observable<PasswordResetLink> {
     return this.users.issuePasswordResetLink(id);
   }

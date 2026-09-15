@@ -474,11 +474,15 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/auth/users` | 一覧 |
-| POST | `/auth/users` | 作成(`username` / `password` / 任意の `email` / `is_admin` / `permission`) |
+| POST | `/auth/users` | 作成(`username` / 任意の `password` / 任意の `email` / `is_admin` / `permission`) |
 | PATCH | `/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
 | DELETE | `/auth/users/{id}` | 削除 |
-| POST | `/auth/users/{id}/password` | パスワード再設定(現在のパスワード不要) |
 | POST | `/auth/me/password` | 自分のパスワード変更(現在のパスワードが必要) |
+
+**`password` は任意**: 省略すると資格情報を持たないアカウントができ、本人がリセットリンクで
+設定するまでサインインできない(画面は常に省略する。自動化・テスト用に受け付けてはいる)。
+**管理者が他人のパスワードを直接設定する経路は無い** — 渡すのはリセットリンクで、パスワードは
+本人だけが知る。
 
 `/auth/users*` は管理者のみ。`/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
 アカウントでも使える**(閲覧のみの人がパスワードを変えられない、という状態を避けるため)。
@@ -508,8 +512,8 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   - `POST /auth/me/password` は**新しい世代のトークン**を返す。変更した本人のセッションも
     切れるため、画面はこれを保存して続行する(他の端末のセッションは終了したまま)。
     応答: `{"token":"...","expires_at":"..."}`
-  - `POST /auth/users/{id}/password`(管理者による再設定)は対象アカウントのトークンだけを
-    失効させる。実行者自身のセッションは続く。応答は本文なしの 200。
+  - リセットリンクの完了(`POST /auth/password-reset`)も同じく、そのアカウントのトークンだけを
+    失効させる。管理者がリンクを発行しただけでは何も失効しない。
 
 ### ログイン試行の制限
 
@@ -552,8 +556,12 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 - 失敗の返し方: 使用済み・期限切れ・無効化されたアカウントは **403**(理由が分かる)、壊れた
   トークン・存在しないアカウントは **401**(公開エンドポイントなので存在を漏らさない)。
 - ログインと同じカウンタで試行を制限する。
-- `POST /auth/users/{id}/password`(**管理者が新しいパスワードを直接設定**)も残してある。本人への
-  連絡手段が無い場合の最後の手段で、通常は上のリンクを使う(管理者がパスワードを知らずに済む)。
+- **パスワードを選べるのは本人だけ**。管理者ができるのはリンクの発行までで、他人のパスワードを
+  直接設定する経路は API にも画面にも無い(以前は `POST /auth/users/{id}/password` があったが、
+  削除した)。アカウント作成時も同じで、画面はパスワードを聞かず、作成した直後にこのリンクを
+  発行して渡す。
+- 例外は**配備が自分で作る初期管理者**(`ADMIN_PASSWORD`)と、自動化が `password` を明示して
+  作るアカウントだけで、どちらも「誰かが代わりに選ぶ」ことを避けられない場面に限られる。
 
 ### リソース単位の権限
 

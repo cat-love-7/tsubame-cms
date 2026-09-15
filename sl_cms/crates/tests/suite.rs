@@ -1773,6 +1773,61 @@ async fn deleting_a_collection_without_items_succeeds() {    let app = test_app(
     assert_eq!(status, StatusCode::OK);
 }
 
+/// An account can be created without a password: it exists, and cannot sign in until its owner
+/// sets one through a reset link. That is the path the account screen takes, so an administrator
+/// never chooses someone else's password.
+#[tokio::test]
+async fn an_account_can_be_created_without_a_password() {
+    let app = test_app().await;
+    if !app.password_login() {
+        eprintln!("skipped: this deployment signs users in through an identity provider");
+        return;
+    }
+    let admin = app.admin_token.clone();
+
+    let (status, created) = create_account(
+        &app,
+        json!({
+            "username": "no-password@example.com",
+            "is_admin": false,
+            "permission": Permission::editor(),
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // No credential yet, so the sign-in is refused - and refused the same way a wrong password is,
+    // because the answer must not say whether an account exists.
+    let (status, _) = login(&app, "no-password@example.com", "anything").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // The reset link is the way in, and the password it sets is the owner's.
+    let (status, link) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password-reset-link"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = link["token"].as_str().expect("the reset token").to_string();
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": token, "new_password": "chosen-by-the-owner" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        login(&app, "no-password@example.com", "chosen-by-the-owner").await.0,
+        StatusCode::OK
+    );
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.
@@ -3968,14 +4023,26 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&replacement), None).await;
     assert_eq!(status, StatusCode::OK);
 
-    // ...and an administrator resetting the password ends that one too, while leaving the
-    // administrator's own session alone.
+    // ...and a reset the editor completes themselves ends that one too, while leaving the
+    // administrator's own session alone. (An administrator cannot choose someone else's password:
+    // they hand over a reset link, so the password is known to its owner and nobody else.)
+    let (status, link) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{editor_id}/password-reset-link"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = link["token"].as_str().expect("the reset token").to_string();
+
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{editor_id}/password"),
-        Some(&admin),
-        Some(json!({ "password": "reset-by-an-admin" })),
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": token, "new_password": "chosen-by-the-editor" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -5202,18 +5269,29 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
         StatusCode::OK
     );
 
-    // An administrator can reset it without knowing the old one.
+    // An administrator can hand over a reset link without knowing the old one, and the account
+    // owner chooses the replacement.
+    let (status, link) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password-reset-link"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = link["token"].as_str().expect("the reset token").to_string();
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password"),
-        Some(&admin),
-        Some(json!({ "password": "reset-password" })),
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": token, "new_password": "chosen-after-a-reset" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        login(&app, "user@example.com", "reset-password").await.0,
+        login(&app, "user@example.com", "chosen-after-a-reset").await.0,
         StatusCode::OK
     );
 
