@@ -32,6 +32,21 @@ class StubImagesService {
     return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png', url: '/images/second.png' });
   };
 
+  /** The replacements asked for, and the bytes they applied. */
+  public replacements: { id: number; file: string }[] = [];
+  public applied: { id: number; fileName: string }[] = [];
+
+  replaceImage = (id: number, file: File) => {
+    this.replacements.push({ id, file: file.name });
+    this.applied.push({ id, fileName: `replacement-${id}` });
+    this.library = this.library.map((image) =>
+      image.id === id ? { ...image, url: `/images/replacement-${id}` } : image,
+    );
+    return of({ file_name: `replacement-${id}`, upload_url: `/images/replacement-${id}?key=k` });
+  };
+
+  imageLink = (id: number) => `/images/by-id/${id}`;
+
   renameImage = (id: number, name: string) => {
     this.renamed.push({ id, name });
     this.library = this.library.map((image) =>
@@ -216,5 +231,50 @@ describe('Image library', () => {
     expect(stub.renamed).toEqual([]);
     expect(fresh.componentInstance.renaming()).toBeNull();
     expect(fresh.nativeElement.querySelector('input[name=imageName]')).toBeNull();
+  });
+
+  // Replacing is not renaming and not deleting: the image keeps its id and its name, and content
+  // that references it shows the new picture without being touched.
+  it('replaces what an image shows, keeping its id', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.onReplacementSelected(stub.library[0], fileChosen('new.png'));
+    fresh.detectChanges();
+
+    expect(stub.replacements).toEqual([{ id: 1, file: 'new.png' }]);
+    expect(stub.applied).toEqual([{ id: 1, fileName: 'replacement-1' }]);
+    expect(stub.library[0].original_filename).toBe('first.png');
+    expect(fresh.componentInstance.notice()).toEqual(t('content.imageReplaced'));
+    expect(fresh.componentInstance.error()).toBeNull();
+  });
+
+  it('reports a replacement that failed, and keeps the image', () => {
+    stub.replaceImage = () => throwError(() => new Error('upload failed'));
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.onReplacementSelected(stub.library[0], fileChosen('new.png'));
+    fresh.detectChanges();
+
+    expect(fresh.componentInstance.error()).toEqual({
+      key: 'content.replaceFailed',
+      params: { message: 'upload failed' },
+    });
+    expect(stub.library[0].url).toBe('/images/first.png');
+  });
+
+  // The link that is worth writing into a Markdown body: it names the image by id, so it points
+  // at whatever the image shows when the page is read.
+  it('offers the durable link, and says so when it cannot copy it', async () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    await fresh.componentInstance.copyLink(stub.library[0]);
+
+    expect(fresh.componentInstance.notice()).toEqual(
+      t('content.imageLinkNotCopied', { url: `${location.origin}/api/images/by-id/1` }),
+    );
+    expect(fresh.componentInstance.error()).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
+import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 
 /**
  * The image library.
@@ -37,6 +38,8 @@ export class List {
   /** The image whose name is being edited, and what has been typed so far. */
   public renaming = signal<number | null>(null);
   public draftName = signal('');
+  /** What just happened (a link copied), as a key or the server's own words. */
+  public notice = signal<Message | null>(null);
   /** Exposed for the template. */
   public imageUrl = apiUrl;
 
@@ -88,6 +91,53 @@ export class List {
   cancelRename() {
     this.renaming.set(null);
     this.draftName.set('');
+  }
+
+  /**
+   * Replace what an image shows, keeping its id.
+   *
+   * Nothing about the image's identity changes - not its id, not its name - so every reference to
+   * it keeps working while the picture is swapped.
+   */
+  onReplacementSelected(image: ImageEntry, event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    this.error.set(null);
+    this.notice.set(null);
+    this.uploading.set(true);
+    this.images.replaceImage(image.id, file).subscribe({
+      next: () => {
+        this.uploading.set(false);
+        input.value = '';
+        this.notice.set(t('content.imageReplaced'));
+        this.load();
+      },
+      error: (e) => {
+        this.uploading.set(false);
+        input.value = '';
+        this.error.set(failure('content.replaceFailed', e));
+      },
+    });
+  }
+
+  /**
+   * Copy the link that survives a replacement.
+   *
+   * Written into a Markdown body, this keeps working after the image is replaced; a link to the
+   * file itself would point at bytes that are gone.
+   */
+  async copyLink(image: ImageEntry) {
+    this.error.set(null);
+    const url = absoluteApiUrl(this.images.imageLink(image.id));
+    const copied = await copyToClipboard(url);
+    this.notice.set(
+      copied
+        ? t('content.imageLinkCopied', { url })
+        : t('content.imageLinkNotCopied', { url }),
+    );
   }
 
   /**

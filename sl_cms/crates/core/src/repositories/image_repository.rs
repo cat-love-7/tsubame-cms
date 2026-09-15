@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::models::image::{Image, ImageID, NewImageInfo, NewImageRequest};
+use crate::models::image::{Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo};
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -20,6 +20,26 @@ pub trait ImageRepository: Send + Sync {
         &self,
         id: &ImageID,
         original_filename: &str,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    /// Hand out a place to upload replacement bytes, under a file name of the adapter's choosing.
+    ///
+    /// The record is untouched: [`ImageRepository::replace_image`] points the image at the new
+    /// bytes once they exist, so an upload that fails leaves the current image serving.
+    fn generate_replacement_upload_url(
+        &self,
+        id: &ImageID,
+        ext: &str,
+    ) -> impl Future<Output = Result<ReplacementInfo, BoxError>> + Send;
+    /// Whether bytes are stored under `file_name`.
+    fn image_bytes_exist(
+        &self,
+        file_name: &str,
+    ) -> impl Future<Output = Result<bool, BoxError>> + Send;
+    /// Point an image at `file_name`, deleting the bytes it used to name.
+    fn replace_image(
+        &self,
+        id: &ImageID,
+        file_name: &str,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }
 

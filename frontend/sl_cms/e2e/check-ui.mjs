@@ -515,6 +515,64 @@ try {
     (await page.locator('.library .image').first().locator('.name').textContent()) === renameLabel,
   );
 
+  // Replacing the bytes: same image (id and name), new picture. The id keeps working, which is
+  // what makes it the right thing to write into a Markdown body.
+  const cardBeforeReplace = page.locator('.library .image').first();
+  const idBeforeReplace = (await cardBeforeReplace.locator('.meta').textContent())?.trim();
+  const urlBeforeReplace = await cardBeforeReplace.locator('img').getAttribute('src');
+  const replacedImageId = Number(idBeforeReplace?.match(/id (\d+)/)?.[1]);
+  const durableLink = `${BASE}/api/images/by-id/${replacedImageId}`;
+  const linkBefore = await page.evaluate(async (src) => {
+    const response = await fetch(src, { redirect: 'follow' });
+    return { status: response.status, body: await response.text() };
+  }, durableLink);
+  check(
+    'id のリンクで実体を取れる',
+    linkBefore.status === 200 && linkBefore.body.length > 0,
+    `status=${linkBefore.status}`,
+  );
+
+  await cardBeforeReplace
+    .locator('button[aria-label^="replace image"]')
+    .click()
+    .catch(() => {});
+  // The hidden input inside the card takes the file, as the button's click would open it.
+  await cardBeforeReplace.locator('input[type=file]').setInputFiles({
+    name: 'replacement.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(PNG_BASE64, 'base64'),
+  });
+  await page
+    .waitForFunction(
+      (previous) => {
+        const source = document.querySelector('.library .image img')?.getAttribute('src');
+        return Boolean(source) && source !== previous;
+      },
+      urlBeforeReplace,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  const cardAfterReplace = page.locator('.library .image').first();
+  const urlAfterReplace = await cardAfterReplace.locator('img').getAttribute('src');
+  check(
+    '画像を差し替えても id と名前は変わらない',
+    (await cardAfterReplace.locator('.meta').textContent())?.trim() === idBeforeReplace &&
+      (await cardAfterReplace.locator('.name').textContent()) === renameLabel &&
+      urlAfterReplace !== urlBeforeReplace,
+    `${urlBeforeReplace} → ${urlAfterReplace}`,
+  );
+  check(
+    '差し替え後の id リンクは新しい実体を指す',
+    (await page.evaluate(async (src) => (await fetch(src, { redirect: 'follow' })).status, durableLink)) ===
+      200,
+  );
+
+  // The record of what happened arrives where the link is handed out.
+  await cardAfterReplace.locator('button[aria-label^="copy the link of image"]').click();
+  await page.waitForTimeout(400);
+  const linkNotice = ((await page.locator('.notice').first().textContent()) ?? '').trim();
+  check('リンクをコピーできる', linkNotice.includes(`/api/images/by-id/`), linkNotice);
+
   // -------------------------------------------------------------- pick images while editing
   await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Choose existing")').click();
@@ -562,10 +620,12 @@ try {
     undefined,
     token,
   );
+  const libraryNow = await api('GET', '/models/images', undefined, token);
+  const expectedPhotoUrl = libraryNow.find((image) => image.id === replacedImageId)?.url;
   check(
     '選んだ画像がアイテムに保存される',
-    typeof saved?.photo === 'object' && saved.photo !== null && saved.photo.url === imageSource?.replace('/api', ''),
-    JSON.stringify(saved?.photo),
+    typeof saved?.photo === 'object' && saved.photo !== null && saved.photo.url === expectedPhotoUrl,
+    `${JSON.stringify(saved?.photo)} (expected ${expectedPhotoUrl})`,
   );
   check(
     '画像配列がまとめて保存される',
@@ -1300,17 +1360,22 @@ try {
     await page.waitForTimeout(200);
   }
   await page.locator(`app-sidebar a[href="/single-pages/${pageB}"]`).click({ force: true });
+  // Wait for the *content* to change: the heading is set first, so waiting on it could pass while
+  // the form still held the previous page's values - which is the bug this check is about.
   const switched = await page
     .waitForFunction(
-      (name) => document.querySelector('h2')?.textContent?.includes(name) ?? false,
-      pageB,
-      { timeout: 10000 },
+      (expected) =>
+        document.querySelector('app-value-field input[name=title]')?.value === expected,
+      `content of ${pageB}`,
+      { timeout: 15000 },
     )
     .then(() => true)
     .catch(() => false);
   check(
     '単一ページを切り替えると画面も切り替わる',
-    switched && (await pageTitle.inputValue()) === `content of ${pageB}`,
+    switched &&
+      ((await page.locator('h2').first().textContent()) ?? '').includes(pageB) &&
+      (await pageTitle.inputValue()) === `content of ${pageB}`,
     `url=${page.url()} / ${await pageTitle.inputValue()}`,
   );
 

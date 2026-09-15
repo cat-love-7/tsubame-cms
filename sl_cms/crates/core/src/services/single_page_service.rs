@@ -383,7 +383,9 @@ mod tests {
 
     use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
     use crate::models::field::{FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse};
-    use crate::models::image::{Image, ImageID, NewImageInfo, NewImageRequest};
+    use crate::models::image::{
+        Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
+    };
     use crate::models::schema::CompositeFieldId;
 
     use super::*;
@@ -553,6 +555,18 @@ mod tests {
                 upload_url: "/upload/1".to_string(),
                 url: "/images/1".to_string(),
             })
+        }
+        async fn generate_replacement_upload_url(&self, _id: &ImageID, ext: &str) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(ReplacementInfo {
+                file_name: format!("replacement.{ext}"),
+                upload_url: "/upload/replacement".to_string(),
+            })
+        }
+        async fn image_bytes_exist(&self, _file_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(true)
+        }
+        async fn replace_image(&self, _id: &ImageID, _file_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
         }
         async fn rename_image(&self, _id: &ImageID, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())

@@ -5,6 +5,7 @@ use rkv::{StoreOptions, Value};
 
 use sl_cms_core::models::image::{
     is_safe_file_name, sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest,
+    ReplacementInfo,
 };
 use crate::repository::Repository;
 use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository};
@@ -145,6 +146,69 @@ impl ImageRepository for Repository {
             &Value::Str(&serde_json::to_string(&data)?),
         )?;
         writer.commit()?;
+        Ok(())
+    }
+
+    async fn generate_replacement_upload_url(
+        &self,
+        _id: &ImageID,
+        ext: &str,
+    ) -> Result<ReplacementInfo, BoxError> {
+        // A fresh file name rather than an overwrite: the browser (and anything in front of it)
+        // caches by URL, so bytes that change under one URL keep showing the old image.
+        let file_name = match sanitize_ext(ext) {
+            Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
+            None => uuid::Uuid::new_v4().to_string(),
+        };
+        let upload_key = uuid::Uuid::new_v4().to_string();
+        self.register_upload_key(upload_key.clone(), file_name.clone());
+
+        Ok(ReplacementInfo {
+            upload_url: format!("/images/{}?key={}", file_name, upload_key),
+            file_name,
+        })
+    }
+
+    async fn image_bytes_exist(&self, file_name: &str) -> Result<bool, BoxError> {
+        Ok(self.image_path(file_name)?.is_file())
+    }
+
+    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<(), BoxError> {
+        let _guard = self.begin();
+        // The path check happens before anything is written: the name comes from the server's own
+        // upload URL, but a record must never be pointed outside the images directory.
+        self.image_path(file_name)?;
+
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single("image", StoreOptions::create())?;
+        let reader = env.read()?;
+        let previous = match store.get(&reader, id.to_le_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            _ => return Err("Image not found".into()),
+        };
+
+        let updated = ImageData {
+            original_filename: previous.original_filename.clone(),
+            file_name: file_name.to_string(),
+            // The first upload is when the image entered the library; replacing what it shows
+            // does not change that, just as re-publishing does not change `published_at`.
+            uploaded_at: previous.uploaded_at,
+        };
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&updated)?),
+        )?;
+        writer.commit()?;
+
+        // What it used to name is now unreferenced. A missing file is not an error: the previous
+        // upload may never have completed.
+        if previous.file_name != file_name {
+            if let Ok(path) = self.image_path(&previous.file_name) {
+                fs::remove_file(path).ok();
+            }
+        }
         Ok(())
     }
 

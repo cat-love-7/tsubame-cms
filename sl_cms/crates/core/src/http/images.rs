@@ -7,7 +7,9 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::error::HttpError;
-use crate::models::image::{is_safe_image_ext, ImageID, NewImageRequest, RenameImageRequest};
+use crate::models::image::{
+    is_safe_image_ext, ImageID, NewImageRequest, ReplaceImageRequest, UpdateImageRequest,
+};
 
 /// Uploading requires authentication (enforced by the auth middleware).
 pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
@@ -17,9 +19,13 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
         .route("/models/images", get(list_images::<R>))
         .route(
             "/models/images/{id}",
-            // The image's metadata can be changed (its display name); its bytes are replaced
-            // through `replace_url` below, which hands out an upload URL for the same id.
-            put(rename_image::<R>).delete(delete_image::<R>),
+            // The image's record can be changed: its display name, and which uploaded bytes it
+            // serves once a replacement upload has landed.
+            put(update_image::<R>).delete(delete_image::<R>),
+        )
+        .route(
+            "/models/images/{id}/replace",
+            post(request_replacement::<R>),
         )
         .route(
             "/models/images/get_upload_url",
@@ -34,19 +40,42 @@ async fn list_images<R: Storage>(
     Ok(Json(module.image_service.list_images().await?))
 }
 
-/// Rename an image: the label the library shows, not the stored file.
+/// Change an image's record: the name it is shown under, or the bytes it serves.
 ///
 /// Answers with an empty body like the other mutations.
-async fn rename_image<R: Storage>(
+async fn update_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
-    Json(request): Json<RenameImageRequest>,
+    Json(request): Json<UpdateImageRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module
-        .image_service
-        .rename_image(ImageID::from_u64(id), &request.original_filename)
-        .await?;
+    let image_id = ImageID::from_u64(id);
+    if let Some(name) = request.original_filename.as_deref() {
+        module.image_service.rename_image(image_id, name).await?;
+    }
+    if let Some(file_name) = request.file_name.as_deref() {
+        module
+            .image_service
+            .replace_image(image_id, file_name)
+            .await?;
+    }
     Ok(StatusCode::OK)
+}
+
+/// Ask for a place to upload bytes that will replace what an image shows.
+///
+/// The image keeps its id and its name; only what it shows changes. The record is untouched until
+/// the bytes are in place (see [`update_image`]), so an upload that fails changes nothing.
+async fn request_replacement<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+    Json(request): Json<ReplaceImageRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(
+        module
+            .image_service
+            .request_replacement(ImageID::from_u64(id), &request.ext)
+            .await?,
+    ))
 }
 
 /// Delete an image, bytes included. Answers with an empty body like the other mutations.

@@ -24,7 +24,42 @@ use crate::repositories::local_image_bytes::LocalImageBytes;
 /// Reading the bytes back. Public: an `<img>` tag cannot send an `Authorization` header, and
 /// uploaded media is content rather than API data.
 pub fn public_routes<R: Storage + LocalImageBytes>() -> Router<AppState<R>> {
-    Router::new().route("/images/{file_name}", get(get_image_file::<R>))
+    Router::new()
+        .route("/images/{file_name}", get(get_image_file::<R>))
+        // The *durable* link to an image: the file name changes when the bytes are replaced, the id
+        // does not, so this is what a hand-written link (in a Markdown body, say) should use. It
+        // answers with the bytes rather than pointing at them because this deployment is reached
+        // through a prefix of its own (`/api` behind the site's proxy), which the backend cannot
+        // know from a backend-relative URL.
+        .route("/images/by-id/{id}", get(get_image_by_id::<R>))
+}
+
+/// Serve whatever the image shows right now, under the link that names it by id.
+async fn get_image_by_id<R: Storage + LocalImageBytes>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+) -> Result<impl IntoResponse, HttpError> {
+    let Some(url) = module
+        .image_service
+        .image_url(crate::models::image::ImageID::from_u64(id))
+        .await?
+    else {
+        return Err(HttpError::NotFound("Image not found"));
+    };
+    // The stored URL is where the bytes are now; the file name is its last segment.
+    let file_name = url.rsplit('/').next().unwrap_or_default();
+    match module.image_service.read_image_bytes(file_name).await? {
+        Some(data) => Ok((
+            [
+                (header::CONTENT_TYPE, "application/octet-stream"),
+                // The bytes behind an id can change, so this answer must not be cached: a reader
+                // would keep showing the picture that was replaced.
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            data,
+        )),
+        None => Err(HttpError::NotFound("File not found")),
+    }
 }
 
 /// Accepting the bytes, with the one-shot token the upload URL carried. The route sits behind

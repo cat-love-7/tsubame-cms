@@ -136,14 +136,49 @@ pub fn build_router_with_login(
     // that guessed the path learns something, and a 404 would only say "wrong URL".
     let message = "this deployment signs users in through Cognito, so the CMS does not handle \
                    passwords; GET /auth/capabilities says where to sign in";
-    let extra_public = sl_cms_core::http::password_auth::unavailable_public(message).merge(
-        sl_cms_core::http::capabilities::routes(
+    let extra_public = sl_cms_core::http::password_auth::unavailable_public(message)
+        .merge(sl_cms_core::http::capabilities::routes(
             sl_cms_core::models::capabilities::Capabilities::aws(login_url),
-        ),
-    );
+        ))
+        // The durable link to an image: the id resolves to wherever the bytes are now. Here that
+        // is object storage, so this points at it rather than passing bytes through the API.
+        .merge(
+            axum::Router::new()
+                .route("/images/by-id/{id}", axum::routing::get(redirect_to_image)),
+        );
     let extra_protected = sl_cms_core::http::password_auth::unavailable_protected(message);
 
     sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
+}
+
+/// Send the reader to the object storage URL an image currently lives at.
+///
+/// The bytes are replaced under a new key, so what this points at can change; the answer must not
+/// be cached, while the object it names may be.
+async fn redirect_to_image(
+    axum::extract::State(module): axum::extract::State<
+        std::sync::Arc<sl_cms_core::app_module::AppModule<AwsRepository>>,
+    >,
+    axum::extract::Path(id): axum::extract::Path<u64>,
+) -> Result<axum::response::Response, sl_cms_core::models::error::HttpError> {
+    use axum::response::IntoResponse;
+    match module
+        .image_service
+        .image_url(sl_cms_core::models::image::ImageID::from_u64(id))
+        .await?
+    {
+        Some(url) => Ok((
+            [(
+                axum::http::header::CACHE_CONTROL,
+                "no-cache",
+            )],
+            axum::response::Redirect::temporary(&url),
+        )
+            .into_response()),
+        None => Err(sl_cms_core::models::error::HttpError::NotFound(
+            "Image not found",
+        )),
+    }
 }
 
 pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

@@ -1973,6 +1973,170 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Replacing an image keeps everything about its identity: the id, the name it is shown under, when
+/// it entered the library, and every reference to it. Only what it shows changes - and the bytes it
+/// used to show are gone, which is what stops a cached URL serving the old picture.
+#[tokio::test]
+async fn an_image_can_be_replaced_keeping_its_id() {
+    if !Backend::SERVES_IMAGE_BYTES {
+        eprintln!("skipped: this backend hands the browser a signed URL instead of serving bytes");
+        return;
+    }
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    /// Upload `bytes` the way the UI does, answering the info the server recorded.
+    async fn upload<B: sl_cms_tests::TestBackend>(
+        app: &sl_cms_tests::TestApp<B>,
+        token: &str,
+        name: &str,
+        bytes: &str,
+    ) -> Value {
+        let (status, info) = send(
+            &app.router,
+            Method::POST,
+            "/models/images/get_upload_url",
+            Some(token),
+            Some(json!({ "original_filename": name, "ext": "png" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let upload_url = info["upload_url"].as_str().unwrap().to_string();
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri(&upload_url)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from(bytes.to_string()))
+            .unwrap();
+        let response = app.router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        info
+    }
+
+    let first = upload(&app, &token, "logo.png", "OLD-BYTES").await;
+    let id = first["id"].as_u64().unwrap();
+    let old_url = first["url"].as_str().unwrap().to_string();
+    let old_path = old_url.clone();
+
+    let (_, before) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    let uploaded_at = before[0]["uploaded_at"].clone();
+
+    // Ask where to put replacement bytes: the record is untouched at this point.
+    let (status, replacement) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/replace"),
+        Some(&token),
+        Some(json!({ "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replacement}");
+    let new_file = replacement["file_name"].as_str().unwrap().to_string();
+    let upload_url = replacement["upload_url"].as_str().unwrap().to_string();
+    assert_ne!(new_file, "", "a replacement gets its own file name");
+
+    // Until the bytes arrive, the image still serves what it did before.
+    let (status, bytes) = send_raw(&app.router, Method::GET, &old_path, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"OLD-BYTES");
+
+    // Applying a replacement before the upload is refused: nothing points at missing bytes.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "file_name": new_file })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let request = Request::builder()
+        .method(Method::PUT)
+        .uri(&upload_url)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from("NEW-BYTES"))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "file_name": new_file })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The same image: same id, same name, same place in the library's history.
+    let (status, body) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["id"], id);
+    assert_eq!(body[0]["original_filename"], "logo.png");
+    assert_eq!(body[0]["uploaded_at"], uploaded_at);
+    let new_url = body[0]["url"].as_str().unwrap().to_string();
+    assert_ne!(new_url, old_url, "the bytes moved, so the URL did");
+
+    // The new bytes are served, and the old URL is gone rather than serving what it did.
+    let new_path = new_url.clone();
+    let (status, bytes) = send_raw(&app.router, Method::GET, &new_path, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"NEW-BYTES");
+    let (status, _) = send_raw(&app.router, Method::GET, &old_path, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // The durable link follows the image: it is the id that names it, not the file. This backend
+    // serves the bytes itself, so the link answers with them rather than pointing elsewhere.
+    let (status, bytes) = send_raw(&app.router, Method::GET, &format!("/images/by-id/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::OK, "the id link should serve what the image shows now");
+    assert_eq!(bytes, b"NEW-BYTES");
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(format!("/images/by-id/{id}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-cache",
+        "the bytes behind an id can change, so this answer must not be cached"
+    );
+
+    // A link to an image that is not there is a 404 rather than a redirect to nowhere.
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/images/by-id/9999")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Two images cannot end up serving the same bytes: the second image's file is refused.
+    let other = upload(&app, &token, "other.png", "OTHER-BYTES").await;
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "file_name": new_file })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "its own bytes are still a no-op");
+
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "file_name": other["url"].as_str().unwrap().rsplit('/').next().unwrap() })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
 /// The image library: what the admin screen lists, and what deleting an image does.
 #[tokio::test]
 async fn images_can_be_listed_and_deleted() {

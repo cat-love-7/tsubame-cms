@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::models::error::{map_internal_error, HttpError};
 use crate::models::image::{
-    is_safe_display_name, ImageEntry, ImageID, NewImageInfo, NewImageRequest,
-    MAX_IMAGE_NAME_LENGTH,
+    is_safe_display_name, is_safe_file_name, is_safe_image_ext, ImageEntry, ImageID, NewImageInfo,
+    NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
 };
 use crate::repositories::image_repository::ImageRepository;
 
@@ -91,6 +91,106 @@ impl<R: ImageRepository> ImageService<R> {
         self.repository
             .rename_image(&id, name)
             .await.map_err(map_internal_error)
+    }
+
+    /// Hand out a place to upload bytes that will replace what an image shows.
+    ///
+    /// The record is not touched: [`ImageService::replace_image`] applies the replacement once the
+    /// bytes exist, so an upload that fails leaves the current image serving. Nothing about the
+    /// image's identity changes - not its id, not the name it is shown under - only what it shows.
+    pub async fn request_replacement(
+        &self,
+        id: ImageID,
+        ext: &str,
+    ) -> Result<ReplacementInfo, HttpError> {
+        if !is_safe_image_ext(ext) {
+            return Err(HttpError::BadRequest("Invalid image extension"));
+        }
+        if self
+            .repository
+            .get_image(&id)
+            .await.map_err(map_internal_error)?
+            .is_none()
+        {
+            return Err(HttpError::NotFound(&format!(
+                "Image with id '{}' does not exist",
+                id
+            )));
+        }
+        self.repository
+            .generate_replacement_upload_url(&id, ext)
+            .await.map_err(map_internal_error)
+    }
+
+    /// Point an image at bytes that have been uploaded for it, and let go of the old ones.
+    ///
+    /// The file name comes back from [`ImageService::request_replacement`], so this finishes a
+    /// replacement rather than starting one. It is checked against storage: a record is never
+    /// pointed at bytes that are not there, which is what makes "upload first, then swap" safe.
+    pub async fn replace_image(&self, id: ImageID, file_name: &str) -> Result<(), HttpError> {
+        if !is_safe_file_name(file_name) {
+            return Err(HttpError::BadRequest("Invalid image file name"));
+        }
+        let Some(current) = self
+            .repository
+            .get_image(&id)
+            .await.map_err(map_internal_error)?
+        else {
+            return Err(HttpError::NotFound(&format!(
+                "Image with id '{}' does not exist",
+                id
+            )));
+        };
+
+        // The bytes have to be there, or the image would serve nothing.
+        if !self
+            .repository
+            .image_bytes_exist(file_name)
+            .await.map_err(map_internal_error)?
+        {
+            return Err(HttpError::NotFound(
+                "the uploaded image is not there yet",
+            ));
+        }
+
+        // And they must not be another image's: two records naming one file would mean one of
+        // them losing its bytes when either is replaced.
+        let taken = self
+            .repository
+            .get_all_images()
+            .await.map_err(map_internal_error)?
+            .into_iter()
+            .any(|(other_id, image)| {
+                other_id != id && image.url.ends_with(&format!("/{file_name}"))
+            });
+        if taken {
+            return Err(HttpError::BadRequest(
+                "those bytes belong to another image",
+            ));
+        }
+
+        // Replacing an image with itself is a no-op rather than an error: the screen sends what
+        // it was given, and a second click on the same file is not a mistake worth refusing.
+        if current.url.ends_with(&format!("/{file_name}")) {
+            return Ok(());
+        }
+
+        self.repository
+            .replace_image(&id, file_name)
+            .await.map_err(map_internal_error)
+    }
+
+    /// Where an image is served from right now, or `None` when there is no such image.
+    ///
+    /// Used for the link that keeps working across a replacement (see the `/images/by-id/` route):
+    /// the id is the durable name of an image, and where the bytes happen to live is not.
+    pub async fn image_url(&self, id: ImageID) -> Result<Option<String>, HttpError> {
+        Ok(self
+            .repository
+            .get_image(&id)
+            .await
+            .map_err(map_internal_error)?
+            .map(|image| image.url))
     }
 
     pub async fn generate_image_upload_url(

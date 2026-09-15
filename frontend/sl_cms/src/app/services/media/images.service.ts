@@ -5,6 +5,7 @@ import {
   ImageEntry,
   ImageRepository,
   NewImageInfo,
+  ReplacementInfo,
 } from 'app/repositories/media/images.repository';
 
 @Injectable({
@@ -24,6 +25,31 @@ export class ImagesService {
     return this.images
       .requestUploadUrl({ original_filename: file.name, ext: extension })
       .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
+  }
+
+  /**
+   * Replace what an image shows, keeping its id.
+   *
+   * Upload first, then point the record at it: the bytes go to a fresh file name (so nothing
+   * cached under the old URL can show the old picture), and the image serves what it did until
+   * the new bytes are in place.
+   */
+  replaceImage(id: number, file: File): Observable<ReplacementInfo> {
+    const extension = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
+    return this.images
+      .requestReplacement(id, extension)
+      .pipe(
+        switchMap((info) =>
+          this.images
+            .upload(info.upload_url, file)
+            .pipe(switchMap(() => this.images.applyReplacement(id, info.file_name).pipe(map(() => info)))),
+        ),
+      );
+  }
+
+  /** The durable link to an image: the id, which survives a replacement. */
+  imageLink(id: number): string {
+    return this.images.imageLinkPath(id);
   }
 
   /** The image library, newest first. */

@@ -17,6 +17,12 @@ export interface NewImageInfo {
   url: string;
 }
 
+/** Where to put replacement bytes, and what they will be called once they are there. */
+export interface ReplacementInfo {
+  file_name: string;
+  upload_url: string;
+}
+
 /** One image in the library, as the admin screens list it. */
 export interface ImageEntry {
   id: number;
@@ -57,6 +63,32 @@ export class ImageRepository {
     return this.http.put<void>(`/api/models/images/${id}`, {
       original_filename: originalFilename,
     });
+  }
+
+  /**
+   * Ask where to upload bytes that will replace what an image shows.
+   *
+   * The image keeps its id and its name; the record is not touched until the bytes are in place,
+   * so an upload that fails changes nothing (see {@link applyReplacement}).
+   */
+  requestReplacement(id: number, ext: string): Observable<ReplacementInfo> {
+    return this.http.post<ReplacementInfo>(`/api/models/images/${id}/replace`, { ext });
+  }
+
+  /** Finish a replacement: the record now points at the bytes that were uploaded for it. */
+  applyReplacement(id: number, fileName: string): Observable<void> {
+    return this.http.put<void>(`/api/models/images/${id}`, { file_name: fileName });
+  }
+
+  /**
+   * The durable link to an image, backend-relative.
+   *
+   * The id never changes, so this keeps working when the bytes are replaced - which is what makes
+   * it the right thing to write into a Markdown body. The API answers with a redirect to wherever
+   * the image is served from now.
+   */
+  imageLinkPath(id: number): string {
+    return `/images/by-id/${id}`;
   }
 
   /**

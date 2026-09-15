@@ -10,7 +10,9 @@ use std::time::Duration;
 use aws_sdk_s3::presigning::PresigningConfig;
 
 use super::*;
-use sl_cms_core::models::image::{sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest};
+use sl_cms_core::models::image::{
+    sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
+};
 use sl_cms_core::repositories::image_repository::ImageRepository;
 
 /// How long an upload URL is good for. Long enough for a slow phone on a train, short enough
@@ -107,6 +109,90 @@ impl ImageRepository for AwsRepository {
             upload_url: request.uri().to_string(),
             url: inner.settings.image_url(&file_name),
         })
+    }
+
+    async fn generate_replacement_upload_url(
+        &self,
+        _id: &ImageID,
+        ext: &str,
+    ) -> Result<ReplacementInfo, BoxError> {
+        let inner = self.inner.clone();
+        // A fresh object key rather than an overwrite of the existing one: a browser or a CDN
+        // caches by URL, so bytes that change under one key keep showing the old image.
+        let file_name = match sanitize_ext(ext) {
+            Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
+            None => uuid::Uuid::new_v4().to_string(),
+        };
+        let config = PresigningConfig::expires_in(UPLOAD_URL_TTL)
+            .map_err(|e| format!("could not build the upload URL: {e}"))?;
+        let request = inner
+            .s3
+            .put_object()
+            .bucket(&inner.settings.bucket)
+            .key(&file_name)
+            .presigned(config)
+            .await
+            .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
+
+        Ok(ReplacementInfo {
+            upload_url: request.uri().to_string(),
+            file_name,
+        })
+    }
+
+    async fn image_bytes_exist(&self, file_name: &str) -> Result<bool, BoxError> {
+        let inner = self.inner.clone();
+        match inner
+            .s3
+            .head_object()
+            .bucket(&inner.settings.bucket)
+            .key(file_name)
+            .send()
+            .await
+        {
+            Ok(_) => Ok(true),
+            // The object is not there: that is the answer, not a failure.
+            Err(e) if e.as_service_error().is_some_and(|e| e.is_not_found()) => Ok(false),
+            Err(e) => Err(format!("could not look for the uploaded image: {}", describe(&e)).into()),
+        }
+    }
+
+    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let raw = **id;
+        let previous = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
+            None => return Err("Image not found".into()),
+        };
+
+        let updated = ImageData {
+            original_filename: previous.original_filename.clone(),
+            file_name: file_name.to_string(),
+            // The first upload is when the image entered the library; replacing what it shows
+            // does not change that, just as re-publishing does not change `published_at`.
+            uploaded_at: previous.uploaded_at,
+        };
+        write(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(raw),
+            &AwsRepository::encode(&updated)?,
+        )
+        .await?;
+
+        // What it used to name is now unreferenced, so it goes. A missing object is not an
+        // error: the previous upload may never have completed.
+        if previous.file_name != file_name {
+            inner
+                .s3
+                .delete_object()
+                .bucket(&inner.settings.bucket)
+                .key(&previous.file_name)
+                .send()
+                .await
+                .map_err(|e| format!("could not delete the replaced image: {}", describe(&e)))?;
+        }
+        Ok(())
     }
 
     async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
@@ -244,6 +330,106 @@ mod tests {
         // Deleting again reports what the on-premises adapter reports, so the service can turn
         // it into the same 404.
         assert!(repository.delete_image(&info.id).await.is_err());
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// Replacing an image's bytes under the same id: the object moves, the record keeps its
+    /// identity, and the bytes it used to serve are gone.
+    #[tokio::test]
+    async fn a_replacement_puts_new_bytes_under_the_same_id() {
+        let endpoint = crate::test_s3_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no S3 at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_replace").await.expect("a table for this test");
+        let bucket = repository.inner.settings.bucket.clone();
+        let s3 = repository.inner.s3.clone();
+        s3.create_bucket().bucket(&bucket).send().await.unwrap_or_else(|e| {
+            panic!("could not create {bucket}: {}", describe(&e))
+        });
+        s3.put_bucket_policy()
+            .bucket(&bucket)
+            .policy(
+                serde_json::json!({
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "AWS": ["*"] },
+                        "Action": ["s3:GetObject"],
+                        "Resource": [format!("arn:aws:s3:::{bucket}/*")],
+                    }],
+                })
+                .to_string(),
+            )
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not open {bucket} for reading: {}", describe(&e)));
+
+        sl_cms_core::webhook::install_crypto_provider();
+        let client = reqwest::Client::new();
+
+        let info = repository
+            .generate_image_upload_url(&NewImageRequest {
+                original_filename: "logo.png".to_string(),
+                ext: "png".to_string(),
+            })
+            .await
+            .unwrap();
+        client
+            .put(&info.upload_url)
+            .body(vec![1u8, 2, 3])
+            .send()
+            .await
+            .expect("the presigned PUT should be reachable");
+        let before = repository.get_image(&info.id).await.unwrap().expect("the record");
+
+        // Where to put the replacement, and what it will be called.
+        let replacement = repository
+            .generate_replacement_upload_url(&info.id, "PNG")
+            .await
+            .unwrap();
+        assert!(replacement.file_name.ends_with(".png"), "{}", replacement.file_name);
+        assert_ne!(replacement.file_name, "");
+        // The record is untouched until the bytes are there.
+        assert_eq!(
+            repository.get_image(&info.id).await.unwrap().unwrap().url,
+            before.url
+        );
+
+        client
+            .put(&replacement.upload_url)
+            .body(vec![4u8, 5, 6])
+            .send()
+            .await
+            .expect("the presigned PUT should be reachable");
+        assert!(
+            repository.image_bytes_exist(&replacement.file_name).await.unwrap(),
+            "the uploaded bytes should be found before the swap"
+        );
+
+        repository
+            .replace_image(&info.id, &replacement.file_name)
+            .await
+            .unwrap();
+
+        let after = repository.get_image(&info.id).await.unwrap().expect("the record");
+        assert_eq!(after.original_filename, "logo.png", "the name is not part of the bytes");
+        assert_eq!(after.uploaded_at, before.uploaded_at, "neither is when it arrived");
+        assert_ne!(after.url, before.url, "new bytes, new URL");
+        assert_eq!(
+            client.get(&after.url).send().await.unwrap().bytes().await.unwrap().as_ref(),
+            &[4u8, 5, 6]
+        );
+        assert_eq!(
+            client.get(&before.url).send().await.unwrap().status(),
+            404,
+            "the replaced bytes should be gone, not left to be served"
+        );
+
+        // Asking about bytes that were never uploaded answers honestly.
+        assert!(!repository.image_bytes_exist("nothing-here.png").await.unwrap());
 
         repository.delete_table().await.unwrap();
     }

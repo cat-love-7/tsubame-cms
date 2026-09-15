@@ -21,6 +21,10 @@
   <p class="error" role="alert">{{ problem | message }}</p>
 }
 
+@if (notice(); as happened) {
+  <p class="notice" role="status">{{ happened | message }}</p>
+}
+
 @if (library().length === 0) {
   <p class="note">{{ 'content.imagesEmptyHint' | transloco }}</p>
 }
@@ -68,6 +72,30 @@
       </figcaption>
       @if (auth.canEdit() && renaming() !== image.id) {
         <span class="image-actions">
+          <button
+            matIconButton
+            (click)="copyLink(image)"
+            [attr.aria-label]="'labels.copyImageLink' | transloco: { id: image.id }"
+          >
+            <mat-icon>link</mat-icon>
+          </button>
+          <!-- Replacing picks a file for the same image: the id and the name stay, the picture
+               changes. Hidden input, like the upload button in the toolbar. -->
+          <input
+            #replacement
+            type="file"
+            accept="image/*"
+            hidden
+            (change)="onReplacementSelected(image, $event)"
+          />
+          <button
+            matIconButton
+            (click)="replacement.click()"
+            [disabled]="uploading()"
+            [attr.aria-label]="'labels.replaceImage' | transloco: { id: image.id }"
+          >
+            <mat-icon>swap_horiz</mat-icon>
+          </button>
           <button
             matIconButton
             (click)="startRename(image)"

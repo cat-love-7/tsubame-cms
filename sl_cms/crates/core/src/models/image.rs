@@ -43,10 +43,34 @@ impl ImageEntry {
 /// readable and a record stays small.
 pub const MAX_IMAGE_NAME_LENGTH: usize = 255;
 
-/// Renaming an image: the name is a label, not a path (see [`is_safe_display_name`]).
+/// Changing an image's record: the name it is shown under, or the bytes it serves.
+///
+/// Both fields are optional so a caller can do one without the other; the screen does them one at
+/// a time, and a replacement finishes with the file name the upload was given.
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct RenameImageRequest {
-    pub original_filename: String,
+pub struct UpdateImageRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+}
+
+/// Asking to replace the bytes of an existing image.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ReplaceImageRequest {
+    pub ext: String,
+}
+
+/// Where to put replacement bytes, and what they will be called once they are there.
+///
+/// Unlike [`NewImageInfo`] there is no id: the image already has one, and nothing about the
+/// record changes until the bytes have arrived (see `ImageService::replace_image`).
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ReplacementInfo {
+    /// The file name the bytes were uploaded under; pass it back to apply the replacement.
+    pub file_name: String,
+    /// Where to PUT them. Short-lived, like [`NewImageInfo::upload_url`].
+    pub upload_url: String,
 }
 
 /// Whether `name` is usable as the *display* name of an image.
