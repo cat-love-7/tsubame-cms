@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -21,7 +22,7 @@ import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
  */
 @Component({
   selector: 'app-image-library',
-  imports: [FormsModule, MatButtonModule, MatIconModule, MessagePipe, TranslocoPipe],
+  imports: [ MatTooltipModule,FormsModule, MatButtonModule, MatIconModule, MessagePipe, TranslocoPipe],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })

@@ -30,6 +30,7 @@
           matIconButton
           [routerLink]="['/single-pages', page]"
           [attr.aria-label]="'labels.editContentOf' | transloco: { name: page }"
+          [matTooltip]="'labels.editContentOf' | transloco: { name: page }"
         >
           <mat-icon>edit_note</mat-icon>
         </button>
@@ -42,6 +43,7 @@
           matIconButton
           [routerLink]="['/settings/single-pages', page, 'schema']"
           [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: page }"
+          [matTooltip]="'labels.editSchemaOf' | transloco: { name: page }"
         >
           <mat-icon>view_column</mat-icon>
         </button>
@@ -54,6 +56,7 @@
           matIconButton
           (click)="delete(page)"
           [attr.aria-label]="'labels.deleteOf' | transloco: { name: page }"
+          [matTooltip]="'labels.deleteOf' | transloco: { name: page }"
         >
           <mat-icon>delete</mat-icon>
         </button>

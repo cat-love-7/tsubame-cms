@@ -1,5 +1,5 @@
 <mat-toolbar class="app-toolbar">
-  <button matIconButton [attr.aria-label]="'labels.toggleNavigation' | transloco">
+  <button matIconButton [attr.aria-label]="'labels.toggleNavigation' | transloco" [matTooltip]="'labels.toggleNavigation' | transloco">
     <mat-icon>menu</mat-icon>
   </button>
   <span class="brand">{{ 'app.name' | transloco }}</span>
@@ -8,10 +8,10 @@
   @if (auth.user(); as user) {
     <span class="user-email" [title]="user.email">{{ user.email }}</span>
   }
-  <button matIconButton routerLink="/account" [attr.aria-label]="'auth.changePassword' | transloco">
+  <button matIconButton routerLink="/account" [attr.aria-label]="'auth.changePassword' | transloco" [matTooltip]="'auth.changePassword' | transloco">
     <mat-icon>key</mat-icon>
   </button>
-  <button matIconButton (click)="logout()" [attr.aria-label]="'common.signOut' | transloco">
+  <button matIconButton (click)="logout()" [attr.aria-label]="'common.signOut' | transloco" [matTooltip]="'common.signOut' | transloco">
     <mat-icon>logout</mat-icon>
   </button>
 </mat-toolbar>

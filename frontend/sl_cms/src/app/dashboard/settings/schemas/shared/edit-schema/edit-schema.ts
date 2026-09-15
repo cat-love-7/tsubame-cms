@@ -9,6 +9,7 @@ import {
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import {
@@ -46,7 +47,7 @@ interface ResizeState {
 
 @Component({
   selector: 'app-edit-schema',
-  imports: [
+  imports: [ MatTooltipModule,
     Field,
     MatIconModule,
     MatInputModule,

@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { RouterLink } from '@angular/router';
@@ -13,7 +14,7 @@ import { LanguageSwitcher } from '../../shared/language-switcher/language-switch
   selector: 'app-header',
   templateUrl: './header.html',
   styleUrl: './header.scss',
-  imports: [
+  imports: [ MatTooltipModule,
     LanguageSwitcher,
     MatButtonModule,
     MatIconModule,

@@ -48,6 +48,7 @@
                 matIconButton
                 (click)="publish(name)"
                 [attr.aria-label]="'labels.publishChangesOfPage' | transloco: { id: name }"
+                [matTooltip]="'labels.publishChangesOfPage' | transloco: { id: name }"
               >
                 <mat-icon>publish</mat-icon>
               </button>
@@ -56,6 +57,10 @@
               matIconButton
               (click)="statusOf(name) === 'published' ? unpublish(name) : publish(name)"
               [attr.aria-label]="
+                (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
+                  | transloco: { id: name }
+              "
+              [matTooltip]="
                 (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
                   | transloco: { id: name }
               "
@@ -68,6 +73,7 @@
               matIconButton
               [routerLink]="['/single-pages', name]"
               [attr.aria-label]="'labels.editContentOf' | transloco: { name }"
+              [matTooltip]="'labels.editContentOf' | transloco: { name }"
             >
               <mat-icon>edit_note</mat-icon>
             </button>

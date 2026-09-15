@@ -5,6 +5,7 @@ import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -22,7 +23,7 @@ const DEFAULT_PAGE_SIZE = 25;
 
 @Component({
   selector: 'app-collection-items',
-  imports: [
+  imports: [ MatTooltipModule,
     ItemStatusBadge,
     MatButtonModule,
     MatIconModule,

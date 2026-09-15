@@ -1,5 +1,6 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { MAT_TOOLTIP_DEFAULT_OPTIONS } from '@angular/material/tooltip';
 import { provideRouter } from '@angular/router';
 import { provideTransloco } from '@jsverse/transloco';
 
@@ -12,6 +13,19 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
+    // Icon buttons explain themselves on hover, after a moment: a tooltip that appears the instant
+    // the pointer crosses one flashes while the reader is on their way to another.
+    {
+      provide: MAT_TOOLTIP_DEFAULT_OPTIONS,
+      useValue: {
+        showDelay: 300,
+        hideDelay: 100,
+        // A tooltip is a hint, not a control: Material leaves it interactive (one may hold its own
+        // buttons), which means the hint from the icon just pressed can swallow the press on the
+        // next one in a row.
+        disableTooltipInteractivity: true,
+      },
+    },
     // `provideHttpClient` is what makes the auth interceptor apply to every request.
     // Angular 22's default backend (fetch) is what we want; the migration to v22 added
     // `withXhr()` only to preserve the v21 behaviour, and nothing here needs XHR - no

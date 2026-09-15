@@ -5,6 +5,7 @@
     matIconButton
     [routerLink]="['/settings/schemas/collections/create']"
     [attr.aria-label]="'content.newCollection' | transloco"
+    [matTooltip]="'content.newCollection' | transloco"
   >
     <mat-icon>add</mat-icon>
   </button>
@@ -35,6 +36,7 @@
           matIconButton
           (click)="delete(collection)"
           [attr.aria-label]="'labels.deleteOf' | transloco: { name: collection }"
+          [matTooltip]="'labels.deleteOf' | transloco: { name: collection }"
         >
           <mat-icon>delete</mat-icon>
         </button>

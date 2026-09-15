@@ -115,6 +115,9 @@
               [attr.aria-label]="
                 'labels.issueResetLinkOf' | transloco: { username: user.username }
               "
+              [matTooltip]="
+                'labels.issueResetLinkOf' | transloco: { username: user.username }
+              "
             >
               <mat-icon>link</mat-icon>
             </button>
@@ -123,6 +126,7 @@
             matIconButton
             (click)="openResources(user)"
             [attr.aria-label]="'labels.permissionsOf' | transloco: { username: user.username }"
+            [matTooltip]="'labels.permissionsOf' | transloco: { username: user.username }"
           >
             <mat-icon>tune</mat-icon>
           </button>
@@ -130,6 +134,7 @@
             matIconButton
             (click)="remove(user)"
             [attr.aria-label]="'labels.deleteAccountOf' | transloco: { username: user.username }"
+            [matTooltip]="'labels.deleteAccountOf' | transloco: { username: user.username }"
           >
             <mat-icon>delete</mat-icon>
           </button>

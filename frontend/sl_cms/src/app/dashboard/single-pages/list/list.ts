@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -20,7 +21,7 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
  */
 @Component({
   selector: 'app-single-page-list',
-  imports: [ItemStatusBadge, MatButtonModule, MatIconModule, MessagePipe, RouterLink, TranslocoPipe],
+  imports: [ MatTooltipModule,ItemStatusBadge, MatButtonModule, MatIconModule, MessagePipe, RouterLink, TranslocoPipe],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })

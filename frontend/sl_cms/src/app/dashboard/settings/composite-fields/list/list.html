@@ -36,6 +36,7 @@
           matIconButton
           [routerLink]="['/settings/composite-fields', row.id, 'schema']"
           [attr.aria-label]="'labels.editSchemaOf' | transloco: { name: row.id }"
+          [matTooltip]="'labels.editSchemaOf' | transloco: { name: row.id }"
         >
           <mat-icon>view_column</mat-icon>
         </button>
@@ -48,6 +49,7 @@
           matIconButton
           (click)="delete(row.id)"
           [attr.aria-label]="'labels.deleteOf' | transloco: { name: row.id }"
+          [matTooltip]="'labels.deleteOf' | transloco: { name: row.id }"
         >
           <mat-icon>delete</mat-icon>
         </button>

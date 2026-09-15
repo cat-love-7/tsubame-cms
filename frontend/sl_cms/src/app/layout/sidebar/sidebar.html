@@ -19,6 +19,10 @@
         'labels.toggleNode'
           | transloco: { name: node.nameKey ? (node.nameKey | transloco) : node.name }
       "
+      [matTooltip]="
+        'labels.toggleNode'
+          | transloco: { name: node.nameKey ? (node.nameKey | transloco) : node.name }
+      "
     >
       <mat-icon class="mat-icon-rtl-mirror">
         {{ tree.isExpanded(node) ? 'expand_more' : 'chevron_right' }}

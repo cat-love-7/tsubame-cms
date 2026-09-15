@@ -189,6 +189,9 @@
                     [attr.aria-label]="
                       'labels.moveImageEarlier' | transloco: { index: $index }
                     "
+                    [matTooltip]="
+                      'labels.moveImageEarlier' | transloco: { index: $index }
+                    "
                   >
                     <mat-icon>chevron_left</mat-icon>
                   </button>
@@ -198,6 +201,7 @@
                     (click)="moveImage($index, 1)"
                     [disabled]="$last"
                     [attr.aria-label]="'labels.moveImageLater' | transloco: { index: $index }"
+                    [matTooltip]="'labels.moveImageLater' | transloco: { index: $index }"
                   >
                     <mat-icon>chevron_right</mat-icon>
                   </button>
@@ -206,6 +210,7 @@
                     type="button"
                     (click)="removeImageAt($index)"
                     [attr.aria-label]="'labels.removeImage' | transloco: { index: $index }"
+                    [matTooltip]="'labels.removeImage' | transloco: { index: $index }"
                   >
                     <mat-icon>close</mat-icon>
                   </button>
@@ -263,6 +268,7 @@
                     (click)="moveElement($index, -1)"
                     [disabled]="$first"
                     [attr.aria-label]="'labels.moveElementEarlier' | transloco: { index: $index }"
+                    [matTooltip]="'labels.moveElementEarlier' | transloco: { index: $index }"
                   >
                     <mat-icon>arrow_upward</mat-icon>
                   </button>
@@ -272,6 +278,7 @@
                     (click)="moveElement($index, 1)"
                     [disabled]="$last"
                     [attr.aria-label]="'labels.moveElementLater' | transloco: { index: $index }"
+                    [matTooltip]="'labels.moveElementLater' | transloco: { index: $index }"
                   >
                     <mat-icon>arrow_downward</mat-icon>
                   </button>
@@ -280,6 +287,7 @@
                     type="button"
                     (click)="removeElementAt($index)"
                     [attr.aria-label]="'labels.removeElement' | transloco: { index: $index }"
+                    [matTooltip]="'labels.removeElement' | transloco: { index: $index }"
                   >
                     <mat-icon>close</mat-icon>
                   </button>

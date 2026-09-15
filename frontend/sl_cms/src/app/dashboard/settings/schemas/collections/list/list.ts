@@ -4,6 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTableModule } from '@angular/material/table';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure } from 'app/core/i18n/message';
@@ -13,7 +14,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
   // Distinct from the `app-list` used by dashboard/collections/list; two components
   // sharing a selector is ambiguous.
   selector: 'app-schema-collection-list',
-  imports: [
+  imports: [ MatTooltipModule,
     MatTableModule,
     MatIconModule,
     MatButtonModule,

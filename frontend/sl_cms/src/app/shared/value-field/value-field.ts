@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { concatMap, from, toArray } from 'rxjs';
 
@@ -57,7 +58,7 @@ type FieldKind =
  */
 @Component({
   selector: 'app-value-field',
-  imports: [
+  imports: [ MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatCheckboxModule,

@@ -55,6 +55,7 @@
                 matIconButton
                 (click)="publish(item[0])"
                 [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: item[0] }"
+                [matTooltip]="'labels.publishChangesOf' | transloco: { id: item[0] }"
               >
                 <mat-icon>publish</mat-icon>
               </button>
@@ -66,6 +67,10 @@
                 (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
                   | transloco: { id: item[0] }
               "
+              [matTooltip]="
+                (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                  | transloco: { id: item[0] }
+              "
             >
               <mat-icon>{{ statusOf(item[0]) === 'published' ? 'visibility_off' : 'publish' }}</mat-icon>
             </button>
@@ -74,6 +79,7 @@
             matIconButton
             [routerLink]="['/collections', collectionName(), 'edit', item[0]]"
             [attr.aria-label]="'labels.editItem' | transloco: { id: item[0] }"
+            [matTooltip]="'labels.editItem' | transloco: { id: item[0] }"
           >
             <mat-icon>edit</mat-icon>
           </button>
@@ -82,6 +88,7 @@
               matIconButton
               (click)="delete(item[0])"
               [attr.aria-label]="'labels.deleteItem' | transloco: { id: item[0] }"
+              [matTooltip]="'labels.deleteItem' | transloco: { id: item[0] }"
             >
               <mat-icon>delete</mat-icon>
             </button>

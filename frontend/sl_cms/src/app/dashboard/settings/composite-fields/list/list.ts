@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatTableModule } from '@angular/material/table';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
@@ -20,7 +21,7 @@ interface DefinitionRow {
 
 @Component({
   selector: 'app-composite-field-list',
-  imports: [
+  imports: [ MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,

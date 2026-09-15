@@ -11,6 +11,7 @@
           type="button"
           cdkDragHandle
           [attr.aria-label]="'labels.dragToReorder' | transloco"
+          [matTooltip]="'labels.dragToReorder' | transloco"
         >
           <mat-icon>drag_indicator</mat-icon>
         </button>
@@ -30,6 +31,7 @@
           (click)="moveUp($index)"
           [disabled]="$index === 0"
           [attr.aria-label]="'labels.moveFieldUp' | transloco"
+          [matTooltip]="'labels.moveFieldUp' | transloco"
         >
           <mat-icon>arrow_upward</mat-icon>
         </button>
@@ -39,6 +41,7 @@
           (click)="moveDown($index)"
           [disabled]="$index === Schema.length - 1"
           [attr.aria-label]="'labels.moveFieldDown' | transloco"
+          [matTooltip]="'labels.moveFieldDown' | transloco"
         >
           <mat-icon>arrow_downward</mat-icon>
         </button>
@@ -48,6 +51,7 @@
           color="warn"
           (click)="removeField($index)"
           [attr.aria-label]="'labels.removeField' | transloco"
+          [matTooltip]="'labels.removeField' | transloco"
         >
           <mat-icon>delete</mat-icon>
         </button>
