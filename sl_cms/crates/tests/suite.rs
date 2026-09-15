@@ -1878,6 +1878,101 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// An image can be renamed without touching what it is: the id, the bytes and the URL stay, so
+/// content that references it is unaffected and the rename is undoable.
+#[tokio::test]
+async fn an_image_can_be_renamed_without_touching_its_bytes() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "photo.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = info["id"].as_u64().expect("the image id");
+    let url = info["url"].as_str().unwrap().to_string();
+
+    // The name can be anything a reader recognises, including non-ASCII.
+    let (status, bytes) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "original_filename": "  表紙の写真.png  " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&bytes));
+    assert!(bytes.is_empty(), "a mutation answers with an empty body");
+
+    let (status, body) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["id"], id, "the id does not change");
+    assert_eq!(body[0]["url"], url, "nor does where the bytes live");
+    assert_eq!(body[0]["original_filename"], "表紙の写真.png", "trimmed, and otherwise as given");
+
+    // A name the library could not show, or one that is a path, is refused.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "original_filename": "   " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "original_filename": "../../etc/passwd" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Renaming something that is not there reports it instead of quietly succeeding.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/9999",
+        Some(&token),
+        Some(json!({ "original_filename": "other.png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A read-only account may not rename; the middleware decides, not the handler.
+    let (status, _) = create_account(
+        &app,
+        json!({
+            "username": "viewer-for-images",
+            "password": "viewer-password",
+            "is_admin": false,
+            "permission": { "can_view": true, "can_edit": false, "can_publish": false }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, body) = login(&app, "viewer-for-images", "viewer-password").await;
+    assert_eq!(status, StatusCode::OK);
+    let viewer = body["token"].as_str().unwrap().to_string();
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/models/images/{id}"),
+        Some(&viewer),
+        Some(json!({ "original_filename": "theirs.png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
 /// The image library: what the admin screen lists, and what deleting an image does.
 #[tokio::test]
 async fn images_can_be_listed_and_deleted() {

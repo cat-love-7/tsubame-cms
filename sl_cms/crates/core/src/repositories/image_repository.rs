@@ -15,5 +15,11 @@ pub trait ImageRepository: Send + Sync {
     fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageID, Image)>, BoxError>> + Send;
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
+    /// Give an image another display name, keeping its id and its bytes.
+    fn rename_image(
+        &self,
+        id: &ImageID,
+        original_filename: &str,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }
 

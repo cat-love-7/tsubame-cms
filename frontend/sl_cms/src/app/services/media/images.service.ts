@@ -31,6 +31,11 @@ export class ImagesService {
     return this.images.listImages();
   }
 
+  /** Rename an image in the library: the label, not the file behind it. */
+  renameImage(id: number, originalFilename: string): Observable<void> {
+    return this.images.renameImage(id, originalFilename);
+  }
+
   deleteImage(id: number): Observable<void> {
     return this.images.deleteImage(id);
   }

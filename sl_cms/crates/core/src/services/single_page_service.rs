@@ -554,6 +554,9 @@ mod tests {
                 url: "/images/1".to_string(),
             })
         }
+        async fn rename_image(&self, _id: &ImageID, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }

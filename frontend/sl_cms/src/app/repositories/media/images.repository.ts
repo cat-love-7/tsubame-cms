@@ -48,6 +48,18 @@ export class ImageRepository {
   }
 
   /**
+   * Give an image another display name.
+   *
+   * The id, the bytes and the URL are untouched: the name is a label the library shows, so
+   * content that references the image keeps working and a rename can be undone.
+   */
+  renameImage(id: number, originalFilename: string): Observable<void> {
+    return this.http.put<void>(`/api/models/images/${id}`, {
+      original_filename: originalFilename,
+    });
+  }
+
+  /**
    * Delete an image and its bytes.
    *
    * Nothing checks whether content still references it: a reference keeps the id it stored

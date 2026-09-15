@@ -49,11 +49,29 @@
     font: var(--mat-sys-body-small);
   }
 
-  .remove {
+  /// The actions sit over the thumbnail, so they are readable against any image.
+  .image-actions {
     position: absolute;
     top: 4px;
     right: 4px;
+    display: flex;
     background: var(--mat-sys-surface-container-high);
+    border-radius: 999px;
+  }
+
+  /// Editing the name happens where the name is.
+  .rename-input {
+    width: 100%;
+    padding: 2px 6px;
+    border: 1px solid var(--mat-sys-outline);
+    border-radius: 6px;
+    background: var(--mat-sys-surface);
     color: var(--mat-sys-on-surface);
+    font: var(--mat-sys-body-medium);
+  }
+
+  .rename-actions {
+    display: flex;
+    justify-content: flex-end;
   }
 }

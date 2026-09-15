@@ -37,6 +37,32 @@ impl ImageEntry {
     }
 }
 
+/// The longest display name an image may carry.
+///
+/// Long enough for the file names people actually have, short enough that the library stays
+/// readable and a record stays small.
+pub const MAX_IMAGE_NAME_LENGTH: usize = 255;
+
+/// Renaming an image: the name is a label, not a path (see [`is_safe_display_name`]).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RenameImageRequest {
+    pub original_filename: String,
+}
+
+/// Whether `name` is usable as the *display* name of an image.
+///
+/// The display name is never used to build a path - the stored file name is generated - so it
+/// may be anything a reader recognises, including non-ASCII. What it may not be is empty (the
+/// library would show a blank entry) or a path, and control characters would let a name break
+/// the line it is printed on.
+pub fn is_safe_display_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().count() <= MAX_IMAGE_NAME_LENGTH
+        && !trimmed.contains(['/', '\\'])
+        && !trimmed.chars().any(char::is_control)
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct NewImageRequest{
     pub original_filename: String,

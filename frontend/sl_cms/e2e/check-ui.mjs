@@ -485,6 +485,36 @@ try {
   const servedStatus = await page.evaluate(async (src) => (await fetch(src)).status, imageSource);
   check('画像の実体が配信される', servedStatus === 200, `${imageSource} → ${servedStatus}`);
 
+  // The name is a label: renaming it leaves the id, the URL and the bytes alone, so content that
+  // references the image is unaffected.
+  const renameLabel = `renamed-${Date.now()}.png`;
+  await uploadedCard.locator('button[aria-label^="rename image"]').click();
+  await uploadedCard.locator('input[name=imageName]').fill(renameLabel);
+  await uploadedCard.locator('button[aria-label="Save"]').click();
+  await page
+    .waitForFunction(
+      (name) => document.querySelector('.library .image .name')?.textContent === name,
+      renameLabel,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const renamedCard = page.locator('.library .image').first();
+  const renamedSource = await renamedCard.locator('img').getAttribute('src');
+  check(
+    '画像の名前を変更できる(URL は変わらない)',
+    (await renamedCard.locator('.name').textContent()) === renameLabel &&
+      renamedSource === imageSource,
+    `${await renamedCard.locator('.name').textContent()} / ${renamedSource}`,
+  );
+
+  // It is the stored name that changed, not just what is on screen.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('.library .image').first().waitFor({ timeout: 15000 });
+  check(
+    '変更した名前が残る',
+    (await page.locator('.library .image').first().locator('.name').textContent()) === renameLabel,
+  );
+
   // -------------------------------------------------------------- pick images while editing
   await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Choose existing")').click();

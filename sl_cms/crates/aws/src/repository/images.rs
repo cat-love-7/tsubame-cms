@@ -109,6 +109,23 @@ impl ImageRepository for AwsRepository {
         })
     }
 
+    async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let raw = **id;
+        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
+            None => return Err("Image not found".into()),
+        };
+        data.original_filename = original_filename.to_string();
+        write(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(raw),
+            &AwsRepository::encode(&data)?,
+        )
+        .await
+    }
+
     async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let raw = **id;

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use crate::models::error::{map_internal_error, HttpError};
-use crate::models::image::{ImageEntry, ImageID, NewImageInfo, NewImageRequest};
+use crate::models::image::{
+    is_safe_display_name, ImageEntry, ImageID, NewImageInfo, NewImageRequest,
+    MAX_IMAGE_NAME_LENGTH,
+};
 use crate::repositories::image_repository::ImageRepository;
 
 pub struct ImageService<R: ImageRepository> {
@@ -47,6 +50,46 @@ impl<R: ImageRepository> ImageService<R> {
         }
         self.repository
             .delete_image(&id)
+            .await.map_err(map_internal_error)
+    }
+
+    /// Give an image another display name.
+    ///
+    /// The name is what the library and the picker show. The id, the stored bytes and the URL
+    /// are untouched, so content that references the image is unaffected - and a rename can be
+    /// undone by renaming it back, which is the point of keeping it separate from replacing.
+    pub async fn rename_image(
+        &self,
+        id: ImageID,
+        original_filename: &str,
+    ) -> Result<(), HttpError> {
+        let name = original_filename.trim();
+        if name.is_empty() {
+            return Err(HttpError::BadRequest("an image name is required"));
+        }
+        if name.chars().count() > MAX_IMAGE_NAME_LENGTH {
+            return Err(HttpError::BadRequest(&format!(
+                "an image name may be at most {MAX_IMAGE_NAME_LENGTH} characters"
+            )));
+        }
+        if !is_safe_display_name(name) {
+            return Err(HttpError::BadRequest(
+                "an image name cannot contain a path separator or a control character",
+            ));
+        }
+        if self
+            .repository
+            .get_image(&id)
+            .await.map_err(map_internal_error)?
+            .is_none()
+        {
+            return Err(HttpError::NotFound(&format!(
+                "Image with id '{}' does not exist",
+                id
+            )));
+        }
+        self.repository
+            .rename_image(&id, name)
             .await.map_err(map_internal_error)
     }
 

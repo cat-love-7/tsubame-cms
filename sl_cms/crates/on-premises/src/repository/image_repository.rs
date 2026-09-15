@@ -128,6 +128,26 @@ impl ImageRepository for Repository {
         })
     }
 
+    async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single("image", StoreOptions::create())?;
+        let reader = env.read()?;
+        let mut data = match store.get(&reader, id.to_le_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            _ => return Err("Image not found".into()),
+        };
+        data.original_filename = original_filename.to_string();
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&data)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
     async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
         let _guard = self.begin();
         let image = self.image_data(id)?.ok_or("Image not found")?;

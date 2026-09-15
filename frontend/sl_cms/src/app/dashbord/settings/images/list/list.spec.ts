@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
+import { t } from 'app/core/i18n/message';
 import { ImageEntry, NewImageInfo } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
 
@@ -21,12 +22,22 @@ class StubImagesService {
   ];
   public uploaded: string[] = [];
   public deleted: number[] = [];
+  /** The renames the screen asked for, in order. */
+  public renamed: { id: number; name: string }[] = [];
 
   listImages = () => of(this.library);
 
   uploadImage = (file: File) => {
     this.uploaded.push(file.name);
     return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png', url: '/images/second.png' });
+  };
+
+  renameImage = (id: number, name: string) => {
+    this.renamed.push({ id, name });
+    this.library = this.library.map((image) =>
+      image.id === id ? { ...image, original_filename: name } : image,
+    );
+    return of(void 0);
   };
 
   deleteImage = (id: number) => {
@@ -160,5 +171,50 @@ describe('Image library', () => {
       key: 'content.uploadFailed',
       params: { message: 'upload failed' },
     });
+  });
+  // The name is a label, and the id is what content references: renaming must not disturb
+  // anything else, which is what the inline editor is for.
+  it('renames an image in place, without touching anything else', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.startRename(stub.library[0]);
+    fresh.componentInstance.draftName.set('  表紙.png  ');
+    fresh.componentInstance.confirmRename(stub.library[0]);
+    fresh.detectChanges();
+
+    expect(stub.renamed).toEqual([{ id: 1, name: '表紙.png' }]);
+    expect(fresh.componentInstance.renaming()).toBeNull();
+    expect(fresh.nativeElement.textContent).toContain('表紙.png');
+  });
+
+  it('refuses a name that is empty or a path, without asking the server', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    for (const bad of ['   ', 'a/b.png', 'a\\b.png']) {
+      fresh.componentInstance.startRename(stub.library[0]);
+      fresh.componentInstance.draftName.set(bad);
+      fresh.componentInstance.confirmRename(stub.library[0]);
+    }
+
+    expect(stub.renamed).toEqual([]);
+    expect(fresh.componentInstance.error()).toEqual(t('content.invalidImageName'));
+    // The editor stays open on the name that was refused.
+    expect(fresh.componentInstance.renaming()).toBe(1);
+  });
+
+  it('leaves the name alone when the edit is cancelled', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.startRename(stub.library[0]);
+    fresh.componentInstance.draftName.set('something else');
+    fresh.componentInstance.cancelRename();
+    fresh.detectChanges();
+
+    expect(stub.renamed).toEqual([]);
+    expect(fresh.componentInstance.renaming()).toBeNull();
+    expect(fresh.nativeElement.querySelector('input[name=imageName]')).toBeNull();
   });
 });

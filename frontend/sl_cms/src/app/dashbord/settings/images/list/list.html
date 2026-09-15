@@ -30,20 +30,60 @@
     <figure class="image">
       <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
       <figcaption>
-        <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
-        <span class="meta">
-          {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
-        </span>
+        @if (renaming() === image.id) {
+          <!-- The name is a label, so it is edited in place: nothing else about the image
+               changes, and cancelling leaves it as it was. -->
+          <input
+            class="rename-input"
+            type="text"
+            name="imageName"
+            [ngModel]="draftName()"
+            (ngModelChange)="draftName.set($event)"
+            (keyup.enter)="confirmRename(image)"
+            (keyup.escape)="cancelRename()"
+            [attr.aria-label]="'labels.renameImage' | transloco: { id: image.id }"
+          />
+          <span class="rename-actions">
+            <button
+              matIconButton
+              (click)="confirmRename(image)"
+              [attr.aria-label]="'common.save' | transloco"
+            >
+              <mat-icon>check</mat-icon>
+            </button>
+            <button
+              matIconButton
+              (click)="cancelRename()"
+              [attr.aria-label]="'common.cancel' | transloco"
+            >
+              <mat-icon>close</mat-icon>
+            </button>
+          </span>
+        } @else {
+          <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
+          <span class="meta">
+            {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
+          </span>
+        }
       </figcaption>
-      @if (auth.canEdit()) {
-        <button
-          matIconButton
-          class="remove"
-          (click)="delete(image)"
-          [attr.aria-label]="'labels.deleteImage' | transloco: { id: image.id }"
-        >
-          <mat-icon>delete</mat-icon>
-        </button>
+      @if (auth.canEdit() && renaming() !== image.id) {
+        <span class="image-actions">
+          <button
+            matIconButton
+            (click)="startRename(image)"
+            [attr.aria-label]="'labels.renameImage' | transloco: { id: image.id }"
+          >
+            <mat-icon>edit</mat-icon>
+          </button>
+          <button
+            matIconButton
+            class="remove"
+            (click)="delete(image)"
+            [attr.aria-label]="'labels.deleteImage' | transloco: { id: image.id }"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </span>
       }
     </figure>
   }
