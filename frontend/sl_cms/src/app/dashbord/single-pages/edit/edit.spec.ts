@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
+import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, of } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -13,6 +14,10 @@ import { t } from 'app/core/i18n/message';
 import { Edit } from './edit';
 
 class StubSinglePagesService {
+  /** The pages the screen asked about, so a switch can be told from a first load. */
+  public requested: string[] = [];
+  /** What the page currently holds, for a test that switches pages. */
+  public content: unknown = { title: 'Home' };
   public published: string[] = [];
   public unpublished: string[] = [];
   public metadata: ItemMetadata = {
@@ -25,12 +30,13 @@ class StubSinglePagesService {
     has_draft: false,
   };
 
-  getPageSchema(): Observable<unknown> {
+  getPageSchema(name: string): Observable<unknown> {
+    this.requested.push(name);
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
   }
 
   getPageItem(): Observable<unknown> {
-    return of({ title: 'Home' });
+    return of(this.content);
   }
 
   getPageMetadata(): Observable<ItemMetadata> {
@@ -88,16 +94,18 @@ describe('Edit', () => {
   let component: Edit;
   let fixture: ComponentFixture<Edit>;
   let stub: StubSinglePagesService;
+  let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     stub = new StubSinglePagesService();
+    route = stubActivatedRoute({ name: 'home' });
     await TestBed.configureTestingModule({
       imports: [Edit],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'home' } } } },
+        { provide: ActivatedRoute, useValue: route },
         { provide: SinglePagesService, useValue: stub },
         stubAuth(),
       ],
@@ -110,6 +118,22 @@ describe('Edit', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  // The sidebar switches pages without leaving this route, and the router reuses the component:
+  // reading the parameter once left the previous page on screen while the URL changed.
+  it('loads another page when the parameter changes', async () => {
+    expect(component.pageName()).toBe('home');
+    stub.content = { title: 'About us' };
+
+    route.navigate({ name: 'about' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.pageName()).toBe('about');
+    expect(stub.requested).toContain('about');
+    expect(component.values()['title']).toBe('About us');
+    expect(fixture.nativeElement.querySelector('h2')?.textContent).toContain('about');
   });
 
   it('lays fields out on the shared grid', () => {

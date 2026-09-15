@@ -1,8 +1,8 @@
 <div class="toolbar">
-  <h2>{{ collectionName }}</h2>
+  <h2>{{ collectionName() }}</h2>
   <span class="spacer"></span>
   @if (canEdit()) {
-    <button matButton [routerLink]="['/collections', collectionName, 'create']">
+    <button matButton [routerLink]="['/collections', collectionName(), 'create']">
       <mat-icon>add</mat-icon>
       {{ 'content.newItem' | transloco }}
     </button>
@@ -72,7 +72,7 @@
           }
           <button
             matIconButton
-            [routerLink]="['/collections', collectionName, 'edit', item[0]]"
+            [routerLink]="['/collections', collectionName(), 'edit', item[0]]"
             [attr.aria-label]="'labels.editItem' | transloco: { id: item[0] }"
           >
             <mat-icon>edit</mat-icon>

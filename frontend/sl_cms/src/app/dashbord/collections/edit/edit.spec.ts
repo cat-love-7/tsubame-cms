@@ -3,6 +3,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { provideRouter } from '@angular/router';
+import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -15,6 +16,8 @@ import { Edit } from './edit';
 import { formatDateTime } from 'app/core/i18n/date-format';
 
 class StubCollectionsService {
+  /** The items the screen asked about, so a switch can be told from a first load. */
+  public requested: number[] = [];
   public published: number[] = [];
   public unpublished: number[] = [];
   /** Set to refuse a save the way the server refuses a value another item holds. */
@@ -43,7 +46,8 @@ class StubCollectionsService {
     return of(this.schema);
   }
 
-  getCollectionItem(): Observable<unknown> {
+  getCollectionItem(_name: string, id: number): Observable<unknown> {
+    this.requested.push(id);
     return of(this.item);
   }
 
@@ -113,21 +117,51 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 
 describe('Edit', () => {
   let stub: StubCollectionsService;
+  let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     stub = new StubCollectionsService();
+    // Editing item 7 of the `blog` collection.
+    route = stubActivatedRoute({ name: 'blog', id: '7' });
     await TestBed.configureTestingModule({
       imports: [Edit],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        // Editing item 7 of the `blog` collection.
-        { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'blog', id: '7' } } } },
+        { provide: ActivatedRoute, useValue: route },
         { provide: CollectionsService, useValue: stub },
         stubAuth(),
       ],
     }).compileComponents();
+  });
+
+  // Opening another item reuses this component, so the parameter has to be followed rather than
+  // read once: the URL changed while the previous item's values stayed in the form.
+  it('loads another item when the parameter changes', async () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    expect(stub.requested).toEqual([7]);
+
+    stub.item = { title: 'Another' };
+    route.navigate({ name: 'blog', id: '9' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(stub.requested).toEqual([7, 9]);
+    expect(fixture.componentInstance.values()['title']).toBe('Another');
+  });
+
+  // Switching collection keeps the same route, so the schema and the rows have to follow too.
+  it('loads another collection when the name changes', async () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+
+    route.navigate({ name: 'pages', id: '7' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.collectionName()).toBe('pages');
   });
 
   it('should create', () => {
@@ -364,7 +398,7 @@ describe('Edit (new item)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: ActivatedRoute, useValue: { snapshot: { params: { name: 'blog' } } } },
+        { provide: ActivatedRoute, useValue: stubActivatedRoute({ name: 'blog' }) },
         { provide: CollectionsService, useValue: new StubCollectionsService() },
       ],
     }).compileComponents();
@@ -375,7 +409,7 @@ describe('Edit (new item)', () => {
     const fresh = TestBed.createComponent(Edit);
     fresh.detectChanges();
 
-    expect(fresh.componentInstance.isNew).toBe(true);
+    expect(fresh.componentInstance.isNew()).toBe(true);
     expect(fresh.nativeElement.querySelector('app-item-status')).toBeNull();
   });
 });

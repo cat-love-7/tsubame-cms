@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
@@ -42,12 +43,16 @@ export class Edit {
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
-  public collectionName: string = this.route.snapshot.params['name'];
-  private readonly itemId: number | null =
-    this.route.snapshot.params['id'] === undefined
-      ? null
-      : Number(this.route.snapshot.params['id']);
-  public readonly isNew = this.itemId === null;
+  /**
+   * The collection and the item being edited.
+   *
+   * Signals, read from the parameter stream: opening another item of the same collection, or
+   * another collection, reuses this component, so parameters read once would leave the previous
+   * item's values in the form.
+   */
+  public collectionName = signal('');
+  private itemId = signal<number | null>(null);
+  public isNew = computed(() => this.itemId() === null);
 
   /**
    * The schema and the values being edited, as signals.
@@ -69,8 +74,8 @@ export class Edit {
   /** A published item with an unpublished working copy: the site is behind the editor. */
   public hasDraft = computed(() => this.metadata()?.has_draft ?? false);
   /** What this account may do *with this collection*, overrides included. */
-  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName));
-  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName));
+  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName()));
+  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName()));
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
@@ -86,14 +91,36 @@ export class Edit {
   private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
-    this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const name = params.get('name') ?? '';
+      const id = params.get('id') === null ? null : Number(params.get('id'));
+      if (name !== this.collectionName() || id !== this.itemId()) {
+        this.load(name, id);
+      }
+    });
+  }
+
+  /** Everything the form shows belongs to one item, so a switch starts from nothing. */
+  private load(name: string, id: number | null) {
+    this.collectionName.set(name);
+    this.itemId.set(id);
+    this.schema.set([]);
+    this.values.set({});
+    this.metadata.set(null);
+    this.error.set(null);
+    this.notice.set(null);
+    this.previewUrl.set('');
+    this.problemField.set(null);
+    this.fieldErrors = {};
+
+    this.collectionsService.getCollectionSchema(name).subscribe({
       next: (schema) => {
         this.schema.set(schema);
-        if (this.itemId === null) {
+        if (id === null) {
           this.values.set(withDefaults(schema, {}));
         } else {
-          this.loadItem(schema, this.itemId);
-          this.loadMetadata(this.itemId);
+          this.loadItem(schema, id);
+          this.loadMetadata(id);
         }
       },
       error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
@@ -101,14 +128,14 @@ export class Edit {
   }
 
   private loadItem(schema: CollectionSchema, id: number) {
-    this.collectionsService.getCollectionItem(this.collectionName, id).subscribe({
+    this.collectionsService.getCollectionItem(this.collectionName(), id).subscribe({
       next: (values) => this.values.set(withDefaults(schema, values)),
       error: (e) => this.error.set(failure('content.failedToLoadItem', e)),
     });
   }
 
   private loadMetadata(id: number) {
-    this.collectionsService.getItemMetadata(this.collectionName, id).subscribe({
+    this.collectionsService.getItemMetadata(this.collectionName(), id).subscribe({
       next: (metadata) => this.metadata.set(metadata),
       error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
@@ -131,14 +158,14 @@ export class Edit {
   }
 
   private setPublished(published: boolean) {
-    const id = this.itemId;
+    const id = this.itemId();
     if (id === null) {
       return;
     }
 
     const request = published
-      ? this.collectionsService.publishItem(this.collectionName, id)
-      : this.collectionsService.unpublishItem(this.collectionName, id);
+      ? this.collectionsService.publishItem(this.collectionName(), id)
+      : this.collectionsService.unpublishItem(this.collectionName(), id);
 
     request.subscribe({
       next: (metadata) => {
@@ -194,12 +221,12 @@ export class Edit {
    * reviewer should be looking at anyway.
    */
   sharePreview() {
-    if (this.isNew) {
+    if (this.itemId() === null) {
       return;
     }
     this.error.set(null);
     this.notice.set(null);
-    this.collectionsService.createPreviewLink(this.collectionName, this.itemId as number).subscribe({
+    this.collectionsService.createPreviewLink(this.collectionName(), this.itemId() as number).subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
@@ -228,14 +255,14 @@ export class Edit {
 
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.
-    const id = this.itemId;
+    const id = this.itemId();
     if (id === null) {
-      this.collectionsService.createCollectionItem(this.collectionName, values).subscribe({
+      this.collectionsService.createCollectionItem(this.collectionName(), values).subscribe({
         next: () => this.goBackToList(),
         error: (e) => this.refuse(e),
       });
     } else {
-      this.collectionsService.updateCollectionItem(this.collectionName, id, values).subscribe({
+      this.collectionsService.updateCollectionItem(this.collectionName(), id, values).subscribe({
         next: () => this.goBackToList(),
         error: (e) => this.refuse(e),
       });
@@ -249,6 +276,6 @@ export class Edit {
   }
 
   private goBackToList() {
-    this.router.navigate(['/collections', this.collectionName]);
+    this.router.navigate(['/collections', this.collectionName()]);
   }
 }

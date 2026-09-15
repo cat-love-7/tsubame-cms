@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
@@ -25,20 +26,30 @@ export class Schema {
   private route = inject(ActivatedRoute);
   private compositeFields = inject(CompositeFieldsService);
 
-  public compositeId: string = this.route.snapshot.params['id'];
+  /** A signal, and read from the parameter stream: switching definitions reuses this component. */
+  public compositeId = signal('');
   public schema = signal<FieldSchema[]>([]);
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
 
   constructor() {
-    this.compositeFields.getCompositeFieldSchema(this.compositeId).subscribe({
-      next: (schema) => this.schema.set(schema),
-      error: (e) => this.error.set(failure('content.failedToLoadDefinition', e)),
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = params.get('id') ?? '';
+      if (id !== this.compositeId()) {
+        this.compositeId.set(id);
+        this.schema.set([]);
+        this.status.set(null);
+        this.error.set(null);
+        this.compositeFields.getCompositeFieldSchema(id).subscribe({
+          next: (schema) => this.schema.set(schema),
+          error: (e) => this.error.set(failure('content.failedToLoadDefinition', e)),
+        });
+      }
     });
   }
 
   save(schema: FieldSchema[]) {
-    this.compositeFields.updateCompositeFieldSchema(this.compositeId, schema).subscribe({
+    this.compositeFields.updateCompositeFieldSchema(this.compositeId(), schema).subscribe({
       next: () => {
         // Content forms read the definitions from a cache, so it has to be dropped or they
         // would keep rendering the previous shape.

@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
@@ -38,7 +39,14 @@ export class Edit {
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
-  public pageName: string = this.route.snapshot.params['name'];
+  /**
+   * The page being edited.
+   *
+   * A signal, and read from the parameter stream rather than once: the sidebar switches pages
+   * without leaving this route, and the router reuses the component, so a parameter read at
+   * construction would leave the previous page on screen.
+   */
+  public pageName = signal('');
   /** Signals, for the reason given in the collection item editor: both arrive from
    * asynchronous loads that would otherwise trip the dev-mode change check. */
   public schema = signal<CollectionSchema>([]);
@@ -52,8 +60,8 @@ export class Edit {
   /** A published page with an unpublished working copy: the site is behind the editor. */
   public hasDraft = computed(() => this.metadata()?.has_draft ?? false);
   /** What this account may do *with this page*, overrides included. */
-  public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName));
-  public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName));
+  public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName()));
+  public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName()));
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
@@ -64,7 +72,27 @@ export class Edit {
   private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
-    this.pages.getPageSchema(this.pageName).subscribe({
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const name = params.get('name') ?? '';
+      if (name !== this.pageName()) {
+        this.load(name);
+      }
+    });
+  }
+
+  /** Everything the screen shows belongs to one page, so switching starts from nothing. */
+  private load(name: string) {
+    this.pageName.set(name);
+    this.schema.set([]);
+    this.values.set({});
+    this.metadata.set(null);
+    this.error.set(null);
+    this.notice.set(null);
+    this.previewUrl.set('');
+    this.problemField.set(null);
+    this.fieldErrors = {};
+
+    this.pages.getPageSchema(name).subscribe({
       next: (schema) => {
         this.schema.set(schema);
         this.loadItem(schema);
@@ -72,14 +100,14 @@ export class Edit {
       error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
     });
 
-    this.pages.getPageMetadata(this.pageName).subscribe({
+    this.pages.getPageMetadata(name).subscribe({
       next: (metadata) => this.metadata.set(metadata),
       error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
   }
 
   private loadItem(schema: CollectionSchema) {
-    this.pages.getPageItem(this.pageName).subscribe({
+    this.pages.getPageItem(this.pageName()).subscribe({
       next: (values) => this.values.set(withDefaults(schema, values)),
       error: (e) => this.error.set(failure('content.failedToLoadContent', e)),
     });
@@ -102,8 +130,8 @@ export class Edit {
 
   private setPublished(published: boolean) {
     const request = published
-      ? this.pages.publishPage(this.pageName)
-      : this.pages.unpublishPage(this.pageName);
+      ? this.pages.publishPage(this.pageName())
+      : this.pages.unpublishPage(this.pageName());
 
     request.subscribe({
       next: (metadata) => {
@@ -156,7 +184,7 @@ export class Edit {
   sharePreview() {
     this.error.set(null);
     this.notice.set(null);
-    this.pages.createPreviewLink(this.pageName).subscribe({
+    this.pages.createPreviewLink(this.pageName()).subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
@@ -181,7 +209,7 @@ export class Edit {
 
     this.error.set(null);
     this.problemField.set(null);
-    this.pages.updatePageItem(this.pageName, { ...this.values() }).subscribe({
+    this.pages.updatePageItem(this.pageName(), { ...this.values() }).subscribe({
       next: () => {
         this.error.set(null);
         this.router.navigate(['/settings/single-pages']);

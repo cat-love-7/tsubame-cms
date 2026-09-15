@@ -1,5 +1,5 @@
 <div class="toolbar">
-  <h2>{{ 'content.compositeFieldTitle' | transloco: { id: compositeId } }}</h2>
+  <h2>{{ 'content.compositeFieldTitle' | transloco: { id: compositeId() } }}</h2>
   <span class="spacer"></span>
   <button matButton [routerLink]="['/settings/composite-fields']">
     {{ 'content.allCompositeFields' | transloco }}

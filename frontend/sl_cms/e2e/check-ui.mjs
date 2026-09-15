@@ -1237,6 +1237,57 @@ try {
   // Through the API rather than the screen: this collection exists only for this scenario.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
 
+  // ------------------------------------------- single pages: switching follows the URL
+  // Two pages, so the sidebar can be used to switch from one to the other. The router reuses the
+  // component when only the parameter changes, which used to leave the first page on screen.
+  const stamp = Date.now();
+  const pageA = `e2e-page-${stamp}-a`;
+  const pageB = `e2e-page-${stamp}-b`;
+  for (const name of [pageA, pageB]) {
+    await api(
+      'POST',
+      `/models/single_pages/${name}/schema`,
+      [{ name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 }],
+      token,
+    );
+    await api('PUT', `/models/single_pages/${name}/item`, { title: `content of ${name}` }, token);
+  }
+
+  await page.goto(`${BASE}/single-pages/${pageA}`, { waitUntil: 'networkidle' });
+  const pageTitle = page.locator('app-value-field input[name=title]');
+  await pageTitle.waitFor({ timeout: 15000 });
+  check(
+    '単一ページの内容が開く',
+    (await pageTitle.inputValue()) === `content of ${pageA}`,
+    await pageTitle.inputValue(),
+  );
+
+  for (const label of ['toggle Documents', 'toggle Single pages']) {
+    await page
+      .locator(`button[aria-label="${label}"]`)
+      .click({ force: true })
+      .catch(() => {});
+    await page.waitForTimeout(200);
+  }
+  await page.locator(`app-sidebar a[href="/single-pages/${pageB}"]`).click({ force: true });
+  const switched = await page
+    .waitForFunction(
+      (name) => document.querySelector('h2')?.textContent?.includes(name) ?? false,
+      pageB,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check(
+    '単一ページを切り替えると画面も切り替わる',
+    switched && (await pageTitle.inputValue()) === `content of ${pageB}`,
+    `url=${page.url()} / ${await pageTitle.inputValue()}`,
+  );
+
+  for (const name of [pageA, pageB]) {
+    await deleteIfPresent(`/models/single_pages/${name}`, token);
+  }
+
   // ------------------------------- an administrator hands out a password reset link
   const resetUsername = `e2e-reset-${Date.now()}`;
   for (const account of await api('GET', '/auth/users', undefined, token)) {

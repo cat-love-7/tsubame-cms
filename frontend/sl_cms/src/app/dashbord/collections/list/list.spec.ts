@@ -2,7 +2,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PageEvent } from '@angular/material/paginator';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
+import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, of } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -107,15 +108,18 @@ describe('List', () => {
   let component: List;
   let fixture: ComponentFixture<List>;
   let stub: StubCollectionsService;
+  let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     stub = new StubCollectionsService();
+    route = stubActivatedRoute({ name: 'blog' });
     await TestBed.configureTestingModule({
       imports: [List],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
         { provide: CollectionsService, useValue: stub },
         stubAuth(),
       ],
@@ -124,6 +128,20 @@ describe('List', () => {
     fixture = TestBed.createComponent(List);
     component = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  // The sidebar switches collections without leaving this route, so the rows and the pager have
+  // to be asked for again rather than left as the previous collection's.
+  it('loads another collection when the parameter changes', async () => {
+    component.pageIndex.set(1);
+    stub.requested.length = 0;
+
+    route.navigate({ name: 'pages' });
+    await fixture.whenStable();
+
+    expect(component.collectionName()).toBe('pages');
+    expect(component.pageIndex()).toBe(0);
+    expect(stub.requested.length).toBeGreaterThan(0);
   });
 
   it('should create', () => {

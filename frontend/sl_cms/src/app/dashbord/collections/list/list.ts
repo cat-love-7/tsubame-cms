@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
@@ -41,7 +42,14 @@ export class List {
   /** What the signed-in account may do; the server enforces the same rules. */
   public auth = inject(AuthService);
 
-  public collectionName: string = this.route.snapshot.params['name'];
+  /**
+   * The collection on screen.
+   *
+   * A signal, read from the parameter stream: the sidebar switches collections without leaving
+   * this route, and the router reuses the component, so a parameter read once would leave the
+   * previous collection's items on screen.
+   */
+  public collectionName = signal('');
   public schema = signal<CollectionSchema>([]);
   /**
    * The rows on screen. A signal, not a plain field: the response can land while Angular
@@ -56,8 +64,8 @@ export class List {
   public metadata = signal<ItemMetadataMap>({});
 
   /** What this account may do *with this collection*, overrides included. */
-  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName));
-  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName));
+  public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName()));
+  public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName()));
   /** Items in the collection, not just on this page. Drives the paginator. */
   public total = signal(0);
   public pageIndex = signal(0);
@@ -70,24 +78,20 @@ export class List {
   private reload = new BehaviorSubject<void>(undefined);
 
   constructor() {
-    this.collectionsService.getCollectionSchema(this.collectionName).subscribe({
-      next: (schema) => this.schema.set(schema),
-      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
-    });
-
     // Rows, their status and the total are fetched together: the table and the pager both
     // need them, and a collection can be too long to send in one response.
     this.reload
       .pipe(
         switchMap(() =>
           forkJoin({
-            page: this.collectionsService.listCollectionItemsPage(this.collectionName, {
+            page: this.collectionsService.listCollectionItemsPage(this.collectionName(), {
               limit: this.pageSize(),
               offset: this.pageIndex() * this.pageSize(),
             }),
-            metadata: this.collectionsService.listItemMetadata(this.collectionName),
+            metadata: this.collectionsService.listItemMetadata(this.collectionName()),
           }),
         ),
+        takeUntilDestroyed(),
       )
       .subscribe({
         next: ({ page, metadata }) => {
@@ -97,6 +101,30 @@ export class List {
         },
         error: (e) => this.error.set(failure('content.failedToLoadItems', e)),
       });
+
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const name = params.get('name') ?? '';
+      if (name !== this.collectionName()) {
+        this.load(name);
+      }
+    });
+  }
+
+  /** Everything on screen belongs to one collection, so a switch starts from nothing. */
+  private load(name: string) {
+    this.collectionName.set(name);
+    this.schema.set([]);
+    this.items.set([]);
+    this.total.set(0);
+    this.metadata.set({});
+    this.error.set(null);
+    this.pageIndex.set(0);
+
+    this.collectionsService.getCollectionSchema(name).subscribe({
+      next: (schema) => this.schema.set(schema),
+      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
+    });
+    this.reload.next();
   }
 
   onPage(event: PageEvent) {
@@ -142,8 +170,8 @@ export class List {
 
   private setPublished(id: number, published: boolean) {
     const request = published
-      ? this.collectionsService.publishItem(this.collectionName, id)
-      : this.collectionsService.unpublishItem(this.collectionName, id);
+      ? this.collectionsService.publishItem(this.collectionName(), id)
+      : this.collectionsService.unpublishItem(this.collectionName(), id);
 
     request.subscribe({
       next: (metadata) => {
@@ -158,7 +186,7 @@ export class List {
     if (!confirm(this.i18n.translate('content.deleteItemConfirm', { id }))) {
       return;
     }
-    this.collectionsService.deleteCollectionItem(this.collectionName, id).subscribe({
+    this.collectionsService.deleteCollectionItem(this.collectionName(), id).subscribe({
       next: () => {
         this.error.set(null);
         this.stepBackIfPageIsGone();

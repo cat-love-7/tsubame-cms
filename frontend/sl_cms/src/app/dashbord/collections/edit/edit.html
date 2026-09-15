@@ -1,5 +1,5 @@
 <div class="toolbar">
-  <h2>{{ (isNew ? 'content.newItem' : 'content.editItem') | transloco }} — {{ collectionName }}</h2>
+  <h2>{{ (isNew() ? 'content.newItem' : 'content.editItem') | transloco }} — {{ collectionName() }}</h2>
   <!-- A new item has no status until it has been saved, so the control appears only once
        the server knows the item. -->
   @if (metadata(); as meta) {
@@ -32,7 +32,7 @@
     }
   }
   <span class="spacer"></span>
-  <button matButton [routerLink]="['/collections', collectionName]">
+  <button matButton [routerLink]="['/collections', collectionName()]">
     {{ 'common.cancel' | transloco }}
   </button>
 </div>

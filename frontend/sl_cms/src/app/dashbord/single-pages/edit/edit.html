@@ -1,5 +1,5 @@
 <div class="toolbar">
-  <h2>{{ pageName }}</h2>
+  <h2>{{ pageName() }}</h2>
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
     @if (meta.status === 'published' && meta.has_draft) {
@@ -30,7 +30,7 @@
     }
   }
   <span class="spacer"></span>
-  <button matButton [routerLink]="['/settings/single-pages', pageName, 'schema']">
+  <button matButton [routerLink]="['/settings/single-pages', pageName(), 'schema']">
     {{ 'content.editSchema' | transloco }}
   </button>
   <button matButton [routerLink]="['/settings/single-pages']">
