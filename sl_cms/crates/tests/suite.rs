@@ -79,9 +79,18 @@ async fn create_user(app: &TestApp, email: &str, password: &str, is_admin: bool)
 /// endpoint yet — provisioning a Cognito user is `doc/aws-plan.md` P4 — so the account record is
 /// written directly: the tests *about* permissions run against both deployments, and the ones
 /// about passwords are gated on `Backend::PASSWORD_LOGIN`.
+///
+/// A `password` in the payload is not sent: creating an account chooses no credential. The helper
+/// completes the two steps a deployment takes — create, then follow a reset link — so a test can
+/// still ask for "an account that signs in with this password".
 async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
     if app.password_login() {
-        return send(
+        let mut payload = payload;
+        let password = payload["password"].as_str().map(str::to_string);
+        if let Some(object) = payload.as_object_mut() {
+            object.remove("password");
+        }
+        let (status, created) = send(
             &app.router,
             Method::POST,
             "/auth/users",
@@ -89,6 +98,30 @@ async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
             Some(payload),
         )
         .await;
+        let Some(password) = password.filter(|_| status == StatusCode::CREATED) else {
+            return (status, created);
+        };
+        let id = created["id"].as_str().expect("the new account's id");
+        let (status, link) = send(
+            &app.router,
+            Method::POST,
+            &format!("/auth/users/{id}/password-reset-link"),
+            Some(&app.admin_token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "a reset link for a new account");
+        let token = link["token"].as_str().expect("the reset token").to_string();
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/auth/password-reset",
+            None,
+            Some(json!({ "token": token, "new_password": password })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "the owner choosing a password");
+        return (StatusCode::CREATED, created);
     }
     let username = payload["username"].as_str().expect("a username");
     let is_admin = payload["is_admin"].as_bool().unwrap_or(false);
@@ -347,8 +380,51 @@ async fn rejects_duplicate_and_weak_user_registrations() {
         create_user(&app, "VIEWER@example.com", VIEWER_PASSWORD, false).await,
         StatusCode::CONFLICT
     );
-    // Too short -> 400.
-    assert_eq!(create_user(&app, "other@example.com", "short", false).await, StatusCode::BAD_REQUEST);
+
+    // Creating an account chooses no password, and a `password` in the body does not change that:
+    // the account cannot sign in with it, so this endpoint cannot be used to choose someone else's
+    // credential.
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/auth/users",
+        Some(&app.admin_token),
+        Some(json!({
+            "username": "typed@example.com",
+            "password": "typed-by-someone-else",
+            "is_admin": false,
+            "permission": Permission::viewer(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        login(&app, "typed@example.com", "typed-by-someone-else").await.0,
+        StatusCode::UNAUTHORIZED,
+        "a password in the request must not become the account's"
+    );
+
+    // Too short -> 400, refused where a password is chosen: the owner completing a reset link.
+    let id = created["id"].as_str().expect("the new account's id");
+    let (status, link) = send(
+        &app.router,
+        Method::POST,
+        &format!("/auth/users/{id}/password-reset-link"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/auth/password-reset",
+        None,
+        Some(json!({ "token": link["token"], "new_password": "short" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "weak_password");
 }
 
 // ------------------------------------------------------------------------------- content

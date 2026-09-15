@@ -474,15 +474,18 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/auth/users` | 一覧 |
-| POST | `/auth/users` | 作成(`username` / 任意の `password` / 任意の `email` / `is_admin` / `permission`) |
+| POST | `/auth/users` | 作成(`username` / 任意の `email` / `is_admin` / `permission`。**パスワードは取らない**) |
 | PATCH | `/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
 | DELETE | `/auth/users/{id}` | 削除 |
 | POST | `/auth/me/password` | 自分のパスワード変更(現在のパスワードが必要) |
 
-**`password` は任意**: 省略すると資格情報を持たないアカウントができ、本人がリセットリンクで
-設定するまでサインインできない(画面は常に省略する。自動化・テスト用に受け付けてはいる)。
-**管理者が他人のパスワードを直接設定する経路は無い** — 渡すのはリセットリンクで、パスワードは
-本人だけが知る。
+**パスワードを選べるのは本人だけ**。作成したアカウントは資格情報を持たず、本人がリセットリンクで
+設定するまでサインインできない(本文に `password` を入れても**無視される** — 作成で他人の
+パスワードを決める経路は API にも画面にも無い)。管理者が渡せるのはリセットリンクまで。
+
+例外は配備が自分で作る**初期管理者**(`ADMIN_PASSWORD`)だけ。誰もサインインできない状態では
+リンクを発行する人がいないため、ここだけは代わりに選ぶ。この作成と資格情報の保存は 1 組で、
+保存に失敗したらアカウントも消す(残すと次の起動が bootstrap を飛ばし、誰も入れない配備になる)。
 
 `/auth/users*` は管理者のみ。`/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
 アカウントでも使える**(閲覧のみの人がパスワードを変えられない、という状態を避けるため)。
@@ -499,7 +502,7 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   使わない**ので、到達できないアドレスでも構わない。
 - `username` は識別子なので作成後は変更しない(変更が必要なら作り直す)。Cognito の username も
   不変なので、この前提はそのまま移行できる。
-- 初期管理者は `ADMIN_USERNAME` と `ADMIN_PASSWORD`。`ADMIN_USERNAME` が無い場合は
+- 初期管理者は `ADMIN_USERNAME` と `ADMIN_PASSWORD`(この 1 人だけはパスワードを配備が選ぶ)。`ADMIN_USERNAME` が無い場合は
   `ADMIN_EMAIL` を識別子として使う(以前の設定名のままでも起動する)。`ADMIN_EMAIL` は同時に
   連絡先としても記録される。
 
@@ -560,8 +563,6 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   直接設定する経路は API にも画面にも無い(以前は `POST /auth/users/{id}/password` があったが、
   削除した)。アカウント作成時も同じで、画面はパスワードを聞かず、作成した直後にこのリンクを
   発行して渡す。
-- 例外は**配備が自分で作る初期管理者**(`ADMIN_PASSWORD`)と、自動化が `password` を明示して
-  作るアカウントだけで、どちらも「誰かが代わりに選ぶ」ことを避けられない場面に限られる。
 
 ### リソース単位の権限
 

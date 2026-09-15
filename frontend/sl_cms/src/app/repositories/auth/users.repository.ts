@@ -8,13 +8,6 @@ import { PasswordResetLink } from 'app/models/item-status';
 export interface NewUser {
   /** The sign-in identifier; the CMS does not require an email address. */
   username: string;
-  /**
-   * An initial password, when the caller has one to choose.
-   *
-   * The account screen never sends one: it hands the new account a reset link so its owner sets
-   * the password. A script that provisions accounts may.
-   */
-  password?: string;
   /** Optional contact address. */
   email: string | null;
   is_admin: boolean;

@@ -14,7 +14,6 @@ use crate::auth::provisioner::{AccountProvisioner, NewAccount};
 use crate::models::error::HttpError;
 use crate::models::user::{
     is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewAccountRequest,
-    NewUserRequest,
     PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
 };
 use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
@@ -90,12 +89,13 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         self
     }
 
-    /// Create an account where an identity provider owns the credential.
+    /// Create an account, asking the identity provider first when one is configured.
     ///
-    /// The provider is asked first (see [`AccountProvisioner`]): if it refuses, nothing is left
-    /// behind here. This is the counterpart of the password-taking `create_user`, which exists
-    /// only for a deployment that stores the credential itself.
-    pub async fn create_account(
+    /// No credential is chosen here. An account signs in either through a provider, or with a
+    /// password **its owner set** by following a reset link - never with one an administrator
+    /// typed. The single exception is [`AuthService::bootstrap_admin`], which exists because a
+    /// deployment needs a way in before anyone can hand out links.
+    pub async fn create_user(
         &self,
         request: NewAccountRequest,
     ) -> Result<UserResponse, HttpError> {
@@ -106,6 +106,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             )
             .with_code("invalid_username"));
         }
+        // The address is optional; when it is given it has to look like one.
         let email = request
             .email
             .as_deref()
@@ -151,7 +152,6 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         self.repository.add_user(&user).await.map_err(internal)?;
         Ok(user.to_response())
     }
-
     pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
         match self.verifier.verify(token).await? {
             Identity::Local {
@@ -456,60 +456,6 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
         Ok(PasswordChangedResponse { token, expires_at })
     }
-    pub async fn create_user(&self, request: NewUserRequest) -> Result<UserResponse, HttpError> {
-        let username = normalize_username(&request.username);
-        if !is_plausible_username(&username) {
-            return Err(HttpError::BadRequest(
-                "a username of up to 128 letters, digits or + = , . @ _ - is required",
-            )
-            .with_code("invalid_username"));
-        }
-        // The address is optional; when it is given it has to look like one.
-        let email = request
-            .email
-            .as_deref()
-            .map(str::trim)
-            .filter(|email| !email.is_empty())
-            .map(|email| {
-                if is_plausible_email(email) {
-                    Ok(email.to_ascii_lowercase())
-                } else {
-                    Err(HttpError::BadRequest("that is not a plausible email address"))
-                }
-            })
-            .transpose()?;
-        if let Some(password) = request.password.as_deref() {
-            validate_password(password)?;
-        }
-        if self
-            .repository
-            .get_user_from_username(&username)
-            .await
-            .map_err(internal)?
-            .is_some()
-        {
-            return Err(HttpError::Conflict("a user with that username already exists").with_code("username_taken"));
-        }
-
-        let permission = if request.is_admin {
-            Permission::admin()
-        } else {
-            request.permission
-        };
-        let mut user = User::new(&username, request.is_admin, permission);
-        user.email = email;
-        self.repository.add_user(&user).await.map_err(internal)?;
-        // The credential goes with the record, when there is one. Without it the account exists but
-        // cannot sign in - an administrator issues a reset link and the person chooses their own,
-        // which is the only way it should ever be chosen.
-        if let Some(password) = request.password.as_deref() {
-            self.repository
-                .set_password(&user.id, password)
-                .await
-                .map_err(internal)?;
-        }
-        Ok(user.to_response())
-    }
     /// Set a password for an account, ending every session it has.
     ///
     /// Called by the two paths that are allowed to choose a password for someone: a reset link the
@@ -585,16 +531,24 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
                 "no users exist yet: set ADMIN_USERNAME and ADMIN_PASSWORD to create the initial administrator",
             )
         };
-        let request = NewUserRequest {
+        let password = password.ok_or_else(missing)?;
+        let request = NewAccountRequest {
             username: username.ok_or_else(missing)?.to_string(),
-            // The bootstrap administrator cannot hand over a reset link before anyone can sign in,
-            // so this is one of the two places a password is chosen for an account.
-            password: Some(password.ok_or_else(missing)?.to_string()),
             email: email.map(str::to_string),
             is_admin: true,
             permission: Permission::admin(),
         };
-        self.create_user(request).await.map(Some)
+        let created = self.create_user(request).await?;
+        // The one account whose password is chosen by someone other than its owner: nobody can sign
+        // in yet, so nobody could follow a reset link. If the credential cannot be stored, the
+        // record goes with it - otherwise the next start would find a user, skip the bootstrap, and
+        // leave a deployment that nobody can enter.
+        let id = UserId::from(created.id.as_str());
+        if let Err(failure) = self.set_password(&id, password).await {
+            let _ = self.repository.delete_user(&id).await;
+            return Err(failure);
+        }
+        Ok(Some(created))
     }
 }
 
@@ -632,10 +586,15 @@ mod tests {
         passwords: RwLock<HashMap<String, String>>,
         /// The same for the provider-identifier index.
         external_ids: RwLock<HashMap<String, String>>,
+        /// A store that refuses to keep a credential, for the failure the bootstrap has to survive.
+        refuse_passwords: bool,
     }
 
     impl LocalCredentials for InMemoryUsers {
         async fn set_password(&self, user_id: &UserId, password: &str) -> Result<(), BoxError> {
+            if self.refuse_passwords {
+                return Err("the credential store is unavailable".into());
+            }
             self.passwords
                 .write()
                 .unwrap()
@@ -724,21 +683,36 @@ mod tests {
         )
     }
 
-    fn new_user(email: &str, password: &str, is_admin: bool) -> NewUserRequest {
-        NewUserRequest {
-            username: email.to_string(),
-            password: Some(password.to_string()),
+    /// An account with a password, in the two steps a deployment takes: create it, which is all the
+    /// API does and leaves it without a credential, then set one, as the bootstrap or a completed
+    /// reset does.
+    async fn account_with_password(
+        auth: &AuthService<InMemoryUsers>,
+        username: &str,
+        password: &str,
+        is_admin: bool,
+    ) -> UserResponse {
+        let request = NewAccountRequest {
+            username: username.to_string(),
             email: None,
             is_admin,
-            permission: Permission::default(),
-        }
+            permission: if is_admin {
+                Permission::admin()
+            } else {
+                Permission::default()
+            },
+        };
+        let created = auth.create_user(request).await.unwrap();
+        auth.set_password(&UserId::from(created.id.as_str()), password)
+            .await
+            .unwrap();
+        created
     }
 
     #[tokio::test]
     async fn login_succeeds_with_correct_credentials() {
         let (auth, _) = service();
-        auth.create_user(new_user("Alice@Example.com", "supersecret", true))
-            .await.unwrap();
+        account_with_password(&auth, "Alice@Example.com", "supersecret", true).await;
 
         let response = auth.login("alice@example.com", "supersecret").await.unwrap();
         assert_eq!(response.user.username, "alice@example.com");
@@ -756,8 +730,7 @@ mod tests {
     #[tokio::test]
     async fn repeated_sign_in_failures_are_refused_for_a_while() {
         let (auth, _) = service();
-        auth.create_user(new_user("a@example.com", "supersecret", false))
-            .await.unwrap();
+        account_with_password(&auth, "a@example.com", "supersecret", false).await;
 
         // Two failures and then a success: the count starts over, so the next four are
         // ordinary rejections rather than a lock.
@@ -803,9 +776,7 @@ mod tests {
     #[tokio::test]
     async fn a_reset_link_sets_the_password_once_and_then_refuses() {
         let (auth, _) = service();
-        let account = auth
-            .create_user(new_user("ops", "old-password", false))
-            .await.unwrap();
+        let account = account_with_password(&auth, "ops", "old-password", false).await;
         let id = UserId::from(account.id.to_string().as_str());
 
         let link = auth.issue_password_reset(&id).await.unwrap();
@@ -857,10 +828,8 @@ mod tests {
     #[tokio::test]
     async fn a_disabled_account_gets_no_reset_link() {
         let (auth, _) = service();
-        let admin = auth
-            .create_user(new_user("admin", "admin-password", true))
-            .await.unwrap();
-        let account = auth.create_user(new_user("ops", "ops-password", false)).await.unwrap();
+        let admin = account_with_password(&auth, "admin", "admin-password", true).await;
+        let account = account_with_password(&auth, "ops", "ops-password", false).await;
 
         auth.update_user(
             &UserId::from(account.id.to_string().as_str()),
@@ -883,9 +852,7 @@ mod tests {
     #[tokio::test]
     async fn changing_your_own_password_ends_the_sessions_that_came_before() {
         let (auth, _) = service();
-        let created = auth
-            .create_user(new_user("a@example.com", "old-password", false))
-            .await.unwrap();
+        let created = account_with_password(&auth, "a@example.com", "old-password", false).await;
 
         let stolen = auth.login("a@example.com", "old-password").await.unwrap().token;
         assert!(auth.user_from_token(&stolen).await.is_ok());
@@ -909,11 +876,8 @@ mod tests {
     #[tokio::test]
     async fn resetting_another_accounts_password_only_ends_that_accounts_sessions() {
         let (auth, _) = service();
-        auth.create_user(new_user("admin@example.com", "admin-password", true))
-            .await.unwrap();
-        let target = auth
-            .create_user(new_user("editor@example.com", "editor-password", false))
-            .await.unwrap();
+        account_with_password(&auth, "admin@example.com", "admin-password", true).await;
+        let target = account_with_password(&auth, "editor@example.com", "editor-password", false).await;
 
         let admin_token = auth.login("admin@example.com", "admin-password").await.unwrap().token;
         let editor_token = auth
@@ -930,8 +894,7 @@ mod tests {
     #[tokio::test]
     async fn login_failures_are_indistinguishable() {
         let (auth, _) = service();
-        auth.create_user(new_user("a@example.com", "supersecret", false))
-            .await.unwrap();
+        account_with_password(&auth, "a@example.com", "supersecret", false).await;
 
         let unknown = auth.login("nobody@example.com", "supersecret").await.unwrap_err();
         let wrong = auth.login("a@example.com", "wrong-password").await.unwrap_err();
@@ -943,9 +906,13 @@ mod tests {
     #[tokio::test]
     async fn rejects_short_passwords_and_unusable_usernames() {
         let (auth, _) = service();
+        // A weak password is refused where a password is chosen, which is no longer creation: the
+        // account exists first, and its owner (or the bootstrap) sets the credential.
+        let created = auth.create_user(account("ops")).await.unwrap();
         assert_eq!(
-            auth.create_user(new_user("ops", "short", false))
-                .await.unwrap_err()
+            auth.set_password(&UserId::from(created.id.as_str()), "short")
+                .await
+                .unwrap_err()
                 .status_code,
             400
         );
@@ -953,15 +920,16 @@ mod tests {
         // not.
         for username in ["", "with space", "with:colon"] {
             assert_eq!(
-                auth.create_user(new_user(username, "supersecret", false))
-                    .await.unwrap_err()
+                auth.create_user(account(username))
+                    .await
+                    .unwrap_err()
                     .status_code,
                 400,
                 "{username:?}"
             );
         }
         // An address, when one is given, still has to look like one.
-        let mut request = new_user("ops", "supersecret", false);
+        let mut request = account("ops@example.com");
         request.email = Some("not-an-email".to_string());
         assert_eq!(auth.create_user(request).await.unwrap_err().status_code, 400);
     }
@@ -969,16 +937,15 @@ mod tests {
     #[tokio::test]
     async fn rejects_duplicate_usernames_regardless_of_case() {
         let (auth, _) = service();
-        auth.create_user(new_user("a@example.com", "supersecret", false))
-            .await.unwrap();
-        let err = auth.create_user(new_user("A@EXAMPLE.COM", "supersecret", false)).await.unwrap_err();
+        auth.create_user(account("a@example.com")).await.unwrap();
+        let err = auth.create_user(account("A@EXAMPLE.COM")).await.unwrap_err();
         assert_eq!(err.status_code, 409);
     }
 
     #[tokio::test]
     async fn token_for_a_deleted_user_is_rejected() {
         let (auth, repo) = service();
-        let created = auth.create_user(new_user("a@example.com", "supersecret", false)).await.unwrap();
+        let created = account_with_password(&auth, "a@example.com", "supersecret", false).await;
         let token = auth.login("a@example.com", "supersecret").await.unwrap().token;
 
         repo.delete_user(&created.id).await.unwrap();
@@ -988,7 +955,7 @@ mod tests {
     #[tokio::test]
     async fn disabled_account_cannot_log_in_and_its_token_is_rejected() {
         let (auth, repo) = service();
-        let created = auth.create_user(new_user("a@example.com", "supersecret", false)).await.unwrap();
+        let created = account_with_password(&auth, "a@example.com", "supersecret", false).await;
         let token = auth.login("a@example.com", "supersecret").await.unwrap().token;
 
         {
@@ -1004,16 +971,8 @@ mod tests {
     #[tokio::test]
     async fn the_last_administrator_cannot_lock_the_cms_out() {
         let (auth, _) = service();
-        let admin = auth
-            .create_user(NewUserRequest {
-                username: "admin@example.com".to_string(),
-                password: Some("supersecret".to_string()),
-                email: Some("admin@example.com".to_string()),
-                is_admin: true,
-                permission: Permission::admin(),
-            })
-            .await.unwrap();
-        let editor = auth.create_user(new_user("editor@example.com", "supersecret", false)).await.unwrap();
+        let admin = account_with_password(&auth, "admin@example.com", "supersecret", true).await;
+        let editor = account_with_password(&auth, "editor@example.com", "supersecret", false).await;
 
         // The only administrator cannot stop being one, stop being active, or be deleted.
         assert_eq!(
@@ -1031,15 +990,7 @@ mod tests {
         assert_eq!(auth.delete_user(&admin.id).await.unwrap_err().status_code, 409);
 
         // With a second administrator the demotion is allowed...
-        let second = auth
-            .create_user(NewUserRequest {
-                username: "second@example.com".to_string(),
-                password: Some("supersecret".to_string()),
-                email: None,
-                is_admin: true,
-                permission: Permission::admin(),
-            })
-            .await.unwrap();
+        let second = account_with_password(&auth, "second@example.com", "supersecret", true).await;
         assert!(!auth
             .update_user(&admin.id, UpdateUserRequest { is_admin: Some(false), ..Default::default() })
             .await.unwrap()
@@ -1056,7 +1007,7 @@ mod tests {
     #[tokio::test]
     async fn roles_and_passwords_can_be_changed() {
         let (auth, _) = service();
-        let viewer = auth.create_user(new_user("viewer@example.com", "supersecret", false)).await.unwrap();
+        let viewer = account_with_password(&auth, "viewer@example.com", "supersecret", false).await;
 
         // A role change is exactly what the new permission says.
         let updated = auth
@@ -1143,7 +1094,7 @@ mod tests {
         let provisioner = Arc::new(RecordingProvisioner::default());
         let auth = auth.with_account_provisioner(provisioner.clone());
 
-        let created = auth.create_account(account("ops@example.com")).await.unwrap();
+        let created = auth.create_user(account("ops@example.com")).await.unwrap();
         assert_eq!(created.username, "ops@example.com");
         assert_eq!(
             provisioner.created.lock().unwrap().as_slice(),
@@ -1162,7 +1113,7 @@ mod tests {
         ));
         assert_eq!(
             refusing_auth
-                .create_account(account("nope@example.com"))
+                .create_user(account("nope@example.com"))
                 .await
                 .unwrap_err(),
             HttpError::InternalServerError("the identity provider refused the account")
@@ -1274,5 +1225,29 @@ mod tests {
 
         // Once seeded, bootstrap is a no-op even without credentials.
         assert!(auth.bootstrap_admin(None, None, None).await.unwrap().is_none());
+    }
+
+    /// A bootstrap that cannot store the credential must not leave the account behind: the next
+    /// start would find a user, skip the bootstrap, and leave a deployment nobody can enter.
+    #[tokio::test]
+    async fn a_bootstrap_that_cannot_store_its_password_leaves_no_account() {
+        let repository = Arc::new(InMemoryUsers {
+            refuse_passwords: true,
+            ..Default::default()
+        });
+        let auth = AuthService::new(
+            repository.clone(),
+            TokenIssuer::new(b"test-secret", 1),
+            PasswordResetIssuer::new(b"test-secret", 30),
+        );
+
+        assert!(auth
+            .bootstrap_admin(Some("ops"), Some("supersecret"), None)
+            .await
+            .is_err());
+        assert!(
+            repository.users.read().unwrap().is_empty(),
+            "the account has to go with the credential it could not keep"
+        );
     }
 }

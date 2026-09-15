@@ -271,28 +271,12 @@ pub struct PasswordChangedResponse {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(serde::Deserialize, Debug)]
-pub struct NewUserRequest {
-    pub username: String,
-    /// An initial password, when the caller has one to choose.
-    ///
-    /// Left out, the account exists with no credential: it cannot sign in until an administrator
-    /// issues a reset link and the person sets their own password. That is what the account screen
-    /// does - an administrator choosing someone else's password is a habit worth not having - and
-    /// the field stays for deployments that provision accounts from a script.
-    #[serde(default)]
-    pub password: Option<String>,
-    /// Contact address, if the operator has one to record.
-    #[serde(default)]
-    pub email: Option<String>,
-    #[serde(default)]
-    pub is_admin: bool,
-    #[serde(default)]
-    pub permission: Permission,
-}
-
-/// A new account where an identity provider owns the credential: the same fields as
-/// [`NewUserRequest`] without a password, because there is none for the CMS to choose.
+/// A new account.
+///
+/// There is no password here, and that is the point: an account signs in either through an
+/// identity provider, or with a password **its owner set** by following a reset link. The one
+/// exception is the administrator a deployment bootstraps from `ADMIN_PASSWORD`, which exists
+/// because there has to be a way in before anyone can hand out links.
 #[derive(serde::Deserialize, Debug)]
 pub struct NewAccountRequest {
     pub username: String,

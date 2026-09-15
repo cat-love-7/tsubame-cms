@@ -241,6 +241,30 @@ const firstRow = () => dataRows().first();
 const badgeOf = (row) => row.locator('app-item-status .badge');
 
 /** Sign in on a fresh context, so a second role can be looked at beside the admin one. */
+/**
+ * Create an account and give it a password, the way a deployment ends up with one.
+ *
+ * `POST /auth/users` chooses no credential (an administrator cannot decide someone else's
+ * password), so this creates the account and then completes a reset link for it - the same two
+ * steps the account screen takes.
+ */
+async function createAccount(username, password, extra = {}, token) {
+  const created = await api(
+    'POST',
+    '/auth/users',
+    { username, is_admin: false, permission: { can_view: true, can_edit: false, can_publish: false }, ...extra },
+    token,
+  );
+  const link = await api('POST', `/auth/users/${created.id}/password-reset-link`, undefined, token);
+  await api(
+    'POST',
+    '/auth/password-reset',
+    { token: link.token, new_password: password },
+    undefined,
+  );
+  return created;
+}
+
 async function openAs(username, password) {
   const roleContext = await newContext();
   const rolePage = await roleContext.newPage();
@@ -834,12 +858,8 @@ try {
     if (already) {
       await api('DELETE', `/auth/users/${already.id}`, undefined, token);
     }
-    await api(
-      'POST',
-      '/auth/users',
-      { ...account, password: 'role-password', is_admin: false },
-      token,
-    );
+    // The account's own permission travels with it: a role test needs the role.
+    await createAccount(account.username, 'role-password', account, token);
   }
 
   await expandSettings(page);
@@ -948,15 +968,10 @@ try {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
-  const scoped = await api(
-    'POST',
-    '/auth/users',
-    {
-      username: scopedEmail,
-      password: 'scoped-password',
-      is_admin: false,
-      permission: { can_view: true, can_edit: false, can_publish: false },
-    },
+  const scoped = await createAccount(
+    scopedEmail,
+    'scoped-password',
+    {},
     token,
   );
   await api(
@@ -1532,17 +1547,7 @@ try {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
-  await api(
-    'POST',
-    '/auth/users',
-    {
-      username: resetUsername,
-      password: 'reset-password',
-      is_admin: false,
-      permission: { can_view: true, can_edit: false, can_publish: false },
-    },
-    token,
-  );
+  await createAccount(resetUsername, 'reset-password', {}, token);
 
   // A session that exists before the reset, to watch it die.
   const openSession = await request.fetch(`${API}/auth/login`, {
@@ -1611,17 +1616,7 @@ try {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
-  await api(
-    'POST',
-    '/auth/users',
-    {
-      username: throttleEmail,
-      password: 'throttle-password',
-      is_admin: false,
-      permission: { can_view: true, can_edit: false, can_publish: false },
-    },
-    token,
-  );
+  await createAccount(throttleEmail, 'throttle-password', {}, token);
 
   const attempt = (password) =>
     request

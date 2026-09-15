@@ -18,7 +18,7 @@ use crate::app_module::Storage;
 use crate::http::{require_admin, AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewUserRequest,
+    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewAccountRequest,
     UserId,
 };
 use crate::repositories::local_credentials::LocalCredentials;
@@ -57,7 +57,7 @@ async fn login<R: Storage + LocalCredentials>(
 async fn create_user<R: Storage + LocalCredentials>(
     State(module): State<AppState<R>>,
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
-    Json(request): Json<NewUserRequest>,
+    Json(request): Json<NewAccountRequest>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
     let created = module.auth_service.create_user(request).await?;
