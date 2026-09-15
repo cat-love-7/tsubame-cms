@@ -23,7 +23,7 @@ export const routes: Routes = [
         children: [
             {
                 path: '',
-                loadChildren: () => import('./dashbord/dashbord.routes').then(m => m.DashbordRoutingModule)
+                loadChildren: () => import('./dashboard/dashboard.routes').then(m => m.DashboardRoutingModule)
             }
         ]
     }

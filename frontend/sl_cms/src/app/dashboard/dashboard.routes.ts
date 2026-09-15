@@ -17,7 +17,7 @@ import { List as UsersList } from "./settings/users/list/list";
 import { Password } from "./account/password/password";
 
 
-const dashbordRoutes: Routes = [
+const dashboardRoutes: Routes = [
     {
         path: '',
         component: Index
@@ -107,8 +107,8 @@ const dashbordRoutes: Routes = [
  */
 @NgModule({
     declarations: [],
-    imports: [RouterModule.forChild(dashbordRoutes)],
+    imports: [RouterModule.forChild(dashboardRoutes)],
     exports: [RouterModule],
 })
 
-export class DashbordRoutingModule { }
+export class DashboardRoutingModule { }

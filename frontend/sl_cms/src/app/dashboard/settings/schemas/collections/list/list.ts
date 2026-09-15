@@ -10,7 +10,7 @@ import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
 @Component({
-  // Distinct from the `app-list` used by dashbord/collections/list; two components
+  // Distinct from the `app-list` used by dashboard/collections/list; two components
   // sharing a selector is ambiguous.
   selector: 'app-schema-collection-list',
   imports: [

@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
 import { AuthService, CurrentUser, Permission } from 'app/core/auth/auth.service';
+import { t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
@@ -174,6 +175,24 @@ describe('Accounts', () => {
     fixture.componentInstance.create();
 
     expect((stub.created[0] as { email: string | null }).email).toBe('ops@example.com');
+  });
+
+  // What it says it did has to name the account. It used `email`, which is optional and usually
+  // absent, so these read "Changed the administrator flag of ." and "Enabled ." - and the
+  // identifier an account is known by is its username.
+  it('names the account in what it says it did', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.setAdmin(stub.accounts[0], true);
+    expect(fresh.componentInstance.status()).toEqual(
+      t('accounts.adminChanged', { user: 'editor@example.com' }),
+    );
+
+    fresh.componentInstance.setActive(stub.accounts[0], false);
+    expect(fresh.componentInstance.status()).toEqual(
+      t('accounts.deactivated', { user: 'editor@example.com' }),
+    );
   });
 
   it('disables an account rather than deleting it', () => {

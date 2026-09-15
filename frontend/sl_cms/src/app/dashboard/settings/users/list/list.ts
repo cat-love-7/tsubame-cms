@@ -215,7 +215,7 @@ export class List {
       })
       .subscribe({
         next: () => {
-          this.status.set(t('accounts.resourcesSaved', { user: user.email }));
+          this.status.set(t('accounts.resourcesSaved', { user: user.username }));
           this.editingResources.set(null);
           this.load();
         },
@@ -264,7 +264,7 @@ export class List {
     this.change(
       user,
       { permission: permissionFor(role) },
-      t('accounts.roleChanged', { user: user.email }),
+      t('accounts.roleChanged', { user: user.username }),
     );
   }
 
@@ -272,7 +272,7 @@ export class List {
     this.change(
       user,
       { is_admin: isAdmin },
-      t('accounts.adminChanged', { user: user.email }),
+      t('accounts.adminChanged', { user: user.username }),
     );
   }
 
@@ -280,7 +280,7 @@ export class List {
     this.change(
       user,
       { is_active: isActive },
-      t(isActive ? 'accounts.activated' : 'accounts.deactivated', { user: user.email }),
+      t(isActive ? 'accounts.activated' : 'accounts.deactivated', { user: user.username }),
     );
   }
 
@@ -294,34 +294,34 @@ export class List {
       },
       error: (e) => {
         // The server refuses changes that would leave nobody able to manage the CMS.
-        this.error.set(failure('accounts.changeFailed', e, { user: user.email }));
+        this.error.set(failure('accounts.changeFailed', e, { user: user.username }));
         this.load();
       },
     });
   }
 
   resetPassword(user: CurrentUser) {
-    const password = prompt(this.i18n.translate('accounts.newPasswordPrompt', { user: user.email }));
+    const password = prompt(this.i18n.translate('accounts.newPasswordPrompt', { user: user.username }));
     if (!password) {
       return;
     }
     this.error.set(null);
     this.status.set(null);
     this.users.resetPassword(user.id, password).subscribe({
-      next: () => this.status.set(t('accounts.passwordReset', { user: user.email })),
+      next: () => this.status.set(t('accounts.passwordReset', { user: user.username })),
       error: (e) => this.error.set(failure('accounts.resetPasswordFailed', e)),
     });
   }
 
   remove(user: CurrentUser) {
-    if (!confirm(this.i18n.translate('accounts.deleteConfirm', { user: user.email }))) {
+    if (!confirm(this.i18n.translate('accounts.deleteConfirm', { user: user.username }))) {
       return;
     }
     this.error.set(null);
     this.status.set(null);
     this.users.remove(user.id).subscribe({
       next: () => {
-        this.status.set(t('accounts.deleted', { user: user.email }));
+        this.status.set(t('accounts.deleted', { user: user.username }));
         this.load();
       },
       error: (e) => this.error.set(failure('accounts.deleteFailed', e)),
