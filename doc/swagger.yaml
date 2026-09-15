@@ -186,6 +186,14 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/FieldType"
+    SlugTypeSchema:
+      type: object
+      properties:
+        Slug:
+          type: object
+          properties:
+            generate_from:
+              type: string
     TextEnumTypeSchema:
       type: array
       items:
@@ -201,6 +209,7 @@ components:
             - Date
             - DateTime
             - Image
+        - $ref: "#/components/schemas/SlugTypeSchema"
         - $ref: "#/components/schemas/CompositeTypeSchema"
         - $ref: "#/components/schemas/ArrayTypeSchema"
         - $ref: "#/components/schemas/TextEnumTypeSchema"

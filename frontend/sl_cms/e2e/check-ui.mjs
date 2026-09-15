@@ -1127,6 +1127,22 @@ try {
   await summaryField.locator('input[name=maxLength]').fill('8');
   await summaryField.locator('input[name=minLength]').fill('5');
 
+  // A slug: the type owns the rule, and the schema says which field the editor may fill it from.
+  await page.click('button:has-text("Add field")');
+  const slugField = page.locator('.schema-field').nth(4);
+  await slugField.locator('input[name=fieldName]').fill('address');
+  await slugField.locator('mat-select[name=fieldType]').click();
+  await page.locator('mat-option', { hasText: 'Slug' }).click();
+  await slugField.locator('mat-select[name=slugGenerateFrom]').click();
+  await page.locator('mat-option', { hasText: 'title' }).click();
+  await page.keyboard.press('Escape');
+  check(
+    'Slug を画面で選び、生成元を指定できる',
+    ((await slugField.locator('mat-select[name=slugGenerateFrom]').textContent()) ?? '').includes(
+      'title',
+    ),
+  );
+
   // Half of the 12-column grid, from the presets rather than the number input.
   await textField.locator('.width-presets button', { hasText: '1/2' }).click();
 
@@ -1136,13 +1152,15 @@ try {
   const builtText = builtSchema.find((field) => field.name === 'title');
   const builtEnum = builtSchema.find((field) => field.name === 'state');
   const builtArray = builtSchema.find((field) => field.name === 'blocks');
+  const builtSlug = builtSchema.find((field) => field.name === 'address');
   check(
     '画面で組んだスキーマが保存される',
     builtText?.width === 6 &&
       builtText?.unique === true &&
       builtText?.field_type?.Text !== undefined &&
       builtEnum?.field_type?.TextEnum?.join() === 'published' &&
-      builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK,
+      builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK &&
+      builtSlug?.field_type?.Slug?.generate_from === 'title',
     JSON.stringify(builtSchema),
   );
 
@@ -1158,6 +1176,26 @@ try {
   await titleInput.waitFor({ timeout: 15000 });
   await titleInput.fill('first item');
   await page.locator('app-value-field input[name=summary]').fill('summary1');
+
+  // The slug is filled from the title when asked, and what it holds is already canonical.
+  const addressInput = page.locator('app-value-field input[name=address]');
+  await addressInput.waitFor({ timeout: 15000 });
+  check(
+    'Slug に生成ボタンが出る',
+    (await page.locator('button:has-text("Generate from title")').count()) === 1,
+  );
+  await page.click('button:has-text("Generate from title")');
+  // The click sets the value; the input follows on the next check of the view, so wait for it
+  // rather than reading it once.
+  const generatedSlug = await page
+    .waitForFunction(
+      () => document.querySelector('app-value-field input[name=address]')?.value === 'first-item',
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('タイトルから slug が生成される', generatedSlug, await addressInput.inputValue());
   await page.locator('app-value-field mat-select').click();
   await page.locator('mat-option', { hasText: 'published' }).click();
   // A multiple select keeps its panel open; the Save button is behind it until it closes.
@@ -1206,6 +1244,11 @@ try {
     'Enum フィールドをコンテンツで選べる',
     JSON.stringify(builtItem?.state) === '["published"]',
     JSON.stringify(builtItem?.state),
+  );
+  check(
+    '生成した slug が正規形で保存される',
+    builtItem?.address === 'first-item',
+    JSON.stringify(builtItem?.address),
   );
   // The definition's own fields come back filled in with their defaults, so compare what this
   // scenario set: which definition each element is, and what was typed into it.
@@ -1268,6 +1311,29 @@ try {
   const duplicateTitle = page.locator('app-value-field input').first();
   await duplicateTitle.waitFor({ timeout: 15000 });
 
+  // The slug is unique by being one, so a *differently spelled* slug of the same item is refused
+  // while the title (a different value) is not the problem.
+  await duplicateTitle.fill('a different title');
+  await page.locator('app-value-field input[name=address]').fill('First  Item');
+  await page.locator('app-value-field input[name=summary]').fill('summary1');
+  // This refusal is the point of the step.
+  expectConsoleError(/409 \(Conflict\)/);
+  await page.click('button:has-text("Save")');
+  const slugRefusal = await page
+    .waitForFunction(
+      () => document.querySelector('.error')?.textContent?.includes('address') ?? false,
+      null,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('綴り違いの slug は同じ住所として拒否される', slugRefusal);
+  check(
+    '拒否された slug の欄が強調される',
+    (await page.locator('.field-cell.problem').count()) === 1,
+    `${await page.locator('.field-cell.problem').count()} 件`,
+  );
+
   // The schema's limits are the content editor's business too, not just the server's: the input
   // carries them, the hint states them, and a value outside them stops the save before it is
   // sent (the minimum cannot be enforced by the browser, which is the case this covers).
@@ -1277,7 +1343,8 @@ try {
   // before they find out from a refusal.
   check(
     '一意なフィールドだと画面に出る',
-    (await page.locator('app-value-field .unique-mark').count()) === 1,
+    // The title, which asked to be unique, and the slug, which is unique by being one.
+    (await page.locator('app-value-field .unique-mark').count()) === 2,
     `${await page.locator('app-value-field .unique-mark').count()} 件`,
   );
   check('スキーマの文字数が入力欄に効く', (await summary.getAttribute('maxlength')) === '8', 'maxlength');
@@ -1297,6 +1364,8 @@ try {
 
   // A value inside the limits is accepted again, so only the duplicate is left to refuse.
   await summary.fill('summary1');
+  // ...and the slug collision above is cleared, so the refusal is about the title.
+  await page.locator('app-value-field input[name=address]').fill('');
   await duplicateTitle.fill('first item');
   // The refusal is the point of this step, so its 409 is expected.
   expectConsoleError(/409 \(Conflict\)/);
