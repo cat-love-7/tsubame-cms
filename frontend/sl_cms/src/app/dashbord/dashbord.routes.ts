@@ -47,6 +47,17 @@ const dashbordRoutes: Routes = [
         path: 'single-pages/:name',
         component: SinglePageEdit
     },
+    // The image library. Content rather than configuration: an editor uploads the images their
+    // content uses, so it lives with the documents. The old path still answers, because a
+    // bookmark is a link someone kept.
+    {
+        path: 'images',
+        component: ImageLibrary
+    },
+    {
+        path: 'settings/images',
+        redirectTo: 'images'
+    },
     // Schema editing.
     {
         path: 'settings/schemas/collections',
@@ -76,11 +87,6 @@ const dashbordRoutes: Routes = [
     {
         path: 'settings/composite-fields/:id/schema',
         component: CompositeFieldSchema
-    },
-    // The image library: everything uploaded, with upload and delete.
-    {
-        path: 'settings/images',
-        component: ImageLibrary
     },
     // Accounts, for administrators. The server enforces the same rule.
     {

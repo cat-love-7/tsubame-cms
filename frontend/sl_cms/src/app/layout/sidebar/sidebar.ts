@@ -80,6 +80,11 @@ export class Sidebar {
             children: singlePageLinks,
             link: '/single-pages',
           },
+          {
+            name: 'Images',
+            nameKey: 'content.images',
+            link: '/images',
+          },
         ],
       },
       {
@@ -104,11 +109,6 @@ export class Sidebar {
                 name: 'Composite fields',
                 nameKey: 'content.compositeFields',
                 link: '/settings/composite-fields',
-              },
-              {
-                name: 'Images',
-                nameKey: 'content.images',
-                link: '/settings/images',
               },
               ...(isAdmin
                 ? [

@@ -124,6 +124,27 @@ export class AuthService {
     const user = this.userSignal();
     return user !== null && (user.is_admin || user.permission.can_publish);
   });
+
+  /**
+   * Whether this account may add an image to the library.
+   *
+   * An image belongs to no collection or page, so there is no resource to judge: anyone who may
+   * edit *something* needs the images that something uses. Changing or deleting an image that
+   * other content may be using stays with {@link canEdit}, which is the account-wide permission -
+   * the server draws the same line.
+   */
+  readonly canUploadImages = computed(() => {
+    const user = this.userSignal();
+    if (user === null) {
+      return false;
+    }
+    return (
+      user.is_admin ||
+      user.permission.can_edit ||
+      Object.values(user.collection_permissions ?? {}).some((permission) => permission.can_edit) ||
+      Object.values(user.single_page_permissions ?? {}).some((permission) => permission.can_edit)
+    );
+  });
   readonly isAdmin = computed(() => this.userSignal()?.is_admin ?? false);
 
   token(): string | null {

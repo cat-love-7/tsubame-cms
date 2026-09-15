@@ -76,6 +76,8 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
       user: () => null,
       canEdit: () => canEdit,
       canPublish: () => canPublish,
+      // Uploading is open to anyone who may edit content; the rest of the library is not.
+      canUploadImages: () => canEdit,
       // The screens ask about the resource they are showing; these stubs answer the same way
       // everywhere.
       canEditIn: () => canEdit,
@@ -276,5 +278,37 @@ describe('Image library', () => {
       t('content.imageLinkNotCopied', { url: `${location.origin}/api/images/by-id/1` }),
     );
     expect(fresh.componentInstance.error()).toBeNull();
+  });
+
+  // An editor with a grant for one collection needs the images that collection uses, so the
+  // library offers the upload button - and not the buttons that change what is already there.
+  it('offers uploading to an editor of one collection, but not changing the library', async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [List],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ImagesService, useValue: stub },
+        {
+          provide: AuthService,
+          useValue: {
+            user: () => null,
+            canEdit: () => false,
+            canPublish: () => false,
+            canEditIn: () => false,
+            canPublishIn: () => false,
+            isAdmin: () => false,
+            canUploadImages: () => true,
+          },
+        },
+      ],
+    });
+    const fresh = TestBed.createComponent(List);
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    expect(fresh.nativeElement.textContent).toContain('Upload image');
+    expect(fresh.nativeElement.querySelector('.remove')).toBeNull();
   });
 });

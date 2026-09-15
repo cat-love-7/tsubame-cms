@@ -7,7 +7,7 @@
         | transloco: { count: library().length }
     }}
   </span>
-  @if (auth.canEdit()) {
+  @if (auth.canUploadImages()) {
     <button matButton (click)="uploadInput.click()" [disabled]="uploading()">
       <mat-icon>add_photo_alternate</mat-icon>
       {{ (uploading() ? 'content.uploading' : 'content.uploadImage') | transloco }}

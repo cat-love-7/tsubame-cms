@@ -445,7 +445,7 @@ try {
   );
 
   // -------------------------------------------------------------- the image library
-  await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
   const imagesBefore = await page.locator('.library .image').count();
 
   // Upload twice, so the image array has something to choose between. Each upload goes
@@ -701,7 +701,7 @@ try {
   // -------------------------------------------------------------- delete them again
   // Everything uploaded during this run goes, whether it came from the library screen or
   // straight into an array, so the next run starts from the same place.
-  await page.goto(`${BASE}/settings/images`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
   for (let guard = 0; guard < 10; guard += 1) {
     const count = await page.locator('.library .image').count();
     if (count <= imagesBefore) {
@@ -861,9 +861,15 @@ try {
       (await editor.page.locator('button[aria-label^="delete item"]').count()) === 0,
   );
   await expandSettings(editor.page);
+  // The image library lives with the documents, so that branch has to be open to see its link.
+  await editor.page
+    .locator('button[aria-label="toggle Documents"]')
+    .click({ force: true })
+    .catch(() => {});
+  await editor.page.waitForTimeout(200);
   check(
     '編集ロール: 画像は見えるがアカウント管理は出ない',
-    (await editor.page.locator('a[href="/settings/images"]').count()) === 1 &&
+    (await editor.page.locator('a[href="/images"]').count()) === 1 &&
       (await editor.page.locator('a[href="/settings/users"]').count()) === 0,
   );
 

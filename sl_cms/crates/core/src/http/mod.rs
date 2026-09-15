@@ -171,8 +171,17 @@ async fn require_auth<R: Storage>(
     // still be able to change its password.
     let is_self_service = request.uri().path().starts_with("/auth/me");
     let permission = permission_for(&user, resource_of(request.uri().path()));
+    // Asking for a place to upload an image is judged differently from every other write: an image
+    // belongs to no collection or page, so it is allowed to anyone who may edit something. Changing
+    // or deleting an image that other content may be using stays with the account-wide permission.
+    let is_image_upload = request.uri().path() == "/models/images/get_upload_url";
     if is_write && !is_self_service {
-        if !user.can_write(permission) {
+        let allowed = if is_image_upload {
+            user.can_edit_somewhere()
+        } else {
+            user.can_write(permission)
+        };
+        if !allowed {
             return Err(HttpError::Forbidden("edit permission required"));
         }
     } else if !is_write && !user.can_read(permission) {

@@ -127,6 +127,20 @@ impl User {
         self.is_admin || permission.can_view
     }
 
+    /// Whether this user may edit content anywhere.
+    ///
+    /// The image library is shared: an image is not owned by a collection or a page, so there is
+    /// no resource to judge against. Uploading one is therefore allowed to anyone who may edit
+    /// *something* - an editor with a grant for one collection needs the images that collection
+    /// uses - while changing or deleting an image that others may be using stays with the
+    /// account-wide permission (see `require_auth` in `http`).
+    pub fn can_edit_somewhere(&self) -> bool {
+        self.is_admin
+            || self.permission.can_edit
+            || self.collection_permissions.values().any(|p| p.can_edit)
+            || self.single_page_permissions.values().any(|p| p.can_edit)
+    }
+
     /// Whether this user may change whether content is published.
     ///
     /// Deliberately separate from [`User::can_write`]: drafts are kept apart from the

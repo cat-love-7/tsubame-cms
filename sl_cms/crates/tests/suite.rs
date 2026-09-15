@@ -2073,6 +2073,117 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// Uploading an image is shared work: an editor with a grant for one collection needs the images
+/// that collection uses, so uploading does not need the account-wide permission. Changing or
+/// deleting what is already there does, because other content may be using it.
+#[tokio::test]
+async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_everywhere() {
+    let app = test_app().await;
+    let admin = app.admin_token.clone();
+
+    // A collection exists for the grant to name.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&admin),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // An editor of that one collection: no account-wide permission at all.
+    let (status, created) = create_account(
+        &app,
+        json!({
+            "username": "collection-editor",
+            "password": "editor-password",
+            "is_admin": false,
+            "permission": { "can_view": true, "can_edit": false, "can_publish": false },
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let editor_id = created["id"].as_str().unwrap().to_string();
+    // The grant is set on the account, which is where the server keeps overrides.
+    let (status, body) = send(
+        &app.router,
+        Method::PATCH,
+        &format!("/auth/users/{editor_id}"),
+        Some(&admin),
+        Some(json!({
+            "collection_permissions": {
+                "blog": { "can_view": true, "can_edit": true, "can_publish": false }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = login(&app, "collection-editor", "editor-password").await;
+    assert_eq!(status, StatusCode::OK);
+    let editor = body["token"].as_str().unwrap().to_string();
+
+    // Uploading: allowed, because they may edit a collection that uses images.
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&editor),
+        Some(json!({ "original_filename": "from-editor.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{info}");
+    let id = info["id"].as_u64().unwrap();
+
+    // Renaming and deleting: refused, because the library is shared with everyone.
+    for (method, path, body) in [
+        (
+            Method::PUT,
+            format!("/models/images/{id}"),
+            Some(json!({ "original_filename": "theirs.png" })),
+        ),
+        (Method::DELETE, format!("/models/images/{id}"), None),
+        (
+            Method::POST,
+            format!("/models/images/{id}/replace"),
+            Some(json!({ "ext": "png" })),
+        ),
+    ] {
+        let (status, _) = send_raw(&app.router, method.clone(), &path, Some(&editor), body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
+    }
+
+    // A viewer may not even ask for an upload URL.
+    assert_eq!(
+        create_user(&app, VIEWER_EMAIL, VIEWER_PASSWORD, false).await,
+        StatusCode::CREATED
+    );
+    let (status, body) = login(&app, VIEWER_EMAIL, VIEWER_PASSWORD).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let viewer = body["token"].as_str().unwrap().to_string();
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&viewer),
+        Some(json!({ "original_filename": "nope.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // The account-wide editor may of course still upload.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&admin),
+        Some(json!({ "original_filename": "from-admin.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 /// Replacing an image keeps everything about its identity: the id, the name it is shown under, when
 /// it entered the library, and every reference to it. Only what it shows changes - and the bytes it
 /// used to show are gone, which is what stops a cached URL serving the old picture.

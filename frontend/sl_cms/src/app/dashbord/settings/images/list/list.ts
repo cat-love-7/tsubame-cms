@@ -29,7 +29,7 @@ export class List {
   private images = inject(ImagesService);
   private i18n = inject(TranslocoService);
   private dates = inject(DateTimeFormat);
-  /** Uploading and deleting images is an editing action. */
+  /** Uploading is open to anyone who may edit content; changing one is not. */
   public auth = inject(AuthService);
 
   public library = signal<ImageEntry[]>([]);
