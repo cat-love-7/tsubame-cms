@@ -19,7 +19,8 @@
     "composite_id_mismatch",
     "nested_arrays",
     "invalid_slug",
-    "draft_changed"
+    "draft_changed",
+    "image_not_trashed"
   ],
   "status": [
     "bad_request",

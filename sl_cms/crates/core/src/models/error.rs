@@ -30,6 +30,9 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "invalid_slug",
     // Publishing lost a race with a save: the working copy changed after it was read.
     "draft_changed",
+    // Deleting an image for good without putting it in the trash first: the second step of the
+    // two-step delete, asked for out of order.
+    "image_not_trashed",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -76,6 +79,8 @@ pub const ERROR_CODES: &[&str] = &[
     "invalid_slug",
     // Publishing lost a race with a save: the working copy changed after it was read.
     "draft_changed",
+    // Deleting an image for good without putting it in the trash first.
+    "image_not_trashed",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",

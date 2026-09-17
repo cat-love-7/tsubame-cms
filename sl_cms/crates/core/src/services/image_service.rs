@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::models::error::{map_internal_error, HttpError};
 use crate::models::image::{
-    is_safe_display_name, is_safe_file_name, is_safe_image_ext, ImageEntry, ImageId, NewImageInfo,
-    NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
+    is_safe_display_name, is_safe_file_name, is_safe_image_ext, Image, ImageEntry, ImageId,
+    NewImageInfo, NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
 };
 use crate::repositories::image_repository::{ImageRepository, Replacement};
 
@@ -75,8 +75,19 @@ impl<R: ImageRepository> ImageService<R> {
     ///
     /// Content that referenced the image keeps the id it stored, so the reference simply
     /// stops resolving; there is no reference check and nothing is rewritten.
+    ///
+    /// Deleting is the **second** step: the image has to be in the trash already. The screen only
+    /// offers it from there, and the API says the same thing rather than trusting the screen - a
+    /// library image deleted by a stray call is gone with nothing to undo it. Moving it to the
+    /// trash first is one more call, and it is what makes that undo possible.
     pub async fn purge_image(&self, id: ImageId) -> Result<(), HttpError> {
-        self.require_image(&id).await?;
+        let image = self.require_image(&id).await?;
+        if image.deleted_at.is_none() {
+            return Err(HttpError::Conflict(
+                "the image is in the library: put it in the trash before deleting it for good",
+            )
+            .with_code("image_not_trashed"));
+        }
         self.repository
             .delete_image(&id)
             .await.map_err(map_internal_error)
@@ -95,20 +106,14 @@ impl<R: ImageRepository> ImageService<R> {
             .map_err(map_internal_error)
     }
 
-    async fn require_image(&self, id: &ImageId) -> Result<(), HttpError> {
-        if self
-            .repository
+    async fn require_image(&self, id: &ImageId) -> Result<Image, HttpError> {
+        self.repository
             .get_image(id)
             .await
             .map_err(map_internal_error)?
-            .is_none()
-        {
-            return Err(HttpError::NotFound(&format!(
-                "Image with id '{}' does not exist",
-                id
-            )));
-        }
-        Ok(())
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!("Image with id '{}' does not exist", id))
+            })
     }
 
     /// Give an image another display name.

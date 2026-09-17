@@ -2211,6 +2211,22 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, listed) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
     let path = listed[0]["url"].as_str().unwrap().to_string();
 
+    // Deleting is the *second* step of the two-step delete: from the library it is refused, and
+    // the image is still there. The screen only offers it from the trash; the API says the same,
+    // because a library image deleted by a stray call is gone with nothing to undo it.
+    let (status, body) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "image_not_trashed");
+    let (_, library) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(library[0]["id"], id, "a refused delete must not delete anything");
+
     // Trash it: out of the library, and in the trash with the time it went there.
     let (status, _) = send_raw(
         &app.router,
