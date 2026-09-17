@@ -14,6 +14,12 @@ pub struct Image {
     pub original_filename: String,
     pub url: String,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
+    /// When the image was moved to the trash, if it is there.
+    ///
+    /// Trashing is not deleting: the record and the bytes stay, so content that references the
+    /// image keeps resolving and the operator can change their mind. Purging is what removes both.
+    #[serde(default)]
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// One entry in the image library: the metadata the admin screen lists.
@@ -23,6 +29,9 @@ pub struct ImageEntry {
     pub url: String,
     pub original_filename: String,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
+    /// When it was moved to the trash, which is how the two lists are told apart.
+    #[serde(default)]
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl ImageEntry {
@@ -33,6 +42,7 @@ impl ImageEntry {
             url: image.url,
             original_filename: image.original_filename,
             uploaded_at: image.uploaded_at,
+            deleted_at: image.deleted_at,
         }
     }
 }

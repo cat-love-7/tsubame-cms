@@ -26,6 +26,9 @@ struct ImageData {
     original_filename: String,
     file_name: String,
     uploaded_at: chrono::DateTime<chrono::Utc>,
+    /// Absent in records written before the trash existed, which is why it has a default.
+    #[serde(default)]
+    deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl AwsRepository {
@@ -35,6 +38,7 @@ impl AwsRepository {
             original_filename: data.original_filename.clone(),
             url: inner.settings.image_url(&data.file_name),
             uploaded_at: data.uploaded_at,
+            deleted_at: data.deleted_at,
         }
     }
 }
@@ -84,6 +88,8 @@ impl ImageRepository for AwsRepository {
             original_filename: upload_info.original_filename.clone(),
             file_name: file_name.clone(),
             uploaded_at: chrono::Utc::now(),
+            // A fresh upload is in the library, not the trash.
+            deleted_at: None,
         };
         write(
             &inner,
@@ -171,6 +177,8 @@ impl ImageRepository for AwsRepository {
             // The first upload is when the image entered the library; replacing what it shows
             // does not change that, just as re-publishing does not change `published_at`.
             uploaded_at: previous.uploaded_at,
+            // Replacing the bytes does not take an image out of the trash, or put it back in.
+            deleted_at: previous.deleted_at,
         };
         write(
             &inner,
@@ -203,6 +211,27 @@ impl ImageRepository for AwsRepository {
             None => return Err("Image not found".into()),
         };
         data.original_filename = original_filename.to_string();
+        write(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(raw),
+            &AwsRepository::encode(&data)?,
+        )
+        .await
+    }
+
+    async fn set_image_deleted_at(
+        &self,
+        id: &ImageID,
+        at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let raw = **id;
+        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
+            None => return Err("Image not found".into()),
+        };
+        data.deleted_at = at;
         write(
             &inner,
             key::IMAGE_INDEX,

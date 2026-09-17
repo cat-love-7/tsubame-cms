@@ -75,3 +75,16 @@
     justify-content: flex-end;
   }
 }
+
+/// The two lists behind one screen: the tab that is showing, and how much is in the trash.
+.toolbar button.selected {
+  background: var(--mat-sys-secondary-container);
+}
+
+.trash-count {
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--mat-sys-surface-variant);
+  font-variant-numeric: tabular-nums;
+}

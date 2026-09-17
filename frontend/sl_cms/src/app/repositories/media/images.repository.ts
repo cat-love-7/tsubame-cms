@@ -30,6 +30,8 @@ export interface ImageEntry {
   url: string;
   original_filename: string;
   uploaded_at: string;
+  /** When it was moved to the trash; absent while it is in the library. */
+  deleted_at?: string | null;
 }
 
 @Injectable({
@@ -92,12 +94,32 @@ export class ImageRepository {
   }
 
   /**
-   * Delete an image and its bytes.
+   * Delete an image and its bytes, for good.
    *
-   * Nothing checks whether content still references it: a reference keeps the id it stored
-   * and simply stops resolving.
+   * Only offered for an image already in the trash (see {@link trashImage}), because a reference
+   * keeps the id it stored and this is what makes it stop resolving.
    */
   deleteImage(id: number): Observable<void> {
     return this.http.delete<void>(`/api/models/images/${id}`);
+  }
+
+  /** The trash: images taken out of the library, most recently trashed first. */
+  listTrash(): Observable<ImageEntry[]> {
+    return this.http.get<ImageEntry[]>('/api/models/images/trash');
+  }
+
+  /**
+   * Take an image out of the library, keeping its bytes.
+   *
+   * Content that references it keeps resolving, so this is the undoable half of deleting: the
+   * other half is {@link deleteImage}.
+   */
+  trashImage(id: number): Observable<void> {
+    return this.http.post<void>(`/api/models/images/${id}/trash`, {});
+  }
+
+  /** Put a trashed image back in the library. */
+  restoreImage(id: number): Observable<void> {
+    return this.http.post<void>(`/api/models/images/${id}/restore`, {});
   }
 }

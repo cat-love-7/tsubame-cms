@@ -758,7 +758,61 @@ try {
       .catch(() => {});
   }
   const imagesAfterDelete = await page.locator('.library .image').count();
-  check('画像を削除できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
+  check('画像をゴミ箱へ移動できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
+
+  // Trash is the undoable half: the images are out of the library, and can be put back.
+  await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
+  await page.locator('button:has-text("Trash")').first().click();
+  await page.locator('.library .image').first().waitFor({ timeout: 10000 }).catch(() => {});
+  const trashedBefore = await page.locator('.library .image').count();
+  check('ゴミ箱に入れた画像が並ぶ', trashedBefore > 0, `${trashedBefore} 件`);
+  check(
+    'ゴミ箱の画像はライブラリに戻せる',
+    (await page.locator('button[aria-label$="back in the library"]').count()) === trashedBefore,
+  );
+
+  await page.locator('button[aria-label$="back in the library"]').first().click();
+  await page
+    .waitForFunction(
+      (expected) => document.querySelectorAll('.library .image').length === expected,
+      trashedBefore - 1,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  check(
+    'ゴミ箱から戻すとゴミ箱が 1 つ減る',
+    (await page.locator('.library .image').count()) === trashedBefore - 1,
+    `${await page.locator('.library .image').count()} 件`,
+  );
+
+  // The restored image is back in the library, and can be taken out again.
+  await page.locator('button:has-text("Library")').first().click();
+  await page.waitForTimeout(300);
+  check('戻した画像はライブラリにある', (await page.locator('.library .image').count()) > 0);
+  await page.locator('.library .image .remove').first().click();
+  await page.waitForTimeout(300);
+  await page.locator('button:has-text("Trash")').first().click();
+  await page.waitForTimeout(300);
+  check(
+    'もう一度ゴミ箱へ入れられる',
+    (await page.locator('.library .image').count()) === trashedBefore,
+    `${await page.locator('.library .image').count()} 件`,
+  );
+
+  // Deleting for good, from the trash, is the half that cannot be undone.
+  await page.locator('.library .image .remove').first().click();
+  await page
+    .waitForFunction(
+      (expected) => document.querySelectorAll('.library .image').length === expected,
+      trashedBefore - 1,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  check(
+    '完全削除でゴミ箱から消える',
+    (await page.locator('.library .image').count()) === trashedBefore - 1,
+    `${await page.locator('.library .image').count()} 件`,
+  );
 
   // ------------------------------------------------- a link shows unpublished work to a guest
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });

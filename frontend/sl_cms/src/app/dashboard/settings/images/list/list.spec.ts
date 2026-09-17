@@ -25,7 +25,35 @@ class StubImagesService {
   /** The renames the screen asked for, in order. */
   public renamed: { id: number; name: string }[] = [];
 
+  /** What has been taken out of the library. */
+  public trashed: ImageEntry[] = [];
+  public trashedIds: number[] = [];
+  public restored: number[] = [];
+
   listImages = () => of(this.library);
+  listTrash = () => of(this.trashed);
+
+  trashImage = (id: number) => {
+    this.trashedIds.push(id);
+    const moving = this.library.filter((image) => image.id === id);
+    this.library = this.library.filter((image) => image.id !== id);
+    this.trashed = [
+      ...this.trashed,
+      ...moving.map((image) => ({ ...image, deleted_at: '2024-06-01T00:00:00Z' })),
+    ];
+    return of(void 0);
+  };
+
+  restoreImage = (id: number) => {
+    this.restored.push(id);
+    const moving = this.trashed.filter((image) => image.id === id);
+    this.trashed = this.trashed.filter((image) => image.id !== id);
+    this.library = [
+      ...this.library,
+      ...moving.map((image) => ({ ...image, deleted_at: null })),
+    ];
+    return of(void 0);
+  };
 
   uploadImage = (file: File) => {
     this.uploaded.push(file.name);
@@ -57,7 +85,9 @@ class StubImagesService {
 
   deleteImage = (id: number) => {
     this.deleted.push(id);
+    // For good: out of the library and out of the trash.
     this.library = this.library.filter((image) => image.id !== id);
+    this.trashed = this.trashed.filter((image) => image.id !== id);
     return of(void 0);
   };
 }
@@ -127,17 +157,76 @@ describe('Image library', () => {
     expect(fresh.nativeElement.querySelector('.note')?.textContent).toContain('No images yet');
   });
 
-  it('deletes an image after confirming', () => {
+  // Taking an image out of the library is the undoable half of deleting, so it is what the
+  // library offers; only the trash destroys.
+  it('moves an image to the trash, where it can be put back', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+
+    component.trash(stub.library[0]);
+    fresh.detectChanges();
+    expect(stub.trashedIds).toEqual([1]);
+    expect(component.library()).toEqual([]);
+    expect(component.trashed().map((image) => image.id)).toEqual([1]);
+
+    // The trash is a view of the same screen, with the two acts that belong to it.
+    component.showLibrary(true);
+    fresh.detectChanges();
+    expect(fresh.nativeElement.querySelector('.library .image')).toBeTruthy();
+    expect(
+      fresh.nativeElement.querySelector('button[aria-label="put image 1 back in the library"]'),
+    ).toBeTruthy();
+
+    component.restore(stub.trashed[0]);
+    fresh.detectChanges();
+    expect(stub.restored).toEqual([1]);
+    expect(component.library().map((image) => image.id)).toEqual([1]);
+    expect(component.trashed()).toEqual([]);
+  });
+
+  it('leaves the image in the library when the trashing is declined', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.trash(stub.library[0]);
+
+    expect(stub.trashedIds).toEqual([]);
+    expect(fresh.componentInstance.library().map((image) => image.id)).toEqual([1]);
+  });
+
+  // The library's remove button takes an image to the trash; deleting for good lives in the trash
+  // view, so losing an image takes two deliberate acts.
+  it('moves an image to the trash from the library', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     fixture.detectChanges();
 
     (fixture.nativeElement.querySelector('.remove') as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    expect(stub.deleted).toEqual([1]);
-    // The list is reloaded, so the deleted image is gone from the grid.
+    expect(stub.trashedIds).toEqual([1]);
+    expect(stub.deleted).toEqual([]);
+    // The list is reloaded, so the trashed image is gone from the grid.
     expect(images().length).toBe(0);
     expect(fixture.componentInstance.error()).toBeNull();
+  });
+
+  it('deletes a trashed image for good, after confirming', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+    component.trash(stub.library[0]);
+    component.showLibrary(true);
+    fresh.detectChanges();
+
+    (fresh.nativeElement.querySelector('.remove') as HTMLButtonElement).click();
+    fresh.detectChanges();
+
+    expect(stub.deleted).toEqual([1]);
+    expect(component.trashed()).toEqual([]);
   });
 
   it('leaves the image alone when the confirmation is declined', () => {

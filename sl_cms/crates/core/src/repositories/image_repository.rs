@@ -15,6 +15,17 @@ pub trait ImageRepository: Send + Sync {
     fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageID, Image)>, BoxError>> + Send;
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// Move an image in or out of the trash.
+    ///
+    /// `Some(at)` is the trash and `None` is the library; the bytes and the file name are not
+    /// touched either way, so content that references the image keeps resolving until it is
+    /// deleted for good.
+    fn set_image_deleted_at(
+        &self,
+        id: &ImageID,
+        at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Give an image another display name, keeping its id and its bytes.
     fn rename_image(
         &self,

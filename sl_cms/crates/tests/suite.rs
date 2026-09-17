@@ -2175,6 +2175,114 @@ async fn publishing_a_page_working_copy_that_changed_under_it_is_refused() {
         .is_published());
 }
 
+/// The trash: taking an image out of the library is undoable, and only deleting it for good
+/// removes the record and the bytes. Content that uses a trashed image keeps resolving, which is
+/// what makes the difference worth having.
+#[tokio::test]
+async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
+    if !Backend::SERVES_IMAGE_BYTES {
+        eprintln!("skipped: this backend hands the browser a signed URL instead of serving bytes");
+        return;
+    }
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "kept.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = info["id"].as_u64().expect("the image id");
+    let upload_url = info["upload_url"].as_str().unwrap().to_string();
+    let request = Request::builder()
+        .method(Method::PUT)
+        .uri(&upload_url)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from("PNG-BYTES"))
+        .unwrap();
+    assert_eq!(
+        app.router.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::CREATED
+    );
+    let (_, listed) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    let path = listed[0]["url"].as_str().unwrap().to_string();
+
+    // Trash it: out of the library, and in the trash with the time it went there.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/trash"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, library) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(library, json!([]), "a trashed image is not offered to editors");
+    let (_, trash) = send(&app.router, Method::GET, "/models/images/trash", Some(&token), None).await;
+    assert_eq!(trash[0]["id"], id);
+    assert!(trash[0]["deleted_at"].is_string());
+
+    // The bytes are still there, and so is the durable link content would be using.
+    let (status, bytes) = send_raw(&app.router, Method::GET, &path, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"PNG-BYTES");
+
+    // Trashing twice is not an error: the caller asked for a state.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/trash"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Put it back.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/restore"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, library) = send(&app.router, Method::GET, "/models/images", Some(&token), None).await;
+    assert_eq!(library[0]["id"], id);
+    let (_, trash) = send(&app.router, Method::GET, "/models/images/trash", Some(&token), None).await;
+    assert_eq!(trash, json!([]));
+
+    // Deleting for good takes the record and the bytes.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/trash"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/images/{id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, trash) = send(&app.router, Method::GET, "/models/images/trash", Some(&token), None).await;
+    assert_eq!(trash, json!([]), "deleting for good empties the trash entry");
+    let (status, _) = send_raw(&app.router, Method::GET, &path, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the bytes went with it");
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.

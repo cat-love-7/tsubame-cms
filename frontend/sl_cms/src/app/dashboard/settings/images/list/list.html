@@ -3,11 +3,21 @@
   <span class="spacer"></span>
   <span class="count">
     {{
-      (library().length === 1 ? 'content.imageCountOne' : 'content.imageCountOther')
-        | transloco: { count: library().length }
+      (visible().length === 1 ? 'content.imageCountOne' : 'content.imageCountOther')
+        | transloco: { count: visible().length }
     }}
   </span>
-  @if (auth.canUploadImages()) {
+  <!-- Two lists, one screen: the library, and what has been taken out of it. -->
+  <button matButton [class.selected]="!showTrash()" (click)="showLibrary(false)">
+    {{ 'content.imageLibraryTab' | transloco }}
+  </button>
+  <button matButton [class.selected]="showTrash()" (click)="showLibrary(true)">
+    {{ 'content.trash' | transloco }}
+    @if (trashed().length > 0) {
+      <span class="trash-count">{{ trashed().length }}</span>
+    }
+  </button>
+  @if (!showTrash() && auth.canUploadImages()) {
     <button matButton (click)="uploadInput.click()" [disabled]="uploading()">
       <mat-icon>add_photo_alternate</mat-icon>
       {{ (uploading() ? 'content.uploading' : 'content.uploadImage') | transloco }}
@@ -25,12 +35,18 @@
   <p class="notice" role="status">{{ happened | message }}</p>
 }
 
-@if (library().length === 0) {
-  <p class="note">{{ 'content.imagesEmptyHint' | transloco }}</p>
+@if (showTrash()) {
+  <p class="note">{{ 'content.trashHint' | transloco }}</p>
+}
+
+@if (visible().length === 0) {
+  <p class="note">
+    {{ (showTrash() ? 'content.trashEmpty' : 'content.imagesEmptyHint') | transloco }}
+  </p>
 }
 
 <div class="library">
-  @for (image of library(); track image.id) {
+  @for (image of visible(); track image.id) {
     <figure class="image">
       <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
       <figcaption>
@@ -68,11 +84,38 @@
         } @else {
           <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
           <span class="meta">
-            {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
+            @if (showTrash()) {
+              {{ 'content.imageTrashedMeta' | transloco: { id: image.id, trashed: trashedAt(image) } }}
+            } @else {
+              {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
+            }
           </span>
         }
       </figcaption>
-      @if (auth.canEdit() && renaming() !== image.id) {
+      @if (auth.canEdit() && renaming() !== image.id && showTrash()) {
+        <!-- Two deliberate acts to lose an image: it is already out of the library, and this is
+             the half that cannot be undone. -->
+        <span class="image-actions">
+          <button
+            matIconButton
+            (click)="restore(image)"
+            [attr.aria-label]="'labels.restoreImage' | transloco: { id: image.id }"
+            [matTooltip]="'labels.restoreImage' | transloco: { id: image.id }"
+          >
+            <mat-icon>restore_from_trash</mat-icon>
+          </button>
+          <button
+            matIconButton
+            class="remove"
+            (click)="delete(image)"
+            [attr.aria-label]="'labels.deleteImagePermanently' | transloco: { id: image.id }"
+            [matTooltip]="'labels.deleteImagePermanently' | transloco: { id: image.id }"
+          >
+            <mat-icon>delete_forever</mat-icon>
+          </button>
+        </span>
+      }
+      @if (auth.canEdit() && renaming() !== image.id && !showTrash()) {
         <span class="image-actions">
           <button
             matIconButton
@@ -111,9 +154,9 @@
           <button
             matIconButton
             class="remove"
-            (click)="delete(image)"
-            [attr.aria-label]="'labels.deleteImage' | transloco: { id: image.id }"
-            [matTooltip]="'labels.deleteImage' | transloco: { id: image.id }"
+            (click)="trash(image)"
+            [attr.aria-label]="'labels.moveImageToTrash' | transloco: { id: image.id }"
+            [matTooltip]="'labels.moveImageToTrash' | transloco: { id: image.id }"
           >
             <mat-icon>delete</mat-icon>
           </button>

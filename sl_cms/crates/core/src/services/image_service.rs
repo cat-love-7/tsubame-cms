@@ -16,8 +16,24 @@ impl<R: ImageRepository> ImageService<R> {
         ImageService { repository }
     }
 
-    /// The image library, newest first.
+    /// The image library: what an editor can pick from, newest first.
+    ///
+    /// Trashed images are not in it (see [`ImageService::list_trash`]), but they still resolve for
+    /// content that references them, so an item keeps its picture while the operator decides.
     pub async fn list_images(&self) -> Result<Vec<ImageEntry>, HttpError> {
+        Ok(self.entries(false).await?)
+    }
+
+    /// The trash: images taken out of the library, most recently trashed first.
+    pub async fn list_trash(&self) -> Result<Vec<ImageEntry>, HttpError> {
+        let mut trashed = self.entries(true).await?;
+        // Most recently trashed first, which is the one an operator wants back.
+        trashed.sort_by_key(|entry| std::cmp::Reverse(entry.deleted_at));
+        Ok(trashed)
+    }
+
+    /// The library or the trash, by whether the record carries a deletion time.
+    async fn entries(&self, trashed: bool) -> Result<Vec<ImageEntry>, HttpError> {
         let mut images = self
             .repository
             .get_all_images()
@@ -28,19 +44,50 @@ impl<R: ImageRepository> ImageService<R> {
 
         Ok(images
             .into_iter()
+            .filter(|(_, image)| image.deleted_at.is_some() == trashed)
             .map(|(id, image)| ImageEntry::from_image(id, image))
             .collect())
     }
 
-    /// Delete an image and the bytes stored under it.
+    /// Move an image to the trash, where it stays until it is put back or deleted for good.
+    ///
+    /// Nothing is rewritten: content that references the image keeps the id it stored and keeps
+    /// resolving, which is what makes this undoable. Already being in the trash is not an error -
+    /// the caller asked for a state, and that state is what it gets.
+    pub async fn trash_image(&self, id: ImageID) -> Result<(), HttpError> {
+        self.require_image(&id).await?;
+        self.repository
+            .set_image_deleted_at(&id, Some(chrono::Utc::now()))
+            .await
+            .map_err(map_internal_error)
+    }
+
+    /// Put an image back in the library.
+    pub async fn restore_image(&self, id: ImageID) -> Result<(), HttpError> {
+        self.require_image(&id).await?;
+        self.repository
+            .set_image_deleted_at(&id, None)
+            .await
+            .map_err(map_internal_error)
+    }
+
+    /// Delete an image and the bytes stored under it, for good.
     ///
     /// Content that referenced the image keeps the id it stored, so the reference simply
     /// stops resolving; there is no reference check and nothing is rewritten.
-    pub async fn delete_image(&self, id: ImageID) -> Result<(), HttpError> {
+    pub async fn purge_image(&self, id: ImageID) -> Result<(), HttpError> {
+        self.require_image(&id).await?;
+        self.repository
+            .delete_image(&id)
+            .await.map_err(map_internal_error)
+    }
+
+    async fn require_image(&self, id: &ImageID) -> Result<(), HttpError> {
         if self
             .repository
-            .get_image(&id)
-            .await.map_err(map_internal_error)?
+            .get_image(id)
+            .await
+            .map_err(map_internal_error)?
             .is_none()
         {
             return Err(HttpError::NotFound(&format!(
@@ -48,9 +95,7 @@ impl<R: ImageRepository> ImageService<R> {
                 id
             )));
         }
-        self.repository
-            .delete_image(&id)
-            .await.map_err(map_internal_error)
+        Ok(())
     }
 
     /// Give an image another display name.

@@ -1575,6 +1575,7 @@ mod tests {
                 original_filename: format!("image_{}.jpg", id),
                 url: format!("/images/{}", id),
                 uploaded_at: chrono::Utc::now(),
+                deleted_at: None,
             }))
         }
         async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -1603,6 +1604,13 @@ mod tests {
             Ok(())
         }
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
+        async fn set_image_deleted_at(
+            &self,
+            _id: &ImageID,
+            _at: Option<chrono::DateTime<chrono::Utc>>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
     }

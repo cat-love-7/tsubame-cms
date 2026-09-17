@@ -16,6 +16,9 @@ pub struct ImageData {
     pub original_filename: String,
     pub file_name: String,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
+    /// Absent in records written before the trash existed, which is why it has a default.
+    #[serde(default)]
+    pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Repository {
@@ -58,6 +61,7 @@ impl ImageRepository for Repository {
                 original_filename: image.original_filename,
                 url: format!("/images/{}", image.file_name),
                 uploaded_at: image.uploaded_at,
+                deleted_at: image.deleted_at,
             })),
             _ => Ok(None),
         }
@@ -82,6 +86,7 @@ impl ImageRepository for Repository {
                     original_filename: image_data.original_filename,
                     url: format!("/images/{}", image_data.file_name),
                     uploaded_at: image_data.uploaded_at,
+                    deleted_at: image_data.deleted_at,
                 };
                 images.push((id, image));
             }
@@ -112,6 +117,8 @@ impl ImageRepository for Repository {
             original_filename: upload_info.original_filename.clone(),
             file_name: save_file_name.clone(),
             uploaded_at: chrono::Utc::now(),
+            // A fresh upload is in the library, not the trash.
+            deleted_at: None,
         };
         store.put(&mut writer, new_id.to_le_bytes(), &Value::Str(&serde_json::to_string(&image_data)?))?;
         self.counter_store.put(&mut writer, "image", &Value::U64(new_id))?;
@@ -193,6 +200,8 @@ impl ImageRepository for Repository {
             // The first upload is when the image entered the library; replacing what it shows
             // does not change that, just as re-publishing does not change `published_at`.
             uploaded_at: previous.uploaded_at,
+            // Replacing the bytes does not take an image out of the trash, or put it back in.
+            deleted_at: previous.deleted_at,
         };
         let mut writer = env.write()?;
         store.put(
@@ -209,6 +218,30 @@ impl ImageRepository for Repository {
                 fs::remove_file(path).ok();
             }
         }
+        Ok(())
+    }
+
+    async fn set_image_deleted_at(
+        &self,
+        id: &ImageID,
+        at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<(), BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single("image", StoreOptions::create())?;
+        let reader = env.read()?;
+        let mut data = match store.get(&reader, id.to_le_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            _ => return Err("Image not found".into()),
+        };
+        data.deleted_at = at;
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&data)?),
+        )?;
+        writer.commit()?;
         Ok(())
     }
 

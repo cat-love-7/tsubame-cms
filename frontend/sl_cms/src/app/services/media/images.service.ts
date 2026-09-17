@@ -62,7 +62,23 @@ export class ImagesService {
     return this.images.renameImage(id, originalFilename);
   }
 
+  /** Delete an image and its bytes, for good. */
   deleteImage(id: number): Observable<void> {
     return this.images.deleteImage(id);
+  }
+
+  /** The trash: images taken out of the library, most recently trashed first. */
+  listTrash(): Observable<ImageEntry[]> {
+    return this.images.listTrash();
+  }
+
+  /** Take an image out of the library, keeping its bytes and its references working. */
+  trashImage(id: number): Observable<void> {
+    return this.images.trashImage(id);
+  }
+
+  /** Put a trashed image back in the library. */
+  restoreImage(id: number): Observable<void> {
+    return this.images.restoreImage(id);
   }
 }

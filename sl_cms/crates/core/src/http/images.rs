@@ -17,16 +17,22 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
     // `{id}`, so both can live here.
     Router::new()
         .route("/models/images", get(list_images::<R>))
+        .route("/models/images/trash", get(list_trash::<R>))
         .route(
             "/models/images/{id}",
             // The image's record can be changed: its display name, and which uploaded bytes it
-            // serves once a replacement upload has landed.
+            // serves once a replacement upload has landed. `DELETE` is the permanent one: the
+            // trash has its own route, so neither has to guess what the other meant.
             put(update_image::<R>).delete(delete_image::<R>),
         )
         .route(
             "/models/images/{id}/replace",
             post(request_replacement::<R>),
         )
+        // Trashing and restoring are the two halves of one act, so they are both here rather than
+        // one being a `DELETE` that does not delete.
+        .route("/models/images/{id}/trash", post(trash_image::<R>))
+        .route("/models/images/{id}/restore", post(restore_image::<R>))
         .route(
             "/models/images/get_upload_url",
             post(generate_image_upload_url::<R>),
@@ -78,12 +84,37 @@ async fn request_replacement<R: Storage>(
     ))
 }
 
-/// Delete an image, bytes included. Answers with an empty body like the other mutations.
+/// The trash: images taken out of the library, most recently trashed first.
+async fn list_trash<R: Storage>(
+    State(module): State<AppState<R>>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(module.image_service.list_trash().await?))
+}
+
+/// Move an image to the trash, where content that uses it still resolves.
+async fn trash_image<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+) -> Result<impl IntoResponse, HttpError> {
+    module.image_service.trash_image(ImageID::from_u64(id)).await?;
+    Ok(StatusCode::OK)
+}
+
+/// Put a trashed image back in the library.
+async fn restore_image<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+) -> Result<impl IntoResponse, HttpError> {
+    module.image_service.restore_image(ImageID::from_u64(id)).await?;
+    Ok(StatusCode::OK)
+}
+
+/// Delete an image, bytes included, for good. Answers with an empty body like the other mutations.
 async fn delete_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.image_service.delete_image(ImageID::from_u64(id)).await?;
+    module.image_service.purge_image(ImageID::from_u64(id)).await?;
     Ok(StatusCode::OK)
 }
 

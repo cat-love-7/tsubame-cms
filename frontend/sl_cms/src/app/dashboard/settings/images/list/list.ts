@@ -34,6 +34,10 @@ export class List {
   public auth = inject(AuthService);
 
   public library = signal<ImageEntry[]>([]);
+  /** What has been taken out of the library, and is waiting to be put back or deleted for good. */
+  public trashed = signal<ImageEntry[]>([]);
+  /** Whether the screen is showing the trash. */
+  public showTrash = signal(false);
   public error = signal<Message | null>(null);
   public uploading = signal(false);
   /** The image whose name is being edited, and what has been typed so far. */
@@ -48,12 +52,30 @@ export class List {
     this.load();
   }
 
+  /**
+   * Both lists, so the toggle is instant and the trash button can say how much is in it.
+   *
+   * They are two small requests against the same store; a screen that had to fetch on every
+   * switch would make the simple act of looking in the trash feel like a page load.
+   */
   private load() {
     this.images.listImages().subscribe({
       next: (images) => this.library.set(images),
       error: (e) => this.error.set(failure('content.failedToLoadImages', e)),
     });
+    this.images.listTrash().subscribe({
+      next: (images) => this.trashed.set(images),
+      error: (e) => this.error.set(failure('content.failedToLoadImages', e)),
+    });
   }
+
+  /** Look at the library, or at what has been taken out of it. */
+  showLibrary(showTrash: boolean) {
+    this.showTrash.set(showTrash);
+  }
+
+  /** The list the screen is showing. */
+  public visible = () => (this.showTrash() ? this.trashed() : this.library());
 
   onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
@@ -80,6 +102,11 @@ export class List {
 
   uploadedAt(image: ImageEntry): string {
     return this.dates.format(image.uploaded_at);
+  }
+
+  /** When a trashed image was taken out of the library. */
+  trashedAt(image: ImageEntry): string {
+    return image.deleted_at ? this.dates.format(image.deleted_at) : '';
   }
 
   /** Start editing a name: the id is the only thing the input needs to know. */
@@ -167,6 +194,45 @@ export class List {
     });
   }
 
+  /**
+   * Take an image out of the library.
+   *
+   * The undoable half of deleting: the bytes stay, and content that references the image keeps
+   * resolving, so this is the one to reach for when something may still be using it.
+   */
+  trash(image: ImageEntry) {
+    if (
+      !confirm(
+        this.i18n.translate('content.moveToTrashConfirm', { name: image.original_filename }),
+      )
+    ) {
+      return;
+    }
+    this.images.trashImage(image.id).subscribe({
+      next: () => {
+        this.error.set(null);
+        this.load();
+      },
+      error: (e) => this.error.set(failure('content.trashFailed', e)),
+    });
+  }
+
+  /** Put a trashed image back in the library. */
+  restore(image: ImageEntry) {
+    this.images.restoreImage(image.id).subscribe({
+      next: () => {
+        this.error.set(null);
+        this.load();
+      },
+      error: (e) => this.error.set(failure('content.restoreFailed', e)),
+    });
+  }
+
+  /**
+   * Delete an image and its bytes for good, which is the half that cannot be undone.
+   *
+   * Only offered for an image already in the trash, so it takes two deliberate acts to lose one.
+   */
   delete(image: ImageEntry) {
     if (
       !confirm(this.i18n.translate('content.deleteImageConfirm', { name: image.original_filename }))
