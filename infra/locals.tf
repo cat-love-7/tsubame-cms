@@ -21,10 +21,11 @@ locals {
 
   # What the function needs to find its way around. Kept in one place because the code reads
   # exactly these names (crates/aws/src/settings.rs).
+  # `AWS_REGION` is not set here: the Lambda runtime provides it, the key is reserved, and a
+  # function configuration that names it is rejected.
   function_environment = merge(
     {
       RUST_LOG                  = "info"
-      AWS_REGION                = var.region
       DYNAMODB_TABLE            = aws_dynamodb_table.cms.name
       S3_BUCKET                 = aws_s3_bucket.images.bucket
       COGNITO_USER_POOL_ID      = aws_cognito_user_pool.cms.id

@@ -102,3 +102,14 @@ resource "aws_lambda_permission" "public_url" {
   principal              = "*"
   function_url_auth_type = "NONE"
 }
+
+# A public function URL needs *both* actions: without this one, every request is answered with
+# 403 before the function runs, even though the URL itself is public. `invoked_via_function_url`
+# keeps the grant to the URL, so it is not also a permission to call the function directly.
+resource "aws_lambda_permission" "public_url_invoke" {
+  statement_id             = "AllowPublicFunctionUrlInvoke"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.cms.function_name
+  principal                = "*"
+  invoked_via_function_url = true
+}
