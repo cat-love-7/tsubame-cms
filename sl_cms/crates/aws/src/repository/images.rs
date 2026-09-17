@@ -147,6 +147,13 @@ impl ImageRepository for AwsRepository {
         })
     }
 
+    /// Whether the bytes an upload was signed for are actually in the bucket.
+    ///
+    /// HeadObject needs `s3:GetObject`, and **S3 answers 403 rather than 404 for a key that is not
+    /// there unless the caller may also list the bucket** - it will not reveal whether an object
+    /// exists otherwise. Both permissions are therefore in the deployment's policy
+    /// (`infra/lambda.tf`): without `s3:ListBucket` an upload that never arrived looks like a
+    /// failure of the CMS instead of the "not there yet" this reads a 404 as.
     async fn image_bytes_exist(&self, file_name: &str) -> Result<bool, BoxError> {
         let inner = self.inner.clone();
         match inner

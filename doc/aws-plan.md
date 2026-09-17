@@ -473,6 +473,18 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 エミュレータ向けの資格情報は `emulator_credentials` に閉じており、`cargo test -p sl-cms-aws` の
 `credential_tests` が「上書きが無ければ使わない」「上書きがあればトークンごと使う」を固定する。
 
+### S3 の「無い」は権限しだいで 403 になる(2026-09 修正)
+
+`ImageService::replace_image` は差し替えの適用前に **HeadObject** で実体の存在を確かめ、404 を
+「まだアップロードされていない」として拒否する。しかし **`s3:ListBucket` が無いと、S3 は存在
+しないキーにも 403 を返す**(存在を明かさないため)ので、その拒否に到達せず 500 になっていた。
+さらに実行ロールには `s3:GetObject` が無く、**公開バケットポリシーの `s3:GetObject`(principal `*`)
+で偶然通っていた** — バケットを CloudFront の背後に置いた時点で HeadObject ごと失敗する。
+`infra/lambda.tf` に `s3:GetObject`(HeadObject 用)と `s3:ListBucket`(404 を取り戻すため)を明示。
+
+**この種の穴は MinIO の全権限では再現しない**: テスト用の資格情報は何でもできるので 404 が返る。
+S3 の権限に依存する分岐は **Terraform のレビューで担保する**しかない、というのが現時点の答え。
+
 ## 3. テスト方針(要約)
 
 | 層 | ローカル | 実 AWS |

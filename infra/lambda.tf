@@ -38,12 +38,27 @@ data "aws_iam_policy_document" "function" {
     resources = [aws_dynamodb_table.cms.arn]
   }
 
-  # Image bytes: the CMS signs uploads and deletes objects, and never reads them back (the
-  # browser does that through the bucket's public read policy).
+  # Image bytes: the CMS signs uploads, deletes objects, and *looks one up* before pointing a
+  # record at it (`ImageService::replace_image`).
+  #
+  # `s3:GetObject` is what HeadObject needs. It is also granted to everyone by the bucket's read
+  # policy, which is how the CMS's own calls have been succeeding - but a bucket that stops being
+  # public (behind CloudFront, say) would take the role's permission with it, so it is stated here
+  # as well.
   statement {
     effect    = "Allow"
-    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
     resources = ["${aws_s3_bucket.images.arn}/*"]
+  }
+
+  # ...and `s3:ListBucket` is what makes a *missing* key answer 404 rather than 403: S3 refuses to
+  # tell a caller whether an object exists if it cannot list the bucket, and the code reads 404 as
+  # "the upload is not there yet" while anything else is a failure. Without this, a replacement
+  # whose upload never arrived is reported as an internal error instead of being refused.
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.images.arn]
   }
 
   statement {
