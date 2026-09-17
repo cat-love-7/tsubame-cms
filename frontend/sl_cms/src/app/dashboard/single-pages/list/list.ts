@@ -25,7 +25,7 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class SinglePageList {
   private pages = inject(SinglePagesService);
   private dates = inject(DateTimeFormat);
   /** What the signed-in account may do; the server enforces the same rules. */

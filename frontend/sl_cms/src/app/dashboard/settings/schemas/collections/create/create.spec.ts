@@ -3,19 +3,19 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 
-import { Create } from './create';
+import { CollectionSchemaCreate } from './create';
 
-describe('Create', () => {
-  let component: Create;
-  let fixture: ComponentFixture<Create>;
+describe('CollectionSchemaCreate', () => {
+  let component: CollectionSchemaCreate;
+  let fixture: ComponentFixture<CollectionSchemaCreate>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Create],
+      imports: [CollectionSchemaCreate],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Create);
+    fixture = TestBed.createComponent(CollectionSchemaCreate);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

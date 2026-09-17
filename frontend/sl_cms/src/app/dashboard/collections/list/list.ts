@@ -22,7 +22,7 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 const DEFAULT_PAGE_SIZE = 25;
 
 @Component({
-  selector: 'app-collection-items',
+  selector: 'app-collection-item-list',
   imports: [ MatTooltipModule,
     ItemStatusBadge,
     MatButtonModule,
@@ -35,7 +35,7 @@ const DEFAULT_PAGE_SIZE = 25;
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class CollectionItemList {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private collectionsService = inject(CollectionsService);

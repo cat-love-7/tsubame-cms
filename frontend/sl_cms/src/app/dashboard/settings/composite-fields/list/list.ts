@@ -35,7 +35,7 @@ interface DefinitionRow {
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class CompositeFieldList {
   private compositeFields = inject(CompositeFieldsService);
   private router = inject(Router);
   private i18n = inject(TranslocoService);

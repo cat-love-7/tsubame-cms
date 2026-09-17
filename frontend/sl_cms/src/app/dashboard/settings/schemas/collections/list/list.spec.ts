@@ -3,20 +3,20 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 
-import { List } from './list';
+import { CollectionSchemaList } from './list';
 
-describe('List', () => {
-  let component: List;
-  let fixture: ComponentFixture<List>;
+describe('CollectionSchemaList', () => {
+  let component: CollectionSchemaList;
+  let fixture: ComponentFixture<CollectionSchemaList>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [List],
+      imports: [CollectionSchemaList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(List);
+    fixture = TestBed.createComponent(CollectionSchemaList);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

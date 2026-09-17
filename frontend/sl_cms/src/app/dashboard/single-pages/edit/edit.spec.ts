@@ -11,7 +11,7 @@ import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
 import { t } from 'app/core/i18n/message';
 
-import { Edit } from './edit';
+import { SinglePageEdit } from './edit';
 
 class StubSinglePagesService {
   /** The pages the screen asked about, so a switch can be told from a first load. */
@@ -120,9 +120,9 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
   };
 }
 
-describe('Edit', () => {
-  let component: Edit;
-  let fixture: ComponentFixture<Edit>;
+describe('SinglePageEdit', () => {
+  let component: SinglePageEdit;
+  let fixture: ComponentFixture<SinglePageEdit>;
   let stub: StubSinglePagesService;
   let route: ReturnType<typeof stubActivatedRoute>;
 
@@ -130,7 +130,7 @@ describe('Edit', () => {
     stub = new StubSinglePagesService();
     route = stubActivatedRoute({ name: 'home' });
     await TestBed.configureTestingModule({
-      imports: [Edit],
+      imports: [SinglePageEdit],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -141,7 +141,7 @@ describe('Edit', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Edit);
+    fixture = TestBed.createComponent(SinglePageEdit);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });
@@ -167,7 +167,7 @@ describe('Edit', () => {
   });
 
   it('lays fields out on the shared grid', () => {
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.schema.set([
       { name: 'title', field_type: 'Number', required: false, width: 8, height: 1 },
     ]);
@@ -178,7 +178,7 @@ describe('Edit', () => {
   });
 
   it('refuses to save while a field reports a problem', () => {
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.setFieldError(
       { name: 'body', field_type: 'Number', required: false, width: 12, height: 1 },
@@ -194,7 +194,7 @@ describe('Edit', () => {
   // Saving used to navigate to the schema list, which has no publish control: the reader had to
   // find the page again to put it on the site.
   it('stays on the page after saving, and shows what was saved', () => {
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.values.set({ title: 'About us' });
     fresh.detectChanges();
 
@@ -209,7 +209,7 @@ describe('Edit', () => {
   });
 
   it('saves and publishes in one act', () => {
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.values.set({ title: 'About us' });
     fresh.detectChanges();
 
@@ -227,7 +227,7 @@ describe('Edit', () => {
   it('publishes the page the save was about, not the one on screen when it lands', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -249,7 +249,7 @@ describe('Edit', () => {
   it('writes nothing into the page the reader moved to', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -273,7 +273,7 @@ describe('Edit', () => {
   it('publishes nothing when the save answers after the screen was destroyed', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -291,7 +291,7 @@ describe('Edit', () => {
   });
 
   it('reports nothing about a save that failed on the page the reader left', async () => {
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -326,7 +326,7 @@ describe('Edit', () => {
     try {
       const held = new Subject<{ path: string; expires_at: string }>();
       stub.heldPreviews = held;
-      const fresh = TestBed.createComponent(Edit);
+      const fresh = TestBed.createComponent(SinglePageEdit);
       const component = fresh.componentInstance;
       fresh.detectChanges();
 
@@ -353,7 +353,7 @@ describe('Edit', () => {
   it('offers no save-and-publish to an account that may not release content', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [Edit],
+      imports: [SinglePageEdit],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -363,7 +363,7 @@ describe('Edit', () => {
         stubAuth(true, false, false),
       ],
     });
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     expect(hasButton(fresh.nativeElement, 'Save')).toBe(true);
@@ -394,7 +394,7 @@ describe('Edit', () => {
       updated_at: '2024-01-01T00:00:00Z',
     has_draft: false,
     };
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     // The editor names whoever published the version that is live.
@@ -418,7 +418,7 @@ describe('Edit', () => {
       updated_at: '2024-01-02T00:00:00Z',
       has_draft: true,
     };
-    const fresh = TestBed.createComponent(Edit);
+    const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     expect(publishButton(fresh.nativeElement, 'Publish changes')).toBeTruthy();

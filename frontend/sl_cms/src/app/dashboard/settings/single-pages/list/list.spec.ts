@@ -3,20 +3,20 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { List } from './list';
+import { SinglePageSchemaList } from './list';
 
-describe('List', () => {
-  let component: List;
-  let fixture: ComponentFixture<List>;
+describe('SinglePageSchemaList', () => {
+  let component: SinglePageSchemaList;
+  let fixture: ComponentFixture<SinglePageSchemaList>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [List],
+      imports: [SinglePageSchemaList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(List);
+    fixture = TestBed.createComponent(SinglePageSchemaList);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

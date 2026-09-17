@@ -9,12 +9,12 @@ import { ActivatedRoute } from '@angular/router';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 
 @Component({
-  selector: 'app-edit',
+  selector: 'app-collection-schema-edit',
   imports: [EditSchema, MessagePipe],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
-export class Edit {
+export class CollectionSchemaEdit {
   private route = inject(ActivatedRoute);
   private collectionsService = inject(CollectionsService);
   /** A signal, and read from the parameter stream: switching collections reuses this component. */

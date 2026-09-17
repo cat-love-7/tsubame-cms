@@ -8,7 +8,7 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
-import { List } from './list';
+import { SinglePageList } from './list';
 
 function metadata(overrides: Partial<ItemMetadata> = {}): ItemMetadata {
   return {
@@ -81,14 +81,14 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 }
 
 describe('Single page list', () => {
-  let component: List;
-  let fixture: ComponentFixture<List>;
+  let component: SinglePageList;
+  let fixture: ComponentFixture<SinglePageList>;
   let stub: StubSinglePagesService;
 
   beforeEach(async () => {
     stub = new StubSinglePagesService();
     await TestBed.configureTestingModule({
-      imports: [List],
+      imports: [SinglePageList],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -98,7 +98,7 @@ describe('Single page list', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(List);
+    fixture = TestBed.createComponent(SinglePageList);
     component = fixture.componentInstance;
     await fixture.whenStable();
     fixture.detectChanges();
@@ -140,7 +140,7 @@ describe('Single page list', () => {
       ...stub.statuses,
       about: { ...stub.statuses['about'], has_draft: true },
     };
-    const fresh = TestBed.createComponent(List);
+    const fresh = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 
@@ -176,7 +176,7 @@ describe('Single page list', () => {
   it('offers nothing a read-only account could not do', async () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [List],
+      imports: [SinglePageList],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -185,7 +185,7 @@ describe('Single page list', () => {
         stubAuth(false, false, false),
       ],
     });
-    const fresh = TestBed.createComponent(List);
+    const fresh = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 
@@ -195,7 +195,7 @@ describe('Single page list', () => {
   it('says so when there are no pages yet', async () => {
     stub.names = [];
     stub.statuses = {};
-    const fresh = TestBed.createComponent(List);
+    const fresh = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 

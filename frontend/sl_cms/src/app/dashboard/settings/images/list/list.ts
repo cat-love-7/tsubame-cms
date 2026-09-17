@@ -27,7 +27,7 @@ import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class ImageLibrary {
   private images = inject(ImagesService);
   private i18n = inject(TranslocoService);
   private dates = inject(DateTimeFormat);

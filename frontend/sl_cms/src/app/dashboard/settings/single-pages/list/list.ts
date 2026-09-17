@@ -15,7 +15,7 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
 @Component({
-  selector: 'app-single-page-list',
+  selector: 'app-single-page-schema-list',
   imports: [ MatTooltipModule,
     FormsModule,
     MatButtonModule,
@@ -30,7 +30,7 @@ import { SinglePagesService } from 'app/services/schema/single_pages.service';
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class SinglePageSchemaList {
   private pages = inject(SinglePagesService);
   private router = inject(Router);
   private i18n = inject(TranslocoService);

@@ -9,7 +9,7 @@ import { UsersService } from 'app/services/auth/users.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single_pages.service';
 
-import { List } from './list';
+import { UsersList } from './list';
 
 function account(overrides: Partial<CurrentUser> = {}): CurrentUser {
   return {
@@ -57,13 +57,13 @@ class StubUsersService {
 }
 
 describe('Accounts', () => {
-  let fixture: ComponentFixture<List>;
+  let fixture: ComponentFixture<UsersList>;
   let stub: StubUsersService;
 
   beforeEach(async () => {
     stub = new StubUsersService();
     await TestBed.configureTestingModule({
-      imports: [List],
+      imports: [UsersList],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -74,7 +74,7 @@ describe('Accounts', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(List);
+    fixture = TestBed.createComponent(UsersList);
     await fixture.whenStable();
     fixture.detectChanges();
   });
@@ -178,7 +178,7 @@ describe('Accounts', () => {
   // absent, so these read "Changed the administrator flag of ." and "Enabled ." - and the
   // identifier an account is known by is its username.
   it('names the account in what it says it did', () => {
-    const fresh = TestBed.createComponent(List);
+    const fresh = TestBed.createComponent(UsersList);
     fresh.detectChanges();
 
     fresh.componentInstance.setAdmin(stub.accounts[0], true);

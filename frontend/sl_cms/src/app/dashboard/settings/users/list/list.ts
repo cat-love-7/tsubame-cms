@@ -58,7 +58,7 @@ interface RoleOption {
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class UsersList {
 
   private users = inject(UsersService);
   private auth = inject(AuthService);

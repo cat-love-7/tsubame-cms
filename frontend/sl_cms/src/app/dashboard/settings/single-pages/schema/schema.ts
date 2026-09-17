@@ -16,7 +16,7 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })
-export class Schema {
+export class SinglePageSchema {
   private route = inject(ActivatedRoute);
   private pages = inject(SinglePagesService);
 

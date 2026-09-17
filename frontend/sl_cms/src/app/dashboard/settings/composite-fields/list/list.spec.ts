@@ -3,20 +3,20 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { List } from './list';
+import { CompositeFieldList } from './list';
 
-describe('List', () => {
-  let component: List;
-  let fixture: ComponentFixture<List>;
+describe('CompositeFieldList', () => {
+  let component: CompositeFieldList;
+  let fixture: ComponentFixture<CompositeFieldList>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [List],
+      imports: [CompositeFieldList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(List);
+    fixture = TestBed.createComponent(CompositeFieldList);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

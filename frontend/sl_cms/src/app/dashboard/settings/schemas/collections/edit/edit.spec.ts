@@ -5,17 +5,17 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 
-import { Edit } from './edit';
+import { CollectionSchemaEdit } from './edit';
 
-describe('Edit', () => {
-  let component: Edit;
-  let fixture: ComponentFixture<Edit>;
+describe('CollectionSchemaEdit', () => {
+  let component: CollectionSchemaEdit;
+  let fixture: ComponentFixture<CollectionSchemaEdit>;
   let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     route = stubActivatedRoute({ name: 'blog' });
     await TestBed.configureTestingModule({
-      imports: [Edit],
+      imports: [CollectionSchemaEdit],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -25,7 +25,7 @@ describe('Edit', () => {
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(Edit);
+    fixture = TestBed.createComponent(CollectionSchemaEdit);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

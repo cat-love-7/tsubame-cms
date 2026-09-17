@@ -32,12 +32,12 @@ import { ValueField } from 'app/shared/value-field/value-field';
  * stays a draft, and only publishing makes it visible to the public content API.
  */
 @Component({
-  selector: 'app-item-edit',
+  selector: 'app-collection-item-edit',
   imports: [ItemStatusBadge, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe, ValueField],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
-export class Edit implements HasUnsavedChanges {
+export class CollectionItemEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   /** When this screen goes away, so does everything it still has in flight (see the constructor). */

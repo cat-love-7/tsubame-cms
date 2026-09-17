@@ -33,7 +33,7 @@ import { ValueField } from 'app/shared/value-field/value-field';
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
-export class Edit implements HasUnsavedChanges {
+export class SinglePageEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   /** When this screen goes away, so does everything it still has in flight (see the constructor). */
   private destroyRef = inject(DestroyRef);

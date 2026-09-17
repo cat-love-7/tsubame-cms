@@ -5,17 +5,17 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 
-import { Schema } from './schema';
+import { CompositeFieldSchema } from './schema';
 
-describe('Schema', () => {
-  let component: Schema;
-  let fixture: ComponentFixture<Schema>;
+describe('CompositeFieldSchema', () => {
+  let component: CompositeFieldSchema;
+  let fixture: ComponentFixture<CompositeFieldSchema>;
   let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     route = stubActivatedRoute({ id: 'seo' });
     await TestBed.configureTestingModule({
-      imports: [Schema],
+      imports: [CompositeFieldSchema],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -25,7 +25,7 @@ describe('Schema', () => {
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(Schema);
+    fixture = TestBed.createComponent(CompositeFieldSchema);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

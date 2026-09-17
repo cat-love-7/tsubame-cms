@@ -5,17 +5,17 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 
-import { Schema } from './schema';
+import { SinglePageSchema } from './schema';
 
-describe('Schema', () => {
-  let component: Schema;
-  let fixture: ComponentFixture<Schema>;
+describe('SinglePageSchema', () => {
+  let component: SinglePageSchema;
+  let fixture: ComponentFixture<SinglePageSchema>;
   let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     route = stubActivatedRoute({ name: 'home' });
     await TestBed.configureTestingModule({
-      imports: [Schema],
+      imports: [SinglePageSchema],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -25,7 +25,7 @@ describe('Schema', () => {
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(Schema);
+    fixture = TestBed.createComponent(SinglePageSchema);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

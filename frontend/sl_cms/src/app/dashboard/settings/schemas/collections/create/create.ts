@@ -10,7 +10,7 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
 @Component({
-  selector: 'app-create-collection',
+  selector: 'app-collection-schema-create',
   imports: [
     FormsModule,
     MatButtonModule,
@@ -23,7 +23,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
   templateUrl: './create.html',
   styleUrl: './create.scss',
 })
-export class Create {
+export class CollectionSchemaCreate {
   private collectionsService = inject(CollectionsService);
   private router = inject(Router);
   public name = '';

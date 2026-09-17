@@ -13,7 +13,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
 @Component({
   // Distinct from the `app-list` used by dashboard/collections/list; two components
   // sharing a selector is ambiguous.
-  selector: 'app-schema-collection-list',
+  selector: 'app-collection-schema-list',
   imports: [ MatTooltipModule,
     MatTableModule,
     MatIconModule,
@@ -25,7 +25,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
-export class List {
+export class CollectionSchemaList {
   private collectionsService = inject(CollectionsService);
   private i18n = inject(TranslocoService);
   /** Re-emits to re-issue the list request after a successful delete. */
