@@ -1,5 +1,11 @@
 import { Injectable } from '@angular/core';
-import { ItemMetadata, ItemMetadataMap, PreviewLink } from 'app/models/item-status';
+import {
+  ItemMetadata,
+  ItemMetadataMap,
+  ItemStatus,
+  ItemStatusOutcome,
+  PreviewLink,
+} from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
@@ -60,6 +66,16 @@ export class CollectionsService {
 
   getItemMetadata(name: string, id: number): Observable<ItemMetadata> {
     return this.collectionRepository.getItemMetadata(name, id);
+  }
+
+  /** Publish or unpublish a batch of items, answering per item. */
+  setItemsStatus(name: string, ids: number[], status: ItemStatus): Observable<ItemStatusOutcome[]> {
+    return this.collectionRepository.setItemsStatus(name, ids, status);
+  }
+
+  /** Copy an item; the answer is the new item's id. */
+  duplicateItem(name: string, id: number): Observable<number> {
+    return this.collectionRepository.duplicateItem(name, id);
   }
 
   publishItem(name: string, id: number): Observable<ItemMetadata> {

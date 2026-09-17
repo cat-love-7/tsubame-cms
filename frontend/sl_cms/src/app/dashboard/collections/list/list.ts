@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -37,6 +37,7 @@ const DEFAULT_PAGE_SIZE = 25;
 })
 export class List {
   private route = inject(ActivatedRoute);
+  private router = inject(Router);
   private collectionsService = inject(CollectionsService);
   private i18n = inject(TranslocoService);
   private dates = inject(DateTimeFormat);
@@ -74,6 +75,16 @@ export class List {
   public readonly pageSizeOptions = [10, 25, 50, 100];
   /** Exposed for the template. */
   public format = formatFieldValue;
+
+  /**
+   * The rows the batch actions apply to.
+   *
+   * A set of ids rather than rows: a reload replaces the row objects, and a selection should
+   * survive that.
+   */
+  public selected = signal<ReadonlySet<number>>(new Set());
+  /** Rows that could not be changed in the last batch, so the report can name them. */
+  public refusals = signal<{ id: number; code: string; message: string }[]>([]);
 
   /** Re-issues the page request after a delete or a page change. */
   private reload = new BehaviorSubject<void>(undefined);
@@ -159,6 +170,65 @@ export class List {
     return this.dates.format(this.metadata()[String(id)]?.updated_at);
   }
 
+  /** Whether every row on screen is selected, which is what the header checkbox asks. */
+  public allSelected = computed(
+    () => this.items().length > 0 && this.items().every(([id]) => this.selected().has(id)),
+  );
+
+  toggleSelected(id: number) {
+    const next = new Set(this.selected());
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    this.selected.set(next);
+  }
+
+  toggleAll() {
+    this.selected.set(
+      this.allSelected() ? new Set() : new Set(this.items().map(([id]) => id)),
+    );
+  }
+
+  /**
+   * Publish or unpublish everything selected, and say what happened.
+   *
+   * Per item, because the server answers per item: a batch that reported only success would hide
+   * the ones that were refused, and the editor would believe the site changed when it did not.
+   */
+  setSelectedPublished(status: ItemStatus) {
+    const ids = [...this.selected()];
+    if (ids.length === 0) {
+      return;
+    }
+    this.collectionsService.setItemsStatus(this.collectionName(), ids, status).subscribe({
+      next: (outcomes) => {
+        this.error.set(null);
+        const refusals: { id: number; code: string; message: string }[] = [];
+        // The server answered with the new metadata, so the badges move without a reload.
+        const metadata = { ...this.metadata() };
+        let changed = 0;
+        for (const outcome of outcomes) {
+          if (outcome.outcome === 'changed') {
+            changed += 1;
+            metadata[String(outcome.id)] = outcome.metadata;
+          } else {
+            refusals.push({ id: outcome.id, code: outcome.code, message: outcome.message });
+          }
+        }
+        this.refusals.set(refusals);
+        this.selected.set(new Set());
+        this.metadata.set(metadata);
+        this.batchReport.set({ changed, refused: refusals.length });
+      },
+      error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
+    });
+  }
+
+  /** What the last batch did, so the screen can say it (and not only when something failed). */
+  public batchReport = signal<{ changed: number; refused: number } | null>(null);
+
   /** Publish or unpublish one item, without leaving the list. */
   /** Publish a draft, or release the changes waiting on a published item. */
   publish(id: number) {
@@ -180,6 +250,22 @@ export class List {
         this.metadata.set({ ...this.metadata(), [String(id)]: metadata });
       },
       error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
+    });
+  }
+
+  /**
+   * Copy an item and open the copy.
+   *
+   * The copy is a draft with its unique fields empty (the server's rule), so the editor lands in a
+   * form that only needs the parts which have to be new.
+   */
+  duplicate(id: number) {
+    this.collectionsService.duplicateItem(this.collectionName(), id).subscribe({
+      next: (created) => {
+        this.error.set(null);
+        this.router.navigate(['/collections', this.collectionName(), 'edit', created]);
+      },
+      error: (e) => this.error.set(failure('content.duplicateFailed', e)),
     });
   }
 

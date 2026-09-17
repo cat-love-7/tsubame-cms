@@ -2,7 +2,13 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { ItemMetadata, ItemMetadataMap, PreviewLink } from 'app/models/item-status';
+import {
+  ItemMetadata,
+  ItemMetadataMap,
+  ItemStatus,
+  ItemStatusOutcome,
+  PreviewLink,
+} from 'app/models/item-status';
 import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 
 /**
@@ -83,6 +89,19 @@ export class CollectionRepository {
   }
 
   /** Makes the item visible in the public content API. */
+  /** Publish or unpublish a batch, answering per item (see `ItemStatusOutcome` on the server). */
+  setItemsStatus(name: string, ids: number[], status: ItemStatus): Observable<ItemStatusOutcome[]> {
+    return this.http.post<ItemStatusOutcome[]>(`/api/models/collections/${name}/items/status`, {
+      ids,
+      status,
+    });
+  }
+
+  /** Copy an item: the server answers with the new item's id. */
+  duplicateItem(name: string, id: number): Observable<number> {
+    return this.http.post<number>(`/api/models/collections/${name}/items/${id}/duplicate`, null);
+  }
+
   publishItem(name: string, id: number): Observable<ItemMetadata> {
     return this.http.post<ItemMetadata>(`/api/models/collections/${name}/items/${id}/publish`, null);
   }

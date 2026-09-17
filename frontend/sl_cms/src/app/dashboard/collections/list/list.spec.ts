@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PageEvent } from '@angular/material/paginator';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, of } from 'rxjs';
 
@@ -55,6 +55,32 @@ class StubCollectionsService {
   unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.unpublished.push(id);
     return of(metadata({ status: 'draft', published_at: null }));
+  }
+
+  /** Batches and duplicates the screen asked for, so their effect can be read back. */
+  public batches: { ids: number[]; status: string }[] = [];
+  public duplicated: number[] = [];
+  /** Ids in the batch that the server should refuse, as it does for one that is gone. */
+  public refuse: number[] = [];
+
+  setItemsStatus(_name: string, ids: number[], status: 'draft' | 'published'): Observable<unknown> {
+    this.batches.push({ ids, status });
+    return of(
+      ids.map((id) =>
+        this.refuse.includes(id)
+          ? { outcome: 'refused', id, code: 'not_found', message: `no item ${id}` }
+          : {
+              outcome: 'changed',
+              id,
+              metadata: metadata({ status, published_at: status === 'published' ? '2024-01-01T00:00:00Z' : null }),
+            },
+      ),
+    );
+  }
+
+  duplicateItem(_name: string, id: number): Observable<number> {
+    this.duplicated.push(id);
+    return of(99);
   }
 
   deleteCollectionItem(_name: string, id: number): Observable<void> {
@@ -327,6 +353,46 @@ describe('List', () => {
     expect(stub.deleted).toEqual([26]);
     expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 0 });
     expect(rows(fresh)).toBe(25);
+  });
+
+  // Selecting rows is how a batch is asked for; the answer is per item, so a refusal is
+  // reported rather than swallowed.
+  it('publishes and unpublishes everything selected, and reports what it could not', () => {
+    stub.all = [
+      [1, { title: 'one' }],
+      [2, { title: 'two' }],
+    ];
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+    component.toggleAll();
+    expect([...component.selected()]).toEqual([1, 2]);
+
+    component.setSelectedPublished('published');
+    expect(stub.batches).toEqual([{ ids: [1, 2], status: 'published' }]);
+    expect(component.selected().size).toBe(0);
+    expect(component.batchReport()).toEqual({ changed: 2, refused: 0 });
+    expect(component.statusOf(1)).toBe('published');
+
+    // One of them is gone by the time the batch runs.
+    stub.refuse = [2];
+    component.toggleAll();
+    component.setSelectedPublished('draft');
+    expect(component.batchReport()).toEqual({ changed: 1, refused: 1 });
+    expect(component.refusals()).toEqual([{ id: 2, code: 'not_found', message: 'no item 2' }]);
+  });
+
+  // Duplicating is only useful if the next act is editing the copy.
+  it('copies an item and opens the copy', () => {
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    fresh.componentInstance.duplicate(1);
+
+    expect(stub.duplicated).toEqual([1]);
+    expect(navigate).toHaveBeenCalledWith(['/collections', 'blog', 'edit', 99]);
   });
 
   it('stays on the same page when the deletion leaves it populated', () => {

@@ -2464,6 +2464,231 @@ async fn the_things_that_use_an_image_can_be_listed() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// Duplicating an item: everything comes across except what has to be new, and the copy is a draft
+/// whatever the original was.
+#[tokio::test]
+async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let schema = json!([
+        { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "unique": true },
+        { "name": "body", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/item",
+        Some(&token),
+        Some(json!({ "title": "original", "body": "the words" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let original = created.as_u64().expect("the item id");
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{original}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, copy) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{original}/duplicate"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let copy = copy.as_u64().expect("the copy's id");
+    assert_ne!(copy, original);
+
+    let (_, values) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/collections/blog/items/{copy}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(values["body"], "the words", "everything else comes across");
+    assert_eq!(values["title"], "", "the unique field is emptied, not copied");
+    // Which leaves the value free: the copy can be given a new one.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &format!("/models/collections/blog/items/{copy}"),
+        Some(&token),
+        Some(json!({ "title": "a second one", "body": "the words" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A copy of a published item is a draft, and nothing was published about it.
+    let (_, metadata) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/collections/blog/items/{copy}/metadata"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(metadata["status"], "draft", "{metadata}");
+    let (_, source) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/collections/blog/items/{original}/metadata"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(source["status"], "published", "the original is untouched");
+
+    // The copy is not on the site.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::GET,
+        &format!("/content/collections/blog/items/{copy}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Duplicating something that is not there says so.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/999/duplicate",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// A batch publish answers per item: one item's refusal does not stop the others, and the caller
+/// can tell which is which.
+#[tokio::test]
+async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    for title in ["one", "two"] {
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            "/models/collections/blog/item",
+            Some(&token),
+            Some(json!({ "title": title })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // One of the ids is not there: the batch still publishes the other, and reports the miss.
+    let (status, outcomes) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/status",
+        Some(&token),
+        Some(json!({ "ids": [1, 999, 2], "status": "published" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(outcomes[0]["outcome"], "changed");
+    assert_eq!(outcomes[0]["id"], 1);
+    assert_eq!(outcomes[1]["outcome"], "refused");
+    assert_eq!(outcomes[1]["id"], 999);
+    assert_eq!(outcomes[1]["code"], "not_found");
+    assert_eq!(outcomes[2]["outcome"], "changed");
+
+    // Both are on the site, and their status is what the batch asked for.
+    for id in [1, 2] {
+        let (status, _) = send_raw(
+            &app.router,
+            Method::GET,
+            &format!("/content/collections/blog/items/{id}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "item {id} should be live");
+    }
+
+    // The other way round, and the batch says the same shape.
+    let (status, outcomes) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/status",
+        Some(&token),
+        Some(json!({ "ids": [1, 2], "status": "draft" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(outcomes
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|outcome| outcome["outcome"] == "changed"));
+    let (status, _) = send_raw(
+        &app.router,
+        Method::GET,
+        "/content/collections/blog/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A batch has a size, and an empty one is a mistake rather than a no-op.
+    let too_many: Vec<u64> = (0..101).collect();
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/status",
+        Some(&token),
+        Some(json!({ "ids": too_many, "status": "published" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/items/status",
+        Some(&token),
+        Some(json!({ "ids": [], "status": "published" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.

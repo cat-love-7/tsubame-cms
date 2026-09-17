@@ -64,6 +64,15 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/collections/{collection_name}/items/{id}/preview-link",
             post(create_collection_item_preview_link::<R>),
         )
+        // Static segment, so axum routes it before `{id}`.
+        .route(
+            "/models/collections/{collection_name}/items/status",
+            post(set_items_status::<R>),
+        )
+        .route(
+            "/models/collections/{collection_name}/items/{id}/duplicate",
+            post(duplicate_collection_item::<R>),
+        )
         .route(
             "/models/collections/{collection_name}/items/{id}/publish",
             post(publish_collection_item::<R>),
@@ -220,6 +229,63 @@ async fn open_collection_item_preview<R: Storage>(
     }))
 }
 
+
+/// The most items one batch may carry.
+///
+/// A batch is a convenience for a screen that is showing a page of a list, not a way to publish a
+/// whole collection in one request: each item is a transaction, an index update and a webhook.
+const MAX_BATCH: usize = 100;
+
+/// What a batch asked for: which items, and which way.
+#[derive(serde::Deserialize)]
+struct BatchStatusRequest {
+    ids: Vec<u64>,
+    status: ItemStatus,
+}
+
+/// Publish or unpublish a batch, answering per item.
+async fn set_items_status<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(collection_name): Path<String>,
+    Json(request): Json<BatchStatusRequest>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_publish(&user, Some(Resource::Collection(&collection_name)))?;
+    if request.ids.is_empty() {
+        return Err(HttpError::BadRequest("a batch needs at least one item"));
+    }
+    if request.ids.len() > MAX_BATCH {
+        return Err(HttpError::BadRequest(&format!(
+            "a batch carries at most {MAX_BATCH} items"
+        )));
+    }
+    let name = CollectionName::from(collection_name.as_str());
+    let ids: Vec<CollectionItemId> = request
+        .ids
+        .into_iter()
+        .map(CollectionItemId::from_u64)
+        .collect();
+    let outcomes = module
+        .collection_service
+        .set_items_status(&name, &ids, request.status, PublishedBy::from(&user))
+        .await;
+    Ok(Json(outcomes))
+}
+
+/// Copy an item, answering with the new item's id so the caller can open it.
+/// The middleware already refuses a write without `can_edit` on the collection, as it does for
+/// creating one.
+async fn duplicate_collection_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let created = module
+        .collection_service
+        .duplicate_collection_item(&name, CollectionItemId::from_u64(id))
+        .await?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
 
 async fn publish_collection_item<R: Storage>(
     State(module): State<AppState<R>>,

@@ -1,6 +1,19 @@
 <div class="toolbar">
   <h2>{{ collectionName() }}</h2>
   <span class="spacer"></span>
+  <!-- Batch actions appear only with a selection: an editor who has picked rows is asking for
+       something to happen to all of them. -->
+  @if (canPublish() && selected().size > 0) {
+    <span class="selection">{{ 'content.selectedCount' | transloco: { count: selected().size } }}</span>
+    <button matButton (click)="setSelectedPublished('published')">
+      <mat-icon>publish</mat-icon>
+      {{ 'content.publishSelected' | transloco }}
+    </button>
+    <button matButton (click)="setSelectedPublished('draft')">
+      <mat-icon>visibility_off</mat-icon>
+      {{ 'content.unpublishSelected' | transloco }}
+    </button>
+  }
   @if (canEdit()) {
     <button matButton [routerLink]="['/collections', collectionName(), 'create']">
       <mat-icon>add</mat-icon>
@@ -8,6 +21,22 @@
     </button>
   }
 </div>
+
+@if (batchReport(); as report) {
+  <p class="notice" role="status">
+    {{ 'content.batchChanged' | transloco: { count: report.changed } }}
+    @if (report.refused > 0) {
+      {{ 'content.batchRefused' | transloco: { count: report.refused } }}
+    }
+  </p>
+}
+@if (refusals().length > 0) {
+  <ul class="refusals">
+    @for (refusal of refusals(); track refusal.id) {
+      <li>{{ 'content.batchRefusalLine' | transloco: { id: refusal.id, message: refusal.message } }}</li>
+    }
+  </ul>
+}
 
 @if (error(); as problem) {
   <p class="error" role="alert">{{ problem | message }}</p>
@@ -18,6 +47,16 @@
 <table class="items">
   <thead>
     <tr>
+      <th class="select">
+        @if (canPublish()) {
+          <input
+            type="checkbox"
+            [checked]="allSelected()"
+            (change)="toggleAll()"
+            [attr.aria-label]="'labels.selectAllItems' | transloco"
+          />
+        }
+      </th>
       <th>{{ 'common.id' | transloco }}</th>
       @for (field of schema(); track field.name) {
         <th>{{ field.name }}</th>
@@ -30,6 +69,16 @@
   <tbody>
     @for (item of items(); track item[0]) {
       <tr>
+        <td class="select">
+          @if (canPublish()) {
+            <input
+              type="checkbox"
+              [checked]="selected().has(item[0])"
+              (change)="toggleSelected(item[0])"
+              [attr.aria-label]="'labels.selectItem' | transloco: { id: item[0] }"
+            />
+          }
+        </td>
         <td>{{ item[0] }}</td>
         @for (field of schema(); track field.name) {
           <td>{{ format(item[1][field.name]) }}</td>
@@ -83,6 +132,18 @@
           >
             <mat-icon>edit</mat-icon>
           </button>
+          @if (canEdit()) {
+            <!-- The copy opens straight away: duplicating is only useful if the next act is
+                 editing it. -->
+            <button
+              matIconButton
+              (click)="duplicate(item[0])"
+              [attr.aria-label]="'labels.duplicateItem' | transloco: { id: item[0] }"
+              [matTooltip]="'labels.duplicateItem' | transloco: { id: item[0] }"
+            >
+              <mat-icon>content_copy</mat-icon>
+            </button>
+          }
           @if (canPublish()) {
             <button
               matIconButton
@@ -97,7 +158,7 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema().length + 4" class="empty">{{ 'content.noItems' | transloco }}</td>
+        <td [attr.colspan]="schema().length + 5" class="empty">{{ 'content.noItems' | transloco }}</td>
       </tr>
     }
   </tbody>

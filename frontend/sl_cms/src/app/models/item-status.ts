@@ -7,6 +7,16 @@
 export type ItemStatus = 'draft' | 'published';
 
 /**
+ * What a batch status change did to one item.
+ *
+ * A batch answers per item: one refusal (an item that is gone, one whose working copy moved while
+ * it was being published) does not stop the rest, and the screen reports both halves.
+ */
+export type ItemStatusOutcome =
+  | { outcome: 'changed'; id: number; metadata: ItemMetadata }
+  | { outcome: 'refused'; id: number; code: string; message: string };
+
+/**
  * Who published an item, as recorded at the moment it was published.
  *
  * The id links back to the account while it still exists; the username is the name as it

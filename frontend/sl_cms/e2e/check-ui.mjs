@@ -402,7 +402,8 @@ try {
   const firstPageRows = await dataRows().count();
   check('1 ページ目は既定の 25 件', firstPageRows === 25, `${firstPageRows} 行`);
 
-  const firstId = (await firstRow().locator('td').first().textContent())?.trim();
+  // The first cell is the batch checkbox; the id is the one after it.
+  const firstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   check('id 昇順で 1 から始まる', firstId === '1', `id=${firstId}`);
 
   const paginator = page.locator('mat-paginator');
@@ -431,7 +432,7 @@ try {
     )
     .catch(() => {});
   await waitForRows(25);
-  const secondPageFirstId = (await firstRow().locator('td').first().textContent())?.trim();
+  const secondPageFirstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   check('次ページは id 26 から始まる', secondPageFirstId === '26', `id=${secondPageFirstId}`);
 
   // -------------------------------------------------------------- page size
@@ -445,7 +446,7 @@ try {
   const draftRow = dataRows()
     .filter({ has: page.locator('button[aria-label^="publish item"]') })
     .first();
-  const draftId = (await draftRow.locator('td').first().textContent())?.trim();
+  const draftId = (await draftRow.locator('td').nth(1).textContent())?.trim();
 
   // Identify the row by its id afterwards, not by which button it shows: the label flips
   // as soon as the publish lands.
@@ -475,7 +476,7 @@ try {
   const lastPageRows = await dataRows().count();
   check('最終ページは 1 行', lastPageRows === 1, `${lastPageRows} 行`);
 
-  const doomedId = (await firstRow().locator('td').first().textContent())?.trim();
+  const doomedId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   await firstRow().locator('button[aria-label^="delete item"]').click();
   await waitForRows(25);
   const rowsAfterDelete = await dataRows().count();
@@ -1544,6 +1545,82 @@ try {
     Object.keys(afterRefusal).length === 1,
     `${Object.keys(afterRefusal).length} 件`,
   );
+
+  // Duplicating opens the copy, with the unique field emptied. The schema editor's collection is
+  // the one whose `title` is unique, so it is the one where clearing it shows.
+  // The refused form still holds edits, so it is left through its own Cancel (the guard asks, and
+  // the page's dialog handler accepts).
+  await page.click('button:has-text("Cancel")');
+  await page
+    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+  const rowsReady = await dataRows()
+    .first()
+    .waitFor({ timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  check('一覧に項目が並ぶ', rowsReady, page.url());
+  const beforeCopy = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/items`, undefined, token);
+  await page.locator('button[aria-label^="copy item"]').first().click();
+  await page
+    .waitForURL(`**/collections/${SCHEMA_COLLECTION}/edit/**`, { timeout: 15000 })
+    .catch(() => {});
+  check('複製すると編集画面が開く', page.url().includes('/edit/'), page.url());
+  const copyId = Number(page.url().split('/').pop());
+  const copy = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items/${copyId}`,
+    undefined,
+    token,
+  );
+  check('複製では一意なフィールドが空になる', copy.title === '', JSON.stringify(copy.title));
+  check('複製では他の値が引き継がれる', typeof copy.summary === 'string', JSON.stringify(copy.summary));
+
+  // Saving it with a title of its own is the point of clearing the field.
+  await page.locator('app-value-field input').first().fill('a copied item');
+  await save().click();
+  await page
+    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
+  const afterCopy = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/items`, undefined, token);
+  check('複製が 1 件増える', afterCopy.length === beforeCopy.length + 1, `${beforeCopy.length} → ${afterCopy.length}`);
+
+  // A batch publishes what is selected, and says how many it changed.
+  const publishedCount = async () =>
+    Object.values(
+      await api('GET', `/models/collections/${SCHEMA_COLLECTION}/items/metadata`, undefined, token),
+    ).filter((metadata) => metadata.status === 'published').length;
+  const publishedBefore = await publishedCount();
+  await page.locator('thead input[type=checkbox]').first().check();
+  await page.waitForTimeout(200);
+  check(
+    '行をまとめて選べる',
+    (await page.locator('.toolbar .selection').count()) === 1,
+    `${await page.locator('tbody input[type=checkbox]:checked').count()} 件`,
+  );
+  await page.getByRole('button', { name: 'Publish selected', exact: true }).click();
+  await page.waitForTimeout(800);
+  check(
+    '選択した記事をまとめて公開できる',
+    (await publishedCount()) === afterCopy.length,
+    `${publishedBefore} → ${await publishedCount()}`,
+  );
+  check(
+    '一括の結果が画面に出る',
+    (await page.locator('.notice').filter({ hasText: 'changed' }).count()) === 1,
+  );
+
+  // And takes them off the site again.
+  await page.locator('thead input[type=checkbox]').first().check();
+  await page.waitForTimeout(200);
+  await page.getByRole('button', { name: 'Unpublish selected', exact: true }).click();
+  await page.waitForTimeout(800);
+  check(
+    '選択した記事をまとめて非公開にできる',
+    (await publishedCount()) === 0,
+    `${await publishedCount()} 件`,
+  );
+
 
   // Through the API rather than the screen: this collection exists only for this scenario.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);

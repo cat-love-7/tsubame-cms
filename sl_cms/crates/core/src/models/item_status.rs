@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 
+use crate::models::collection::CollectionItemId;
 use crate::models::user::{User, UserId};
 
 /// Who published an item, captured at the moment it was published.
@@ -32,6 +33,23 @@ pub enum ItemStatus {
     #[default]
     Draft,
     Published,
+}
+
+/// What a batch status change did to one item.
+///
+/// A batch reports per item rather than as a whole: one item a publisher may not touch, or one
+/// whose working copy moved under the operation, does not make the rest of the batch fail.
+#[derive(serde::Serialize, Debug, Clone)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum ItemStatusOutcome {
+    /// The item's status is what was asked for; the metadata is what the screen needs to update.
+    Changed { id: CollectionItemId, metadata: ItemMetadata },
+    /// The item was left as it was, and this is why.
+    Refused {
+        id: CollectionItemId,
+        code: String,
+        message: String,
+    },
 }
 
 /// Metadata about an item that is *not* part of the user-defined schema.

@@ -11,3 +11,21 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/// Batch actions: what is selected, and what the batch could not do.
+.selection {
+  margin-inline-end: 8px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+th.select,
+td.select {
+  width: 1px;
+  white-space: nowrap;
+}
+
+.refusals {
+  margin: 0 0 12px;
+  padding-inline-start: 20px;
+  color: var(--mat-sys-error);
+}

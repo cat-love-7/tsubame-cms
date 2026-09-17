@@ -8,7 +8,7 @@ use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::models::field::{FieldValue, FieldValueMap};
 use crate::models::image::{Image, ImageID};
-use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::item_status::{ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
     has_unique_fields, unique_values,
@@ -186,6 +186,81 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             ))),
         }
     }
+    /// Publish or unpublish a batch of items, and say what happened to each one.
+    ///
+    /// One item's refusal is not another's: a batch is a convenience for the editor, and the
+    /// alternative - an all-or-nothing operation - would either publish items nobody asked about
+    /// after a failure or leave a half-applied change with no way to tell which half. Each item
+    /// goes through [`CollectionService::set_item_status`], so a batch has exactly the guarantees a
+    /// single publish has, including its refusals.
+    pub async fn set_items_status(
+        &self,
+        collection_name: &CollectionName,
+        item_ids: &[CollectionItemId],
+        status: ItemStatus,
+        actor: PublishedBy,
+    ) -> Vec<ItemStatusOutcome> {
+        let mut outcomes = Vec::with_capacity(item_ids.len());
+        for item_id in item_ids {
+            let outcome = match self
+                .set_item_status(collection_name, item_id.clone(), status, actor.clone())
+                .await
+            {
+                Ok(metadata) => ItemStatusOutcome::Changed {
+                    id: item_id.clone(),
+                    metadata,
+                },
+                Err(error) => ItemStatusOutcome::Refused {
+                    id: item_id.clone(),
+                    code: error.code.to_string(),
+                    message: error.message.clone(),
+                },
+            };
+            outcomes.push(outcome);
+        }
+        outcomes
+    }
+
+    /// Copy an item, and answer with the id of the copy.
+    ///
+    /// The copy is what an editor is looking at (the working copy if there is one, the published
+    /// one otherwise), it starts as a **draft** whatever the original was, and its **unique fields
+    /// are emptied**: two items cannot hold the same value, and a copy that reused the title or the
+    /// slug would be refused rather than made. Everything else comes across, so the editor only
+    /// has to fill in the parts that have to be new - which is also what makes the slug's
+    /// "generate from the title" button the natural next step.
+    pub async fn duplicate_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<u64, HttpError> {
+        self.require_item(collection_name, &item_id).await?;
+        let schema = self
+            .collection_repository
+            .get_collection_schema(collection_name)
+            .await
+            .map_err(map_internal_error)?
+            .unwrap_or_default();
+        let source = match self.working_item(collection_name, &item_id).await? {
+            Some(item) => item,
+            None => {
+                return Err(HttpError::NotFound(&format!(
+                    "Item with id '{}' has no content to copy",
+                    item_id
+                )))
+            }
+        };
+
+        let mut copy = source;
+        for field in &schema {
+            if field.is_unique() {
+                copy.0
+                    .insert(field.name.clone(), field.get_default_value());
+            }
+        }
+        self.create_collection_item(collection_name, &copy).await
+    }
+
     pub async fn create_collection_item(
         &self,
         collection_name: &CollectionName,
