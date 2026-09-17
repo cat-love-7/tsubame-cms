@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, map, of, switchMap, tap } from 'rxjs';
+import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
 
 export interface Permission {
   can_publish: boolean;
@@ -213,7 +213,11 @@ export class AuthService {
       .post<PasswordChanged>('/api/auth/password-reset', { token, new_password: newPassword })
       .pipe(
         tap((changed) => this.replaceToken(changed.token)),
-        switchMap((changed) => this.loadUser().pipe(map(() => changed))),
+        // Reading the account back is a convenience, not part of the reset: the password *was*
+        // changed, and reporting a failure here would tell the reader their reset did not work
+        // when it did. The shell asks again on its next load (`loadUserIfMissing`), which is the
+        // only place that failure belongs.
+        switchMap((changed) => this.loadUser().pipe(map(() => changed), catchError(() => of(changed)))),
       );
   }
 

@@ -71,6 +71,29 @@ describe('PasswordReset', () => {
     expect(navigate).toHaveBeenCalledWith(['/']);
   });
 
+  // The password *was* changed: a failure to read the account back is not a failed reset, and
+  // telling the reader it was would send them back to a link that no longer works.
+  it('still signs the caller in when reading the account back fails', async () => {
+    await create('user-1.0.1758000000.abc123');
+    const component = fixture.componentInstance;
+    component.next = 'chosen-password';
+    component.repeated = 'chosen-password';
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    component.save();
+
+    httpMock
+      .expectOne('/api/auth/password-reset')
+      .flush({ token: 'fresh-token', expires_at: '2026-09-13T12:00:00Z' });
+    // The account read is refused for whatever reason.
+    httpMock
+      .expectOne('/api/auth/me')
+      .flush('nope', { status: 500, statusText: 'Server Error' });
+
+    expect(auth.token()).toBe('fresh-token');
+    expect(component.error()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/']);
+  });
+
   it('shows what the server said when the link is no longer usable', async () => {
     await create('spent-token');
     const component = fixture.componentInstance;
