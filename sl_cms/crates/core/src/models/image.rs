@@ -1,11 +1,11 @@
 use crate::models::identity::UintId;
 
 
-pub type ImageID = UintId<Image>;
+pub type ImageId = UintId<Image>;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ImageResponse {
-    pub id: ImageID,
+    pub id: ImageId,
     pub url: String,
 }
 
@@ -25,7 +25,7 @@ pub struct Image {
 /// One entry in the image library: the metadata the admin screen lists.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ImageEntry {
-    pub id: ImageID,
+    pub id: ImageId,
     pub url: String,
     pub original_filename: String,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
@@ -36,7 +36,7 @@ pub struct ImageEntry {
 
 impl ImageEntry {
     /// Pair stored metadata with the id it is filed under.
-    pub fn from_image(id: ImageID, image: Image) -> Self {
+    pub fn from_image(id: ImageId, image: Image) -> Self {
         ImageEntry {
             id,
             url: image.url,
@@ -125,7 +125,7 @@ fn unescape(name: &str) -> String {
 /// (`/images/by-id/<id>`) and nothing else: a hand-written URL to wherever the bytes are served
 /// from is indistinguishable from an ordinary link, and would go stale the moment the image is
 /// replaced.
-pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Vec<ImageID> {
+pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Vec<ImageId> {
     let mut found = std::collections::BTreeSet::new();
     for value in item.0.values() {
         collect_images(value, &mut found);
@@ -133,7 +133,7 @@ pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Ve
     found.into_iter().collect()
 }
 
-fn collect_images(value: &crate::models::field::FieldValue, found: &mut std::collections::BTreeSet<ImageID>) {
+fn collect_images(value: &crate::models::field::FieldValue, found: &mut std::collections::BTreeSet<ImageId>) {
     use crate::models::field::FieldValue;
     match value {
         FieldValue::Image(Some(id)) => {
@@ -159,7 +159,7 @@ fn collect_images(value: &crate::models::field::FieldValue, found: &mut std::col
 }
 
 /// The images a Markdown body links to by their durable id.
-pub fn image_ids_in_markdown(text: &str) -> Vec<ImageID> {
+pub fn image_ids_in_markdown(text: &str) -> Vec<ImageId> {
     const MARKER: &str = "/images/by-id/";
     let mut ids = Vec::new();
     let mut rest = text;
@@ -171,7 +171,7 @@ pub fn image_ids_in_markdown(text: &str) -> Vec<ImageID> {
             continue;
         }
         if let Ok(id) = digits.parse::<u64>() {
-            ids.push(ImageID::from_u64(id));
+            ids.push(ImageId::from_u64(id));
         }
     }
     ids
@@ -210,14 +210,14 @@ mod reference_tests {
     #[test]
     fn image_fields_are_read_wherever_they_sit() {
         let mut composite_values = HashMap::new();
-        composite_values.insert("photo".to_string(), FieldValue::Image(Some(ImageID::from_u64(3))));
+        composite_values.insert("photo".to_string(), FieldValue::Image(Some(ImageId::from_u64(3))));
         let item = values(vec![
-            ("cover", FieldValue::Image(Some(ImageID::from_u64(1)))),
+            ("cover", FieldValue::Image(Some(ImageId::from_u64(1)))),
             ("empty", FieldValue::Image(None)),
             (
                 "gallery",
                 FieldValue::Array(vec![
-                    FieldValue::Image(Some(ImageID::from_u64(2))),
+                    FieldValue::Image(Some(ImageId::from_u64(2))),
                     FieldValue::Text("not an image".to_string()),
                 ]),
             ),
@@ -304,7 +304,7 @@ pub struct NewImageRequest{
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct NewImageInfo{
-    pub id: ImageID,
+    pub id: ImageId,
     /// Where to PUT the bytes. On-premises this points at the CMS (with a one-shot token in
     /// the query), on AWS at S3 with a signature — either way it is **short-lived** and is not
     /// what belongs in content.

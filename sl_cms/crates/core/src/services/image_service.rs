@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::models::error::{map_internal_error, HttpError};
 use crate::models::image::{
-    is_safe_display_name, is_safe_file_name, is_safe_image_ext, ImageEntry, ImageID, NewImageInfo,
+    is_safe_display_name, is_safe_file_name, is_safe_image_ext, ImageEntry, ImageId, NewImageInfo,
     NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
 };
 use crate::repositories::image_repository::{ImageRepository, Replacement};
@@ -54,7 +54,7 @@ impl<R: ImageRepository> ImageService<R> {
     /// Nothing is rewritten: content that references the image keeps the id it stored and keeps
     /// resolving, which is what makes this undoable. Already being in the trash is not an error -
     /// the caller asked for a state, and that state is what it gets.
-    pub async fn trash_image(&self, id: ImageID) -> Result<(), HttpError> {
+    pub async fn trash_image(&self, id: ImageId) -> Result<(), HttpError> {
         self.require_image(&id).await?;
         self.repository
             .set_image_deleted_at(&id, Some(chrono::Utc::now()))
@@ -63,7 +63,7 @@ impl<R: ImageRepository> ImageService<R> {
     }
 
     /// Put an image back in the library.
-    pub async fn restore_image(&self, id: ImageID) -> Result<(), HttpError> {
+    pub async fn restore_image(&self, id: ImageId) -> Result<(), HttpError> {
         self.require_image(&id).await?;
         self.repository
             .set_image_deleted_at(&id, None)
@@ -75,7 +75,7 @@ impl<R: ImageRepository> ImageService<R> {
     ///
     /// Content that referenced the image keeps the id it stored, so the reference simply
     /// stops resolving; there is no reference check and nothing is rewritten.
-    pub async fn purge_image(&self, id: ImageID) -> Result<(), HttpError> {
+    pub async fn purge_image(&self, id: ImageId) -> Result<(), HttpError> {
         self.require_image(&id).await?;
         self.repository
             .delete_image(&id)
@@ -87,7 +87,7 @@ impl<R: ImageRepository> ImageService<R> {
     /// What a delete warning is made of: an image already in the trash is only in the library's
     /// way, but deleting it for good takes the picture out of whatever this answers with. The list
     /// is only as complete as the reference index (see [`crate::models::image::referenced_images`]).
-    pub async fn references(&self, id: ImageID) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
+    pub async fn references(&self, id: ImageId) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
         self.require_image(&id).await?;
         self.repository
             .get_image_references(&id)
@@ -95,7 +95,7 @@ impl<R: ImageRepository> ImageService<R> {
             .map_err(map_internal_error)
     }
 
-    async fn require_image(&self, id: &ImageID) -> Result<(), HttpError> {
+    async fn require_image(&self, id: &ImageId) -> Result<(), HttpError> {
         if self
             .repository
             .get_image(id)
@@ -118,7 +118,7 @@ impl<R: ImageRepository> ImageService<R> {
     /// undone by renaming it back, which is the point of keeping it separate from replacing.
     pub async fn rename_image(
         &self,
-        id: ImageID,
+        id: ImageId,
         original_filename: &str,
     ) -> Result<(), HttpError> {
         let name = original_filename.trim();
@@ -158,7 +158,7 @@ impl<R: ImageRepository> ImageService<R> {
     /// image's identity changes - not its id, not the name it is shown under - only what it shows.
     pub async fn request_replacement(
         &self,
-        id: ImageID,
+        id: ImageId,
         ext: &str,
     ) -> Result<ReplacementInfo, HttpError> {
         if !is_safe_image_ext(ext) {
@@ -189,7 +189,7 @@ impl<R: ImageRepository> ImageService<R> {
     /// The upload it takes has to be the one this image is waiting for, and taking it is what ends
     /// the wait: an apply naming anything else leaves the wait alone, and so does naming the file
     /// the image already serves.
-    pub async fn replace_image(&self, id: ImageID, file_name: &str) -> Result<(), HttpError> {
+    pub async fn replace_image(&self, id: ImageId, file_name: &str) -> Result<(), HttpError> {
         if !is_safe_file_name(file_name) {
             return Err(HttpError::BadRequest("Invalid image file name"));
         }
@@ -248,7 +248,7 @@ impl<R: ImageRepository> ImageService<R> {
     ///
     /// Used for the link that keeps working across a replacement (see the `/images/by-id/` route):
     /// the id is the durable name of an image, and where the bytes happen to live is not.
-    pub async fn image_url(&self, id: ImageID) -> Result<Option<String>, HttpError> {
+    pub async fn image_url(&self, id: ImageId) -> Result<Option<String>, HttpError> {
         Ok(self
             .repository
             .get_image(&id)

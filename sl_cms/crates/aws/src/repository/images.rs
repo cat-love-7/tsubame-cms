@@ -12,7 +12,7 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use super::*;
 use crate::ImageDelivery;
 use sl_cms_core::models::image::{
-    sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
+    sanitize_ext, Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo,
     ImageOwner,
 };
 use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
@@ -116,7 +116,7 @@ async fn change_image(
 }
 
 impl ImageRepository for AwsRepository {
-    async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
+    async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, BoxError> {
         let inner = self.inner.clone();
         let id = **id;
         match read(&inner, key::IMAGE_INDEX, &key::image(id)).await? {
@@ -128,7 +128,7 @@ impl ImageRepository for AwsRepository {
         }
     }
 
-    async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
+    async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
         let inner = self.inner.clone();
         let mut images = Vec::new();
         for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
@@ -139,7 +139,7 @@ impl ImageRepository for AwsRepository {
             };
             let data: ImageData = AwsRepository::decode(&data)?;
             images.push((
-                ImageID::from_u64(id),
+                ImageId::from_u64(id),
                 AwsRepository::image_from(&inner, &data).await?,
             ));
         }
@@ -187,7 +187,7 @@ impl ImageRepository for AwsRepository {
             .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
 
         Ok(NewImageInfo {
-            id: ImageID::from_u64(id),
+            id: ImageId::from_u64(id),
             upload_url: request.uri().to_string(),
             // What the upload will be readable from, which an editor shows straight away: in the
             // signed mode that is a fresh signature, and it is replaced by a new one whenever the
@@ -198,7 +198,7 @@ impl ImageRepository for AwsRepository {
 
     async fn generate_replacement_upload_url(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         ext: &str,
     ) -> Result<ReplacementInfo, BoxError> {
         let inner = self.inner.clone();
@@ -259,7 +259,7 @@ impl ImageRepository for AwsRepository {
         }
     }
 
-    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<Replacement, BoxError> {
+    async fn replace_image(&self, id: &ImageId, file_name: &str) -> Result<Replacement, BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
         // Checked and consumed in one conditional write: the record is written back only while it
@@ -323,7 +323,7 @@ impl ImageRepository for AwsRepository {
         .into())
     }
 
-    async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
+    async fn rename_image(&self, id: &ImageId, original_filename: &str) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         change_image(&inner, **id, |data| {
             data.original_filename = original_filename.to_string()
@@ -331,7 +331,7 @@ impl ImageRepository for AwsRepository {
         .await
     }
 
-    async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
+    async fn image_file_name(&self, id: &ImageId) -> Result<Option<String>, BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
         match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
@@ -343,7 +343,7 @@ impl ImageRepository for AwsRepository {
     async fn set_image_references(
         &self,
         owner: &ImageOwner,
-        images: &[ImageID],
+        images: &[ImageId],
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         // Both directions in the one table: the owner's partition answers "what does this content
@@ -371,7 +371,7 @@ impl ImageRepository for AwsRepository {
         Ok(())
     }
 
-    async fn get_image_references(&self, id: &ImageID) -> Result<Vec<ImageOwner>, BoxError> {
+    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ImageOwner>, BoxError> {
         let inner = self.inner.clone();
         let image_pk = format!("image#{}", id);
         let mut owners: Vec<ImageOwner> = list(&inner, &image_pk, "ref#")
@@ -385,14 +385,14 @@ impl ImageRepository for AwsRepository {
 
     async fn set_image_deleted_at(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         change_image(&inner, **id, |data| data.deleted_at = at).await
     }
 
-    async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
+    async fn delete_image(&self, id: &ImageId) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
         let data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {

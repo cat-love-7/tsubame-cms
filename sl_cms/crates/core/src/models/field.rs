@@ -7,7 +7,7 @@ use strum_macros::EnumIter;
 
 use crate::models::{
     error::FieldRefusal,
-    image::{Image, ImageID, ImageResponse},
+    image::{Image, ImageId, ImageResponse},
     schema::CompositeFieldId,
 };
 
@@ -54,7 +54,7 @@ where
     /// library once per request and passes it in, which also keeps this a pure function.
     pub fn to_response(
         &self,
-        images: &HashMap<ImageID, Image>,
+        images: &HashMap<ImageId, Image>,
     ) -> HashMap<String, FieldValueResponse> {
         self.0
             .iter()
@@ -241,14 +241,14 @@ fn parse_untagged_scalar(
             serde_json::Value::Null => Ok(FieldValue::Image(None)),
             serde_json::Value::Number(n) => n
                 .as_u64()
-                .map(|id| FieldValue::Image(Some(ImageID::from_u64(id))))
+                .map(|id| FieldValue::Image(Some(ImageId::from_u64(id))))
                 .ok_or_else(|| mismatch(field, "an image id (unsigned integer)")),
             // Responses carry `{ "id": n, "url": "..." }`; accepting that shape back means
             // a client can load an item, change one field and save the rest untouched.
             serde_json::Value::Object(map) => map
                 .get("id")
                 .and_then(|id| id.as_u64())
-                .map(|id| FieldValue::Image(Some(ImageID::from_u64(id))))
+                .map(|id| FieldValue::Image(Some(ImageId::from_u64(id))))
                 .ok_or_else(|| mismatch(field, "an image id")),
             _ => Err(mismatch(field, "an image id (unsigned integer)")),
         },
@@ -371,7 +371,7 @@ mod untyped_parsing_tests {
             parsed.0["published"],
             FieldValue::Date(Some(NaiveDate::from_ymd_opt(2024, 3, 1).unwrap()))
         );
-        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageID::from_u64(7))));
+        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageId::from_u64(7))));
         assert_eq!(parsed.0["tags"], FieldValue::TextEnum(vec!["news".into()]));
         assert_eq!(
             parsed.0["scores"],
@@ -400,7 +400,7 @@ mod untyped_parsing_tests {
             "cover": { "id": 7, "url": "/images/abc.png" }
         }))
         .unwrap();
-        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageID::from_u64(7))));
+        assert_eq!(parsed.0["cover"], FieldValue::Image(Some(ImageId::from_u64(7))));
 
         // An object without a usable id is still an error.
         assert!(parse(json!({ "title": "t", "cover": { "url": "/images/abc.png" } })).is_err());
@@ -627,7 +627,7 @@ pub enum FieldValue {
     Boolean(bool),
     Date(Option<NaiveDate>),
     DateTime(Option<DateTime<FixedOffset>>),
-    Image(Option<ImageID>),
+    Image(Option<ImageId>),
     CompositeField(Option<CompositeFieldValue>),
     Array(Vec<FieldValue>),
     TextEnum(Vec<String>),
@@ -660,7 +660,7 @@ impl Default for FieldValue {
     }
 }
 impl FieldValue {
-    pub fn to_response(&self, images: &HashMap<ImageID, Image>) -> FieldValueResponse {
+    pub fn to_response(&self, images: &HashMap<ImageId, Image>) -> FieldValueResponse {
         match self {
             FieldValue::Text(s) => FieldValueResponse::Text(s.clone()),
             FieldValue::Markdown(s) => FieldValueResponse::Markdown(s.clone()),
@@ -1633,7 +1633,7 @@ mod tests {
                     )),
                     r#"{"DateTime":"2023-01-01T12:00:00+00:00"}"#,
                 ),
-                FieldType::Image => (FieldValue::Image(Some(ImageID::from_u64(1))), r#"{"Image":1}"#),
+                FieldType::Image => (FieldValue::Image(Some(ImageId::from_u64(1))), r#"{"Image":1}"#),
                 FieldType::CompositeField(_) => (
                     FieldValue::CompositeField(Some(CompositeFieldValue {
                         id: "comp_1".into(),
@@ -1836,7 +1836,7 @@ mod tests {
                         unique: false,
                     },
                     HashMap::new(),
-                    FieldValue::Image(Some(ImageID::from_u64(1))),
+                    FieldValue::Image(Some(ImageId::from_u64(1))),
                 ),
                 FieldType::CompositeField(_) => (
                     FieldSchema {
@@ -1939,7 +1939,7 @@ mod tests {
                 FieldType::DateTime => FieldValue::DateTime(Some(
                     DateTime::parse_from_rfc3339("2023-01-01T12:00:00+00:00").unwrap(),
                 )),
-                FieldType::Image => FieldValue::Image(Some(ImageID::from_u64(1))),
+                FieldType::Image => FieldValue::Image(Some(ImageId::from_u64(1))),
                 FieldType::CompositeField(_) => FieldValue::CompositeField(Some(CompositeFieldValue::default())),
                 FieldType::Array(_) => FieldValue::Array(vec![FieldValue::Text("Item".to_string())]),
                 FieldType::TextEnum(_) => FieldValue::TextEnum(vec!["Option".to_string()]),
@@ -2251,7 +2251,7 @@ mod tests {
                     )),
                     true,
                 ),
-                FieldType::Image => (FieldValue::Image(Some(ImageID::from_u64(1))), true),
+                FieldType::Image => (FieldValue::Image(Some(ImageId::from_u64(1))), true),
                 FieldType::CompositeField(_) | FieldType::Array(_) | FieldType::TextEnum(_) => {
                     continue;
                 }
@@ -2769,8 +2769,8 @@ mod tests {
                 FieldType::Image => (
                     field_type,
                     HashMap::new(),
-                    FieldValue::Image(Some(ImageID::from_u64(1))),
-                    FieldValue::Image(Some(ImageID::from_u64(1))),
+                    FieldValue::Image(Some(ImageId::from_u64(1))),
+                    FieldValue::Image(Some(ImageId::from_u64(1))),
                 ),
                 FieldType::CompositeField(_) => (
                     FieldType::CompositeField(CompositeFieldReference {

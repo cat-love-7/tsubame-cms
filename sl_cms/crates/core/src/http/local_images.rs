@@ -41,7 +41,7 @@ async fn get_image_by_id<R: Storage + LocalImageBytes>(
 ) -> Result<impl IntoResponse, HttpError> {
     let Some(url) = module
         .image_service
-        .image_url(crate::models::image::ImageID::from_u64(id))
+        .image_url(crate::models::image::ImageId::from_u64(id))
         .await?
     else {
         return Err(HttpError::NotFound("Image not found"));

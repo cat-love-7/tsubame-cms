@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::models::image::{Image, ImageID, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo};
+use crate::models::image::{Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo};
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -24,10 +24,10 @@ pub enum Replacement {
 /// answer. Serving and accepting those bytes is *not* here: that belongs to the adapter that
 /// stores them itself (see [`crate::repositories::local_image_bytes::LocalImageBytes`]).
 pub trait ImageRepository: Send + Sync {
-    fn get_image(&self, id: &ImageID) -> impl Future<Output = Result<Option<Image>, BoxError>> + Send;
-    fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageID, Image)>, BoxError>> + Send;
+    fn get_image(&self, id: &ImageId) -> impl Future<Output = Result<Option<Image>, BoxError>> + Send;
+    fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageId, Image)>, BoxError>> + Send;
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
-    fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_image(&self, id: &ImageId) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     /// The file an image's record currently names, or `None` when there is no such image.
     ///
@@ -35,7 +35,7 @@ pub trait ImageRepository: Send + Sync {
     /// nothing to search for.
     fn image_file_name(
         &self,
-        id: &ImageID,
+        id: &ImageId,
     ) -> impl Future<Output = Result<Option<String>, BoxError>> + Send;
 
     /// Record which images one piece of content uses, replacing what it used before.
@@ -47,13 +47,13 @@ pub trait ImageRepository: Send + Sync {
     fn set_image_references(
         &self,
         owner: &ImageOwner,
-        images: &[ImageID],
+        images: &[ImageId],
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     /// The content that uses an image.
     fn get_image_references(
         &self,
-        id: &ImageID,
+        id: &ImageId,
     ) -> impl Future<Output = Result<Vec<ImageOwner>, BoxError>> + Send;
 
     /// Move an image in or out of the trash.
@@ -63,13 +63,13 @@ pub trait ImageRepository: Send + Sync {
     /// deleted for good.
     fn set_image_deleted_at(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Give an image another display name, keeping its id and its bytes.
     fn rename_image(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         original_filename: &str,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Hand out a place to upload replacement bytes, under a file name of the adapter's choosing,
@@ -85,7 +85,7 @@ pub trait ImageRepository: Send + Sync {
     /// deleted the bytes the stale record still names.
     fn generate_replacement_upload_url(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         ext: &str,
     ) -> impl Future<Output = Result<ReplacementInfo, BoxError>> + Send;
     /// Whether bytes are stored under `file_name`.
@@ -105,7 +105,7 @@ pub trait ImageRepository: Send + Sync {
     /// An image that already serves `file_name` is not a change (and nothing is forgotten).
     fn replace_image(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         file_name: &str,
     ) -> impl Future<Output = Result<Replacement, BoxError>> + Send;
 }

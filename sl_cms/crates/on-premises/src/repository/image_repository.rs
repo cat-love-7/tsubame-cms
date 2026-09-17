@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use rkv::{StoreOptions, Value};
 
 use sl_cms_core::models::image::{
-    is_safe_file_name, sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest,
+    is_safe_file_name, sanitize_ext, Image, ImageId, NewImageInfo, NewImageRequest,
     ReplacementInfo,
     ImageOwner,
 };
@@ -34,18 +34,18 @@ fn owner_prefix(owner: &ImageOwner) -> String {
 }
 
 /// The entries one image has: `image|<id>|<owner>`.
-fn image_prefix(id: &ImageID) -> String {
+fn image_prefix(id: &ImageId) -> String {
     format!("image|{}|", **id)
 }
 
-fn image_owner_key(id: &ImageID, owner: &ImageOwner) -> String {
+fn image_owner_key(id: &ImageId, owner: &ImageOwner) -> String {
     format!("{}{}", image_prefix(id), owner.storage_key())
 }
 
 impl Repository {
     /// The lookup itself, without the storage lock: `delete_image` already holds it, and a
     /// `std::sync::Mutex` is not reentrant.
-    fn image_data(&self, id: &ImageID) -> Result<Option<ImageData>, BoxError> {
+    fn image_data(&self, id: &ImageId) -> Result<Option<ImageData>, BoxError> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
         let reader = env.read()?;
@@ -58,7 +58,7 @@ impl Repository {
         }
     }
 
-    fn get_image_data(&self, id: &ImageID) -> Result<Option<ImageData>, BoxError> {
+    fn get_image_data(&self, id: &ImageId) -> Result<Option<ImageData>, BoxError> {
         let _guard = self.begin();
         self.image_data(id)
     }
@@ -76,7 +76,7 @@ impl Repository {
 }
 
 impl ImageRepository for Repository {
-    async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, BoxError> {
+    async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, BoxError> {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
                 original_filename: image.original_filename,
@@ -88,7 +88,7 @@ impl ImageRepository for Repository {
         }
     }
 
-    async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, BoxError> {
+    async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
@@ -101,7 +101,7 @@ impl ImageRepository for Repository {
                 let Ok(raw_id) = <[u8; 8]>::try_from(key) else {
                     continue;
                 };
-                let id = ImageID::from_u64(u64::from_le_bytes(raw_id));
+                let id = ImageId::from_u64(u64::from_le_bytes(raw_id));
                 let image_data: ImageData = serde_json::from_str(&s)?;
                 let image = Image {
                     original_filename: image_data.original_filename,
@@ -133,7 +133,7 @@ impl ImageRepository for Repository {
             _ => 0,
         };
         let new_id = current_id + 1;
-        let image_id = ImageID::from_u64(new_id);
+        let image_id = ImageId::from_u64(new_id);
         let image_data = ImageData {
             original_filename: upload_info.original_filename.clone(),
             file_name: save_file_name.clone(),
@@ -158,7 +158,7 @@ impl ImageRepository for Repository {
         })
     }
 
-    async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
+    async fn rename_image(&self, id: &ImageId, original_filename: &str) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;
@@ -180,7 +180,7 @@ impl ImageRepository for Repository {
 
     async fn generate_replacement_upload_url(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         ext: &str,
     ) -> Result<ReplacementInfo, BoxError> {
         // Read-modify-write of the image record, and the whole of it is under the one lock: an
@@ -228,7 +228,7 @@ impl ImageRepository for Repository {
         Ok(self.image_path(file_name)?.is_file())
     }
 
-    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<Replacement, BoxError> {
+    async fn replace_image(&self, id: &ImageId, file_name: &str) -> Result<Replacement, BoxError> {
         // Read, decide and write under the one lock: an apply that decided against a record and
         // then waited to write it could take an upload a newer request had already replaced, or
         // forget one recorded in between - and a request that wrote back a record it read before
@@ -285,14 +285,14 @@ impl ImageRepository for Repository {
         Ok(Replacement::Applied)
     }
 
-    async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
+    async fn image_file_name(&self, id: &ImageId) -> Result<Option<String>, BoxError> {
         Ok(self.get_image_data(id)?.map(|data| data.file_name))
     }
 
     async fn set_image_references(
         &self,
         owner: &ImageOwner,
-        images: &[ImageID],
+        images: &[ImageId],
     ) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
@@ -314,7 +314,7 @@ impl ImageRepository for Repository {
                 continue;
             };
             let Ok(id) = raw.parse::<u64>() else { continue };
-            before.push(ImageID::from_u64(id));
+            before.push(ImageId::from_u64(id));
         }
 
         let after: std::collections::BTreeSet<u64> = images.iter().map(|id| **id).collect();
@@ -327,7 +327,7 @@ impl ImageRepository for Repository {
             )?;
             store.delete(
                 &mut writer,
-                image_owner_key(&ImageID::from_u64(*id), owner).as_bytes(),
+                image_owner_key(&ImageId::from_u64(*id), owner).as_bytes(),
             )?;
         }
         for id in after.difference(&before_set) {
@@ -338,7 +338,7 @@ impl ImageRepository for Repository {
             )?;
             store.put(
                 &mut writer,
-                image_owner_key(&ImageID::from_u64(*id), owner).as_bytes(),
+                image_owner_key(&ImageId::from_u64(*id), owner).as_bytes(),
                 &Value::Str(&owner.storage_key()),
             )?;
         }
@@ -346,7 +346,7 @@ impl ImageRepository for Repository {
         Ok(())
     }
 
-    async fn get_image_references(&self, id: &ImageID) -> Result<Vec<ImageOwner>, BoxError> {
+    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ImageOwner>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(IMAGE_REFS_STORE, StoreOptions::create())?;
@@ -369,7 +369,7 @@ impl ImageRepository for Repository {
 
     async fn set_image_deleted_at(
         &self,
-        id: &ImageID,
+        id: &ImageId,
         at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<(), BoxError> {
         let _guard = self.begin();
@@ -391,7 +391,7 @@ impl ImageRepository for Repository {
         Ok(())
     }
 
-    async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
+    async fn delete_image(&self, id: &ImageId) -> Result<(), BoxError> {
         let _guard = self.begin();
         let image = self.image_data(id)?.ok_or("Image not found")?;
         // Remove the stored bytes first; a missing file is not an error (the metadata

@@ -5,7 +5,7 @@ use chrono::Utc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::repositories::collection_repository::ApplyStatusError;
-use crate::models::image::{Image, ImageID};
+use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{
     SchemaScope,validate_composite_references, validate_schema, CompositeFieldId};
@@ -154,7 +154,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     async fn set_image_references(
         &self,
         owner: &crate::models::image::ImageOwner,
-        images: &[crate::models::image::ImageID],
+        images: &[crate::models::image::ImageId],
     ) {
         if let Err(e) = self
             .image_repository
@@ -217,7 +217,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?;
         // The image library once per request: a field value may point at an image, and the
         // cheap way to answer that is one query rather than one per value.
-        let images: HashMap<ImageID, Image> = self
+        let images: HashMap<ImageId, Image> = self
             .image_repository
             .get_all_images()
             .await
@@ -485,7 +485,7 @@ mod tests {
     use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
     use crate::models::field::{FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse};
     use crate::models::image::{
-        Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
+        Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo,
     };
     use crate::models::schema::CompositeFieldId;
     use crate::repositories::image_repository::Replacement;
@@ -646,10 +646,10 @@ mod tests {
     /// something to be read back out of however the image happens to be served.
     #[derive(Default)]
     struct MockImageRepository {
-        file_names: std::sync::RwLock<std::collections::HashMap<ImageID, String>>,
+        file_names: std::sync::RwLock<std::collections::HashMap<ImageId, String>>,
     }
     impl ImageRepository for MockImageRepository {
-        async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Some(Image {
                 original_filename: format!("image_{}.jpg", id),
                 url: format!("/images/{}", id),
@@ -657,17 +657,17 @@ mod tests {
                 deleted_at: None,
             }))
         }
-        async fn get_all_images(&self) -> Result<Vec<(ImageID, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(vec![])
         }
         async fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(NewImageInfo {
-                id: ImageID::from_u64(1),
+                id: ImageId::from_u64(1),
                 upload_url: "/upload/1".to_string(),
                 url: "/images/1".to_string(),
             })
         }
-        async fn generate_replacement_upload_url(&self, _id: &ImageID, ext: &str) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn generate_replacement_upload_url(&self, _id: &ImageId, ext: &str) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(ReplacementInfo {
                 file_name: format!("replacement.{ext}"),
                 upload_url: "/upload/replacement".to_string(),
@@ -676,37 +676,37 @@ mod tests {
         async fn image_bytes_exist(&self, _file_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(true)
         }
-        async fn replace_image(&self, _id: &ImageID, _file_name: &str) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn replace_image(&self, _id: &ImageId, _file_name: &str) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
             // These tests never go through a replacement; answering `Applied` keeps the double
             // out of the way of the content they are about.
             Ok(Replacement::Applied)
         }
-        async fn rename_image(&self, _id: &ImageID, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn rename_image(&self, _id: &ImageId, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn delete_image(&self, _id: &ImageId) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn image_file_name(&self, id: &ImageId) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(self.file_names.read().unwrap().get(id).cloned())
         }
 
         async fn set_image_references(
             &self,
             _owner: &crate::models::image::ImageOwner,
-            _images: &[ImageID],
+            _images: &[ImageId],
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
         async fn get_image_references(
             &self,
-            _id: &ImageID,
+            _id: &ImageId,
         ) -> Result<Vec<crate::models::image::ImageOwner>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Vec::new())
         }
         async fn set_image_deleted_at(
             &self,
-            _id: &ImageID,
+            _id: &ImageId,
             _at: Option<chrono::DateTime<chrono::Utc>>,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())

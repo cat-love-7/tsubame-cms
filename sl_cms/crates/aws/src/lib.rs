@@ -256,7 +256,7 @@ async fn redirect_to_image(
     use axum::response::IntoResponse;
     match module
         .image_service
-        .image_url(sl_cms_core::models::image::ImageID::from_u64(id))
+        .image_url(sl_cms_core::models::image::ImageId::from_u64(id))
         .await?
     {
         Some(url) => Ok((
