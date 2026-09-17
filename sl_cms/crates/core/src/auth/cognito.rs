@@ -191,6 +191,10 @@ pub struct HttpJwks {
 
 impl HttpJwks {
     pub fn new(url: String) -> Self {
+        // reqwest leaves the choice of rustls crypto provider to the process (see
+        // `webhook::install_crypto_provider`), and this is the other place a client is built -
+        // including in a deployment that sends no webhooks and so never went through that one.
+        crate::webhook::install_crypto_provider();
         HttpJwks {
             url,
             client: reqwest::Client::new(),

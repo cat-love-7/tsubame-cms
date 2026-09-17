@@ -316,8 +316,16 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       レコードを作る。リスト外は **403**(「組織の誰でもプールにサインインできる = 誰でもサイトを
       編集できる、にはしない」)。2 回目以降は `external_id` で解決する。無効化されたアカウントは
       解決しても 403。
-      AWS 側は `COGNITO_CLIENT_ID` を設定に足し、`build_app_module` が
-      `CognitoVerifier`(+ `HttpJwks`)を据える。ローカル起動も同じ合成を通る。
+      AWS 側は `COGNITO_CLIENT_ID` を設定に足し、**Lambda 起動経路**(`build_deployed_module`)が
+      `CognitoVerifier`(+ `HttpJwks`)を据え、`BOOTSTRAP_ADMIN_USERNAMES` を認証サービスへ渡す。
+      **ローカル起動はあえて別の合成**(`build_app_module` = 自前 HS256)を通る: テストは
+      `JWT_SECRET` で署名したトークンでサインインし、また**配備では `JWT_SECRET` が
+      リセット/プレビューリンクの署名にも使われる**ので、配備が自前トークンを受け入れると
+      その秘密を知る者が管理者トークンを鋳造できてしまう。
+      → **完了条件**: 配備の合成が自前トークンを拒否すること(401)、検証器がプールを正しく
+      指すこと → `deployed_verifier_tests` で達成。
+      **残り**: Cognito のユーザー作成・削除・パスワード再設定(`AccountProvisioner`)は未配線
+      (アカウント画面はまだ AWS では 501)。
       → **完了条件**: リスト内の 1 人が初回ログインで管理者、リスト外は 403、2 回目は
       `external_id` で解決
       → **達成**(同じテストで、作成・再解決・無効化・部外者の 4 点を確認)。
@@ -427,6 +435,13 @@ scripts/build-lambda.sh --arch arm64
 - 実際に**起動できるか**は staging で確認する(下の P5 の E2E と同じ扱い)。
 - 同じターゲットは on-prem のバイナリにも使える(`cargo build --target aarch64-unknown-linux-gnu`、
   ただし rkv/LMDB も C なので同じクロスツールチェーンが要る)。
+
+### 起動時の rustls プロバイダ(2026-09 修正)
+
+`reqwest` は rustls の暗号プロバイダを自分で選ばない(`rustls-no-provider` で aws-lc-rs の CMake を
+避けている)ため、**HTTPS クライアントを作る前にプロセスが 1 つ据える**必要がある。据えていたのは
+Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` のクライアント生成時に
+パニックしていた。`install_crypto_provider()` を `HttpJwks::new` と AWS バイナリの起動時に呼ぶ。
 
 ### P6. 別トピック(今回は対象外)
 

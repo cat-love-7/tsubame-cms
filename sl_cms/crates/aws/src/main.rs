@@ -8,6 +8,10 @@ use sl_cms_core::config::Config;
 #[tokio::main]
 async fn main() {
     init_tracing();
+    // The process has to pick a rustls crypto provider before any HTTPS client is built (see
+    // `sl_cms_core::webhook::install_crypto_provider`); saying it here makes the requirement
+    // visible at the entry point rather than hidden in whichever client happens to be built first.
+    sl_cms_core::webhook::install_crypto_provider();
 
     let config = Config::from_env().unwrap_or_else(|error| fatal(error.into()));
 

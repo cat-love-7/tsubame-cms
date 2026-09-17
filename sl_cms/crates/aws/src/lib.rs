@@ -22,6 +22,7 @@ use sl_cms_core::app_module::AppModule;
 use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
+use sl_cms_core::auth::cognito::{CognitoSettings, CognitoVerifier, HttpJwks};
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
 pub mod lambda;
@@ -99,29 +100,87 @@ async fn s3_client(settings: &AwsSettings) -> aws_sdk_s3::Client {
 ///
 /// Same shape as the on-premises one, with one difference: this has to reach the network, so it
 /// is `async` — the SDK clients are built from configuration the SDK loads.
+/// Everything a module is built from, so the two composers below cannot drift in anything but
+/// which verifier decides who the caller is.
+struct ModuleParts {
+    repository: std::sync::Arc<AwsRepository>,
+    token_issuer: TokenIssuer,
+    notifier: std::sync::Arc<dyn sl_cms_core::webhook::Notifier>,
+    preview_links: PreviewLinkIssuer,
+    password_resets: PasswordResetIssuer,
+}
+
+async fn module_parts(config: &Config, settings: &AwsSettings) -> ModuleParts {
+    ModuleParts {
+        repository: std::sync::Arc::new(AwsRepository::connect(settings).await),
+        token_issuer: TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours),
+        notifier: sl_cms_core::webhook::build_notifier(
+            config.webhook_urls.clone(),
+            config.webhook_secret.clone(),
+        ),
+        // Same secret, different prefix for each kind of link, exactly as on premises: a reset
+        // signature can never be replayed as a preview link or a token.
+        preview_links: PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes),
+        password_resets: PasswordResetIssuer::new(
+            &config.jwt_secret,
+            config.password_reset_ttl_minutes,
+        ),
+    }
+}
+
+/// The module a local run drives: the CMS issues and checks its own tokens.
+///
+/// Used by `run_local` and by the adapter tests, which sign in with a token minted from
+/// `JWT_SECRET`. A deployment does **not** use this (see [`build_deployed_module`]).
 pub async fn build_app_module(
     config: &Config,
     settings: &AwsSettings,
 ) -> Result<AppModule<AwsRepository>, Box<dyn std::error::Error + Send + Sync>> {
-    let repository = std::sync::Arc::new(AwsRepository::connect(settings).await);
-    let token_issuer = TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours);
-    let notifier = sl_cms_core::webhook::build_notifier(
-        config.webhook_urls.clone(),
-        config.webhook_secret.clone(),
-    );
-    // Same secret, different prefix for each kind of link, exactly as on premises: a reset
-    // signature can never be replayed as a preview link or a token.
-    let preview_links =
-        PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes);
-    let password_resets =
-        PasswordResetIssuer::new(&config.jwt_secret, config.password_reset_ttl_minutes);
+    let parts = module_parts(config, settings).await;
     Ok(AppModule::new(
-        repository,
-        token_issuer,
-        notifier,
-        preview_links,
-        password_resets,
+        parts.repository,
+        parts.token_issuer,
+        parts.notifier,
+        parts.preview_links,
+        parts.password_resets,
     ))
+}
+
+/// The module a deployment runs: whoever signs in is vouched for by the identity provider.
+///
+/// Deliberately not the same composition as a local run. The CMS's own verifier is HS256 under
+/// `JWT_SECRET`, and that secret is also what signs password-reset and preview links in this very
+/// deployment - so a Lambda that accepted self-issued tokens would mint an administrator's token
+/// for anyone who learned it. Here the only tokens that count are the pool's, and
+/// `BOOTSTRAP_ADMIN_USERNAMES` names the people who may become the first administrators by
+/// signing in.
+pub async fn build_deployed_module(
+    config: &Config,
+    settings: &AwsSettings,
+) -> Result<AppModule<AwsRepository>, Box<dyn std::error::Error + Send + Sync>> {
+    let parts = module_parts(config, settings).await;
+    let verifier = std::sync::Arc::new(CognitoVerifier::new(
+        cognito_settings(settings),
+        HttpJwks::new(cognito_settings(settings).jwks_url()),
+    ));
+    Ok(AppModule::new_with_verifier(
+        parts.repository,
+        parts.token_issuer,
+        parts.notifier,
+        parts.preview_links,
+        parts.password_resets,
+        verifier,
+        settings.bootstrap_admin_usernames.clone(),
+    ))
+}
+
+/// What the verifier has to be told, from what the deployment was given.
+fn cognito_settings(settings: &AwsSettings) -> CognitoSettings {
+    CognitoSettings {
+        region: settings.region.clone(),
+        user_pool_id: settings.user_pool_id.clone(),
+        client_id: settings.client_id.clone(),
+    }
 }
 
 /// The whole HTTP surface for this backend.
@@ -202,7 +261,7 @@ pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error
     );
     warn_about_the_environment(config, &settings);
 
-    let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
+    let module = std::sync::Arc::new(build_deployed_module(config, &settings).await?);
     let router = build_router_with_login(
         module,
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
@@ -227,8 +286,9 @@ pub async fn run_local(config: &Config) -> Result<(), Box<dyn std::error::Error 
     if repository.ensure_table().await? {
         tracing::info!(table = %settings.table, "created the table for this local run");
     }
-    // The same composition as the Lambda entry point, so what a developer drives locally is what
-    // runs on AWS — including which verifier decides who the caller is.
+    // The same module as the Lambda entry point in everything but the verifier: a local run signs
+    // in with a token minted from `JWT_SECRET` (there is no pool to talk to), while a deployment
+    // takes the pool's tokens only. See `build_deployed_module`.
     let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
     warn_about_the_environment(config, &settings);
 
@@ -355,5 +415,68 @@ mod credential_tests {
         settings.session_token = None;
         let credentials = emulator_credentials(&settings).expect("an emulator is configured");
         assert_eq!(credentials.session_token(), None);
+    }
+}
+
+#[cfg(test)]
+mod deployed_verifier_tests {
+    use super::*;
+    use sl_cms_core::auth::token::TokenIssuer;
+    use sl_cms_core::models::user::{Permission, User};
+
+    fn emulator_settings() -> AwsSettings {
+        AwsSettings {
+            region: "eu-west-1".to_string(),
+            table: "cms".to_string(),
+            bucket: "cms-images".to_string(),
+            user_pool_id: "eu-west-1_abc".to_string(),
+            client_id: "client-1".to_string(),
+            login_url: None,
+            endpoint_url: Some("http://localhost:8000".to_string()),
+            s3_endpoint_url: None,
+            image_base_url: None,
+            access_key_id: Some("test".to_string()),
+            secret_access_key: Some("test-secret".to_string()),
+            session_token: None,
+            bootstrap_admin_usernames: vec!["ops".to_string()],
+        }
+    }
+
+    /// The deployment's tokens are the pool's. The CMS's own HS256 tokens are signed with the same
+    /// secret that signs reset and preview links in that deployment, so accepting them here would
+    /// hand an administrator's token to anyone holding it - which is why the Lambda composition is
+    /// not the local one, and why this test exists rather than a comment.
+    #[tokio::test]
+    async fn the_deployed_module_does_not_accept_the_cms_own_tokens() {
+        let config = Config::default();
+        let settings = emulator_settings();
+        let module = build_deployed_module(&config, &settings)
+            .await
+            .expect("the module builds without talking to anything");
+
+        let (own_token, _) = TokenIssuer::new(&config.jwt_secret, 1)
+            .issue(&User::new("ops", true, Permission::admin()))
+            .expect("a token");
+        let refusal = module
+            .auth_service
+            .user_from_token(&own_token)
+            .await
+            .expect_err("the deployment takes the pool's tokens, not the CMS's own");
+        assert_eq!(refusal.status_code, 401);
+    }
+
+    /// The verifier is pointed at the deployment's own pool: a mismatch here would be a deployment
+    /// that rejects every genuine token.
+    #[test]
+    fn the_verifier_is_told_which_pool_this_is() {
+        let settings = emulator_settings();
+        let cognito = cognito_settings(&settings);
+
+        assert_eq!(
+            cognito.issuer(),
+            "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_abc"
+        );
+        assert_eq!(cognito.client_id, "client-1");
+        assert_eq!(cognito.jwks_url(), settings.jwks_url());
     }
 }
