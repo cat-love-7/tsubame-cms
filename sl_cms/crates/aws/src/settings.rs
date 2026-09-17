@@ -172,8 +172,12 @@ fn image_delivery_from(
         "presigned" => {
             let seconds = ttl_seconds
                 .map(|raw| {
-                    raw.parse::<u64>()
-                        .map_err(|_| format!("AWS_IMAGE_URL_TTL_SECONDS must be a number, got {raw}"))
+                    // Whole seconds: `Duration::from_secs` takes them, and Terraform's check refuses
+                    // a fraction at plan time (`infra/variables.tf`), so one reaching here is
+                    // something to say clearly rather than to round behind the operator's back.
+                    raw.parse::<u64>().map_err(|_| {
+                        format!("AWS_IMAGE_URL_TTL_SECONDS must be a whole number of seconds, got {raw}")
+                    })
                 })
                 .transpose()?
                 .unwrap_or(3600);
@@ -263,6 +267,10 @@ mod tests {
         // And the values that would have shipped a broken deployment.
         assert!(image_delivery_from(Some("private"), None).is_err());
         assert!(image_delivery_from(Some("presigned"), Some("soon")).is_err());
+        assert!(
+            image_delivery_from(Some("presigned"), Some("60.5")).is_err(),
+            "a fraction is not a number of seconds Terraform lets through"
+        );
         assert!(image_delivery_from(Some("presigned"), Some("30")).is_err(), "too short");
         assert!(
             image_delivery_from(Some("presigned"), Some("604801")).is_err(),

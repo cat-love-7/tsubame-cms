@@ -86,8 +86,15 @@ variable "image_url_ttl_seconds" {
   default     = 3600
 
   validation {
-    condition     = var.image_url_ttl_seconds >= 60 && var.image_url_ttl_seconds <= 604800
-    error_message = "A signature lasts between a minute and seven days (604800 seconds), as SigV4 allows."
+    # `floor` as well as the range: the application parses this variable as whole seconds
+    # (`AWS_IMAGE_URL_TTL_SECONDS`), so a fraction would pass here and then refuse to start the
+    # deployment.
+    condition = (
+      var.image_url_ttl_seconds == floor(var.image_url_ttl_seconds) &&
+      var.image_url_ttl_seconds >= 60 &&
+      var.image_url_ttl_seconds <= 604800
+    )
+    error_message = "A signature lasts a whole number of seconds, between a minute and seven days (604800), as SigV4 allows."
   }
 }
 
