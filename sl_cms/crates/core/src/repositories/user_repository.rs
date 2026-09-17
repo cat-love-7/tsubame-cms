@@ -38,6 +38,15 @@ pub trait UserRepository: Send + Sync + 'static {
         user: &User,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
 
+    /// Record that an account signed in, without writing back anything else it holds.
+    ///
+    /// A sign-in reads the account to check the password, and checking a password takes long
+    /// enough for an administrator to change the same account in between. Writing the whole
+    /// account back from that read would undo their answer - a disabled account re-enabled, a
+    /// permission change or a session invalidation rolled back. This is the write a sign-in makes:
+    /// the read of `last_login` and the write of it are one step.
+    fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> impl Future<Output = Result<(), BoxError>> + Send;
+
     fn get_all_users(&self) -> impl Future<Output = Result<Vec<(UserId, User)>, BoxError>> + Send;
 
     fn delete_user(&self, user_id: &UserId) -> impl Future<Output = Result<(), BoxError>> + Send;

@@ -229,6 +229,26 @@ impl UserRepository for AwsRepository {
         .await
     }
 
+    async fn record_login(
+        &self,
+        user_id: &UserId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let id = user_id.clone();
+        // The account is read to check the password, and that takes long enough for an
+        // administrator to change it in between: this writes only the one field the sign-in is
+        // recording, and only while the rest of the record is still what it read.
+        match change_record::<User>(&inner, &key::user(&id), key::RECORD, |user| {
+            user.last_login = Some(at)
+        })
+        .await?
+        {
+            Some(()) => Ok(()),
+            None => Err("user not found".into()),
+        }
+    }
+
     async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let inner = self.inner.clone();
         // Accounts are few and listed rarely, and the reservation list holds every one of

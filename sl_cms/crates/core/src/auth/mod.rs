@@ -370,10 +370,13 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         }
         self.throttle.record_success(&username);
 
-        // Recording the login is a side effect; a failure here must not deny a valid
-        // login, so it is logged and swallowed.
-        user.last_login = Some(chrono::Utc::now());
-        if let Err(e) = self.repository.update_user(&user.id, &user).await {
+        // Recording the login is a side effect; a failure here must not deny a valid login, so it
+        // is logged and swallowed. It is its own write: the account was read before the password
+        // was checked, and writing the whole of it back would undo an administrator's change made
+        // while that was happening (see `UserRepository::record_login`).
+        let now = chrono::Utc::now();
+        user.last_login = Some(now);
+        if let Err(e) = self.repository.record_login(&user.id, now).await {
             tracing::warn!("failed to record last_login for {}: {e}", user.username);
         }
 
@@ -588,6 +591,9 @@ mod tests {
         external_ids: RwLock<HashMap<String, String>>,
         /// A store that refuses to keep a credential, for the failure the bootstrap has to survive.
         refuse_passwords: bool,
+        /// Every account written whole. A sign-in must not do that: it records one field (see
+        /// `UserRepository::record_login`), and this is how a test sees the difference.
+        whole_writes: std::sync::atomic::AtomicUsize,
     }
 
     impl LocalCredentials for InMemoryUsers {
@@ -652,7 +658,19 @@ mod tests {
             }
             Ok(user.id.clone())
         }
+        async fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> Result<(), BoxError> {
+            // Only the one field, on the record as it is now: the whole point of the method (see
+            // `UserRepository::record_login`).
+            let mut users = self.users.write().unwrap();
+            let Some(user) = users.get_mut(&user_id.to_string()) else {
+                return Err("user not found".into());
+            };
+            user.last_login = Some(at);
+            Ok(())
+        }
         async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
+            self.whole_writes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.users
                 .write()
                 .unwrap()
@@ -707,6 +725,39 @@ mod tests {
             .await
             .unwrap();
         created
+    }
+
+    /// A sign-in records when it happened, and nothing else about the account.
+    ///
+    /// The account is read before the password is checked, and checking one takes long enough for
+    /// an administrator to disable it in between: writing the whole account back from that read
+    /// would undo that. The write is its own, and only touches `last_login`.
+    #[tokio::test]
+    async fn a_login_does_not_write_the_account_back() {
+        let repository = Arc::new(InMemoryUsers::default());
+        let auth = AuthService::new(
+            repository.clone(),
+            TokenIssuer::new(b"test-secret", 1),
+            PasswordResetIssuer::new(b"test-secret", 30),
+        );
+        let created = account_with_password(&auth, "ops", "supersecret", false).await;
+        // Creating the account writes it whole; the sign-in is what must not.
+        let writes_before = repository.whole_writes.load(std::sync::atomic::Ordering::Relaxed);
+
+        auth.login("ops", "supersecret").await.unwrap();
+
+        assert_eq!(
+            repository.whole_writes.load(std::sync::atomic::Ordering::Relaxed),
+            writes_before,
+            "a sign-in must not write the whole account: that would undo an admin change made \
+             while the password was being checked"
+        );
+        let stored = repository
+            .get_user_from_id(&UserId::from(created.id.as_str()))
+            .await
+            .unwrap()
+            .expect("the account");
+        assert!(stored.last_login.is_some(), "the sign-in is still recorded");
     }
 
     #[tokio::test]

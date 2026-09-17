@@ -114,6 +114,24 @@ impl UserRepository for Repository {
         Ok(())
     }
 
+    async fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> Result<(), BoxError> {
+        // Read and write under the one lock: a sign-in must not write back an account an
+        // administrator has changed in the meantime (see `UserRepository::record_login`).
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single("user", StoreOptions::create())?;
+        let reader = env.read()?;
+        let mut user = match store.get(&reader, user_id.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?,
+            _ => return Err("user not found".into()),
+        };
+        user.last_login = Some(at);
+        let mut writer = env.write()?;
+        store.put(&mut writer, user_id.as_bytes(), &Value::Str(&serde_json::to_string(&user)?))?;
+        writer.commit()?;
+        Ok(())
+    }
+
     async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
