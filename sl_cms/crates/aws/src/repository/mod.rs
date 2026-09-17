@@ -394,6 +394,23 @@ fn delete_draft_in_transaction(
         .build())
 }
 
+/// One `Delete` inside a `TransactWriteItems`, with nothing to check.
+fn delete_in_transaction(
+    inner: &Inner,
+    pk: &str,
+    sk: &str,
+) -> Result<aws_sdk_dynamodb::types::TransactWriteItem, BoxError> {
+    Ok(aws_sdk_dynamodb::types::TransactWriteItem::builder()
+        .delete(
+            aws_sdk_dynamodb::types::Delete::builder()
+                .table_name(&inner.table)
+                .key("pk", AttributeValue::S(pk.to_string()))
+                .key("sk", AttributeValue::S(sk.to_string()))
+                .build()?,
+        )
+        .build())
+}
+
 /// What applying a transaction did.
 enum TransactOutcome {
     /// Every write landed.
@@ -578,8 +595,23 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let data = AwsRepository::encode(schema)?;
-        write(&inner, &key::collection(&name), key::SCHEMA, &data).await?;
-        write(&inner, key::COLLECTION_INDEX, name.as_str(), name.as_str()).await
+        // The schema and the entry that lists it go together: a collection whose entry is missing
+        // is invisible (nothing lists it, and nothing would ever put the entry back).
+        let outcome = transact(
+            &inner,
+            vec![
+                put_in_transaction(&inner, &key::collection(&name), key::SCHEMA, &data)?,
+                put_in_transaction(&inner, key::COLLECTION_INDEX, name.as_str(), name.as_str())?,
+            ],
+        )
+        .await?;
+        match outcome {
+            TransactOutcome::Applied => Ok(()),
+            TransactOutcome::Refused { write } => Err(format!(
+                "saving the schema for {name} was refused by write {write}, which has no condition"
+            )
+            .into()),
+        }
     }
 
     async fn delete_collection(&self, collection_name: &CollectionName) -> Result<(), BoxError> {
@@ -657,11 +689,25 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let id = **item_id;
         let partition = key::collection(&name);
-        // The published copy, the working copy and the metadata go together: removing one
-        // and leaving the others would show up as a half-deleted item.
-        remove(&inner, &partition, &key::item(id)).await?;
-        remove(&inner, &partition, &key::draft(id)).await?;
-        remove(&inner, &partition, &key::metadata(id)).await
+        // The published copy, the working copy and the metadata go together: removing one and
+        // leaving the others shows up as a half-deleted item (a draft with nothing published, or a
+        // status naming content that is gone). One transaction, so it is all of them or none.
+        let outcome = transact(
+            &inner,
+            vec![
+                delete_in_transaction(&inner, &partition, &key::item(id))?,
+                delete_in_transaction(&inner, &partition, &key::draft(id))?,
+                delete_in_transaction(&inner, &partition, &key::metadata(id))?,
+            ],
+        )
+        .await?;
+        match outcome {
+            TransactOutcome::Applied => Ok(()),
+            TransactOutcome::Refused { write } => Err(format!(
+                "deleting item {id} was refused by write {write}, which has no condition"
+            )
+            .into()),
+        }
     }
 
     async fn get_collection_item_draft(
