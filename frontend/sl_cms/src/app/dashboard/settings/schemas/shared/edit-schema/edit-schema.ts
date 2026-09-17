@@ -64,10 +64,10 @@ interface ResizeState {
   styleUrl: './edit-schema.scss',
 })
 export class EditSchema {
-  @Input() Schema: FieldSchema[] = [];
+  @Input() schema: FieldSchema[] = [];
   /** Passed on to each field: see [`Field.uniqueAllowed`]. */
   @Input() uniqueAllowed = true;
-  @Output() SchemaChange = new EventEmitter<FieldSchema[]>();
+  @Output() schemaChange = new EventEmitter<FieldSchema[]>();
   /**
    * Emitted when the user asks to persist. The parent performs the HTTP call because it
    * is the component that knows the collection name; this component used to only
@@ -94,7 +94,7 @@ export class EditSchema {
   togglePreview() {
     if (!this.preview()) {
       this.previewValues = new Map(
-        this.Schema.map((field) => [field.name, defaultValueForField(field)]),
+        this.schema.map((field) => [field.name, defaultValueForField(field)]),
       );
     }
     this.preview.set(!this.preview());
@@ -105,19 +105,19 @@ export class EditSchema {
   }
 
   addField() {
-    this.Schema.push({
+    this.schema.push({
       name: '',
       // Its own copy of the default: the field editor writes into the type it is given.
       field_type: newFieldType('Text'),
       required: false,
       ...DefaultFieldLayout,
     });
-    this.SchemaChange.emit(this.Schema);
+    this.schemaChange.emit(this.schema);
   }
 
   removeField(index: number) {
-    this.Schema.splice(index, 1);
-    this.SchemaChange.emit(this.Schema);
+    this.schema.splice(index, 1);
+    this.schemaChange.emit(this.schema);
   }
 
   /** Array order *is* display order, so reordering is a schema change. */
@@ -125,8 +125,8 @@ export class EditSchema {
     if (event.previousIndex === event.currentIndex) {
       return;
     }
-    moveItemInArray(this.Schema, event.previousIndex, event.currentIndex);
-    this.SchemaChange.emit(this.Schema);
+    moveItemInArray(this.schema, event.previousIndex, event.currentIndex);
+    this.schemaChange.emit(this.schema);
   }
 
   /** Keyboard-accessible alternative to dragging (CDK drag-drop is pointer-only). */
@@ -139,17 +139,17 @@ export class EditSchema {
   }
 
   private move(from: number, to: number) {
-    if (to < 0 || to >= this.Schema.length) {
+    if (to < 0 || to >= this.schema.length) {
       return;
     }
-    moveItemInArray(this.Schema, from, to);
-    this.SchemaChange.emit(this.Schema);
+    moveItemInArray(this.schema, from, to);
+    this.schemaChange.emit(this.schema);
   }
 
   requestSave() {
     // Normalised on the way out: what the form held (strings, empty inputs) is not what the
     // server reads.
-    this.save.emit(schemaForSaving(this.Schema));
+    this.save.emit(schemaForSaving(this.schema));
   }
 
   /**
@@ -213,6 +213,6 @@ export class EditSchema {
     }
     this.resizeState = null;
     // A resize is a schema change like any other.
-    this.SchemaChange.emit(this.Schema);
+    this.schemaChange.emit(this.schema);
   }
 }

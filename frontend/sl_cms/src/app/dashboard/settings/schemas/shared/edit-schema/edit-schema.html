@@ -1,7 +1,7 @@
 <p class="hint">{{ 'schema.orderHint' | transloco }}</p>
 
 <div class="field-grid" cdkDropList (cdkDropListDropped)="drop($event)">
-  @for (field of Schema; track $index) {
+  @for (field of schema; track $index) {
     <div class="schema-field field-cell" [style]="cellStyle(field)" cdkDrag>
       <div class="schema-field-header">
         <!-- Only the handle starts a drag: the tile contains text inputs, so making the
@@ -39,7 +39,7 @@
           matIconButton
           type="button"
           (click)="moveDown($index)"
-          [disabled]="$index === Schema.length - 1"
+          [disabled]="$index === schema.length - 1"
           [attr.aria-label]="'labels.moveFieldDown' | transloco"
           [matTooltip]="'labels.moveFieldDown' | transloco"
         >
@@ -62,9 +62,9 @@
         <app-value-field [field]="field" [value]="previewValue(field)" [disabled]="true" />
       } @else {
         <app-field
-          [(field)]="Schema[$index]"
+          [(field)]="schema[$index]"
           [uniqueAllowed]="uniqueAllowed"
-          [siblingFields]="Schema"
+          [siblingFields]="schema"
         />
       }
 
