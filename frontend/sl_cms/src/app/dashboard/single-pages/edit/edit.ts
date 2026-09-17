@@ -155,21 +155,21 @@ export class Edit implements HasUnsavedChanges {
     this.setPublished(false);
   }
 
-  private setPublished(published: boolean) {
-    const name = this.pageName();
+  private setPublished(published: boolean, target = this.pageName()) {
+    const name = target;
     const request = published ? this.pages.publishPage(name) : this.pages.unpublishPage(name);
 
     request.subscribe({
       next: (metadata) => {
         // The answer belongs to the page that was on screen when the button was pressed.
-        if (this.pageName() !== name) {
+        if (!this.stillOn(name)) {
           return;
         }
         this.error.set(null);
         this.metadata.set(metadata);
       },
       error: (e) => {
-        if (this.pageName() === name) {
+        if (this.stillOn(name)) {
           this.error.set(failure('content.failedToChangePublished', e));
         }
       },
@@ -248,10 +248,10 @@ export class Edit implements HasUnsavedChanges {
 
   /** Save and take the page live in one act: the two steps an editor always does in sequence. */
   saveAndPublish() {
-    this.saveThen(() => this.publish());
+    this.saveThen((name) => this.setPublished(true, name));
   }
 
-  private saveThen(then?: () => void) {
+  private saveThen(then?: (name: string) => void) {
     const problems = Object.values(this.fieldErrors);
     if (problems.length > 0) {
       this.error.set(problems[0]);
@@ -262,7 +262,10 @@ export class Edit implements HasUnsavedChanges {
     this.notice.set(null);
     this.problemField.set(null);
     const values = { ...this.values() };
-    this.pages.updatePageItem(this.pageName(), values).subscribe({
+    // Captured before the request: everything after this point is about the page the button was
+    // pressed for, whatever the sidebar shows by the time the answer arrives.
+    const name = this.pageName();
+    this.pages.updatePageItem(name, values).subscribe({
       next: () => {
         this.error.set(null);
         this.notice.set(t('common.saved'));
@@ -271,7 +274,9 @@ export class Edit implements HasUnsavedChanges {
         // A page that has never been saved has no status on screen yet; this is what puts the
         // badge and the publish controls there without a reload.
         this.loadMetadata(this.loadToken);
-        then?.();
+        if (this.stillOn(name)) {
+          then?.(name);
+        }
       },
       error: (e) => {
         this.problemField.set(fieldOf(e));
@@ -293,6 +298,16 @@ export class Edit implements HasUnsavedChanges {
         }
       },
     });
+  }
+
+  /**
+   * Whether the screen is still on the page a slow answer was about.
+   *
+   * A single page has no id, so the name is the whole address: publishing "the current page"
+   * after a save lands could put the page the reader moved *to* on the site.
+   */
+  private stillOn(name: string): boolean {
+    return this.pageName() === name;
   }
 
   /**

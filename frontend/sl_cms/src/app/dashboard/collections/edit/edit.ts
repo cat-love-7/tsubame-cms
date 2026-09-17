@@ -214,9 +214,9 @@ export class Edit implements HasUnsavedChanges {
    * that cannot be wrong.
    */
   saveAndPublish() {
-    this.saveThen(() => {
-      this.addressTheNewItem();
-      this.setPublished(true);
+    this.saveThen((target) => {
+      this.addressTheNewItem(target);
+      this.setPublished(true, target);
     });
   }
 
@@ -227,12 +227,11 @@ export class Edit implements HasUnsavedChanges {
    * again would then create a second one). The route id is compared with the item's, so this only
    * fires for the screen that created something.
    */
-  private addressTheNewItem() {
-    const id = this.itemId();
-    if (id === null || this.routeItemId() !== null) {
+  private addressTheNewItem(target: { name: string; id: number }) {
+    if (this.routeItemId() !== null) {
       return;
     }
-    this.router.navigate(['/collections', this.collectionName(), 'edit', id], { replaceUrl: true });
+    this.router.navigate(['/collections', target.name, 'edit', target.id], { replaceUrl: true });
   }
 
   /** Take the item off the site. Its working copy is kept. */
@@ -240,28 +239,27 @@ export class Edit implements HasUnsavedChanges {
     this.setPublished(false);
   }
 
-  private setPublished(published: boolean) {
-    const id = this.itemId();
-    if (id === null) {
+  private setPublished(published: boolean, target = this.target()) {
+    if (target === null) {
       return;
     }
 
     const request = published
-      ? this.collectionsService.publishItem(this.collectionName(), id)
-      : this.collectionsService.unpublishItem(this.collectionName(), id);
+      ? this.collectionsService.publishItem(target.name, target.id)
+      : this.collectionsService.unpublishItem(target.name, target.id);
 
     request.subscribe({
       next: (metadata) => {
         // The answer is about the item that was on screen when the button was pressed; by now
         // the editor may be showing another one.
-        if (this.itemId() !== id) {
+        if (!this.stillOn(target)) {
           return;
         }
         this.error.set(null);
         this.metadata.set(metadata);
       },
       error: (e) => {
-        if (this.itemId() === id) {
+        if (this.stillOn(target)) {
           this.error.set(failure('content.failedToChangePublished', e));
         }
       },
@@ -336,7 +334,7 @@ export class Edit implements HasUnsavedChanges {
 
   /** Save the working copy, and go back to the list. */
   save() {
-    this.saveThen(() => this.goBackToList());
+    this.saveThen((target) => this.goBackToList(target.name));
   }
 
   /**
@@ -345,7 +343,7 @@ export class Edit implements HasUnsavedChanges {
    * The follow-up only runs when the server accepted the save: publishing what a refused save
    * left behind would be worse than doing nothing.
    */
-  private saveThen(then: () => void) {
+  private saveThen(then: (target: { name: string; id: number }) => void) {
     const problems = Object.values(this.fieldErrors);
     if (problems.length > 0) {
       this.error.set(problems[0]);
@@ -356,25 +354,36 @@ export class Edit implements HasUnsavedChanges {
     this.notice.set(null);
     this.problemField.set(null);
     const values: CollectionValue = { ...this.values() };
+    // Captured now, before the request: everything after this point is about the item the button
+    // was pressed for, whatever the screen shows by the time the answer arrives.
+    const name = this.collectionName();
+    const id = this.itemId();
 
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.
-    const id = this.itemId();
     if (id === null) {
-      this.collectionsService.createCollectionItem(this.collectionName(), values).subscribe({
+      this.collectionsService.createCollectionItem(name, values).subscribe({
         next: (created) => {
           this.editsSaved(values);
           // A new item is saved as a working copy; publishing it needs its id.
           this.itemId.set(created);
-          then();
+          const target = { name, id: created };
+          if (this.stillOn(target)) {
+            then(target);
+          }
         },
         error: (e) => this.refuse(e),
       });
     } else {
-      this.collectionsService.updateCollectionItem(this.collectionName(), id, values).subscribe({
+      this.collectionsService.updateCollectionItem(name, id, values).subscribe({
         next: () => {
           this.editsSaved(values);
-          then();
+          const target = { name, id };
+          // The reader may have moved on: a save that landed late must not publish another item,
+          // and must not drag them back to this one.
+          if (this.stillOn(target)) {
+            then(target);
+          }
         },
         error: (e) => this.refuse(e),
       });
@@ -384,6 +393,23 @@ export class Edit implements HasUnsavedChanges {
   /** The form and the server agree again. */
   private editsSaved(values: CollectionValue) {
     this.saved.set(fingerprint(values));
+  }
+
+  /**
+   * The item an act is about, captured when the act starts.
+   *
+   * A save or publish answers later than it is asked, and by then the screen may be showing
+   * another item - or another collection, which is worse: the id would name a different item
+   * there. Everything that talks to the server after an await reads this, not the signals.
+   */
+  private target(): { name: string; id: number } | null {
+    const id = this.itemId();
+    return id === null ? null : { name: this.collectionName(), id };
+  }
+
+  /** Whether the screen is still on the item a slow answer was about. */
+  private stillOn(target: { name: string; id: number }): boolean {
+    return this.collectionName() === target.name && this.itemId() === target.id;
   }
 
   /**
@@ -414,7 +440,7 @@ export class Edit implements HasUnsavedChanges {
     this.error.set(failure('content.saveFailed', error));
   }
 
-  private goBackToList() {
-    this.router.navigate(['/collections', this.collectionName()]);
+  private goBackToList(name: string) {
+    this.router.navigate(['/collections', name]);
   }
 }

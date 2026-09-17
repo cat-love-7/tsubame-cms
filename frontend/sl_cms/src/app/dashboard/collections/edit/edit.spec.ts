@@ -34,10 +34,17 @@ class StubCollectionsService {
 
   /** Saves the screen sent, so the order of "save, then publish" can be read back. */
   public updated: { id: number; values: unknown }[] = [];
+  /** Where a publish was sent, which is how "the wrong collection" would show up. */
+  public publishedTargets: { name: string; id: number }[] = [];
+  /** When set, the save waits for the test to complete it. */
+  public heldUpdates?: Subject<void>;
 
   updateCollectionItem(_name: string, id: number, values: unknown): Observable<void> {
     this.updated.push({ id, values });
-    return this.saveRefusal ? throwError(() => this.saveRefusal) : of(void 0);
+    if (this.saveRefusal) {
+      return throwError(() => this.saveRefusal);
+    }
+    return this.heldUpdates ?? of(void 0);
   }
 
   createCollectionItem(): Observable<number> {
@@ -73,6 +80,7 @@ class StubCollectionsService {
 
   publishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.published.push(id);
+    this.publishedTargets.push({ name: _name, id });
     return of({ status: 'published', published_at: '2024-01-01T00:00:00Z',
       last_published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
@@ -233,6 +241,32 @@ describe('Edit', () => {
     // Saved, then published: the order is the whole point.
     expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
     expect(stub.published).toEqual([7]);
+  });
+
+  // The reader can switch collections while the save is in flight, and the id alone would then
+  // name a *different* item in the collection they moved to. The act carries the collection it was
+  // pressed for, and does nothing at all if the reader has moved on.
+  it('publishes nothing when the reader left before the save landed', async () => {
+    const held = new Subject<void>();
+    stub.heldUpdates = held;
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+
+    component.saveAndPublish();
+    // Another collection, before the save answers.
+    route.navigate({ name: 'pages', id: '7' });
+    await fixture.whenStable();
+    held.next();
+    held.complete();
+    await fixture.whenStable();
+
+    expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
+    expect(stub.publishedTargets).toEqual([]);
   });
 
   it('does not publish when the save was refused', async () => {

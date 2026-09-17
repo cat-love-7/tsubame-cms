@@ -203,6 +203,24 @@ describe('Edit', () => {
     expect(fresh.componentInstance.published()).toBe(true);
   });
 
+  // The reader can move to another page while the save is in flight, and the sidebar does it
+  // without leaving the route: "publish the current page" then means the one they moved *to*,
+  // which is the page that goes live. The act carries the page it was pressed for instead.
+  it('publishes the page the save was about, not the one on screen when it lands', () => {
+    const fresh = TestBed.createComponent(Edit);
+    const component = fresh.componentInstance;
+    component.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    component.saveAndPublish();
+    // The sidebar switches pages before the answer arrives.
+    route.navigate({ name: 'contact' });
+    fresh.detectChanges();
+
+    expect(stub.saved).toEqual([{ title: 'About us' }]);
+    expect(stub.published).toEqual(['home']);
+  });
+
   it('offers no save-and-publish to an account that may not release content', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
