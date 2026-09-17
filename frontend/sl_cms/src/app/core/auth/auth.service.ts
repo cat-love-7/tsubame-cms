@@ -212,7 +212,14 @@ export class AuthService {
     return this.http
       .post<PasswordChanged>('/api/auth/password-reset', { token, new_password: newPassword })
       .pipe(
-        tap((changed) => this.replaceToken(changed.token)),
+        tap((changed) => {
+          // A reset link belongs to one account, and this browser may be signed in as another: the
+          // token is a *different* session, so the record that went with the old one goes with it.
+          // Keeping it would leave the CMS holding B's token and A's name and permissions, and
+          // `loadUserIfMissing` would not correct it because it treats a record as knowledge.
+          this.replaceToken(changed.token);
+          this.forgetUser();
+        }),
         // Reading the account back is a convenience, not part of the reset: the password *was*
         // changed, and reporting a failure here would tell the reader their reset did not work
         // when it did. The shell asks again on its next load (`loadUserIfMissing`), which is the
@@ -289,6 +296,18 @@ export class AuthService {
   replaceToken(token: string): void {
     this.tokenSignal.set(token);
     writeStorage(TOKEN_KEY, token);
+  }
+
+  /**
+   * Forget the account's record, keeping the token.
+   *
+   * For a token that stands for a session this browser did not have: whatever was known about the
+   * previous one does not describe the new one, and `loadUserIfMissing` only asks the server when
+   * the record is missing.
+   */
+  private forgetUser(): void {
+    this.userSignal.set(null);
+    removeStorage(USER_KEY);
   }
 
   logout(): void {

@@ -53,6 +53,34 @@ describe('AuthService', () => {
     expect(auth.canEdit()).toBe(true);
   });
 
+  // A reset link belongs to one account: completing it here while another was signed in puts a
+  // *different* session in place, and the record that went with the old one has to go with it.
+  it('forgets the previous account when a reset signs in as another', () => {
+    auth.login('first@example.com', 'password').subscribe();
+    httpMock.expectOne('/api/auth/login').flush({
+      token: 'first-token',
+      expires_at: '2026-12-31T00:00:00Z',
+      user: account({ username: 'first@example.com' }),
+    });
+    expect(auth.canEdit()).toBe(true);
+
+    auth.completePasswordReset('link-token', 'chosen-password').subscribe();
+    httpMock
+      .expectOne('/api/auth/password-reset')
+      .flush({ token: 'second-token', expires_at: '2026-12-31T00:00:00Z' });
+    // The account read fails: nothing may be left describing the previous session.
+    httpMock.expectOne('/api/auth/me').flush('nope', { status: 500, statusText: 'Server Error' });
+
+    expect(auth.token()).toBe('second-token');
+    expect(auth.user()).toBeNull();
+    expect(auth.canEdit()).toBe(false);
+    // Which is what makes the shell ask again rather than trust a stale record.
+    let read: CurrentUser | null | undefined;
+    auth.loadUserIfMissing().subscribe((user) => (read = user));
+    httpMock.expectOne('/api/auth/me').flush(account({ username: 'second@example.com' }));
+    expect(read?.username).toBe('second@example.com');
+  });
+
   it('asks nothing when the record is already known, or when nobody is signed in', () => {
     // Nobody signed in: there is nothing to read.
     auth.loadUserIfMissing().subscribe();
