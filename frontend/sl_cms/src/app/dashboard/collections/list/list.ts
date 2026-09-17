@@ -1,7 +1,7 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BehaviorSubject, forkJoin, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, forkJoin, of, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
@@ -38,6 +38,8 @@ const DEFAULT_PAGE_SIZE = 25;
 export class CollectionItemList {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  /** When this screen goes away, so does everything it still has in flight. */
+  private destroyRef = inject(DestroyRef);
   private collectionsService = inject(CollectionsService);
   private i18n = inject(TranslocoService);
   private dates = inject(DateTimeFormat);
@@ -89,6 +91,16 @@ export class CollectionItemList {
   /** Re-issues the page request after a delete or a page change. */
   private reload = new BehaviorSubject<void>(undefined);
 
+  /**
+   * Which visit to a collection the answers on screen belong to.
+   *
+   * Switching collections reuses this component, so a slow answer for the one before - the schema
+   * most of all - would otherwise land on the one now named, and the next save would write it
+   * there. The page request cancels itself (`switchMap`), the schema request cannot, so it is
+   * answered by comparing this.
+   */
+  private loadToken = 0;
+
   constructor() {
     // Rows, their status and the total are fetched together: the table and the pager both
     // need them, and a collection can be too long to send in one response.
@@ -101,17 +113,26 @@ export class CollectionItemList {
               offset: this.pageIndex() * this.pageSize(),
             }),
             metadata: this.collectionsService.listItemMetadata(this.collectionName()),
-          }),
+          }).pipe(
+            // Handled *inside* the switch: an error that reaches the outer subscription ends it,
+            // and from then on no page change, delete or retry would fetch anything again - the
+            // screen would be stuck on whatever it happened to show.
+            catchError((e) => {
+              this.error.set(failure('content.failedToLoadItems', e));
+              return of(null);
+            }),
+          ),
         ),
         takeUntilDestroyed(),
       )
-      .subscribe({
-        next: ({ page, metadata }) => {
-          this.items.set(page.items);
-          this.total.set(page.total);
-          this.metadata.set(metadata);
-        },
-        error: (e) => this.error.set(failure('content.failedToLoadItems', e)),
+      .subscribe((loaded) => {
+        if (loaded === null) {
+          return;
+        }
+        this.error.set(null);
+        this.items.set(loaded.page.items);
+        this.total.set(loaded.page.total);
+        this.metadata.set(loaded.metadata);
       });
 
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -124,6 +145,7 @@ export class CollectionItemList {
 
   /** Everything on screen belongs to one collection, so a switch starts from nothing. */
   private load(name: string) {
+    const token = ++this.loadToken;
     this.collectionName.set(name);
     this.schema.set([]);
     this.items.set([]);
@@ -131,12 +153,34 @@ export class CollectionItemList {
     this.metadata.set({});
     this.error.set(null);
     this.pageIndex.set(0);
+    // The selection is a set of ids, and every collection numbers its items from one: a batch
+    // pressed after a switch would otherwise publish whatever holds those ids *here*.
+    this.selected.set(new Set());
+    this.refusals.set([]);
+    this.batchReport.set(null);
 
-    this.collectionsService.getCollectionSchema(name).subscribe({
-      next: (schema) => this.schema.set(schema),
-      error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
-    });
+    this.collectionsService
+      .getCollectionSchema(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema) => {
+          if (token === this.loadToken) {
+            this.schema.set(schema);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadSchema', e));
+          }
+        },
+      });
     this.reload.next();
+  }
+
+  /** Ask again after a failure. The pager does this for a page change; this is for when there is
+   *  nothing on screen to click. */
+  retry() {
+    this.load(this.collectionName());
   }
 
   onPage(event: PageEvent) {
@@ -202,8 +246,17 @@ export class CollectionItemList {
     if (ids.length === 0) {
       return;
     }
-    this.collectionsService.setItemsStatus(this.collectionName(), ids, status).subscribe({
+    // The collection the rows were picked in, not the one on screen when the answer lands: the ids
+    // are only meaningful there.
+    const started = { name: this.collectionName(), generation: this.loadToken };
+    this.collectionsService
+      .setItemsStatus(started.name, ids, status)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (outcomes) => {
+        if (!this.stillOn(started)) {
+          return;
+        }
         this.error.set(null);
         const refusals: { id: number; code: string; message: string }[] = [];
         // The server answered with the new metadata, so the badges move without a reload.
@@ -222,8 +275,17 @@ export class CollectionItemList {
         this.metadata.set(metadata);
         this.batchReport.set({ changed, refused: refusals.length });
       },
-      error: (e) => this.error.set(failure('content.failedToChangePublished', e)),
+      error: (e) => {
+        if (this.stillOn(started)) {
+          this.error.set(failure('content.failedToChangePublished', e));
+        }
+      },
     });
+  }
+
+  /** Whether the screen is still on the collection a slow answer was about, as it was then. */
+  private stillOn(started: { name: string; generation: number }): boolean {
+    return this.collectionName() === started.name && this.loadToken === started.generation;
   }
 
   /** What the last batch did, so the screen can say it (and not only when something failed). */

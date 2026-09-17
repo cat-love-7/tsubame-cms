@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PageEvent } from '@angular/material/paginator';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
-import { Observable, of } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
@@ -25,6 +25,10 @@ class StubCollectionsService {
   public metadata: ItemMetadataMap = {};
   /** Everything the fake server holds, in id order. */
   public all: CollectionItemEntry[] = [[1, { title: 'Hello' }]];
+  /** When set, the next page request fails once, and the one after it works again. */
+  public failNextPage: unknown = null;
+  /** When set, a batch waits for the test to complete it. */
+  public heldBatch?: Subject<unknown>;
   /** The windows the component asked for, in order. */
   public requested: { limit: number; offset: number }[] = [];
 
@@ -37,6 +41,11 @@ class StubCollectionsService {
     page: { limit: number; offset: number },
   ): Observable<CollectionItemPage> {
     this.requested.push(page);
+    if (this.failNextPage) {
+      const failure = this.failNextPage;
+      this.failNextPage = null;
+      return throwError(() => failure);
+    }
     return of({
       items: this.all.slice(page.offset, page.offset + page.limit),
       total: this.all.length,
@@ -65,6 +74,9 @@ class StubCollectionsService {
 
   setItemsStatus(_name: string, ids: number[], status: 'draft' | 'published'): Observable<unknown> {
     this.batches.push({ ids, status });
+    if (this.heldBatch) {
+      return this.heldBatch;
+    }
     return of(
       ids.map((id) =>
         this.refuse.includes(id)
@@ -168,6 +180,57 @@ describe('CollectionItemList', () => {
     expect(component.collectionName()).toBe('pages');
     expect(component.pageIndex()).toBe(0);
     expect(stub.requested.length).toBeGreaterThan(0);
+  });
+
+  // A failure that ends the subscription would leave the screen stuck: no page change, no delete
+  // and no retry would fetch anything again.
+  it('asks again after a load that failed', async () => {
+    stub.failNextPage = { error: { code: 'internal', message: 'boom' } };
+
+    component.onPage({ pageIndex: 1, pageSize: 25, length: 1 });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.error()).not.toBeNull();
+
+    const retry = fixture.nativeElement.querySelector('.error button') as HTMLButtonElement;
+    expect(retry).toBeTruthy();
+    retry.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.error()).toBeNull();
+    expect(rows(fixture)).toBeGreaterThan(0);
+  });
+
+  // Every collection numbers its items from one, so a selection that outlived a switch would name
+  // whatever holds those ids in the collection now on screen.
+  it('forgets the selection when the collection changes', async () => {
+    component.toggleAll();
+    expect(component.selected().size).toBe(1);
+
+    route.navigate({ name: 'pages' });
+    await fixture.whenStable();
+
+    expect(component.selected().size).toBe(0);
+  });
+
+  // The other half: a batch already on its way answers about the rows that were picked, which are
+  // in the collection the reader has left.
+  it('leaves the collection on screen alone when a batch answers late', async () => {
+    const held = new Subject<unknown>();
+    stub.heldBatch = held;
+    component.toggleAll();
+    component.setSelectedPublished('published');
+
+    route.navigate({ name: 'pages' });
+    await fixture.whenStable();
+    held.next([{ outcome: 'changed', id: 1, metadata: metadata({ status: 'published' }) }]);
+    held.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.batchReport()).toBeNull();
+    expect(component.metadata()['1']).toBeUndefined();
   });
 
   it('should create', () => {

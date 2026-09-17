@@ -39,7 +39,12 @@
 }
 
 @if (error(); as problem) {
-  <p class="error" role="alert">{{ problem | message }}</p>
+  <p class="error" role="alert">
+    {{ problem | message }}
+    <!-- A failed first load leaves nothing to click: without this, the only way on would be to
+         reload the page. -->
+    <button matButton (click)="retry()">{{ 'common.retry' | transloco }}</button>
+  </p>
 }
 
 <!-- A plain table (rather than mat-table) because the columns are defined by the
