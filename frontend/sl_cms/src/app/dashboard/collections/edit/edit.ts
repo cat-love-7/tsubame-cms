@@ -231,8 +231,11 @@ export class Edit implements HasUnsavedChanges {
    */
   saveAndPublish() {
     this.saveThen((target) => {
-      this.addressTheNewItem(target);
+      // Publish, *then* move the address: the publish is the act the button was pressed for, and
+      // the navigation below is free to replace this screen - a route change may destroy it, and a
+      // request that has not been sent by then is never sent.
       this.setPublished(true, target);
+      this.addressTheNewItem(target);
     });
   }
 
@@ -327,28 +330,45 @@ export class Edit implements HasUnsavedChanges {
    * reviewer should be looking at anyway.
    */
   sharePreview() {
-    if (this.itemId() === null) {
+    // The item this is about, captured now: the screen may be showing a different one by the time
+    // the link comes back (the sidebar and the item list reuse this component), and a link for the
+    // item the reader has left is not one to copy under the name of the one on screen.
+    const started = this.start();
+    const id = started.id;
+    if (id === null) {
       return;
     }
     this.error.set(null);
     this.notice.set(null);
     this.collectionsService
-      .createPreviewLink(this.collectionName(), this.itemId() as number)
+      .createPreviewLink(started.name, id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-      next: async (link) => {
-        const url = absoluteApiUrl(link.path);
-        this.previewUrl.set(url);
-        const copied = await copyToClipboard(url);
-        const expires = this.dates.format(link.expires_at);
-        this.notice.set(
-          copied
-            ? t('content.previewCopied', { expires })
-            : t('content.previewNotCopied', { expires }),
-        );
-      },
-      error: (e) => this.error.set(failure('content.failedToCreatePreviewLink', e)),
-    });
+        next: async (link) => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          const url = absoluteApiUrl(link.path);
+          this.previewUrl.set(url);
+          // Copying is asynchronous, so the screen can move on while the clipboard is written:
+          // what is said about the link has to be about the item it is for.
+          const copied = await copyToClipboard(url);
+          if (!this.stillOn(started)) {
+            return;
+          }
+          const expires = this.dates.format(link.expires_at);
+          this.notice.set(
+            copied
+              ? t('content.previewCopied', { expires })
+              : t('content.previewNotCopied', { expires }),
+          );
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToCreatePreviewLink', e));
+          }
+        },
+      });
   }
 
   /** Save the working copy, and go back to the list. */

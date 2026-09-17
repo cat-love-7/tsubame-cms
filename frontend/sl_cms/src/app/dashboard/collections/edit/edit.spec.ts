@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
-import { Observable, Subject, of, throwError } from 'rxjs';
+import { Observable, Subject, defer, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
@@ -85,8 +85,11 @@ class StubCollectionsService {
       last_published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
 
+  /** When set, the minted link waits for the test to complete it. */
+  public heldPreviews?: Subject<{ path: string; expires_at: string }>;
+
   createPreviewLink(_name: string, _id: number): Observable<{ path: string; expires_at: string }> {
-    return of({
+    return this.heldPreviews ?? of({
       path: '/preview/collections/blog/items/7?token=1758000000.abc123',
       expires_at: '2026-09-13T12:00:00Z',
     });
@@ -513,6 +516,80 @@ describe('Edit', () => {
       key: 'content.previewNotCopied',
       params: { expires: formatDateTime('2026-09-13T12:00:00Z', 'en') },
     });
+  });
+
+  // A link is minted for the item on screen when the button is pressed. Switching items reuses
+  // this component, so the answer can arrive while another item is on screen - and a link for the
+  // item the reader has left is neither theirs to show nor theirs to copy.
+  it('ignores a preview link for the item the reader left', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      const held = new Subject<{ path: string; expires_at: string }>();
+      stub.heldPreviews = held;
+      const fixture = TestBed.createComponent(Edit);
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+
+      component.sharePreview();
+      route.navigate({ name: 'blog', id: '9' });
+      await fixture.whenStable();
+      held.next({
+        path: '/preview/collections/blog/items/7?token=1758000000.abc123',
+        expires_at: '2026-09-13T12:00:00Z',
+      });
+      held.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.previewUrl()).toBe('');
+      expect(component.notice()).toBeNull();
+      expect(writeText).not.toHaveBeenCalled();
+    } finally {
+      // The other tests in this file rely on there being no clipboard in this environment.
+      delete (navigator as unknown as Record<string, unknown>)['clipboard'];
+    }
+  });
+
+  // The address moves to the item that was just created, and a route change may replace this
+  // screen: the publish the button asked for has to be sent before that happens, not after.
+  it('publishes what it created before the address moves to it', async () => {
+    // Recorded when the call is subscribed to, the way a request is really sent: the stub's own
+    // list is written when the observable is *built*, which is too early to notice a request that
+    // never went out.
+    const sent: { name: string; id: number }[] = [];
+    vi.spyOn(stub, 'publishItem').mockImplementation((name: string, id: number) =>
+      defer(() => {
+        sent.push({ name, id });
+        return of(stub.metadata);
+      }),
+    );
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    route.navigate({ name: 'blog' });
+    await fixture.whenStable();
+    // The route change that follows the save destroys this screen, which is what the ordering is
+    // about: a navigation is free to do that, and this is the earliest it can happen.
+    const navigate = vi
+      .spyOn(TestBed.inject(Router), 'navigate')
+      .mockImplementation(() => {
+        fixture.destroy();
+        return Promise.resolve(true);
+      });
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'New one',
+    );
+
+    component.saveAndPublish();
+    await fixture.whenStable();
+
+    expect(sent).toEqual([{ name: 'blog', id: 11 }]);
+    expect(navigate).toHaveBeenCalled();
   });
 
   it('publishes the item it is editing without saving the form', () => {

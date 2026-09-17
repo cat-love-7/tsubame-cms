@@ -34,6 +34,16 @@ class StubSinglePagesService {
   public saved: unknown[] = [];
   public metadataReads = 0;
 
+  /** When set, the minted link waits for the test to complete it. */
+  public heldPreviews?: Subject<{ path: string; expires_at: string }>;
+
+  createPreviewLink(_name: string): Observable<{ path: string; expires_at: string }> {
+    return this.heldPreviews ?? of({
+      path: '/preview/single-pages/home?token=1758000000.abc123',
+      expires_at: '2026-09-13T12:00:00Z',
+    });
+  }
+
   getPageSchema(name: string): Observable<unknown> {
     this.requested.push(name);
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
@@ -302,6 +312,42 @@ describe('Edit', () => {
 
     expect(component.error()).toBeNull();
     expect(component.problemField()).toBeNull();
+  });
+
+  // A link is minted for the page on screen when the button is pressed, and the sidebar switches
+  // pages without leaving the route: a link for the page the reader has left is neither theirs to
+  // show nor theirs to copy.
+  it('ignores a preview link for the page the reader left', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      const held = new Subject<{ path: string; expires_at: string }>();
+      stub.heldPreviews = held;
+      const fresh = TestBed.createComponent(Edit);
+      const component = fresh.componentInstance;
+      fresh.detectChanges();
+
+      component.sharePreview();
+      route.navigate({ name: 'contact' });
+      await fresh.whenStable();
+      held.next({
+        path: '/preview/single-pages/home?token=1758000000.abc123',
+        expires_at: '2026-09-13T12:00:00Z',
+      });
+      held.complete();
+      await fresh.whenStable();
+      fresh.detectChanges();
+
+      expect(component.previewUrl()).toBe('');
+      expect(component.notice()).toBeNull();
+      expect(writeText).not.toHaveBeenCalled();
+    } finally {
+      // The other tests in this file rely on there being no clipboard in this environment.
+      delete (navigator as unknown as Record<string, unknown>)['clipboard'];
+    }
   });
 
   it('offers no save-and-publish to an account that may not release content', () => {

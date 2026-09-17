@@ -229,15 +229,26 @@ export class Edit implements HasUnsavedChanges {
   /** Mint a link that shows this working copy to someone without an account, and copy it
    * (see the collection item editor for the reasoning). */
   sharePreview() {
+    // The page this is about, captured now: the sidebar switches pages without leaving the route,
+    // so the screen may be showing a different one by the time the link comes back.
+    const started = this.start();
     this.error.set(null);
     this.notice.set(null);
-    this.pages.createPreviewLink(this.pageName()).pipe(
+    this.pages.createPreviewLink(started.name).pipe(
       takeUntilDestroyed(this.destroyRef),
     ).subscribe({
       next: async (link) => {
+        if (!this.stillOn(started)) {
+          return;
+        }
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
+        // Copying is asynchronous, so the screen can move on while the clipboard is written: what
+        // is said about the link has to be about the page it is for.
         const copied = await copyToClipboard(url);
+        if (!this.stillOn(started)) {
+          return;
+        }
         const expires = this.dates.format(link.expires_at);
         this.notice.set(
           copied
@@ -245,7 +256,11 @@ export class Edit implements HasUnsavedChanges {
             : t('content.previewNotCopied', { expires }),
         );
       },
-      error: (e) => this.error.set(failure('content.failedToCreatePreviewLink', e)),
+      error: (e) => {
+        if (this.stillOn(started)) {
+          this.error.set(failure('content.failedToCreatePreviewLink', e));
+        }
+      },
     });
   }
 
