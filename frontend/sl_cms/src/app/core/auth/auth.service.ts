@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, tap } from 'rxjs';
+import { Observable, map, of, switchMap, tap } from 'rxjs';
 
 export interface Permission {
   can_publish: boolean;
@@ -203,12 +203,47 @@ export class AuthService {
    * Set a new password with an administrator-issued link, and sign in with the result.
    *
    * The link is the credential, so this needs no session; completing it ends whatever sessions
-   * existed, which is why the answer carries a token for the caller to adopt.
+   * existed, which is why the answer carries a token for the caller to adopt. The account's own
+   * record is then read: the person following the link was signed out (that is usually why they
+   * needed it), so the token would otherwise be all the CMS knows about them - no name, no
+   * permissions, and no way to fill either in short of signing in again.
    */
   completePasswordReset(token: string, newPassword: string): Observable<PasswordChanged> {
     return this.http
       .post<PasswordChanged>('/api/auth/password-reset', { token, new_password: newPassword })
-      .pipe(tap((changed) => this.replaceToken(changed.token)));
+      .pipe(
+        tap((changed) => this.replaceToken(changed.token)),
+        switchMap((changed) => this.loadUser().pipe(map(() => changed))),
+      );
+  }
+
+  /**
+   * Read the signed-in account from the server and remember it.
+   *
+   * Used wherever the CMS holds a token but not (yet) the record it stands for: a page loaded
+   * with a token from storage and nothing beside it, and the moment after a password reset.
+   */
+  loadUser(): Observable<CurrentUser> {
+    return this.http.get<CurrentUser>('/api/auth/me').pipe(
+      tap((user) => {
+        this.userSignal.set(user);
+        writeStorage(USER_KEY, JSON.stringify(user));
+      }),
+    );
+  }
+
+  /**
+   * Fill in the account when a token is remembered but the record beside it is not.
+   *
+   * A CMS that knows who is signed in only by token would offer the screens of a viewer: every
+   * permission question is answered from the record. Nothing is fetched when the record is
+   * already there, so this costs nothing on an ordinary load.
+   */
+  loadUserIfMissing(): Observable<CurrentUser | null> {
+    if (this.tokenSignal() === null || this.userSignal() !== null) {
+      return of(null);
+    }
+    return this.loadUser();
   }
 
   /**

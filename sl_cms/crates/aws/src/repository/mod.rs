@@ -714,36 +714,48 @@ impl CollectionRepository for AwsRepository {
         let unique = unique.clone();
         let id = item_id.clone();
         let partition = key::unique(collection.as_str(), &unique.field);
-        let answer = inner
-            .client
-            .put_item()
-            .table_name(&inner.table)
-            .item("pk", AttributeValue::S(partition.clone()))
-            .item("sk", AttributeValue::S(unique.value.clone()))
-            .item("data", AttributeValue::S(id.to_string()))
-            // Absent, or already ours: a save that keeps its own value is not a conflict.
-            .condition_expression("attribute_not_exists(pk) OR #data = :id")
-            .expression_attribute_names("#data", "data")
-            .expression_attribute_values(":id", AttributeValue::S(id.to_string()))
-            .send()
-            .await;
-        match answer {
-            Ok(_) => Ok(Reservation::Held),
-            Err(e)
-                if e.as_service_error().and_then(|e| e.code())
-                    == Some("ConditionalCheckFailedException") =>
-            {
-                // Say who holds it, so the refusal can name the item rather than only the value.
-                match read(&inner, &partition, &unique.value).await? {
-                    Some(owner) => Ok(Reservation::Taken {
-                        owner: CollectionItemId::from_u64(owner.parse()?),
-                    }),
-                    // Released between the two calls; the caller may retry.
-                    None => Ok(Reservation::Held),
+        // Two answers are possible when the conditional write is refused: somebody holds the
+        // value, or it was released between the write and the read that would name the holder.
+        // The second is not a refusal at all - the value is free - so try the write again rather
+        // than reporting a claim that was never made. (A loop rather than a recursion: the
+        // window is a round trip wide, and after a handful of attempts something is wrong that
+        // a caller should hear about.)
+        for _ in 0..RESERVE_ATTEMPTS {
+            let answer = inner
+                .client
+                .put_item()
+                .table_name(&inner.table)
+                .item("pk", AttributeValue::S(partition.clone()))
+                .item("sk", AttributeValue::S(unique.value.clone()))
+                .item("data", AttributeValue::S(id.to_string()))
+                // Absent, or already ours: a save that keeps its own value is not a conflict.
+                .condition_expression("attribute_not_exists(pk) OR #data = :id")
+                .expression_attribute_names("#data", "data")
+                .expression_attribute_values(":id", AttributeValue::S(id.to_string()))
+                .send()
+                .await;
+            match answer {
+                Ok(_) => return Ok(Reservation::Held),
+                Err(e)
+                    if e.as_service_error().and_then(|e| e.code())
+                        == Some("ConditionalCheckFailedException") =>
+                {
+                    // Say who holds it, so the refusal can name the item rather than only the
+                    // value. Nothing there means it is free now: claim it.
+                    if let Some(owner) = read(&inner, &partition, &unique.value).await? {
+                        return Ok(Reservation::Taken {
+                            owner: CollectionItemId::from_u64(owner.parse()?),
+                        });
+                    }
                 }
+                Err(e) => return Err(format!("dynamodb put_item failed: {}", describe(&e)).into()),
             }
-            Err(e) => Err(format!("dynamodb put_item failed: {}", describe(&e)).into()),
         }
+        Err(format!(
+            "the unique index for {} kept changing under {} after {RESERVE_ATTEMPTS} attempts",
+            unique.field, unique.value
+        )
+        .into())
     }
 
     async fn find_unique_value(
@@ -844,6 +856,12 @@ impl CollectionRepository for AwsRepository {
     }
 }
 
+/// How many times a unique reservation retries the conditional write before giving up.
+///
+/// Each retry means the value was released between a refused write and the read that followed it,
+/// which is a round trip wide; more than a handful in a row is a sign of something else.
+const RESERVE_ATTEMPTS: usize = 5;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,6 +943,88 @@ mod tests {
         assert!(repository.list_collection_items(&name).await.unwrap().is_empty());
 
         repository.delete_table().await.unwrap();
+    }
+
+    /// The unique index against the emulator: what is free is claimed, what is taken names its
+    /// holder, a value the item already holds is not a conflict with itself - and an answer of
+    /// "held" means the index really holds it, which is what a release between two calls used to
+    /// break (the value came back as held without ever being written).
+    #[tokio::test]
+    async fn a_unique_value_is_claimed_by_one_item_at_a_time() {
+        let endpoint = crate::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_test")
+            .await
+            .expect("a table for this test");
+        let name = CollectionName::from("unique_claims");
+        let value = |slug: &str| UniqueValue {
+            field: "slug".to_string(),
+            value: slug.to_string(),
+        };
+        let one = CollectionItemId::from_u64(1);
+        let two = CollectionItemId::from_u64(2);
+
+        // Free: claimed, and the index says so.
+        assert_eq!(
+            repository
+                .reserve_unique_value(&name, &one, &value("intro"))
+                .await
+                .unwrap(),
+            Reservation::Held
+        );
+        assert_eq!(
+            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            Some(one.clone())
+        );
+
+        // Ours already: not a conflict with itself.
+        assert_eq!(
+            repository
+                .reserve_unique_value(&name, &one, &value("intro"))
+                .await
+                .unwrap(),
+            Reservation::Held
+        );
+
+        // Taken: the answer names the item, so a refusal can too.
+        assert_eq!(
+            repository
+                .reserve_unique_value(&name, &two, &value("intro"))
+                .await
+                .unwrap(),
+            Reservation::Taken { owner: one.clone() }
+        );
+
+        // Released: free again, and the next claim really lands.
+        repository
+            .release_unique_value(&name, &one, &value("intro"))
+            .await
+            .unwrap();
+        assert_eq!(repository.find_unique_value(&name, &value("intro")).await.unwrap(), None);
+        assert_eq!(
+            repository
+                .reserve_unique_value(&name, &two, &value("intro"))
+                .await
+                .unwrap(),
+            Reservation::Held
+        );
+        assert_eq!(
+            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            Some(two)
+        );
+
+        // Releasing a value that is no longer ours leaves the holder alone.
+        repository
+            .release_unique_value(&name, &one, &value("intro"))
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            Some(CollectionItemId::from_u64(2))
+        );
     }
 
     /// The id counter is an atomic `ADD`, which is the whole reason it is not a read-modify-write

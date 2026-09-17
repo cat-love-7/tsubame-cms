@@ -6,7 +6,8 @@
   <span class="spacer"></span>
   <app-language-switcher />
   @if (auth.user(); as user) {
-    <span class="user-email" [title]="user.email">{{ user.email }}</span>
+    <!-- The username is what an account is known by; the address is optional, and often absent. -->
+    <span class="user-email" [title]="user.email ?? ''">{{ user.username }}</span>
   }
   <button matIconButton routerLink="/account" [attr.aria-label]="'auth.changePassword' | transloco" [matTooltip]="'auth.changePassword' | transloco">
     <mat-icon>key</mat-icon>

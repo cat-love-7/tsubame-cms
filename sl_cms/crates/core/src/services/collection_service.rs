@@ -392,19 +392,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// Claimed before the write, so a failure leaves a value reserved that nothing holds yet -
     /// which refuses one value too early - rather than two items holding the same value. The
     /// caller releases what this claimed if the write itself fails.
+    ///
+    /// A refusal gives back what this call claimed before it: an item with two unique fields that
+    /// collides on the second must not leave the first reserved, because the save that would have
+    /// held it is not happening, and the value would be blocked for everyone from then on.
     async fn reserve_unique_values(
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
         values: &[UniqueValue],
     ) -> Result<(), HttpError> {
-        for value in values {
+        for (index, value) in values.iter().enumerate() {
             let reservation = self
                 .collection_repository
                 .reserve_unique_value(collection_name, item_id, value)
                 .await
                 .map_err(map_internal_error)?;
             if let Reservation::Taken { owner } = reservation {
+                self.release_unique_values(collection_name, item_id, &values[..index])
+                    .await;
                 return Err(HttpError::Conflict(&format!(
                     "field '{}': the value '{}' is already used by item {}",
                     value.field, value.value, owner

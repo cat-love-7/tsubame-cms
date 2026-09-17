@@ -1904,6 +1904,79 @@ async fn an_account_can_be_created_without_a_password() {
     );
 }
 
+/// An item with two unique fields that collides on the second gives back the first: the save is
+/// not happening, so the value it would have held has to be free again - otherwise it stays
+/// reserved by an item that does not exist, and nobody can ever use it.
+#[tokio::test]
+async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let schema = json!([
+        { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "unique": true },
+        { "name": "code", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "unique": true }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let create = |body: Value| {
+        let token = token.clone();
+        let router = app.router.clone();
+        async move {
+            send(
+                &router,
+                Method::POST,
+                "/models/collections/pages/item",
+                Some(&token),
+                Some(body),
+            )
+            .await
+        }
+    };
+
+    // The first item holds both values.
+    let (status, _) = create(json!({ "title": "first", "code": "one" })).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The second is refused on `code`, after `title` was free and had to be claimed.
+    let (status, refusal) = create(json!({ "title": "second", "code": "one" })).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(refusal["field"], "code");
+
+    // So "second" has to be free: the item that never existed must not be holding it.
+    let (status, created) = create(json!({ "title": "second", "code": "two" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the title claimed before the refusal is still reserved: {created}"
+    );
+    let second = created.as_u64().expect("the new item's id");
+
+    // The same for a save: it claims the new title, then collides on the code item 1 holds.
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        &format!("/models/collections/pages/items/{second}"),
+        Some(&token),
+        Some(json!({ "title": "third", "code": "one" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let (status, created) = create(json!({ "title": "third", "code": "four" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the title claimed by the refused save is still reserved: {created}"
+    );
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.

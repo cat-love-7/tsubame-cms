@@ -51,8 +51,23 @@ describe('PasswordReset', () => {
     });
     request.flush({ token: 'fresh-token', expires_at: '2026-09-13T12:00:00Z' });
 
-    // The replacement token is adopted, so the screen the user lands on works.
+    // The replacement token is adopted, so the screen the user lands on works...
     expect(auth.token()).toBe('fresh-token');
+    // ...and the account is read back, because somebody following a reset link has never signed
+    // in on this browser: without this the CMS would know a token and nothing about who it is.
+    httpMock.expectOne('/api/auth/me').flush({
+      id: 'user-1',
+      username: 'editor@example.com',
+      email: null,
+      is_admin: false,
+      is_active: true,
+      permission: { can_view: true, can_edit: true, can_publish: false },
+      created_at: '2026-01-01T00:00:00Z',
+      last_login: null,
+      collection_permissions: {},
+      single_page_permissions: {},
+    });
+    expect(auth.user()?.username).toBe('editor@example.com');
     expect(navigate).toHaveBeenCalledWith(['/']);
   });
 
