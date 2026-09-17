@@ -1,5 +1,36 @@
 //! The settings an AWS deployment is described by.
 
+/// How this deployment serves image bytes.
+///
+/// Two shapes, for two ways of using the CMS:
+///
+/// - [`ImageDelivery::Stable`]: the object's own address, readable by anyone (a public bucket, or a
+///   CDN in front of one). What a page can store and a browser can fetch later.
+/// - [`ImageDelivery::Presigned`]: a signature over the object, valid for a while. What a private
+///   bucket needs, and what a site that **fetches and re-serves** its images wants: the site reads
+///   the image during a build, transforms it and publishes its own copy, so the CMS URL never has
+///   to outlive the build.
+///
+/// A stored URL cannot be both: a signature expires, and an address is readable by anyone who has
+/// it. Which one is right is a property of the deployment, not of the CMS.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImageDelivery {
+    Stable,
+    Presigned { ttl: std::time::Duration },
+}
+
+impl ImageDelivery {
+    /// The default when a deployment says nothing: the address, as every deployment so far has.
+    pub fn stable() -> Self {
+        ImageDelivery::Stable
+    }
+}
+
+/// The longest a signature may last: what SigV4 allows.
+const MAX_PRESIGNED_TTL: u64 = 7 * 24 * 60 * 60;
+/// The shortest: a URL that expires as it is handed over is a configuration mistake.
+const MIN_PRESIGNED_TTL: u64 = 60;
+
 /// What this backend needs, read from the environment and checked before it is used.
 ///
 /// It lives here rather than in the core's `Config` because no other backend has a use for it:
@@ -23,7 +54,12 @@ pub struct AwsSettings {
     /// The same for S3. Falls back to `endpoint_url` when only that one is set.
     pub s3_endpoint_url: Option<String>,
     /// Where an uploaded image is read from, when that is not the bucket itself.
+    ///
+    /// Only meaningful for [`ImageDelivery::Stable`]: a signed URL names the bucket itself, so a
+    /// CDN in front of it is ignored (and the deployment says so at startup).
     pub image_base_url: Option<String>,
+    /// Whether an image's URL is the object's own address or a signature over it.
+    pub image_delivery: ImageDelivery,
     /// Set for a local emulator, which verifies the signature. `None` means the SDK's own
     /// credential chain, which is the Lambda execution role in a deployment.
     ///
@@ -103,6 +139,7 @@ impl AwsSettings {
             endpoint_url: non_empty_env("AWS_ENDPOINT_URL"),
             s3_endpoint_url: non_empty_env("AWS_ENDPOINT_URL_S3"),
             image_base_url: non_empty_env("AWS_IMAGE_BASE_URL"),
+            image_delivery: image_delivery_from_env()?,
             access_key_id: non_empty_env("AWS_ACCESS_KEY_ID"),
             secret_access_key: non_empty_env("AWS_SECRET_ACCESS_KEY"),
             session_token: non_empty_env("AWS_SESSION_TOKEN"),
@@ -110,6 +147,48 @@ impl AwsSettings {
                 .map(|names| parse_usernames(&names))
                 .unwrap_or_default(),
         })
+    }
+}
+
+/// `AWS_IMAGE_DELIVERY` and `AWS_IMAGE_URL_TTL_SECONDS`, or the address every deployment has had.
+///
+/// Nonsense is refused at startup rather than discovered by a browser: an unknown mode, or a
+/// lifetime outside what SigV4 allows, is a deployment that would have served broken links.
+fn image_delivery_from_env() -> Result<ImageDelivery, String> {
+    image_delivery_from(
+        non_empty_env("AWS_IMAGE_DELIVERY").as_deref(),
+        non_empty_env("AWS_IMAGE_URL_TTL_SECONDS").as_deref(),
+    )
+}
+
+/// The decision itself, without the environment in the way: what the two variables mean.
+fn image_delivery_from(
+    mode: Option<&str>,
+    ttl_seconds: Option<&str>,
+) -> Result<ImageDelivery, String> {
+    let mode = mode.unwrap_or("public");
+    match mode {
+        "public" => Ok(ImageDelivery::Stable),
+        "presigned" => {
+            let seconds = ttl_seconds
+                .map(|raw| {
+                    raw.parse::<u64>()
+                        .map_err(|_| format!("AWS_IMAGE_URL_TTL_SECONDS must be a number, got {raw}"))
+                })
+                .transpose()?
+                .unwrap_or(3600);
+            if !(MIN_PRESIGNED_TTL..=MAX_PRESIGNED_TTL).contains(&seconds) {
+                return Err(format!(
+                    "AWS_IMAGE_URL_TTL_SECONDS must be between {MIN_PRESIGNED_TTL} and {MAX_PRESIGNED_TTL} seconds, got {seconds}"
+                ));
+            }
+            Ok(ImageDelivery::Presigned {
+                ttl: std::time::Duration::from_secs(seconds),
+            })
+        }
+        other => Err(format!(
+            "AWS_IMAGE_DELIVERY must be 'public' or 'presigned', got '{other}'"
+        )),
     }
 }
 
@@ -144,11 +223,51 @@ mod tests {
             endpoint_url: None,
             s3_endpoint_url: None,
             image_base_url: None,
+            image_delivery: ImageDelivery::stable(),
             access_key_id: None,
             secret_access_key: None,
             session_token: None,
             bootstrap_admin_usernames: parse_usernames("Ops"),
         }
+    }
+
+    /// Two ways of serving images, and the nonsense a deployment could write instead. Refusing at
+    /// startup is the point: an unknown mode would otherwise be a bucket nobody can read.
+    #[test]
+    fn the_image_delivery_is_read_from_two_variables_or_nothing_at_all() {
+        // Nothing said: the address, which is what every deployment has had.
+        assert_eq!(
+            image_delivery_from(None, None).unwrap(),
+            ImageDelivery::Stable
+        );
+        assert_eq!(
+            image_delivery_from(Some("public"), Some("60")).unwrap(),
+            ImageDelivery::Stable,
+            "a lifetime means nothing in the mode that has no signature"
+        );
+
+        // Signed, with a lifetime that defaults to an hour and may be given.
+        assert_eq!(
+            image_delivery_from(Some("presigned"), None).unwrap(),
+            ImageDelivery::Presigned {
+                ttl: std::time::Duration::from_secs(3600)
+            }
+        );
+        assert_eq!(
+            image_delivery_from(Some("presigned"), Some("90")).unwrap(),
+            ImageDelivery::Presigned {
+                ttl: std::time::Duration::from_secs(90)
+            }
+        );
+
+        // And the values that would have shipped a broken deployment.
+        assert!(image_delivery_from(Some("private"), None).is_err());
+        assert!(image_delivery_from(Some("presigned"), Some("soon")).is_err());
+        assert!(image_delivery_from(Some("presigned"), Some("30")).is_err(), "too short");
+        assert!(
+            image_delivery_from(Some("presigned"), Some("604801")).is_err(),
+            "longer than SigV4 allows"
+        );
     }
 
     #[test]

@@ -13,6 +13,9 @@ cors_allowed_origins = ["https://cms.example.com"]
 # Where the screen is served from: the provider sends the browser back to <app_url>/auth/callback,
 # which is registered on the pool's client.
 app_url = "https://cms.example.com"
+# "public" (a stable URL in content) or "presigned" (a private bucket, signed URLs: for a site that
+# fetches images at build time and serves its own copies).
+image_delivery = "public"
 
 # Cognito's hosted page has to be unique across the whole region.
 cognito_domain_prefix = "sl-cms-staging-example"

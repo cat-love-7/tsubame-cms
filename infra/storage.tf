@@ -40,6 +40,10 @@ resource "aws_s3_bucket_public_access_block" "images" {
 }
 
 resource "aws_s3_bucket_policy" "images_readable" {
+  # Only in the mode that serves the object's own address. With `presigned`, the bucket stays
+  # private and every URL the CMS hands out is a signature - the whole point of choosing it.
+  count = var.image_delivery == "public" ? 1 : 0
+
   bucket = aws_s3_bucket.images.id
 
   # Reading is public; writing is not, which is what the presigned PUT depends on.

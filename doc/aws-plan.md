@@ -174,6 +174,17 @@ true/false, "password_reset_links": true/false}`。
 - [x] 保存する URL は**安定 URL**(`AWS_IMAGE_BASE_URL` > S3 エンドポイントの path-style >
       `https://<bucket>.s3.<region>.amazonaws.com/<key>`)。**presigned URL はコンテンツに
       入れない**(ページに載った瞬間に期限切れになる)。署名が漏れていないこともテストで確認。
+- [x] **署名付き配信を配備の選択肢にした**(2026-09、`AWS_IMAGE_DELIVERY`)。
+      `public`(既定)= オブジェクトのアドレスを配る + バケットは公開読み取り。
+      `presigned` = **バケットは非公開**で、API が返す URL は毎回**署名付き GET**
+      (`AWS_IMAGE_URL_TTL_SECONDS`、既定 1 時間、60 秒〜7 日)。
+      **向いているのは「ビルド時に取得して自前で配信する」サイト**(SSG が画像を変換して自分の
+      コピーを配る場合): 署名はビルドの間だけ生きていればよく、バケットは誰も読めない。
+      逆に、ページに CMS の URL をそのまま載せるサイトでは**キャッシュした URL が期限切れで
+      死ぬ**ので既定にはしない。`/images/by-id/{id}` の転送も同じ経路を通るので、モードに
+      かかわらず動く(手書きの Markdown リンクはそのまま使える)。
+      → **完了条件**: 署名モードで (1) API の URL が署名付き、(2) その URL で実体が取れる、
+      (3) **署名なしでは取れない** → `a_presigned_deployment_serves_a_url_that_expires` で達成。
 - [x] **アップロード情報に安定 URL を載せた**(`NewImageInfo.url`)。S3 の
       presigned URL は「署名」であって object の公開アドレスではないので、クライアントが
       `upload_url` から導出するのは AWS では不可能だった(on-prem は `?key=` を落とすだけで

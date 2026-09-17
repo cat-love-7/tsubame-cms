@@ -58,6 +58,39 @@ variable "app_url" {
   }
 }
 
+variable "image_delivery" {
+  description = <<-EOT
+    How the CMS hands out image URLs.
+
+    `public` (the default) writes the object's own address into content and makes the bucket
+    readable: a URL that keeps working, for a site that puts CMS URLs on its pages.
+
+    `presigned` signs every URL instead, and the bucket is left private. Choose it when the site
+    **fetches images during a build and serves its own copies** (an SSG that transforms them): the
+    signature only has to survive the build, and nobody else can read the bucket. A page that
+    cached a CMS URL would carry a dead link once the signature expires, which is why this is not
+    the default.
+  EOT
+  type        = string
+  default     = "public"
+
+  validation {
+    condition     = contains(["public", "presigned"], var.image_delivery)
+    error_message = "image_delivery is 'public' or 'presigned'."
+  }
+}
+
+variable "image_url_ttl_seconds" {
+  description = "How long a signed image URL lasts. Only used when image_delivery is presigned."
+  type        = number
+  default     = 3600
+
+  validation {
+    condition     = var.image_url_ttl_seconds >= 60 && var.image_url_ttl_seconds <= 604800
+    error_message = "A signature lasts between a minute and seven days (604800 seconds), as SigV4 allows."
+  }
+}
+
 variable "cognito_domain_prefix" {
   description = <<-EOT
     The prefix of the hosted sign-in page's address. Cognito requires it to be unique across

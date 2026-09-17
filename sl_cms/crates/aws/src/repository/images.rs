@@ -10,6 +10,7 @@ use std::time::Duration;
 use aws_sdk_s3::presigning::PresigningConfig;
 
 use super::*;
+use crate::ImageDelivery;
 use sl_cms_core::models::image::{
     sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
     ImageOwner,
@@ -33,13 +34,37 @@ struct ImageData {
 }
 
 impl AwsRepository {
-    /// A stored record as the model the API returns, with the stable URL filled in.
-    fn image_from(inner: &Inner, data: &ImageData) -> Image {
-        Image {
+    /// A stored record as the model the API returns, with its URL filled in.
+    async fn image_from(inner: &Inner, data: &ImageData) -> Result<Image, BoxError> {
+        Ok(Image {
             original_filename: data.original_filename.clone(),
-            url: inner.settings.image_url(&data.file_name),
+            url: serve_url(inner, &data.file_name).await?,
             uploaded_at: data.uploaded_at,
             deleted_at: data.deleted_at,
+        })
+    }
+}
+
+/// The URL an image's bytes are served from, for this deployment.
+///
+/// The object's own address when the bucket is readable (or a CDN in front of it), and a signature
+/// over the object when it is not. The mode is the deployment's ([`ImageDelivery`]): the same CMS
+/// serves both, and a reader is told which one it got by looking at the URL.
+async fn serve_url(inner: &Inner, file_name: &str) -> Result<String, BoxError> {
+    match inner.settings.image_delivery {
+        ImageDelivery::Stable => Ok(inner.settings.image_url(file_name)),
+        ImageDelivery::Presigned { ttl } => {
+            let config = PresigningConfig::expires_in(ttl)
+                .map_err(|e| format!("could not build the image URL: {e}"))?;
+            let request = inner
+                .s3
+                .get_object()
+                .bucket(&inner.settings.bucket)
+                .key(file_name)
+                .presigned(config)
+                .await
+                .map_err(|e| format!("could not sign the image URL: {}", describe(&e)))?;
+            Ok(request.uri().to_string())
         }
     }
 }
@@ -51,7 +76,7 @@ impl ImageRepository for AwsRepository {
         match read(&inner, key::IMAGE_INDEX, &key::image(id)).await? {
             Some(data) => {
                 let data: ImageData = AwsRepository::decode(&data)?;
-                Ok(Some(AwsRepository::image_from(&inner, &data)))
+                Ok(Some(AwsRepository::image_from(&inner, &data).await?))
             }
             None => Ok(None),
         }
@@ -67,7 +92,10 @@ impl ImageRepository for AwsRepository {
                 continue;
             };
             let data: ImageData = AwsRepository::decode(&data)?;
-            images.push((ImageID::from_u64(id), AwsRepository::image_from(&inner, &data)));
+            images.push((
+                ImageID::from_u64(id),
+                AwsRepository::image_from(&inner, &data).await?,
+            ));
         }
         Ok(images)
     }
@@ -114,7 +142,10 @@ impl ImageRepository for AwsRepository {
         Ok(NewImageInfo {
             id: ImageID::from_u64(id),
             upload_url: request.uri().to_string(),
-            url: inner.settings.image_url(&file_name),
+            // What the upload will be readable from, which an editor shows straight away: in the
+            // signed mode that is a fresh signature, and it is replaced by a new one whenever the
+            // record is read again.
+            url: serve_url(&inner, &file_name).await?,
         })
     }
 
@@ -322,6 +353,80 @@ mod tests {
 
     /// Push bytes through the URL the CMS handed out, the way a browser does, and read them
     /// back through the URL that ends up in the content.
+    /// The other way of serving images: a bucket nobody may read, and a URL that is a signature.
+    ///
+    /// What a site that fetches its images during a build wants - it reads them while the signature
+    /// is fresh, transforms them, and publishes its own copy - and what the deployment chooses with
+    /// `AWS_IMAGE_DELIVERY=presigned`. The test is the whole promise of that mode: the URL the API
+    /// hands out works, and the same object without a signature does not.
+    #[tokio::test]
+    async fn a_presigned_deployment_serves_a_url_that_expires() {
+        let endpoint = crate::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository_serving(
+            "cms_presigned",
+            crate::ImageDelivery::Presigned {
+                ttl: std::time::Duration::from_secs(300),
+            },
+        )
+        .await
+        .expect("a repository");
+        let bucket = repository.inner.settings.bucket.clone();
+        // Private: no bucket policy at all, which is what the mode is for.
+        repository
+            .inner
+            .s3
+            .create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
+
+        let request = NewImageRequest {
+            original_filename: "cat.png".to_string(),
+            ext: "png".to_string(),
+        };
+        let info = repository.generate_image_upload_url(&request).await.unwrap();
+        sl_cms_core::webhook::install_crypto_provider();
+        let client = reqwest::Client::new();
+        assert_eq!(
+            client
+                .put(&info.upload_url)
+                .body(vec![1u8, 2, 3])
+                .send()
+                .await
+                .expect("the presigned PUT should be reachable")
+                .status(),
+            200
+        );
+
+        let image = repository.get_image(&info.id).await.unwrap().expect("the record");
+        assert!(
+            image.url.contains("X-Amz-Signature"),
+            "the URL should be a signature: {}",
+            image.url
+        );
+        let signed = client
+            .get(&image.url)
+            .send()
+            .await
+            .expect("the signed URL should be reachable");
+        assert_eq!(signed.status(), 200, "the signature was refused");
+        assert_eq!(signed.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
+
+        // The same object without the signature is not readable, which is the point.
+        let bare = format!("{endpoint}/{bucket}/{}", info.url.rsplit('/').next().unwrap());
+        let refused = client.get(&bare).send().await.expect("the bucket answers");
+        assert!(
+            refused.status().is_client_error(),
+            "a private bucket should refuse an unsigned read, got {}",
+            refused.status()
+        );
+    }
+
     /// What a deployment's S3 permissions actually allow, against the emulator.
     ///
     /// The emulator's root credentials can do anything, which is how a missing `s3:ListBucket`

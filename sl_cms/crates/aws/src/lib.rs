@@ -30,7 +30,7 @@ pub mod repository;
 pub mod settings;
 
 pub use repository::AwsRepository;
-pub use settings::AwsSettings;
+pub use settings::{AwsSettings, ImageDelivery};
 
 /// Where a sign-in that happened at the provider is finished, or `None` when this deployment
 /// signs users in itself (there is nothing to exchange then).
@@ -433,6 +433,36 @@ fn run_in_emulator(script: &str) -> Option<()> {
     Some(())
 }
 
+/// A repository over a fresh table, serving images the way the given mode says.
+///
+/// What a test needs to see both deployments: the same CMS, one with a readable bucket and one
+/// where every URL is a signature.
+pub async fn open_test_repository_serving(
+    table_hint: &str,
+    image_delivery: ImageDelivery,
+) -> Result<(std::sync::Arc<AwsRepository>, String), Box<dyn std::error::Error + Send + Sync>> {
+    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
+    let settings = AwsSettings {
+        region: "us-east-1".to_string(),
+        table: table.clone(),
+        bucket: format!("cms-test-{}", uuid::Uuid::new_v4().simple()),
+        user_pool_id: "unused_pool".to_string(),
+        client_id: "unused_client".to_string(),
+        login_url: None,
+        endpoint_url: Some(test_endpoint()),
+        s3_endpoint_url: Some(test_s3_endpoint()),
+        image_base_url: None,
+        image_delivery,
+        access_key_id: Some(test_access_key()),
+        secret_access_key: Some(test_secret_key()),
+        session_token: None,
+        bootstrap_admin_usernames: Vec::new(),
+    };
+    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
+    repository.create_table().await?;
+    Ok((repository, table))
+}
+
 /// A repository over a fresh table that talks to `bucket` as the given credentials.
 ///
 /// What a test needs to run as a restricted user: the bucket is made by the caller (with the
@@ -454,6 +484,7 @@ pub async fn open_test_repository_as(
         endpoint_url: Some(test_endpoint()),
         s3_endpoint_url: Some(test_s3_endpoint()),
         image_base_url: None,
+        image_delivery: ImageDelivery::stable(),
         access_key_id: Some(access_key_id.to_string()),
         secret_access_key: Some(secret_access_key.to_string()),
         session_token: None,
@@ -483,6 +514,7 @@ pub async fn open_test_repository(
         endpoint_url: Some(test_endpoint()),
         s3_endpoint_url: Some(test_s3_endpoint()),
         image_base_url: None,
+        image_delivery: ImageDelivery::stable(),
         // The emulator from docker-compose.yml checks the signature, so these have to match it.
         access_key_id: Some(test_access_key()),
         secret_access_key: Some(test_secret_key()),
@@ -530,6 +562,7 @@ mod credential_tests {
             endpoint_url: endpoint.map(str::to_string),
             s3_endpoint_url: None,
             image_base_url: None,
+            image_delivery: ImageDelivery::stable(),
             access_key_id: Some("AKIA-FROM-THE-ENVIRONMENT".to_string()),
             secret_access_key: Some("secret".to_string()),
             session_token: Some("session".to_string()),
@@ -582,6 +615,7 @@ mod deployed_verifier_tests {
             endpoint_url: Some("http://localhost:8000".to_string()),
             s3_endpoint_url: None,
             image_base_url: None,
+            image_delivery: ImageDelivery::stable(),
             access_key_id: Some("test".to_string()),
             secret_access_key: Some("test-secret".to_string()),
             session_token: None,

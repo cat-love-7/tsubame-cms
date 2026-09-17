@@ -38,8 +38,17 @@ locals {
       CORS_ALLOWED_ORIGINS      = join(",", var.cors_allowed_origins)
       JWT_SECRET                = var.jwt_secret
       WEBHOOK_URLS              = join(",", var.webhook_urls)
-      AWS_IMAGE_BASE_URL        = "https://${aws_s3_bucket.images.bucket}.s3.${var.region}.amazonaws.com"
+      # Which of the two ways this deployment serves an image's bytes, and how long a signature
+      # lasts when it does. `AWS_IMAGE_BASE_URL` (a CDN in front of the bucket) only means anything
+      # for the address mode: a signature names the bucket itself.
+      AWS_IMAGE_DELIVERY        = var.image_delivery
+      AWS_IMAGE_URL_TTL_SECONDS = tostring(var.image_url_ttl_seconds)
     },
     var.webhook_secret == "" ? {} : { WEBHOOK_SECRET = var.webhook_secret },
+    var.image_delivery == "public"
+    ? {
+      AWS_IMAGE_BASE_URL = "https://${aws_s3_bucket.images.bucket}.s3.${var.region}.amazonaws.com"
+    }
+    : {},
   )
 }

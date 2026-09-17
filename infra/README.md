@@ -79,9 +79,14 @@ has to stay on x86_64 for some reason.
 - **`AWS_REGION` is not among the function's environment variables.** The runtime sets it and the
   key is reserved, so a configuration that names it is rejected outright; the code still reads it
   (`crates/aws/src/settings.rs`), and in Lambda it is simply already there.
-- **The bucket is publicly readable.** Content stores an object's own address, which has to keep
-  working long after a signature would have expired. CloudFront in front of it is the next step
-  if that is wanted; `AWS_IMAGE_BASE_URL` is already the variable for it.
+- **The bucket is publicly readable by default, and that is a choice** (`image_delivery`). Content
+  stores an object's own address, which has to keep working long after a signature would have
+  expired. CloudFront in front of it is the next step if that is wanted; `AWS_IMAGE_BASE_URL` is
+  already the variable for it.
+- **`image_delivery = "presigned"` is the other choice**, for a site that fetches its images during
+  a build and serves transformed copies of its own: the bucket stays private, every URL the API
+  returns is a signature over the object (`image_url_ttl_seconds`, an hour by default), and a page
+  that cached one of those URLs would carry a dead link once it expires.
 - **No Cognito groups.** Roles, per-collection and per-page grants live in the CMS's records
   (`doc/aws-plan.md`, P4): Cognito answers who someone is, the CMS what they may do.
 - **`allow_admin_create_user_only`.** Nobody signs themselves up; an administrator creates the
