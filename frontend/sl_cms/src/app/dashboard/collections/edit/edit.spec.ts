@@ -267,6 +267,37 @@ describe('Edit', () => {
 
     expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
     expect(stub.publishedTargets).toEqual([]);
+    // And the form the reader is looking at was told nothing about the item they left.
+    expect(component.notice()).toBeNull();
+    expect(component.error()).toBeNull();
+    expect(component.hasUnsavedChanges()).toBe(false);
+  });
+
+  // The failure side of the same delay: a refusal about the item that was left must not mark the
+  // fields of the item now on screen.
+  it('reports nothing about a save that failed on the item the reader left', async () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+    stub.saveRefusal = { error: { code: 'field_required', field: 'title', message: 'required' } };
+    vi.spyOn(stub, 'updateCollectionItem').mockImplementation(
+      (_name: string, _id: number) =>
+        new Observable((subscriber) => {
+          route.navigate({ name: 'pages', id: '7' });
+          subscriber.error(stub.saveRefusal);
+        }),
+    );
+
+    component.saveAndPublish();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.error()).toBeNull();
+    expect(component.problemField()).toBeNull();
   });
 
   it('does not publish when the save was refused', async () => {

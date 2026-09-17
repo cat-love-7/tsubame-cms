@@ -343,7 +343,9 @@ export class Edit implements HasUnsavedChanges {
    * The follow-up only runs when the server accepted the save: publishing what a refused save
    * left behind would be worse than doing nothing.
    */
-  private saveThen(then: (target: { name: string; id: number }) => void) {
+  private saveThen(
+    then: (target: { name: string; id: number; generation: number }) => void,
+  ) {
     const problems = Object.values(this.fieldErrors);
     if (problems.length > 0) {
       this.error.set(problems[0]);
@@ -356,36 +358,46 @@ export class Edit implements HasUnsavedChanges {
     const values: CollectionValue = { ...this.values() };
     // Captured now, before the request: everything after this point is about the item the button
     // was pressed for, whatever the screen shows by the time the answer arrives.
-    const name = this.collectionName();
-    const id = this.itemId();
+    const started = this.start();
+    const name = started.name;
+    const id = started.id;
 
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.
     if (id === null) {
       this.collectionsService.createCollectionItem(name, values).subscribe({
         next: (created) => {
+          // The form, its saved baseline and the address all describe the create screen this was
+          // pressed on: writing any of them once the reader has gone elsewhere would attribute a
+          // save to whatever they are looking at now.
+          if (!this.stillOn(started)) {
+            return;
+          }
           this.editsSaved(values);
           // A new item is saved as a working copy; publishing it needs its id.
           this.itemId.set(created);
-          const target = { name, id: created };
-          if (this.stillOn(target)) {
-            then(target);
+          then({ name, id: created, generation: started.generation });
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.refuse(e);
           }
         },
-        error: (e) => this.refuse(e),
       });
     } else {
       this.collectionsService.updateCollectionItem(name, id, values).subscribe({
         next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
           this.editsSaved(values);
-          const target = { name, id };
-          // The reader may have moved on: a save that landed late must not publish another item,
-          // and must not drag them back to this one.
-          if (this.stillOn(target)) {
-            then(target);
+          then({ name, id, generation: started.generation });
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.refuse(e);
           }
         },
-        error: (e) => this.refuse(e),
       });
     }
   }
@@ -402,14 +414,29 @@ export class Edit implements HasUnsavedChanges {
    * another item - or another collection, which is worse: the id would name a different item
    * there. Everything that talks to the server after an await reads this, not the signals.
    */
-  private target(): { name: string; id: number } | null {
+  private target(): { name: string; id: number; generation: number } | null {
     const id = this.itemId();
-    return id === null ? null : { name: this.collectionName(), id };
+    return id === null ? null : { name: this.collectionName(), id, generation: this.loadToken };
   }
 
-  /** Whether the screen is still on the item a slow answer was about. */
-  private stillOn(target: { name: string; id: number }): boolean {
-    return this.collectionName() === target.name && this.itemId() === target.id;
+  /**
+   * The item an act is about, and the load it belongs to, captured when the act starts.
+   *
+   * The id says *which* item; the generation says which visit to it. A save that answers after the
+   * same item was opened again - or after the reader left and came back - must not decide that the
+   * form on screen has been saved, and must not report a refusal about it.
+   */
+  private start(): { name: string; id: number | null; generation: number } {
+    return { name: this.collectionName(), id: this.itemId(), generation: this.loadToken };
+  }
+
+  /** Whether the screen is still on the item a slow answer was about, as it was then. */
+  private stillOn(target: { name: string; id: number | null; generation: number }): boolean {
+    return (
+      this.collectionName() === target.name &&
+      this.itemId() === target.id &&
+      this.loadToken === target.generation
+    );
   }
 
   /**

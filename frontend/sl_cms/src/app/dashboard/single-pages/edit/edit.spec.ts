@@ -3,7 +3,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
-import { Observable, of } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
@@ -48,11 +48,19 @@ class StubSinglePagesService {
     return of(this.metadata);
   }
 
+  /** When set, a save waits for the test to complete it (see the delayed-answer tests). */
+  public heldSave?: Subject<void>;
+  /** Set to refuse the next save. */
+  public saveRefusal: unknown = null;
+
   updatePageItem(_name: string, values: unknown): Observable<void> {
     this.saved.push(values);
     // The server records the first save as a draft, which is what the badge then shows.
     this.metadata = { ...this.metadata, status: 'draft' };
-    return of(void 0);
+    if (this.saveRefusal) {
+      return throwError(() => this.saveRefusal);
+    }
+    return this.heldSave ?? of(void 0);
   }
 
   publishPage(name: string): Observable<ItemMetadata> {
@@ -206,7 +214,9 @@ describe('Edit', () => {
   // The reader can move to another page while the save is in flight, and the sidebar does it
   // without leaving the route: "publish the current page" then means the one they moved *to*,
   // which is the page that goes live. The act carries the page it was pressed for instead.
-  it('publishes the page the save was about, not the one on screen when it lands', () => {
+  it('publishes the page the save was about, not the one on screen when it lands', async () => {
+    const held = new Subject<void>();
+    stub.heldSave = held;
     const fresh = TestBed.createComponent(Edit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
@@ -215,10 +225,61 @@ describe('Edit', () => {
     component.saveAndPublish();
     // The sidebar switches pages before the answer arrives.
     route.navigate({ name: 'contact' });
-    fresh.detectChanges();
+    await fresh.whenStable();
+    held.next();
+    held.complete();
+    await fresh.whenStable();
 
     expect(stub.saved).toEqual([{ title: 'About us' }]);
-    expect(stub.published).toEqual(['home']);
+    expect(stub.published).toEqual([]);
+  });
+
+  // The same delay, the other way round: the answer settles the *form*, and a form that no longer
+  // belongs to that page must not be told it has been saved - or that the save failed.
+  it('writes nothing into the page the reader moved to', async () => {
+    const held = new Subject<void>();
+    stub.heldSave = held;
+    const fresh = TestBed.createComponent(Edit);
+    const component = fresh.componentInstance;
+    component.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    component.save();
+    route.navigate({ name: 'contact' });
+    await fresh.whenStable();
+    held.next();
+    held.complete();
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    expect(component.notice()).toBeNull();
+    expect(component.error()).toBeNull();
+    expect(component.hasUnsavedChanges()).toBe(false, );
+    expect(component.values()).toEqual({ title: 'Home' });
+  });
+
+  it('reports nothing about a save that failed on the page the reader left', async () => {
+    const fresh = TestBed.createComponent(Edit);
+    const component = fresh.componentInstance;
+    component.values.set({ title: 'About us' });
+    fresh.detectChanges();
+    stub.saveRefusal = { error: { code: 'field_required', field: 'title', message: 'required' } };
+    stub.heldSave = undefined;
+
+    // The save is asked for on `home`, and refused after the reader switched to `contact`.
+    const refusal = throwError(() => stub.saveRefusal);
+    vi.spyOn(stub, 'updatePageItem').mockReturnValue(
+      new Observable((subscriber) => {
+        route.navigate({ name: 'contact' });
+        refusal.subscribe(subscriber);
+      }),
+    );
+    component.save();
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    expect(component.error()).toBeNull();
+    expect(component.problemField()).toBeNull();
   });
 
   it('offers no save-and-publish to an account that may not release content', () => {
