@@ -5374,6 +5374,49 @@ async fn the_content_api_returns_a_bounded_page_without_an_explicit_limit() {
     assert_eq!(body["next_offset"], Value::Null);
 }
 
+/// A browser on another origin can read how many items there are.
+///
+/// The total travels in `X-Total-Count`, and a cross-origin fetch may only read the response
+/// headers the policy *exposes*: `Access-Control-Allow-Origin` says who may ask, not what they may
+/// read. Without the exposure the count is invisible, and a client the CMS does not serve itself
+/// (the deployment's own front end on another host) would see a list that looks empty and a pager
+/// with one page.
+#[tokio::test]
+async fn a_cross_origin_client_can_read_the_total() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri("/models/collections/blog/items")
+        .header(header::ORIGIN, "http://localhost:4200")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("x-total-count").unwrap(), "0");
+    let exposed = response
+        .headers()
+        .get("access-control-expose-headers")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    assert!(
+        exposed.contains("x-total-count"),
+        "a cross-origin reader cannot see the total: {exposed:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let app = test_app().await;

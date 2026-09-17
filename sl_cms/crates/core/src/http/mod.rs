@@ -26,7 +26,7 @@ pub mod single_pages;
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -50,7 +50,14 @@ pub struct AuthenticatedUser(pub User);
 /// A single `*` entry allows any origin, which is intended for local development only —
 /// the previous implementation used `Cors::permissive()` unconditionally.
 pub fn cors_layer(origins: &[String]) -> CorsLayer {
-    let base = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    // How many items there are travels in `X-Total-Count` (see `http::collections`), and a browser
+    // on another origin can only read the response headers the policy *exposes*: without this, a
+    // client the CMS does not serve itself would see every page as empty and every pager as one
+    // page long. `Access-Control-Allow-Origin` covers who may ask, not what they may read.
+    let base = CorsLayer::new()
+        .allow_methods(Any)
+        .allow_headers(Any)
+        .expose_headers([HeaderName::from_static("x-total-count")]);
     if origins.iter().any(|o| o == "*") {
         base.allow_origin(Any)
     } else {
