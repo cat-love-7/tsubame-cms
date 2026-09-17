@@ -218,6 +218,36 @@ async fn write_if_unchanged(
     }
 }
 
+/// Read a JSON record, change it with `change`, and write it back only while it is still the
+/// record that was read.
+///
+/// The shape every "record that something happened" write needs: an item's record is one blob, so
+/// writing one field of it writes all of it - and a blob written from a read that a concurrent
+/// writer has invalidated would undo that writer's answer. `Ok(None)` means there was no such
+/// record, which callers treat in their own way (an absent metadata record is a default, an absent
+/// image is a 404); `Ok(Some(()))` means the change landed.
+async fn change_record<T: serde::Serialize + serde::de::DeserializeOwned>(
+    inner: &Inner,
+    pk: &str,
+    sk: &str,
+    change: impl Fn(&mut T),
+) -> Result<Option<()>, BoxError> {
+    for _ in 0..RECORD_ATTEMPTS {
+        let Some(stored) = read(inner, pk, sk).await? else {
+            return Ok(None);
+        };
+        let mut data: T = AwsRepository::decode(&stored)?;
+        change(&mut data);
+        if write_if_unchanged(inner, pk, sk, &stored, &AwsRepository::encode(&data)?).await? {
+            return Ok(Some(()));
+        }
+    }
+    Err(format!(
+        "the record at {sk} kept changing under a change after {RECORD_ATTEMPTS} attempts"
+    )
+    .into())
+}
+
 async fn remove(inner: &Inner, pk: &str, sk: &str) -> Result<(), BoxError> {
     inner
         .client
@@ -230,6 +260,12 @@ async fn remove(inner: &Inner, pk: &str, sk: &str) -> Result<(), BoxError> {
         .map_err(|e| format!("dynamodb delete_item failed: {}", describe(&e)))?;
     Ok(())
 }
+
+/// How many times a read-modify-write re-reads a record that changed under it.
+///
+/// The window is one round trip wide and a loss means only that somebody else got there first, so
+/// a handful is plenty; after that something is wrong that a caller should hear about.
+const RECORD_ATTEMPTS: usize = 5;
 
 /// How many `Query` round trips the adapter has made.
 ///
@@ -710,6 +746,32 @@ impl CollectionRepository for AwsRepository {
         write(&inner, &key::collection(&name), &key::metadata(id), &data).await
     }
 
+    async fn touch_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        let id = **item_id;
+        let partition = key::collection(&name);
+        let sort = key::metadata(id);
+        // Only `updated_at` changes, and the rest of what is on the record is whatever it is by
+        // the time this lands - a publish that happened in between is not undone by a save.
+        let changed = change_record::<ItemMetadata>(&inner, &partition, &sort, |metadata| {
+            *metadata = metadata.touched(now)
+        })
+        .await?;
+        if changed.is_none() {
+            // No record yet: the touch is what creates it, exactly as it would have been written
+            // before (nothing else about the item was recorded either).
+            let fresh = AwsRepository::encode(&ItemMetadata::default().touched(now))?;
+            write(&inner, &partition, &sort, &fresh).await?;
+        }
+        Ok(())
+    }
+
     async fn list_published_items_page(
         &self,
         collection_name: &CollectionName,
@@ -1097,6 +1159,78 @@ mod tests {
             read(&inner, pk, &sk).await.unwrap().as_deref(),
             Some("{\"file_name\":\"new.png\",\"pending\":\"next\"}")
         );
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// Stamping an item records that it changed, and writes back nothing else it read.
+    ///
+    /// The record belongs to the publish as much as to the save, so the touch has to leave the
+    /// publication state where it finds it; and an item saved for the first time has no metadata
+    /// record yet, which the touch is what creates.
+    #[tokio::test]
+    async fn a_touch_stamps_the_record_and_leaves_the_rest_of_it() {
+        use sl_cms_core::models::item_status::ItemStatus;
+
+        let endpoint = crate::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_touch").await.expect("a table for this test");
+        let name = CollectionName::from("blog");
+        let id = CollectionItemId::from_u64(1);
+
+        // Nothing is recorded for an item that was just created: the save's stamp is what starts it.
+        repository
+            .touch_item_metadata(&name, &id, chrono::Utc::now())
+            .await
+            .unwrap();
+        let first = repository
+            .get_item_metadata(&name, &id)
+            .await
+            .unwrap()
+            .expect("the record the touch created");
+        assert_eq!(first.status, ItemStatus::Draft);
+        let stamped_at = first.updated_at.expect("the save is recorded");
+        assert_eq!(first.created_at, Some(stamped_at), "the first stamp is when it started");
+
+        // A publish writes the record; a save that follows must not undo it.
+        let published_at = chrono::Utc::now() - chrono::Duration::hours(1);
+        repository
+            .set_item_metadata(
+                &name,
+                &id,
+                &ItemMetadata {
+                    status: ItemStatus::Published,
+                    published_at: Some(published_at),
+                    last_published_at: Some(published_at),
+                    published_by: Some(sl_cms_core::models::item_status::PublishedBy {
+                        id: sl_cms_core::models::user::UserId::from("ops"),
+                        username: "ops".to_string(),
+                    }),
+                    ..first.clone()
+                },
+            )
+            .await
+            .unwrap();
+        repository
+            .touch_item_metadata(&name, &id, chrono::Utc::now())
+            .await
+            .unwrap();
+
+        let after = repository
+            .get_item_metadata(&name, &id)
+            .await
+            .unwrap()
+            .expect("the record");
+        assert_eq!(after.status, ItemStatus::Published, "a save is not a publish");
+        assert_eq!(after.published_at, Some(published_at));
+        assert_eq!(
+            after.published_by.as_ref().map(|by| by.username.as_str()),
+            Some("ops")
+        );
+        assert!(after.updated_at >= Some(stamped_at), "and the save is recorded");
 
         repository.delete_table().await.unwrap();
     }

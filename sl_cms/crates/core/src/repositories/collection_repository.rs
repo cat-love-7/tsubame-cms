@@ -192,6 +192,13 @@ pub trait CollectionRepository:Send + Sync + 'static {
     // named `status` without colliding. Absent metadata means "draft".
     fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<ItemMetadata>, BoxError>> + Send;
     fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> impl Future<Output = Result<(), BoxError>> + Send;
+    /// Record that the item changed, **without touching anything else on its record**.
+    ///
+    /// A save and a publish write the same record, and the save reads it before it writes. Writing
+    /// back the whole record from that read undoes a publish that happened in between - the site
+    /// goes back to the state before it, publication time and all. This is the write a save makes:
+    /// the read and the write are one step, so nothing between them can be lost.
+    fn touch_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, now: chrono::DateTime<chrono::Utc>) -> impl Future<Output = Result<(), BoxError>> + Send;
     fn list_item_metadata(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>> + Send;
 
     /// One page of a collection's items, in id order, plus how many items there are.

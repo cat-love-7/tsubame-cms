@@ -742,24 +742,29 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         item_id: CollectionItemId,
         created: bool,
     ) -> Result<(), HttpError> {
-        let now = Utc::now();
-        let metadata = if created {
-            ItemMetadata {
+        if created {
+            // Nothing else can be on the record of an item that was just created, so this write
+            // has nothing to lose.
+            let now = Utc::now();
+            let metadata = ItemMetadata {
                 created_at: Some(now),
                 updated_at: Some(now),
                 ..ItemMetadata::default()
-            }
-        } else {
-            self.collection_repository
-                .get_item_metadata(collection_name, &item_id)
-                .await.map_err(map_internal_error)?
-                .unwrap_or_default()
-                .touched(now)
-        };
+            };
+            return self
+                .collection_repository
+                .set_item_metadata(collection_name, &item_id, &metadata)
+                .await
+                .map_err(map_internal_error);
+        }
 
+        // A save and a publish write the same record, and this one only has `updated_at` to say.
+        // Reading it here and writing it back whole would undo a publish that landed in between,
+        // so the repository does the read and the write as one step.
         self.collection_repository
-            .set_item_metadata(collection_name, &item_id, &metadata)
-            .await.map_err(map_internal_error)
+            .touch_item_metadata(collection_name, &item_id, Utc::now())
+            .await
+            .map_err(map_internal_error)
     }
 
     pub async fn delete_collection_item(
@@ -1469,6 +1474,9 @@ mod tests {
         fail_reserve_on_call: Option<usize>,
         /// How many reservations have been asked for, so the above can count.
         reserve_calls: std::sync::atomic::AtomicUsize,
+        /// Every whole-record metadata write. A save must not make one: it stamps the record
+        /// through `touch_item_metadata`, which reads and writes as one step (see the trait).
+        metadata_writes: std::sync::atomic::AtomicUsize,
     }
     impl CollectionRepository for MockCollectionRepository {
         async fn get_collection_schema(
@@ -1575,12 +1583,31 @@ mod tests {
                 .get(&(collection_name.clone(), item_id.clone()))
                 .cloned())
         }
+        async fn touch_item_metadata(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // The real adapters read and write as one step; the double holds one lock, so the
+            // same promise is kept by doing both here.
+            let mut all = self.item_metadata.write().unwrap();
+            let metadata = all
+                .get(&(collection_name.clone(), item_id.clone()))
+                .cloned()
+                .unwrap_or_default()
+                .touched(now);
+            all.insert((collection_name.clone(), item_id.clone()), metadata);
+            Ok(())
+        }
         async fn set_item_metadata(
             &self,
             collection_name: &CollectionName,
             item_id: &CollectionItemId,
             metadata: &ItemMetadata,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.metadata_writes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.item_metadata
                 .write()
                 .unwrap()
@@ -1875,6 +1902,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1948,6 +1976,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2068,6 +2097,7 @@ mod tests {
             fail_apply_status,
             fail_reserve_on_call,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -2423,6 +2453,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2461,6 +2492,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2500,6 +2532,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2527,6 +2560,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2566,6 +2600,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2584,6 +2619,77 @@ mod tests {
         assert_eq!(item, create_test_item_response("Updated Title", 100.0));
     }
 
+    /// A save stamps the record through the repository's one-step touch, never by writing back the
+    /// metadata it read: that second shape loses a publish that lands between the read and the
+    /// write (see `CollectionRepository::touch_item_metadata`).
+    #[tokio::test]
+    async fn a_save_stamps_the_metadata_without_writing_it_back() {
+        let mut schemas = HashMap::new();
+        schemas.insert("test_composite".into(), create_test_schema());
+        let mut collection_item = HashMap::new();
+        collection_item.insert(CollectionItemId::from_u64(1), create_test_item("Original Title", 10.0));
+        let mut items = HashMap::new();
+        items.insert("test_composite".into(), collection_item);
+        let repository = Arc::new(MockCollectionRepository {
+            schemas: Arc::new(RwLock::new(schemas)),
+            items: Arc::new(RwLock::new(items)),
+            item_counter: Arc::new(RwLock::new(1)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
+            fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        // The item is published before the save, which is the state the save must leave alone.
+        let published_at = chrono::Utc::now() - chrono::Duration::hours(1);
+        repository.item_metadata.write().unwrap().insert(
+            ("test_composite".into(), CollectionItemId::from_u64(1)),
+            ItemMetadata {
+                status: crate::models::item_status::ItemStatus::Published,
+                published_at: Some(published_at),
+                ..ItemMetadata::default()
+            },
+        );
+        let service = CollectionService::new(
+            repository.clone(),
+            Arc::new(MockCompositeFieldRepository { schemas: Arc::new(RwLock::new(HashMap::new())) }),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
+
+        service
+            .update_collection_item(
+                &"test_composite".into(),
+                CollectionItemId::from_u64(1),
+                &create_test_item("Updated Title", 100.0),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            repository.metadata_writes.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "a save must not write the whole metadata record"
+        );
+        let stored = repository
+            .item_metadata
+            .read()
+            .unwrap()
+            .get(&("test_composite".into(), CollectionItemId::from_u64(1)))
+            .cloned()
+            .expect("the record the save stamped");
+        assert_eq!(
+            stored.status,
+            crate::models::item_status::ItemStatus::Published,
+            "the publication state belongs to a publish, not to a save"
+        );
+        assert_eq!(stored.published_at, Some(published_at));
+        assert!(stored.updated_at.is_some(), "and the save is still recorded");
+    }
+
     #[tokio::test]
     async fn test_update_collection_item_not_found() {
         let mut schemas = HashMap::new();
@@ -2599,6 +2705,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2646,6 +2753,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2687,6 +2795,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2729,6 +2838,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2759,6 +2869,7 @@ mod tests {
             fail_apply_status: false,
             fail_reserve_on_call: None,
             reserve_calls: std::sync::atomic::AtomicUsize::new(0),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

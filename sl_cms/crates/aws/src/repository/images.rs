@@ -21,12 +21,6 @@ use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
 /// that a leaked URL is not a standing invitation.
 const UPLOAD_URL_TTL: Duration = Duration::from_secs(15 * 60);
 
-/// How many times a change re-reads an image record that changed under it.
-///
-/// The window is one round trip wide and a loss means only that somebody else got there first, so
-/// a handful is plenty; after that something is wrong that a caller should hear about.
-const RECORD_ATTEMPTS: usize = 5;
-
 /// What the table remembers about an uploaded image. The bytes are in S3 under `file_name`,
 /// which is also the last segment of the URL.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -91,28 +85,10 @@ async fn change_image(
     id: u64,
     change: impl Fn(&mut ImageData),
 ) -> Result<(), BoxError> {
-    for _ in 0..RECORD_ATTEMPTS {
-        let Some(stored) = read(inner, key::IMAGE_INDEX, &key::image(id)).await? else {
-            return Err("Image not found".into());
-        };
-        let mut data: ImageData = AwsRepository::decode(&stored)?;
-        change(&mut data);
-        if write_if_unchanged(
-            inner,
-            key::IMAGE_INDEX,
-            &key::image(id),
-            &stored,
-            &AwsRepository::encode(&data)?,
-        )
-        .await?
-        {
-            return Ok(());
-        }
+    match change_record(inner, key::IMAGE_INDEX, &key::image(id), change).await? {
+        Some(()) => Ok(()),
+        None => Err("Image not found".into()),
     }
-    Err(format!(
-        "the record for image {id} kept changing under a change after {RECORD_ATTEMPTS} attempts"
-    )
-    .into())
 }
 
 impl ImageRepository for AwsRepository {

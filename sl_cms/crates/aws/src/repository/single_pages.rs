@@ -140,6 +140,27 @@ impl SinglePageRepository for AwsRepository {
         write(&inner, &key::page(&name), key::META, &data).await
     }
 
+    async fn touch_page_metadata(
+        &self,
+        page_name: &SinglePageName,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = page_name.clone();
+        let partition = key::page(&name);
+        // See `CollectionRepository::touch_item_metadata`: a save must not write back the
+        // publication state it read before it.
+        let changed = change_record::<ItemMetadata>(&inner, &partition, key::META, |metadata| {
+            *metadata = metadata.touched(now)
+        })
+        .await?;
+        if changed.is_none() {
+            let fresh = AwsRepository::encode(&ItemMetadata::default().touched(now))?;
+            write(&inner, &partition, key::META, &fresh).await?;
+        }
+        Ok(())
+    }
+
     async fn apply_page_status(
         &self,
         page_name: &SinglePageName,

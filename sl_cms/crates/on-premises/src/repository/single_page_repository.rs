@@ -148,6 +148,24 @@ impl SinglePageRepository for Repository {
         writer.commit()?;
         Ok(())
     }
+    async fn touch_page_metadata(&self, page_name: &SinglePageName, now: chrono::DateTime<chrono::Utc>) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        // See `CollectionRepository::touch_item_metadata`.
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let key = page_metadata_key(page_name.as_str());
+        let reader = env.read()?;
+        let metadata = match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            _ => ItemMetadata::default(),
+        }
+        .touched(now);
+        let mut writer = env.write()?;
+        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(&metadata)?))?;
+        writer.commit()?;
+        Ok(())
+    }
+
     async fn get_single_page_item(&self, page_name: &SinglePageName) -> Result<Option<SinglePageItem>,Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;

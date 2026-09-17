@@ -295,15 +295,11 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// Saving must not disturb the published state: a published page stays published, and
     /// only `updated_at` moves.
     async fn stamp_page(&self, name: &SinglePageName) -> Result<(), HttpError> {
-        let metadata = self
-            .single_page_repository
-            .get_page_metadata(name)
-            .await.map_err(map_internal_error)?
-            .unwrap_or_default()
-            .touched(Utc::now());
-
+        // Only `updated_at` is this call's to say, and the repository reads and writes the record
+        // as one step: reading it here would undo a publish that landed in between (see
+        // `CollectionRepository::touch_item_metadata`).
         self.single_page_repository
-            .set_page_metadata(name, &metadata)
+            .touch_page_metadata(name, Utc::now())
             .await.map_err(map_internal_error)
     }
 
@@ -499,6 +495,9 @@ mod tests {
         items: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
         page_metadata: Arc<RwLock<HashMap<SinglePageName, ItemMetadata>>>,
         drafts: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
+        /// Every whole-record metadata write. A save must not make one: it stamps the record
+        /// through `touch_page_metadata` (see the trait).
+        metadata_writes: Arc<std::sync::atomic::AtomicUsize>,
     }
     impl SinglePageRepository for MockSinglePageRepository {
         async fn get_single_page_schema(
@@ -573,11 +572,29 @@ mod tests {
         ) -> Result<Option<ItemMetadata>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(self.page_metadata.read().unwrap().get(page_name).cloned())
         }
+        async fn touch_page_metadata(
+            &self,
+            page_name: &SinglePageName,
+            now: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // One lock for the read and the write, as the adapters promise (see
+            // `CollectionRepository::touch_item_metadata`).
+            let mut all = self.page_metadata.write().unwrap();
+            let metadata = all
+                .get(page_name)
+                .cloned()
+                .unwrap_or_default()
+                .touched(now);
+            all.insert(page_name.clone(), metadata);
+            Ok(())
+        }
         async fn set_page_metadata(
             &self,
             page_name: &SinglePageName,
             metadata: &ItemMetadata,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            self.metadata_writes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.page_metadata.write().unwrap().insert(page_name.clone(), metadata.clone());
             Ok(())
         }
@@ -719,6 +736,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -750,6 +768,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1008,6 +1027,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1021,6 +1041,54 @@ mod tests {
             &create_test_item("Test Title", 42.0),
         ).await;
         assert!(result.is_ok());
+    }
+
+    /// The same promise as the collection editor's save: stamping a page records that it changed
+    /// and writes back nothing else it read (see `CollectionRepository::touch_item_metadata`).
+    #[tokio::test]
+    async fn a_page_save_stamps_the_metadata_without_writing_it_back() {
+        use crate::models::item_status::ItemStatus;
+
+        let repository = Arc::new(MockSinglePageRepository {
+            schemas: Arc::new(RwLock::new(HashMap::from([("home".into(), create_test_schema())]))),
+            items: Arc::new(RwLock::new(HashMap::new())),
+            page_metadata: Arc::new(RwLock::new(HashMap::from([(
+                SinglePageName::from("home"),
+                ItemMetadata {
+                    status: ItemStatus::Published,
+                    published_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+                    ..ItemMetadata::default()
+                },
+            )]))),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        });
+        let service = SinglePageService::new(
+            repository.clone(),
+            Arc::new(MockCompositeFieldRepository { schemas: Arc::new(RwLock::new(HashMap::new())) }),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
+
+        service
+            .update_single_page_item(&"home".into(), &create_test_item("Test Title", 42.0))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            repository.metadata_writes.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "a save must not write the whole metadata record"
+        );
+        let stored = repository
+            .page_metadata
+            .read()
+            .unwrap()
+            .get(&SinglePageName::from("home"))
+            .cloned()
+            .expect("the record the save stamped");
+        assert_eq!(stored.status, ItemStatus::Published, "a save is not a publish");
+        assert!(stored.updated_at.is_some(), "and the save is still recorded");
     }
 
     #[tokio::test]
@@ -1039,6 +1107,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1070,6 +1139,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1091,6 +1161,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1123,6 +1194,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1148,6 +1220,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1185,6 +1258,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
@@ -1217,6 +1291,7 @@ mod tests {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
+            metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
         let composite_field_repository = MockCompositeFieldRepository {
