@@ -296,6 +296,9 @@ export class CollectionItemEdit implements HasUnsavedChanges {
       },
       error: (e) => {
         if (this.stillOn(target)) {
+          // Publishing is where required fields are asked about, so a refusal names one: mark the
+          // input, exactly as a refused save does.
+          this.problemField.set(fieldOf(e));
           this.error.set(failure('content.failedToChangePublished', e));
         }
       },

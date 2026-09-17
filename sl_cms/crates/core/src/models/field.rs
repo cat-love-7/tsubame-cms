@@ -75,6 +75,26 @@ where
         self.validate_at("", composite_schemas, schema)
     }
 
+    /// Validate values for **storing a working copy**, where a required field may still be empty.
+    ///
+    /// A draft is what an editor is in the middle of: it is not served, and a schema that gains a
+    /// required field must not make every item stored before it unsavable. Everything *else* the
+    /// schema says about the value still holds - the value is stored either way, and a type or a
+    /// length that the field will never accept is worth refusing at the moment it is typed.
+    ///
+    /// Completeness is required at publication instead
+    /// (`CollectionService::set_item_status`), which is the moment the site is affected.
+    pub fn validate_draft(
+        &self,
+        composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+        schema: &T,
+    ) -> Result<(), FieldRefusal> {
+        match self.validate_to_schema(composite_schemas, schema) {
+            Err(refusal) if refusal.is_missing_required() => Ok(()),
+            other => other,
+        }
+    }
+
     fn validate_at(
         &self,
         prefix: &str,

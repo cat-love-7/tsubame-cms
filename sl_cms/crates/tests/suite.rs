@@ -495,9 +495,10 @@ async fn collection_item_crud_round_trip() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // Validation is enforced through the HTTP layer too. Error bodies are plain text,
-    // so read them raw rather than as JSON.
-    let (status, body) = send_raw(
+    // A working copy may be missing a required field: it is a draft, and the site is not served
+    // from it (see `a_required_field_is_asked_for_at_publication`). What it may *not* do is go
+    // live.
+    let (status, body) = send(
         &app.router,
         Method::POST,
         "/models/collections/blog/item",
@@ -505,9 +506,30 @@ async fn collection_item_crud_round_trip() {
         Some(json!({ "tags": ["news"] })),
     )
     .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let incomplete = body.as_u64().expect("the new item's id");
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/blog/items/{incomplete}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    let text = String::from_utf8_lossy(&body);
-    assert!(text.contains("title"), "unexpected body: {text}");
+    assert_eq!(body["code"], "field_required");
+    assert_eq!(body["field"], "title");
+
+    let (status, _) = send(
+        &app.router,
+        Method::DELETE,
+        &format!("/models/collections/blog/items/{incomplete}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     // Update + delete.
     let (status, _) = send(
@@ -654,13 +676,24 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 
-    // A required field left empty.
+    // A required field left empty: the save keeps it as a working copy, and publishing is what
+    // refuses it - the refusal names the field, so the editor knows which one to fill in.
     let (status, body) = send(
         &app.router,
         Method::POST,
         "/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let incomplete = body.as_u64().expect("the new item's id");
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/limited/items/{incomplete}/publish"),
+        Some(&token),
+        None,
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2581,8 +2614,13 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let app = test_app().await;
     let token = app.admin_token.clone();
 
+    // Both unique fields are *required*: a copy that empties them is exactly the case that used to
+    // be impossible, because a create was validated as if it were going live (see
+    // `FieldValueMap::validate_draft`). The slug is the other kind of unique field, and the one a
+    // "generate from the title" button fills in.
     let schema = json!([
-        { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "unique": true },
+        { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1, "unique": true },
+        { "name": "slug", "field_type": { "Slug": {} }, "required": true, "width": 12, "height": 1 },
         { "name": "body", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
     ]);
     let (status, body) = send_raw(
@@ -2600,7 +2638,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
         Method::POST,
         "/models/collections/blog/item",
         Some(&token),
-        Some(json!({ "title": "original", "body": "the words" })),
+        Some(json!({ "title": "original", "slug": "original", "body": "the words" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -2636,14 +2674,18 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     )
     .await;
     assert_eq!(values["body"], "the words", "everything else comes across");
-    assert_eq!(values["title"], "", "the unique field is emptied, not copied");
+    assert_eq!(
+        values["title"], "",
+        "the unique fields are emptied, not copied - a required one included"
+    );
+    assert_eq!(values["slug"], "");
     // Which leaves the value free: the copy can be given a new one.
     let (status, _) = send(
         &app.router,
         Method::PUT,
         &format!("/models/collections/blog/items/{copy}"),
         Some(&token),
-        Some(json!({ "title": "a second one", "body": "the words" })),
+        Some(json!({ "title": "a second one", "slug": "a-second-one", "body": "the words" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);

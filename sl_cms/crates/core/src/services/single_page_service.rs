@@ -269,7 +269,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 )));
             }
             Some(schema) => {
-                item_data.validate_to_schema(
+                // A working copy may be incomplete; publishing is what asks for the required
+                // fields (see `FieldValueMap::validate_draft`).
+                item_data.validate_draft(
                     &self
                         .composite_field_repository
                         .list_composite_field_schemas()
@@ -409,6 +411,19 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if pending.is_some() {
             // The content the site serves just changed, so the release moves `updated_at`.
             metadata = metadata.released(chrono::Utc::now());
+        }
+        // Publishing is where completeness is asked for: a working copy may be missing a required
+        // field, and the site must not be served one (see `CollectionService::set_item_status`).
+        if let Some(copy) = pending.as_ref() {
+            let schema = self.get_single_page_schema(name).await?;
+            copy.validate_to_schema(
+                &self
+                    .composite_field_repository
+                    .list_composite_field_schemas()
+                    .await.map_err(map_internal_error)?,
+                &schema,
+            )
+            .map_err(|e| e.into_http_error())?;
         }
         if let Err(e) = self
             .single_page_repository
@@ -1100,7 +1115,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_single_page_item_invalid_data() {
+    async fn a_page_working_copy_may_be_missing_a_required_field() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let single_page_repository = MockSinglePageRepository {
@@ -1120,13 +1135,9 @@ mod tests {
             &"test_composite".into(),
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), PhantomData),
         ).await;
-        assert!(result.is_err());
-        assert_eq!(
-                result.err().unwrap(),
-                HttpError::BadRequest("field title is required")
-                    .with_code("field_required")
-                    .with_field("title")
-            );
+        // A working copy may be incomplete; publishing is what asks for the required fields
+        // (see the collection item editor's tests and the contract suite).
+        assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
     }
 
     #[tokio::test]
@@ -1249,7 +1260,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_single_page_item_invalid_data() {
+    async fn a_page_save_may_leave_a_required_field_empty() {
         let mut schemas = HashMap::new();
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();
@@ -1272,13 +1283,9 @@ mod tests {
             ("count".to_string(), FieldValue::Number(Some(1.0))),
         ]), PhantomData),
         ).await;
-        assert!(result.is_err());
-        assert_eq!(
-                result.err().unwrap(),
-                HttpError::BadRequest("field title is required")
-                    .with_code("field_required")
-                    .with_field("title")
-            );
+        // A working copy may be incomplete; publishing is what asks for the required fields
+        // (see the collection item editor's tests and the contract suite).
+        assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
     }
 
     #[tokio::test]

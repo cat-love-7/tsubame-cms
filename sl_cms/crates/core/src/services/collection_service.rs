@@ -328,8 +328,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 // Before validation, and before anything is reserved: what is stored, indexed and
                 // looked up later is the canonical slug, not what was typed.
                 let item_data = self.normalise_slugs(&schema, item_data)?;
+                // A working copy may be incomplete: it is a draft, and publishing is what asks
+                // for the required fields (see `FieldValueMap::validate_draft`).
                 item_data
-                    .validate_to_schema(&composite_schema_map, &schema)
+                    .validate_draft(&composite_schema_map, &schema)
                     .map_err(|e| e.into_http_error())?;
                 (schema, item_data)
             }
@@ -400,7 +402,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 // The same normalisation as a create: a save stores the canonical slug, so the
                 // index keeps holding what a URL will ask for.
                 let item_data = self.normalise_slugs(&schema, item_data)?;
-                item_data.validate_to_schema(
+                item_data.validate_draft(
                     &self
                         .composite_field_repository
                         .list_composite_field_schemas()
@@ -1254,6 +1256,20 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 .await
                 .map_err(map_internal_error)?,
         };
+        // Publishing is where completeness is asked for. A working copy may be missing a required
+        // field (a draft is what an editor is in the middle of), and the site must not be served
+        // one: the refusal names the field, so the editor knows which one to fill in.
+        if metadata.is_published() {
+            if let Some(copy) = working.as_ref() {
+                let composite_schemas = self
+                    .composite_field_repository
+                    .list_composite_field_schemas()
+                    .await
+                    .map_err(map_internal_error)?;
+                copy.validate_to_schema(&composite_schemas, &schema)
+                    .map_err(|e| e.into_http_error())?;
+            }
+        }
         let (reserve, release) = if has_unique_fields(&schema) {
             let before = Self::held_unique_values_for_status(
                 &schema,
@@ -2544,7 +2560,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_collection_item_invalid_data() {
+    async fn a_working_copy_may_be_missing_a_required_field() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let collection_repository = MockCollectionRepository {
@@ -2566,17 +2582,16 @@ mod tests {
         let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
+        // A working copy is what an editor is in the middle of, so a required field may still be
+        // empty: the site is not served from it, and refusing the save would mean an editor cannot
+        // save half-written work (or a schema that gained a required field cannot be saved at all).
+        // Publication is what asks for completeness, and the tests for it are in the contract
+        // suite.
         let result = service.create_collection_item(
             &"test_composite".into(),
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), std::marker::PhantomData),
         ).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            HttpError::BadRequest("field title is required")
-                .with_code("field_required")
-                .with_field("title")
-        );
+        assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
     }
 
     #[tokio::test]
@@ -2801,7 +2816,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_collection_item_invalid_data() {
+    async fn a_save_may_leave_a_required_field_empty() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let mut collection_item = HashMap::new();
@@ -2827,18 +2842,14 @@ mod tests {
         let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
+        // The same as a create: a save stores a working copy, and a working copy may be
+        // incomplete (see `a_working_copy_may_be_missing_a_required_field`).
         let result = service.update_collection_item(
             &"test_composite".into(),
             CollectionItemId::from_u64(1),
             &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(100.0)))]), std::marker::PhantomData),
         ).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            HttpError::BadRequest("field title is required")
-                .with_code("field_required")
-                .with_field("title")
-        );
+        assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
     }
 
     #[tokio::test]

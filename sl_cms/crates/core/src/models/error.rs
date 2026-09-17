@@ -138,6 +138,11 @@ impl FieldRefusal {
         }
     }
 
+    /// Whether this is "a required field held nothing" - the one refusal a working copy may make.
+    pub fn is_missing_required(&self) -> bool {
+        self.code == "field_required"
+    }
+
     /// A required field held nothing.
     pub fn required(field: &str) -> Self {
         Self::new("field_required", field, format!("field {field} is required"))
