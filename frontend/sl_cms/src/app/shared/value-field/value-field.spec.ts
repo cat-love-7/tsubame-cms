@@ -110,6 +110,45 @@ describe('ValueField', () => {
     return fixture.nativeElement.querySelector(selector);
   }
 
+  // The label is a `span` above the widget, not a Material `mat-label` inside it, so a screen
+  // reader has nothing to go on without this: every box read as "edit text", and the boolean read
+  // as "Yes" - the label's own text was never part of the control.
+  it('names each control with the field label', () => {
+    // The element that carries the name is the one a screen reader lands on: the native input
+    // itself, and the checkbox's inner `<input>` (Material puts the name there, not on the host).
+    const labelled: [FieldSchema, string][] = [
+      [field('title', { Text: {} }), 'input'],
+      [field('body', { Markdown: {} }), 'textarea'],
+      [field('published', 'Boolean'), 'mat-checkbox input[type="checkbox"]'],
+    ];
+    for (const [schema, control] of labelled) {
+      create(schema);
+      const label = query('.field-label') as HTMLElement;
+      expect(label.id, `${schema.name}: the label has an id`).toBeTruthy();
+      expect(label.textContent).toContain(schema.name);
+      const element = query(control) as HTMLElement;
+      expect(element, `${schema.name}: ${control}`).toBeTruthy();
+      expect(element.getAttribute('aria-labelledby'), `${schema.name}: ${control}`).toBe(
+        label.id,
+      );
+    }
+
+    // A select keeps its own aria-labelledby (it points at the value it shows), so the name goes
+    // in through the input the component publishes for it.
+    create(field('kind', { TextEnum: ['a', 'b'] }));
+    expect((query('mat-select') as HTMLElement).getAttribute('aria-label')).toBe('kind');
+  });
+
+  // Two widgets for the same field name (a composite that repeats one) must not share an id: the
+  // browser and the screen reader both resolve an id to the first element that has it.
+  it('gives each widget its own label id', () => {
+    create(field('title', { Text: {} }));
+    const first = (query('.field-label') as HTMLElement).id;
+    create(field('title', { Text: {} }));
+    const second = (query('.field-label') as HTMLElement).id;
+    expect(first).not.toBe(second);
+  });
+
   it('renders the control the field type calls for', () => {
     create(field('text', { Text: {} }));
     expect(query('input[matinput]')).toBeTruthy();

@@ -1,4 +1,4 @@
-<span class="field-label">
+<span class="field-label" [id]="labelId">
   {{ field.name }}@if (field.required) {<span class="required" aria-hidden="true">*</span>}
   @if (isUniqueField()) {
     <!-- The value has to be the only one in the collection; the server is what checks it, so the
@@ -21,6 +21,7 @@
       [ngModel]="arrayText"
       (ngModelChange)="onArrayTextChange($event)"
       [placeholder]="'content.jsonArrayPlaceholder' | transloco"
+      [attr.aria-labelledby]="labelId"
     ></textarea>
     <mat-hint>{{ 'content.jsonArrayHint' | transloco }}</mat-hint>
     @if (itemTypeNames().length > 0) {
@@ -42,6 +43,7 @@
         [attr.minlength]="minLength()"
         [ngModel]="value"
         (ngModelChange)="update($event)"
+      [attr.aria-labelledby]="labelId"
       />
       @if (lengthHintKey(); as key) {
         <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
@@ -61,6 +63,7 @@
           [ngModel]="value"
           (ngModelChange)="update($event)"
           (blur)="canonicaliseSlug()"
+        [attr.aria-labelledby]="labelId"
         />
         <mat-hint>{{ 'content.slugRule' | transloco }}</mat-hint>
       </mat-form-field>
@@ -91,6 +94,7 @@
         [attr.minlength]="minLength()"
         [ngModel]="value"
         (ngModelChange)="update($event)"
+        [attr.aria-labelledby]="labelId"
       ></textarea>
       @if (lengthHintKey(); as key) {
         <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
@@ -109,6 +113,7 @@
         [disabled]="disabled"
         [ngModel]="value"
         (ngModelChange)="update($event)"
+      [attr.aria-labelledby]="labelId"
       />
     </mat-form-field>
   }
@@ -118,6 +123,7 @@
       [disabled]="disabled"
       [ngModel]="value"
       (ngModelChange)="update($event)"
+      [aria-labelledby]="labelId"
     >
       {{ 'common.yes' | transloco }}
     </mat-checkbox>
@@ -131,6 +137,7 @@
         [disabled]="disabled"
         [ngModel]="value"
         (ngModelChange)="update($event)"
+      [attr.aria-labelledby]="labelId"
       />
     </mat-form-field>
   }
@@ -143,6 +150,7 @@
         [disabled]="disabled"
         [ngModel]="toDateTimeLocal()"
         (ngModelChange)="setDateTime($event)"
+      [attr.aria-labelledby]="labelId"
       />
     </mat-form-field>
   }
@@ -154,6 +162,7 @@
         [disabled]="disabled"
         [ngModel]="value"
         (ngModelChange)="update($event)"
+        [aria-label]="field.name"
       >
         @for (option of enumOptions(); track option) {
           <mat-option [value]="option">{{ option }}</mat-option>
@@ -232,6 +241,7 @@
               class="array-upload"
               [disabled]="uploading()"
               (change)="onFilesSelected($event)"
+            [attr.aria-labelledby]="labelId"
             />
             <button matButton type="button" class="array-add" (click)="openLibrary(true)">
               <mat-icon>photo_library</mat-icon>
@@ -353,6 +363,7 @@
             accept="image/*"
             [disabled]="uploading()"
             (change)="onFileSelected($event)"
+          [attr.aria-labelledby]="labelId"
           />
           <button matButton type="button" (click)="openLibrary(false)">
             <mat-icon>photo_library</mat-icon>

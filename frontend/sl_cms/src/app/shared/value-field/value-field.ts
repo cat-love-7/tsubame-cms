@@ -56,6 +56,9 @@ type FieldKind =
  * nesting works to any depth. That is also why the server refuses composite reference
  * cycles: this recursion would never terminate.
  */
+/** Every widget gets its own id, so a label can name one input and not another. */
+let nextValueFieldId = 0;
+
 @Component({
   selector: 'app-value-field',
   imports: [ MatTooltipModule,
@@ -93,6 +96,16 @@ export class ValueField implements OnInit, OnChanges {
    * dropped or replaced by a stale value.
    */
   @Output() errorChange = new EventEmitter<Message | null>();
+
+  /**
+   * The id of the field's own label, so every input can point at it.
+   *
+   * The label is a `span` above the widget rather than a Material `mat-label` inside it, and a
+   * screen reader has no way to know that on its own: without this, every box in the form is
+   * "edit text" and the checkbox is "Yes". The suffix is per widget because a composite may put
+   * the same field name on screen twice.
+   */
+  public readonly labelId = `value-field-${(nextValueFieldId += 1)}`;
 
   private images = inject(ImagesService);
   private compositeFields = inject(CompositeFieldsService);
