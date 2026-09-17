@@ -2,6 +2,13 @@
   <h2>{{ (isNew() ? 'content.newItem' : 'content.editItem') | transloco }} — {{ collectionName() }}</h2>
   <!-- A new item has no status until it has been saved, so the control appears only once
        the server knows the item. -->
+  @if (unsavedChanges()) {
+    <!-- Distinct from the note below, which is about the server's copy: this one is about the
+         form, and it is why the publish button reads "Save and publish". -->
+    <span class="draft-note" [title]="'content.unsavedEditsHint' | transloco">
+      {{ 'content.unsavedEdits' | transloco }}
+    </span>
+  }
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
     @if (meta.status === 'published' && meta.has_draft) {
@@ -14,7 +21,17 @@
     @if (canPublish()) {
       <!-- A published item with pending changes needs both acts: release the changes, or take
            the item off the site. Showing only "Unpublish" left no way to release them. -->
-      @if (published() && hasDraft()) {
+      @if (unsavedChanges()) {
+        <!-- Publishing copies what is *stored*, so with edits still in the form it would put the
+             previous version on the site while the screen showed the new one. Save, then
+             publish: the two acts an editor means by one press. -->
+        <button matButton color="primary" (click)="saveAndPublish()">
+          {{ 'content.saveAndPublish' | transloco }}
+        </button>
+        @if (published()) {
+          <button matButton (click)="unpublish()">{{ 'content.unpublish' | transloco }}</button>
+        }
+      } @else if (published() && hasDraft()) {
         <button matButton color="primary" (click)="publish()">
           {{ 'content.publishChanges' | transloco }}
         </button>

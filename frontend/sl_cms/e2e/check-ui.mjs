@@ -233,7 +233,23 @@ page.on('console', (message) => {
   if (message.type() === 'error') consoleErrors.push(message.text());
 });
 // Deleting asks for confirmation through window.confirm.
-page.on('dialog', (dialog) => dialog.accept());
+/**
+ * What to answer a browser prompt with.
+ *
+ * The editors ask before leaving unsaved work (`unsavedChangesGuard`), so a navigation that used
+ * to be silent now raises one; the checks that are *about* that ask for `dismiss`.
+ */
+let dialogAnswer = 'accept';
+const answerDialog = (dialog) => (dialogAnswer === 'accept' ? dialog.accept() : dialog.dismiss());
+page.on('dialog', answerDialog);
+
+/**
+ * The form's own save button.
+ *
+ * By accessible name and exact: the toolbar offers "Save and publish" whenever the form holds
+ * unsaved edits, and a substring match would press that instead - which publishes.
+ */
+const save = () => page.getByRole('button', { name: 'Save', exact: true });
 
 /** Data rows only: the "No items yet." row has no status badge. */
 const dataRows = () => page.locator('table.items tbody tr:has(app-item-status)');
@@ -272,6 +288,7 @@ async function openAs(username, password) {
   rolePage.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(`${username}: ${message.text()}`);
   });
+  rolePage.on('dialog', answerDialog);
 
   await rolePage.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await rolePage.fill('input[name=username]', username);
@@ -357,7 +374,7 @@ try {
   );
 
   await scores.fill('[1, "two"]');
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForTimeout(600);
   const stillEditing = page.url().includes('/edit/1');
   const scoresProblem = await page.locator('.field-cell.problem').count();
@@ -370,7 +387,7 @@ try {
 
   // Put it back so the rest of the run sees a valid item.
   await scores.fill('[1, 2]');
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page
     .waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 })
     .catch(() => {});
@@ -635,7 +652,7 @@ try {
   const arrayAfterUpload = await page.locator('.array-item').count();
   check('画像配列にその場でアップロードできる', arrayAfterUpload === 3, `${arrayItems} → ${arrayAfterUpload}`);
 
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
 
   const saved = await api(
@@ -706,7 +723,7 @@ try {
   const compositeItems = await composite.locator('.array-item').count();
   check('複合フィールド内の画像配列にも追加できる', compositeItems === 2, `${compositeItems} 件`);
 
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForURL(`${BASE}/collections/${COMPOSITE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
   const compositeSaved = await api(
     'GET',
@@ -749,7 +766,7 @@ try {
   await titleField.waitFor({ timeout: 15000 });
   const previewWording = `preview wording ${Date.now()}`;
   await titleField.fill(previewWording);
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
 
   // Saving was not publishing: the delivery API still serves the older wording...
@@ -839,6 +856,56 @@ try {
     releasedCopy.id === 1 && (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token)).has_draft === false,
   );
 
+  // Publishing copies what the server holds, so an editor with the form half-changed used to put
+  // the *previous* version live while the screen showed the new one.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await titleField.waitFor({ timeout: 15000 });
+  const publishWording = `publish wording ${Date.now()}`;
+  await titleField.fill(publishWording);
+  check(
+    '未保存の変更があると画面にそう出る',
+    (await page.locator('.draft-note', { hasText: 'Not saved yet' }).count()) === 1,
+  );
+  check(
+    '未保存なら「保存して公開」になる',
+    (await page.locator('button:has-text("Save and publish")').count()) === 1 &&
+      (await page.locator('button:has-text("Publish changes")').count()) === 0,
+  );
+  await page.click('button:has-text("Save and publish")');
+  await page
+    .waitForFunction(
+      // Plain DOM: `:has-text` is a Playwright selector and the page cannot parse it.
+      () =>
+        !Array.from(document.querySelectorAll('button')).some((button) =>
+          button.textContent?.includes('Save and publish'),
+        ),
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const afterSaveAndPublish = await api('GET', `/content/collections/${COLLECTION}/items/1`);
+  check(
+    '「保存して公開」は保存と公開をまとめて行う',
+    afterSaveAndPublish.values.title === publishWording,
+    `${afterSaveAndPublish.values.title}`,
+  );
+
+  // Leaving with unsaved edits asks first: the answer is the person's.
+  await titleField.fill(`left behind ${Date.now()}`);
+  dialogAnswer = 'dismiss';
+  await page.click('button:has-text("Cancel")');
+  await page.waitForTimeout(500);
+  check('未保存で離れようとすると確認が出る', page.url().includes('/edit/1'), page.url());
+  check(
+    '取り消すと編集内容が残っている',
+    (await titleField.inputValue()).startsWith('left behind'),
+  );
+
+  dialogAnswer = 'accept';
+  await page.click('button:has-text("Cancel")');
+  await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  check('確認に同意すると移動する', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
+
 
   // -------------------------------------------------------------- roles decide what is offered
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
@@ -897,7 +964,7 @@ try {
   await editor.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
   check(
     '編集ロール: 保存はできるが公開はできない',
-    (await editor.page.locator('button:has-text("Save")').count()) === 1 &&
+    (await editor.page.getByRole('button', { name: 'Save', exact: true }).count()) === 1 &&
       (await editor.page.locator('button:has-text("Publish")').count()) === 0,
   );
 
@@ -912,7 +979,7 @@ try {
   await viewer.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
   check(
     '閲覧ロール: 保存も公開も出ない',
-    (await viewer.page.locator('button:has-text("Save")').count()) === 0 &&
+    (await viewer.page.getByRole('button', { name: 'Save', exact: true }).count()) === 0 &&
       (await viewer.page.locator('button:has-text("Publish")').count()) === 0,
   );
   check(
@@ -1245,7 +1312,7 @@ try {
     .catch(() => false);
   check('複合配列の要素を並べ替えられる', reordered);
 
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});
@@ -1305,7 +1372,7 @@ try {
       .catch(() => false),
   );
 
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});
@@ -1333,7 +1400,7 @@ try {
   await page.locator('app-value-field input[name=summary]').fill('summary1');
   // This refusal is the point of the step.
   expectConsoleError(/409 \(Conflict\)/);
-  await page.click('button:has-text("Save")');
+  await save().click();
   const slugRefusal = await page
     .waitForFunction(
       () => document.querySelector('.error')?.textContent?.includes('address') ?? false,
@@ -1371,7 +1438,7 @@ try {
   );
 
   await summary.fill('ab');
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForTimeout(500);
   const stillCreating = page.url().includes('/create');
   const summaryProblem = await page.locator('.field-cell.problem').count();
@@ -1384,7 +1451,7 @@ try {
   await duplicateTitle.fill('first item');
   // The refusal is the point of this step, so its 409 is expected.
   expectConsoleError(/409 \(Conflict\)/);
-  await page.click('button:has-text("Save")');
+  await save().click();
   // The length check above left its own message in the banner, so this waits for the banner to
   // say something new rather than for it to appear.
   await page
@@ -1472,7 +1539,7 @@ try {
   // Saving stays on the page, with the status appearing and the two acts in one click. It used to
   // navigate to the schema list, which has no publish control at all.
   await pageTitle.fill(`edited ${pageB}`);
-  await page.click('button:has-text("Save")');
+  await save().click();
   await page.waitForTimeout(800);
   const stayedOnPage = page.url().includes(`/single-pages/${pageB}`);
   const savedNotice = ((await page.locator('.notice').first().textContent()) ?? '').trim();

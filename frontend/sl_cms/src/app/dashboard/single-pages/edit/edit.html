@@ -9,17 +9,37 @@
     @if (meta.published_by; as publisher) {
       <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher.username }}</span>
     }
+    @if (unsavedChanges()) {
+      <!-- The form holds edits the server has not seen; the note says so, so the buttons below
+           are read as "save first" rather than "the old version is about to go live". -->
+      <span class="draft-note" [title]="'content.unsavedEditsHint' | transloco">
+        {{ 'content.unsavedEdits' | transloco }}
+      </span>
+    }
     @if (canPublish()) {
       <!-- A published page with pending changes needs both acts: release the changes, or take
            the page off the site. -->
       @if (published() && hasDraft()) {
-        <button matButton color="primary" (click)="publish()">
+        <button
+          matButton
+          color="primary"
+          [disabled]="unsavedChanges()"
+          [title]="unsavedChanges() ? ('content.publishNeedsSave' | transloco) : ''"
+          (click)="publish()"
+        >
           {{ 'content.publishChanges' | transloco }}
         </button>
         <button matButton (click)="unpublish()">{{ 'content.unpublish' | transloco }}</button>
+      } @else if (published()) {
+        <button matButton (click)="unpublish()">{{ 'content.unpublish' | transloco }}</button>
       } @else {
-        <button matButton (click)="published() ? unpublish() : publish()">
-          {{ (published() ? 'content.unpublish' : 'content.publish') | transloco }}
+        <button
+          matButton
+          [disabled]="unsavedChanges()"
+          [title]="unsavedChanges() ? ('content.publishNeedsSave' | transloco) : ''"
+          (click)="publish()"
+        >
+          {{ 'content.publish' | transloco }}
         </button>
       }
     }

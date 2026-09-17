@@ -1,3 +1,4 @@
+import { unsavedChangesGuard } from 'app/core/unsaved-changes.guard';
 import { RouterModule, Routes } from "@angular/router";
 import { Index } from "./index";
 import { NgModule } from "@angular/core";
@@ -28,13 +29,17 @@ const dashboardRoutes: Routes = [
         path: 'collections/:name',
         component: CollectionList
     },
+    // Both item screens hold edits until their save button is pressed, so leaving is asked about
+    // (`unsavedChangesGuard`).
     {
         path: 'collections/:name/create',
-        component: ItemEdit
+        component: ItemEdit,
+        canDeactivate: [unsavedChangesGuard]
     },
     {
         path: 'collections/:name/edit/:id',
-        component: ItemEdit
+        component: ItemEdit,
+        canDeactivate: [unsavedChangesGuard]
     },
     // Single pages ("single documents"): one schema and exactly one item each, so there is no
     // create screen - but the overview says what is live and what has unpublished changes, and
@@ -45,7 +50,8 @@ const dashboardRoutes: Routes = [
     },
     {
         path: 'single-pages/:name',
-        component: SinglePageEdit
+        component: SinglePageEdit,
+        canDeactivate: [unsavedChangesGuard]
     },
     // The image library. Content rather than configuration: an editor uploads the images their
     // content uses, so it lives with the documents. The old path still answers, because a

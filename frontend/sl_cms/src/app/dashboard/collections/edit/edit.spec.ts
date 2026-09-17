@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
@@ -32,8 +32,16 @@ class StubCollectionsService {
     has_draft: false,
   };
 
-  updateCollectionItem(): Observable<void> {
+  /** Saves the screen sent, so the order of "save, then publish" can be read back. */
+  public updated: { id: number; values: unknown }[] = [];
+
+  updateCollectionItem(_name: string, id: number, values: unknown): Observable<void> {
+    this.updated.push({ id, values });
     return this.saveRefusal ? throwError(() => this.saveRefusal) : of(void 0);
+  }
+
+  createCollectionItem(): Observable<number> {
+    return this.saveRefusal ? throwError(() => this.saveRefusal) : of(11);
   }
 
   /** What the collection's schema is, and the item being edited. */
@@ -46,9 +54,17 @@ class StubCollectionsService {
     return of(this.schema);
   }
 
+  /**
+   * Answers the test delivers by hand, by item id.
+   *
+   * A response that arrives late is the point of one of these tests, and `of(...)` answers before
+   * anything can happen in between.
+   */
+  public heldItems = new Map<number, Subject<unknown>>();
+
   getCollectionItem(_name: string, id: number): Observable<unknown> {
     this.requested.push(id);
-    return of(this.item);
+    return this.heldItems.get(id) ?? of(this.item);
   }
 
   getItemMetadata(): Observable<ItemMetadata> {
@@ -162,6 +178,95 @@ describe('Edit', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.collectionName()).toBe('pages');
+  });
+
+  // An answer that belongs to the item that was open before must not land in the new form: it used
+  // to replace it, which showed one item's content under another's address.
+  it('ignores an answer for the item that was open before', async () => {
+    const slowFirst = new Subject<unknown>();
+    stub.heldItems.set(7, slowFirst);
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+
+    // Switch to item 9 while item 7's answer is still on its way, and let 9 arrive.
+    stub.item = { title: 'Second' };
+    route.navigate({ name: 'blog', id: '9' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.values()['title']).toBe('Second');
+
+    // Now the first answer turns up. It is about an item nobody is looking at.
+    slowFirst.next({ title: 'First' });
+    slowFirst.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.values()['title']).toBe('Second');
+    expect(fixture.componentInstance.isNew()).toBe(false);
+  });
+
+  // Publishing copies what the server has, so with edits still in the form it would put the
+  // previous version on the site while the screen showed the new one.
+  it('saves before publishing when the form has unsaved edits, and only then', async () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    component.metadata.set({ ...stub.metadata, status: 'published', has_draft: true });
+    fixture.detectChanges();
+    expect(component.unsavedChanges()).toBe(false);
+
+    // The button is the plain release while the form is in step with the server.
+    expect(hasButton(fixture.nativeElement, 'Publish changes')).toBe(true);
+    expect(hasButton(fixture.nativeElement, 'Save and publish')).toBe(false);
+
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+    fixture.detectChanges();
+    expect(component.unsavedChanges()).toBe(true);
+    expect(hasButton(fixture.nativeElement, 'Save and publish')).toBe(true);
+
+    component.saveAndPublish();
+    await fixture.whenStable();
+
+    // Saved, then published: the order is the whole point.
+    expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
+    expect(stub.published).toEqual([7]);
+  });
+
+  it('does not publish when the save was refused', async () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    stub.saveRefusal = { error: { code: 'value_taken', field: 'title', message: 'taken' } };
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+
+    component.saveAndPublish();
+    await fixture.whenStable();
+
+    expect(stub.published).toEqual([]);
+    expect(component.unsavedChanges()).toBe(true);
+  });
+
+  it('answers the guard about unsaved edits, and warns a reload', () => {
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    expect(component.hasUnsavedChanges()).toBe(false);
+
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+    expect(component.hasUnsavedChanges()).toBe(true);
+
+    const event = { preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
+    component.warnBeforeLeaving(event);
+    expect(event.preventDefault).toHaveBeenCalled();
   });
 
   it('should create', () => {
