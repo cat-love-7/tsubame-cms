@@ -26,8 +26,13 @@ pub struct AwsSettings {
     pub image_base_url: Option<String>,
     /// Set for a local emulator, which verifies the signature. `None` means the SDK's own
     /// credential chain, which is the Lambda execution role in a deployment.
+    ///
+    /// Lambda sets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` too - to the role's temporary
+    /// credentials - so these are only *used* when the deployment is pointed at an emulator (see
+    /// `emulator_credentials`), and the session token travels with them when there is one.
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
+    pub session_token: Option<String>,
     /// May be empty: then nobody can provision themselves and an administrator has to create
     /// the first account record another way.
     pub bootstrap_admin_usernames: Vec<String>,
@@ -100,6 +105,7 @@ impl AwsSettings {
             image_base_url: non_empty_env("AWS_IMAGE_BASE_URL"),
             access_key_id: non_empty_env("AWS_ACCESS_KEY_ID"),
             secret_access_key: non_empty_env("AWS_SECRET_ACCESS_KEY"),
+            session_token: non_empty_env("AWS_SESSION_TOKEN"),
             bootstrap_admin_usernames: std::env::var("BOOTSTRAP_ADMIN_USERNAMES")
                 .map(|names| parse_usernames(&names))
                 .unwrap_or_default(),
@@ -140,6 +146,7 @@ mod tests {
             image_base_url: None,
             access_key_id: None,
             secret_access_key: None,
+            session_token: None,
             bootstrap_admin_usernames: parse_usernames("Ops"),
         }
     }
