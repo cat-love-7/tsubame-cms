@@ -364,6 +364,106 @@ pub fn test_secret_key() -> String {
     std::env::var("CMS_TEST_SECRET_ACCESS_KEY").unwrap_or_else(|_| "test-secret".to_string())
 }
 
+/// The S3 policy a deployment gives its function, as the emulator is told it.
+///
+/// A copy of `infra/lambda.tf`'s two statements. It is here so a test that depends on a permission
+/// can say so out loud, and so that changing the deployment's policy is something the tests are
+/// expected to follow - they are the only place the difference is visible.
+pub fn deployment_s3_policy(bucket: &str, list_bucket: bool) -> String {
+    let mut statements = vec![format!(
+        r#"{{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}"#
+    )];
+    if list_bucket {
+        statements.push(format!(
+            r#"{{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::{bucket}"]}}"#
+        ));
+    }
+    format!(
+        r#"{{"Version":"2012-10-17","Statement":[{}]}}"#,
+        statements.join(",")
+    )
+}
+
+/// A MinIO user with exactly that policy, and the credentials to sign as it.
+///
+/// The emulator's root credentials can do anything, which is how a missing `s3:ListBucket` stayed
+/// invisible: with root, a key that is not there answers 404 and the branch that reads it is
+/// reached. A user with the deployment's policy does not have that luxury.
+///
+/// `None` when the emulator, `docker` or `mc` is not at hand, which is a test that skips rather
+/// than a test that lies.
+pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String, String)> {
+    let user = format!("cms-{}", uuid::Uuid::new_v4().simple());
+    let secret = uuid::Uuid::new_v4().simple().to_string();
+    let policy = deployment_s3_policy(bucket, list_bucket);
+    // The JSON has no single quotes in it, so the shell can carry it as it is.
+    let script = format!(
+        "set -e;          mc alias set cms http://127.0.0.1:9000 {root} {password} >/dev/null;          printf '%s' '{policy}' > /tmp/{user}.json;          mc admin user add cms {user} {secret} >/dev/null;          mc admin policy create cms {user} /tmp/{user}.json >/dev/null;          mc admin policy attach cms {user} --user {user} >/dev/null",
+        root = test_access_key(),
+        password = test_secret_key(),
+    );
+    run_in_emulator(&script)?;
+    Some((user, secret))
+}
+
+/// Run a shell line inside the emulator container, or answer `None` when there is no container.
+fn run_in_emulator(script: &str) -> Option<()> {
+    let compose = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docker-compose.yml");
+    let output = std::process::Command::new("docker")
+        .args([
+            "compose",
+            "-f",
+            compose.to_str()?,
+            "exec",
+            "-T",
+            "s3",
+            "sh",
+            "-c",
+            script,
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        tracing::debug!(
+            "could not set up the emulator's users: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return None;
+    }
+    Some(())
+}
+
+/// A repository over a fresh table that talks to `bucket` as the given credentials.
+///
+/// What a test needs to run as a restricted user: the bucket is made by the caller (with the
+/// emulator's root credentials), and everything else is an ordinary local repository.
+pub async fn open_test_repository_as(
+    table_hint: &str,
+    bucket: &str,
+    access_key_id: &str,
+    secret_access_key: &str,
+) -> Result<(std::sync::Arc<AwsRepository>, String), Box<dyn std::error::Error + Send + Sync>> {
+    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
+    let settings = AwsSettings {
+        region: "us-east-1".to_string(),
+        table: table.clone(),
+        bucket: bucket.to_string(),
+        user_pool_id: "unused_pool".to_string(),
+        client_id: "unused_client".to_string(),
+        login_url: None,
+        endpoint_url: Some(test_endpoint()),
+        s3_endpoint_url: Some(test_s3_endpoint()),
+        image_base_url: None,
+        access_key_id: Some(access_key_id.to_string()),
+        secret_access_key: Some(secret_access_key.to_string()),
+        session_token: None,
+        bootstrap_admin_usernames: Vec::new(),
+    };
+    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
+    repository.create_table().await?;
+    Ok((repository, table))
+}
+
 /// A repository over a freshly created table, for tests against a local DynamoDB.
 ///
 /// The table name is unique per call so tests do not share state; the caller drops it when it
@@ -392,6 +492,27 @@ pub async fn open_test_repository(
     let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
     repository.create_table().await?;
     Ok((repository, table))
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    /// The fixture is the deployment's policy: the statements the function is granted, and nothing
+    /// else. A test that depends on a permission reads the deployment, not this file.
+    #[test]
+    fn the_emulator_policy_is_the_deployments() {
+        let allowed = deployment_s3_policy("cms-images", true);
+        assert!(allowed.contains(r#""s3:GetObject","s3:PutObject","s3:DeleteObject""#));
+        assert!(allowed.contains(r#""arn:aws:s3:::cms-images/*""#));
+        assert!(allowed.contains(r#""s3:ListBucket""#));
+        assert!(allowed.contains(r#""arn:aws:s3:::cms-images""#));
+
+        // The other half of the puzzle: what the tests are like without it.
+        let denied = deployment_s3_policy("cms-images", false);
+        assert!(!denied.contains("ListBucket"));
+        assert!(denied.contains("s3:GetObject"));
+    }
 }
 
 #[cfg(test)]

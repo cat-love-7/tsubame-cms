@@ -322,6 +322,102 @@ mod tests {
 
     /// Push bytes through the URL the CMS handed out, the way a browser does, and read them
     /// back through the URL that ends up in the content.
+    /// What a deployment's S3 permissions actually allow, against the emulator.
+    ///
+    /// The emulator's root credentials can do anything, which is how a missing `s3:ListBucket`
+    /// stayed invisible: with root, a key that is not there answers 404 and the code's "not there
+    /// yet" branch is reached. As a user with the deployment's policy (`infra/lambda.tf`, mirrored
+    /// by `deployment_s3_policy`), a key that is there is found, and one that is not is answered
+    /// *as absent* - which is what `s3:ListBucket` buys. Without it the emulator refuses to say,
+    /// and the CMS cannot tell "missing" from "not allowed": the failure the policy keeps out of
+    /// reach.
+    #[tokio::test]
+    async fn finding_an_upload_needs_the_permissions_the_deployment_grants() {
+        use sl_cms_core::repositories::image_repository::ImageRepository;
+
+        let endpoint = crate::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (root, _table) = crate::open_test_repository("cms_permissions")
+            .await
+            .expect("a table for this test");
+        let bucket = root.inner.settings.bucket.clone();
+        root.inner
+            .s3
+            .create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
+
+        // The deployment's own policy: what is there is found, and what is not is absent.
+        let Some((user, secret)) = crate::restricted_minio_user(&bucket, true) else {
+            eprintln!("skipped: no emulator container to make a restricted user in");
+            return;
+        };
+        let (repository, _table) = crate::open_test_repository_as(
+            "cms_permissions_allowed",
+            &bucket,
+            &user,
+            &secret,
+        )
+        .await
+        .expect("a repository as the restricted user");
+
+        // An upload arrives the way the browser sends it: through the presigned PUT, which is
+        // signed with these very credentials.
+        let request = NewImageRequest {
+            original_filename: "there.png".to_string(),
+            ext: "png".to_string(),
+        };
+        let info = repository
+            .generate_image_upload_url(&request)
+            .await
+            .expect("a signed upload");
+        sl_cms_core::webhook::install_crypto_provider();
+        let put = reqwest::Client::new()
+            .put(&info.upload_url)
+            .body(vec![1u8, 2, 3])
+            .send()
+            .await
+            .expect("the presigned PUT should be reachable");
+        assert_eq!(put.status(), 200, "the restricted user may not upload");
+
+        // The record names the file the bytes went to.
+        let stored = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
+        let file_name = stored.url.rsplit('/').next().unwrap_or_default();
+        assert!(
+            repository.image_bytes_exist(file_name).await.unwrap(),
+            "an upload that is there has to be found"
+        );
+        assert_eq!(
+            repository.image_bytes_exist("nothing-here.png").await.unwrap(),
+            false,
+            "with s3:ListBucket, a key that is not there answers 404 - which is what the code reads"
+        );
+
+        // And without that permission, the same question has no answer: this is the shape the
+        // policy exists to avoid.
+        let Some((stranger, secret)) = crate::restricted_minio_user(&bucket, false) else {
+            eprintln!("skipped: no emulator container to make a restricted user in");
+            return;
+        };
+        let (repository, _table) =
+            crate::open_test_repository_as("cms_permissions_denied", &bucket, &stranger, &secret)
+                .await
+                .expect("a repository as the second restricted user");
+        assert!(
+            repository.image_bytes_exist("nothing-here.png").await.is_err(),
+            "without s3:ListBucket the emulator refuses to say whether the key exists"
+        );
+    }
+
     #[tokio::test]
     async fn an_upload_url_puts_bytes_that_the_stable_url_then_serves() {
         let endpoint = crate::test_s3_endpoint();

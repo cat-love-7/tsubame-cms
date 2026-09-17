@@ -17,6 +17,12 @@
 # capacity, throttling, the 400KB item and 1MB query limits, and GSI propagation delays are
 # all different in the cloud. Passing here means the adapter's logic is right, not that the
 # deployment is (see doc/aws-plan.md, "テスト方針").
+#
+# One thing they *can* reproduce, now that it matters: MinIO takes a user whose policy is the
+# deployment's, so a permission-dependent branch is exercised against the same walls
+# (`restricted_minio_user` in crates/aws, and the test that uses it). The emulator's root
+# credentials answer 404 for a key that is not there whatever the policy says, which is how a
+# missing `s3:ListBucket` stayed invisible.
 services:
   dynamodb:
     image: amazon/dynamodb-local:latest
