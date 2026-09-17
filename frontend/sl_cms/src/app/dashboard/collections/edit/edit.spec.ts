@@ -102,6 +102,17 @@ class StubCollectionsService {
   }
 }
 
+/** The form's save button, by its exact label ("Save and publish" is a different button). */
+function saveButton(element: HTMLElement): HTMLButtonElement {
+  const button = Array.from(element.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === 'Save',
+  );
+  if (!button) {
+    throw new Error('no Save button');
+  }
+  return button as HTMLButtonElement;
+}
+
 function previewButton(element: HTMLElement): HTMLButtonElement {
   return Array.from(element.querySelectorAll('button')).find((button) =>
     button.textContent?.includes('Preview link'),
@@ -364,6 +375,51 @@ describe('CollectionItemEdit', () => {
     const event = { preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
     component.warnBeforeLeaving(event);
     expect(event.preventDefault).toHaveBeenCalled();
+  });
+
+  // The form holds nothing until the item arrives, and the server holds the item: a save before
+  // then would write the empty (or half-typed) form over fields nobody touched.
+  it('does not offer to edit or save before the item has loaded', async () => {
+    const slow = new Subject<unknown>();
+    stub.heldItems.set(7, slow);
+    const fresh = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+
+    expect(component.loaded()).toBe(false);
+    expect(saveButton(fresh.nativeElement).disabled).toBe(true);
+    // Nothing to type into: the form appears with its content, so nothing can be typed into an
+    // empty form and then overwritten by the answer.
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeNull();
+
+    // A load that failed keeps the form off the screen rather than offering one that would wipe it.
+    slow.error({ error: { code: 'internal', message: 'boom' } });
+    await fresh.whenStable();
+    fresh.detectChanges();
+    expect(component.loaded()).toBe(false);
+    expect(saveButton(fresh.nativeElement).disabled).toBe(true);
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeNull();
+    expect(fresh.nativeElement.querySelector('.error button')).toBeTruthy();
+  });
+
+  it('offers the form once the item has loaded', async () => {
+    const slow = new Subject<unknown>();
+    stub.heldItems.set(7, slow);
+    const fresh = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+    expect(saveButton(fresh.nativeElement).disabled).toBe(true);
+
+    slow.next({ title: 'Hello' });
+    slow.complete();
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    expect(component.loaded()).toBe(true);
+    expect(saveButton(fresh.nativeElement).disabled).toBe(false);
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeTruthy();
+    // The form is in step with the server, so leaving does not have to be asked about.
+    expect(component.unsavedChanges()).toBe(false);
   });
 
   it('should create', () => {

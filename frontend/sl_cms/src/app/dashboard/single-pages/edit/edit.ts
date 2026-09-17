@@ -65,8 +65,15 @@ export class SinglePageEdit implements HasUnsavedChanges {
 
   /** What the form held when it was last in step with the server (see the collection editor). */
   private saved = signal('');
+  /**
+   * Whether the page's content has arrived (see the collection item editor): saving before it has
+   * would write the empty form over what nobody touched, so the form waits for it.
+   */
+  public loaded = signal(false);
   /** Whether the form holds edits that have never been saved. */
-  public unsavedChanges = computed(() => fingerprint(this.values()) !== this.saved());
+  public unsavedChanges = computed(
+    () => this.loaded() && fingerprint(this.values()) !== this.saved(),
+  );
   /**
    * Guards against a response for a page that is no longer the one on screen: the sidebar
    * switches pages without leaving this route, so a slow answer used to arrive after the switch.
@@ -103,6 +110,7 @@ export class SinglePageEdit implements HasUnsavedChanges {
   /** Everything the screen shows belongs to one page, so switching starts from nothing. */
   private load(name: string) {
     const token = ++this.loadToken;
+    this.loaded.set(false);
     this.pageName.set(name);
     this.schema.set([]);
     this.values.set({});
@@ -144,6 +152,8 @@ export class SinglePageEdit implements HasUnsavedChanges {
         const filled = withDefaults(schema, values);
         this.values.set(filled);
         this.saved.set(fingerprint(filled));
+        // Only now can the form be edited and saved: before this, what it holds is not the page.
+        this.loaded.set(true);
       },
       error: (e) => {
         if (token === this.loadToken) {
@@ -262,6 +272,11 @@ export class SinglePageEdit implements HasUnsavedChanges {
         }
       },
     });
+  }
+
+  /** Ask again after a load that failed (see the collection item editor). */
+  retry() {
+    this.load(this.pageName());
   }
 
   /**

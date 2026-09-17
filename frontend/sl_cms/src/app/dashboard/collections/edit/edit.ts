@@ -96,8 +96,19 @@ export class CollectionItemEdit implements HasUnsavedChanges {
    * edited, so a form nobody touched would still be a different object.
    */
   private saved = signal('');
+  /**
+   * Whether the item's content has arrived.
+   *
+   * Until it has, the form holds nothing and the server holds the item: saving now (or typing into
+   * a form with nothing in it) would write the empty form over fields nobody touched, so the form
+   * is not rendered until this is true. It stays false when the load failed, which is what the
+   * retry button is for.
+   */
+  public loaded = signal(false);
   /** Whether the form holds edits that have never been saved. */
-  public unsavedChanges = computed(() => fingerprint(this.values()) !== this.saved());
+  public unsavedChanges = computed(
+    () => this.loaded() && fingerprint(this.values()) !== this.saved(),
+  );
 
   /**
    * Guards against a response that belongs to the item that was open when it was asked for.
@@ -137,6 +148,7 @@ export class CollectionItemEdit implements HasUnsavedChanges {
   /** Everything the form shows belongs to one item, so a switch starts from nothing. */
   private load(name: string, id: number | null) {
     const token = ++this.loadToken;
+    this.loaded.set(false);
     this.collectionName.set(name);
     this.itemId.set(id);
     this.schema.set([]);
@@ -157,9 +169,11 @@ export class CollectionItemEdit implements HasUnsavedChanges {
         }
         this.schema.set(schema);
         if (id === null) {
+          // A new item starts from the schema's defaults, and there is nothing else to wait for.
           const empty = withDefaults(schema, {});
           this.values.set(empty);
           this.saved.set(fingerprint(empty));
+          this.loaded.set(true);
         } else {
           this.loadItem(schema, id, token);
           this.loadMetadata(id, token);
@@ -184,6 +198,9 @@ export class CollectionItemEdit implements HasUnsavedChanges {
         const filled = withDefaults(schema, values);
         this.values.set(filled);
         this.saved.set(fingerprint(filled));
+        // Only now is there a form to edit and save: before this, what the screen holds is not
+        // the item.
+        this.loaded.set(true);
       },
       error: (e) => {
         if (token === this.loadToken) {
@@ -369,6 +386,12 @@ export class CollectionItemEdit implements HasUnsavedChanges {
           }
         },
       });
+  }
+
+  /** Ask again after a load that failed: the form stays off the screen until something arrives,
+   *  and this is the only thing on it that can make that happen. */
+  retry() {
+    this.load(this.collectionName(), this.routeItemId());
   }
 
   /** Save the working copy, and go back to the list. */

@@ -49,8 +49,11 @@ class StubSinglePagesService {
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
   }
 
+  /** When set, the page's content waits for the test to complete it. */
+  public heldItem?: Subject<unknown>;
+
   getPageItem(): Observable<unknown> {
-    return of(this.content);
+    return this.heldItem ?? of(this.content);
   }
 
   getPageMetadata(): Observable<ItemMetadata> {
@@ -84,6 +87,17 @@ class StubSinglePagesService {
     return of({ status: 'draft', published_at: null,
     last_published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
   }
+}
+
+/** The form's save button, by its exact label ("Save and publish" is a different button). */
+function saveButton(element: HTMLElement): HTMLButtonElement {
+  const button = Array.from(element.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === 'Save',
+  );
+  if (!button) {
+    throw new Error('no Save button');
+  }
+  return button as HTMLButtonElement;
 }
 
 /** Whether the screen offers a button with this label (the label is what a user reads). */
@@ -144,6 +158,30 @@ describe('SinglePageEdit', () => {
     fixture = TestBed.createComponent(SinglePageEdit);
     component = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  // See the collection item editor: the page's content has to arrive before the form can be
+  // edited or saved, or a save would write the empty form over it.
+  it('does not offer to edit or save before the page has loaded', async () => {
+    const slow = new Subject<unknown>();
+    stub.heldItem = slow;
+    const fresh = TestBed.createComponent(SinglePageEdit);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+
+    expect(component.loaded()).toBe(false);
+    expect(saveButton(fresh.nativeElement).disabled).toBe(true);
+    // Nothing to type into before the content is there (see the collection item editor).
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeNull();
+
+    slow.next({ title: 'Home' });
+    slow.complete();
+    await fresh.whenStable();
+    fresh.detectChanges();
+
+    expect(component.loaded()).toBe(true);
+    expect(saveButton(fresh.nativeElement).disabled).toBe(false);
+    expect(fresh.nativeElement.querySelector('app-value-field')).toBeTruthy();
   });
 
   it('should create', () => {
