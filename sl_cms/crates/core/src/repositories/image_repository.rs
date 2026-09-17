@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use crate::models::image::{Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo};
+use crate::models::image::{Image, ImageID, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo};
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -15,6 +15,24 @@ pub trait ImageRepository: Send + Sync {
     fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageID, Image)>, BoxError>> + Send;
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// Record which images one piece of content uses, replacing what it used before.
+    ///
+    /// Called when the content is saved (with the union of what the published and the working
+    /// copies reference, because either may be served) and with an empty list when it is deleted.
+    /// The index is what answers "what would break if this image went?" - see
+    /// [`ImageRepository::get_image_references`].
+    fn set_image_references(
+        &self,
+        owner: &ImageOwner,
+        images: &[ImageID],
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// The content that uses an image.
+    fn get_image_references(
+        &self,
+        id: &ImageID,
+    ) -> impl Future<Output = Result<Vec<ImageOwner>, BoxError>> + Send;
 
     /// Move an image in or out of the trash.
     ///

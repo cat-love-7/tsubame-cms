@@ -23,6 +23,18 @@ export interface ReplacementInfo {
   upload_url: string;
 }
 
+/**
+ * The content that uses an image, as the server's reference index records it.
+ *
+ * A collection item carries its id; a single page has exactly one item, so its name is the whole
+ * address.
+ */
+export interface ImageOwner {
+  kind: 'collection_item' | 'single_page';
+  name: string;
+  item?: number | null;
+}
+
 /** One image in the library, as the admin screens list it. */
 export interface ImageEntry {
   id: number;
@@ -101,6 +113,11 @@ export class ImageRepository {
    */
   deleteImage(id: number): Observable<void> {
     return this.http.delete<void>(`/api/models/images/${id}`);
+  }
+
+  /** The content that uses an image, so a delete can say what it would break. */
+  references(id: number): Observable<ImageOwner[]> {
+    return this.http.get<ImageOwner[]>(`/api/models/images/${id}/references`);
   }
 
   /** The trash: images taken out of the library, most recently trashed first. */

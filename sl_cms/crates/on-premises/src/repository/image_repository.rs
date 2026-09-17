@@ -6,6 +6,7 @@ use rkv::{StoreOptions, Value};
 use sl_cms_core::models::image::{
     is_safe_file_name, sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest,
     ReplacementInfo,
+    ImageOwner,
 };
 use crate::repository::Repository;
 use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository};
@@ -19,6 +20,23 @@ pub struct ImageData {
     /// Absent in records written before the trash existed, which is why it has a default.
     #[serde(default)]
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Where the image reference index lives: which content uses which image.
+const IMAGE_REFS_STORE: &str = "image_refs";
+
+/// The entries one owner has: `<owner>|image|<id>`.
+fn owner_prefix(owner: &ImageOwner) -> String {
+    format!("{}|", owner.storage_key())
+}
+
+/// The entries one image has: `image|<id>|<owner>`.
+fn image_prefix(id: &ImageID) -> String {
+    format!("image|{}|", **id)
+}
+
+fn image_owner_key(id: &ImageID, owner: &ImageOwner) -> String {
+    format!("{}{}", image_prefix(id), owner.storage_key())
 }
 
 impl Repository {
@@ -219,6 +237,84 @@ impl ImageRepository for Repository {
             }
         }
         Ok(())
+    }
+
+    async fn set_image_references(
+        &self,
+        owner: &ImageOwner,
+        images: &[ImageID],
+    ) -> Result<(), BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(IMAGE_REFS_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+
+        // What this owner used before, so the entries that are gone can be removed. Both
+        // directions live in the same store: `<owner>|<image>` answers "what does this content
+        // use", and `image|<image>|<owner>` answers "what uses this image".
+        let owner_prefix = owner_prefix(owner);
+        let mut before = Vec::new();
+        for result in store.iter_from(&reader, owner_prefix.as_bytes())? {
+            let Ok((key, _)) = result else { continue };
+            let key = str::from_utf8(&key)?;
+            let Some(rest) = key.strip_prefix(&owner_prefix) else {
+                break;
+            };
+            let Some(raw) = rest.strip_prefix("image|") else {
+                continue;
+            };
+            let Ok(id) = raw.parse::<u64>() else { continue };
+            before.push(ImageID::from_u64(id));
+        }
+
+        let after: std::collections::BTreeSet<u64> = images.iter().map(|id| **id).collect();
+        let before_set: std::collections::BTreeSet<u64> = before.iter().map(|id| **id).collect();
+        let mut writer = env.write()?;
+        for id in before_set.difference(&after) {
+            store.delete(
+                &mut writer,
+                format!("{owner_prefix}image|{id}").as_bytes(),
+            )?;
+            store.delete(
+                &mut writer,
+                image_owner_key(&ImageID::from_u64(*id), owner).as_bytes(),
+            )?;
+        }
+        for id in after.difference(&before_set) {
+            store.put(
+                &mut writer,
+                format!("{owner_prefix}image|{id}").as_bytes(),
+                &Value::Str(&owner.storage_key()),
+            )?;
+            store.put(
+                &mut writer,
+                image_owner_key(&ImageID::from_u64(*id), owner).as_bytes(),
+                &Value::Str(&owner.storage_key()),
+            )?;
+        }
+        writer.commit()?;
+        Ok(())
+    }
+
+    async fn get_image_references(&self, id: &ImageID) -> Result<Vec<ImageOwner>, BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(IMAGE_REFS_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let prefix = image_prefix(id);
+        let mut owners = Vec::new();
+        for result in store.iter_from(&reader, prefix.as_bytes())? {
+            let Ok((key, _)) = result else { continue };
+            let key = str::from_utf8(&key)?;
+            let Some(rest) = key.strip_prefix(&prefix) else {
+                break;
+            };
+            if let Some(owner) = ImageOwner::from_storage_key(rest) {
+                owners.push(owner);
+            }
+        }
+        owners.sort();
+        Ok(owners)
     }
 
     async fn set_image_deleted_at(

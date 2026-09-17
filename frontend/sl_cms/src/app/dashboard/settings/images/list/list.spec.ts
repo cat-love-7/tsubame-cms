@@ -25,6 +25,11 @@ class StubImagesService {
   /** The renames the screen asked for, in order. */
   public renamed: { id: number; name: string }[] = [];
 
+  /** What the server's reference index says uses each image. */
+  public referencesById = new Map<number, { kind: 'collection_item' | 'single_page'; name: string; item?: number }[]>();
+
+  references = (id: number) => of(this.referencesById.get(id) ?? []);
+
   /** What has been taken out of the library. */
   public trashed: ImageEntry[] = [];
   public trashedIds: number[] = [];
@@ -184,6 +189,41 @@ describe('Image library', () => {
     expect(stub.restored).toEqual([1]);
     expect(component.library().map((image) => image.id)).toEqual([1]);
     expect(component.trashed()).toEqual([]);
+  });
+
+  // The index the server keeps is what the question is made of: an image something still shows
+  // deserves a different sentence from one nothing does.
+  it('says what uses the image before it leaves the library', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    // `spyOn` answers with the spy already installed by an earlier test, calls and all.
+    confirmSpy.mockClear();
+    stub.referencesById.set(1, [
+      { kind: 'collection_item', name: 'blog', item: 7 },
+      { kind: 'single_page', name: 'about' },
+    ]);
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.trash(stub.library[0]);
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    const question = String(confirmSpy.mock.calls[0][0]);
+    expect(question).toContain('blog #7');
+    expect(question).toContain('about');
+    // Declined, so nothing changed.
+    expect(stub.trashedIds).toEqual([]);
+  });
+
+  it('asks the shorter question when nothing uses the image', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy.mockClear();
+    const fresh = TestBed.createComponent(List);
+    fresh.detectChanges();
+
+    fresh.componentInstance.trash(stub.library[0]);
+
+    expect(String(confirmSpy.mock.calls[0][0])).not.toContain('used by');
+    expect(stub.trashedIds).toEqual([1]);
   });
 
   it('leaves the image in the library when the trashing is declined', () => {

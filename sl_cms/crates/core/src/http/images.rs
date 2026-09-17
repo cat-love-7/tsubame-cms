@@ -31,6 +31,7 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
         )
         // Trashing and restoring are the two halves of one act, so they are both here rather than
         // one being a `DELETE` that does not delete.
+        .route("/models/images/{id}/references", get(image_references::<R>))
         .route("/models/images/{id}/trash", post(trash_image::<R>))
         .route("/models/images/{id}/restore", post(restore_image::<R>))
         .route(
@@ -89,6 +90,19 @@ async fn list_trash<R: Storage>(
     State(module): State<AppState<R>>,
 ) -> Result<impl IntoResponse, HttpError> {
     Ok(Json(module.image_service.list_trash().await?))
+}
+
+/// The content that uses an image, so a delete can say what it would break.
+async fn image_references<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(
+        module
+            .image_service
+            .references(ImageID::from_u64(id))
+            .await?,
+    ))
 }
 
 /// Move an image to the trash, where content that uses it still resolves.

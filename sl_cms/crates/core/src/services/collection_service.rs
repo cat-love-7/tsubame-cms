@@ -245,6 +245,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.collection_repository
             .set_collection_item_draft(collection_name, &item_id, item_data)
             .await.map_err(map_internal_error)?;
+        self.record_image_references(collection_name, &item_id, item_data, None)
+            .await;
         self.stamp_item(collection_name, item_id, true).await?;
         Ok(*item_id)
     }
@@ -338,6 +340,15 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 }
                 self.release_unique_values(collection_name, &item_id, &release)
                     .await;
+                // Both copies while the item is published: the site is still serving the published
+                // one, and this save only replaced the working copy.
+                self.record_image_references(
+                    collection_name,
+                    &item_id,
+                    item_data,
+                    if is_published { published.as_ref() } else { None },
+                )
+                .await;
                 self.stamp_item(collection_name, item_id, false).await?;
                 Ok(())
             }
@@ -696,6 +707,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // After the delete: a value is never given up while a copy still holds it.
         self.release_unique_values(collection_name, &item_id, &held)
             .await;
+        // And nothing uses this item's images any more.
+        self.set_image_references(
+            &crate::models::image::ImageOwner::collection_item(collection_name.as_str(), *item_id),
+            &[],
+        )
+        .await;
         Ok(())
     }
 
@@ -874,6 +891,48 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default())
     }
 
+    /// Record which images this item uses, so a delete can say what it would break.
+    ///
+    /// The **published** copy counts only while the item is published, which is the same rule the
+    /// unique index uses: a draft keeps the record it was created from, nobody serves it, and
+    /// counting it would name an item whose image fields are empty. A failure here is logged rather
+    /// than returned - the content *was* saved, and refusing it over bookkeeping would be worse
+    /// than a warning that misses.
+    async fn record_image_references(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        working: &CollectionItem,
+        published: Option<&CollectionItem>,
+    ) {
+        let mut images = crate::models::image::referenced_images(working);
+        if let Some(published) = published {
+            images.extend(crate::models::image::referenced_images(published));
+            images.sort();
+            images.dedup();
+        }
+        self.set_image_references(
+            &crate::models::image::ImageOwner::collection_item(collection_name.as_str(), **item_id),
+            &images,
+        )
+        .await;
+    }
+
+    /// Write the reference index, and say so in the log when it cannot be written.
+    async fn set_image_references(
+        &self,
+        owner: &crate::models::image::ImageOwner,
+        images: &[crate::models::image::ImageID],
+    ) {
+        if let Err(e) = self
+            .image_repository
+            .set_image_references(owner, images)
+            .await
+        {
+            tracing::warn!("could not record image references for {owner:?}: {e}");
+        }
+    }
+
     /// The value a unique lookup is asking about, in the form the index holds it.
     ///
     /// A slug is stored canonical, so the question has to be canonical too; everything else is
@@ -1022,19 +1081,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .get_collection_schema(collection_name)
             .await.map_err(map_internal_error)?
             .unwrap_or_default();
-        let (reserve, release) = if has_unique_fields(&schema) {
-            let published = self
+        // Read once, for the index and for the image references below: what the item holds in each
+        // copy is what both of them are about.
+        let published = self
+            .collection_repository
+            .get_collection_item(collection_name, &item_id)
+            .await.map_err(map_internal_error)?;
+        let working = match &pending {
+            Some(pending) => Some(pending.clone()),
+            None => self
                 .collection_repository
-                .get_collection_item(collection_name, &item_id)
-                .await.map_err(map_internal_error)?;
-            let working = match &pending {
-                Some(pending) => Some(pending.clone()),
-                None => self
-                    .collection_repository
-                    .get_collection_item_draft(collection_name, &item_id)
-                    .await
-                    .map_err(map_internal_error)?,
-            };
+                .get_collection_item_draft(collection_name, &item_id)
+                .await
+                .map_err(map_internal_error)?,
+        };
+        let (reserve, release) = if has_unique_fields(&schema) {
             let before = Self::held_unique_values_for_status(
                 &schema,
                 was_published,
@@ -1079,6 +1140,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
         self.release_unique_values(collection_name, &item_id, &release)
             .await;
+        // What the item holds now: publishing promoted the working copy, unpublishing took it off
+        // the site but kept the working copy, and a draft's old published record is not served.
+        let held_now = pending.as_ref().or(working.as_ref()).or(published.as_ref());
+        match held_now {
+            Some(held_now) => {
+                self.record_image_references(collection_name, &item_id, held_now, None)
+                    .await
+            }
+            None => {
+                self.set_image_references(
+                    &crate::models::image::ImageOwner::collection_item(
+                        collection_name.as_str(),
+                        *item_id,
+                    ),
+                    &[],
+                )
+                .await
+            }
+        }
         // Only after the status is stored: a receiver that reacts by reading the delivery
         // API must not see the previous state.
         self.notifier
@@ -1605,6 +1685,19 @@ mod tests {
         }
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
+        }
+        async fn set_image_references(
+            &self,
+            _owner: &crate::models::image::ImageOwner,
+            _images: &[ImageID],
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
+        async fn get_image_references(
+            &self,
+            _id: &ImageID,
+        ) -> Result<Vec<crate::models::image::ImageOwner>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(Vec::new())
         }
         async fn set_image_deleted_at(
             &self,

@@ -3,6 +3,7 @@ import { map, Observable, switchMap } from 'rxjs';
 
 import {
   ImageEntry,
+  ImageOwner,
   ImageRepository,
   NewImageInfo,
   ReplacementInfo,
@@ -65,6 +66,11 @@ export class ImagesService {
   /** Delete an image and its bytes, for good. */
   deleteImage(id: number): Observable<void> {
     return this.images.deleteImage(id);
+  }
+
+  /** The content that uses an image, so a delete can say what it would break. */
+  references(id: number): Observable<ImageOwner[]> {
+    return this.images.references(id);
   }
 
   /** The trash: images taken out of the library, most recently trashed first. */

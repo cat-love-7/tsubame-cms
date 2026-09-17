@@ -82,6 +82,19 @@ impl<R: ImageRepository> ImageService<R> {
             .await.map_err(map_internal_error)
     }
 
+    /// The content that uses an image.
+    ///
+    /// What a delete warning is made of: an image already in the trash is only in the library's
+    /// way, but deleting it for good takes the picture out of whatever this answers with. The list
+    /// is only as complete as the reference index (see [`crate::models::image::referenced_images`]).
+    pub async fn references(&self, id: ImageID) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
+        self.require_image(&id).await?;
+        self.repository
+            .get_image_references(&id)
+            .await
+            .map_err(map_internal_error)
+    }
+
     async fn require_image(&self, id: &ImageID) -> Result<(), HttpError> {
         if self
             .repository

@@ -2283,6 +2283,187 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     assert_eq!(status, StatusCode::NOT_FOUND, "the bytes went with it");
 }
 
+/// The reference index: which content uses which image, so a delete can say what it would break.
+///
+/// Both directions are exercised - an `Image` field, the same inside an array and a composite, a
+/// Markdown body linking the durable id, and an item being deleted - because the point of the
+/// index is that it is complete enough to warn from.
+#[tokio::test]
+async fn the_things_that_use_an_image_can_be_listed() {
+    if !Backend::SERVES_IMAGE_BYTES {
+        eprintln!("skipped: this backend hands the browser a signed URL instead of serving bytes");
+        return;
+    }
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    // Two images, so the index has to tell them apart.
+    let mut ids = Vec::new();
+    for name in ["one.png", "two.png"] {
+        let (status, info) = send(
+            &app.router,
+            Method::POST,
+            "/models/images/get_upload_url",
+            Some(&token),
+            Some(json!({ "original_filename": name, "ext": "png" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        ids.push(info["id"].as_u64().expect("the image id"));
+        let upload_url = info["upload_url"].as_str().unwrap().to_string();
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri(&upload_url)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from("PNG-BYTES"))
+            .unwrap();
+        assert_eq!(
+            app.router.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::CREATED
+        );
+    }
+    let (used, other) = (ids[0], ids[1]);
+
+    // A collection whose schema has an image field, an array of images and a Markdown body.
+    let schema = json!([
+        { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
+        { "name": "cover", "field_type": "Image", "required": false, "width": 12, "height": 1 },
+        { "name": "gallery", "field_type": { "Array": ["Image"] }, "required": false, "width": 12, "height": 1 },
+        { "name": "body", "field_type": { "Markdown": {} }, "required": false, "width": 12, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/item",
+        Some(&token),
+        Some(json!({
+            "title": "first",
+            "cover": used,
+            "gallery": [used],
+            "body": format!("See ![it](/images/by-id/{used}) and [two](/images/by-id/{other})."),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let first = created.as_u64().expect("the item id");
+
+    // The page that uses the other image, so the two lists can be told apart. It needs a schema
+    // of its own: a page without one has nothing to save against.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/about/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
+            { "name": "cover", "field_type": "Image", "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/models/single_pages/about/item",
+        Some(&token),
+        Some(json!({ "title": "about", "cover": other })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, references) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/images/{used}/references"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        references,
+        json!([{ "kind": "collection_item", "name": "pages", "item": first }]),
+        "the field, the array and the Markdown link are one item, listed once"
+    );
+
+    let (_, references) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/images/{other}/references"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        references,
+        json!([
+            { "kind": "collection_item", "name": "pages", "item": first },
+            { "kind": "single_page", "name": "about" }
+        ])
+    );
+
+    // Saving the item without the images drops them from the index.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &format!("/models/collections/pages/items/{first}"),
+        Some(&token),
+        Some(json!({ "title": "first", "cover": null, "gallery": [], "body": "no images" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, references) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/images/{used}/references"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(references, json!([]), "nothing uses it any more");
+
+    // Deleting the page drops its references too.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::DELETE,
+        "/models/single_pages/about",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, references) = send(
+        &app.router,
+        Method::GET,
+        &format!("/models/images/{other}/references"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(references, json!([]));
+
+    // An image nobody knows about has no references, and says so rather than failing.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::GET,
+        "/models/images/999/references",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.

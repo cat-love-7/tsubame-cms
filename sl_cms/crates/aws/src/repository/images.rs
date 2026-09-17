@@ -12,6 +12,7 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use super::*;
 use sl_cms_core::models::image::{
     sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
+    ImageOwner,
 };
 use sl_cms_core::repositories::image_repository::ImageRepository;
 
@@ -218,6 +219,49 @@ impl ImageRepository for AwsRepository {
             &AwsRepository::encode(&data)?,
         )
         .await
+    }
+
+    async fn set_image_references(
+        &self,
+        owner: &ImageOwner,
+        images: &[ImageID],
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        // Both directions in the one table: the owner's partition answers "what does this content
+        // use", and the image's answers "what uses this image". A save has to know both, because
+        // the entries that are gone have to be removed from each.
+        let owner_pk = format!("refs#{}", owner.storage_key());
+        let before: std::collections::BTreeSet<u64> = list(&inner, &owner_pk, "image#")
+            .await?
+            .into_iter()
+            .filter_map(|(sk, _)| sk.trim_start_matches("image#").parse::<u64>().ok())
+            .collect();
+        let after: std::collections::BTreeSet<u64> = images.iter().map(|id| **id).collect();
+
+        for id in before.difference(&after) {
+            let image_pk = format!("image#{}", id);
+            remove(&inner, &owner_pk, &format!("image#{}", id)).await?;
+            remove(&inner, &image_pk, &format!("ref#{}", owner.storage_key())).await?;
+        }
+        for id in after.difference(&before) {
+            let image_pk = format!("image#{}", id);
+            write(&inner, &owner_pk, &format!("image#{}", id), &owner.storage_key()).await?;
+            write(&inner, &image_pk, &format!("ref#{}", owner.storage_key()), &owner.storage_key())
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn get_image_references(&self, id: &ImageID) -> Result<Vec<ImageOwner>, BoxError> {
+        let inner = self.inner.clone();
+        let image_pk = format!("image#{}", id);
+        let mut owners: Vec<ImageOwner> = list(&inner, &image_pk, "ref#")
+            .await?
+            .into_iter()
+            .filter_map(|(sk, _)| ImageOwner::from_storage_key(sk.trim_start_matches("ref#")))
+            .collect();
+        owners.sort();
+        Ok(owners)
     }
 
     async fn set_image_deleted_at(

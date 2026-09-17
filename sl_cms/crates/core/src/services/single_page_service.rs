@@ -106,6 +106,65 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .add_single_page_schema(name, schema)
             .await.map_err(map_internal_error)
     }
+    /// Record which images this page uses, so a delete can say what it would break.
+    ///
+    /// Both copies, and a failure in the log rather than in the answer (see
+    /// `CollectionService::record_image_references`).
+    async fn record_image_references(&self, name: &SinglePageName) {
+        let published = self
+            .single_page_repository
+            .get_single_page_item(name)
+            .await
+            .map_err(|e| tracing::warn!("could not read {name} for its image references: {e}"))
+            .ok()
+            .flatten();
+        let working = self
+            .single_page_repository
+            .get_single_page_item_draft(name)
+            .await
+            .map_err(|e| tracing::warn!("could not read {name}'s working copy: {e}"))
+            .ok()
+            .flatten();
+        // The published copy counts only while the page is published: a draft keeps the record it
+        // was created from, and nobody serves it (the rule the unique index uses too).
+        let is_published = self
+            .single_page_repository
+            .get_page_metadata(name)
+            .await
+            .map(|metadata| metadata.unwrap_or_default().is_published())
+            .unwrap_or(false);
+        let mut images = Vec::new();
+        if let Some(effective) = working.as_ref().or(published.as_ref()) {
+            images.extend(crate::models::image::referenced_images(effective));
+        }
+        if is_published {
+            if let Some(published) = published.as_ref() {
+                images.extend(crate::models::image::referenced_images(published));
+            }
+        }
+        images.sort();
+        images.dedup();
+        self.set_image_references(
+            &crate::models::image::ImageOwner::single_page(name.as_str()),
+            &images,
+        )
+        .await;
+    }
+
+    async fn set_image_references(
+        &self,
+        owner: &crate::models::image::ImageOwner,
+        images: &[crate::models::image::ImageID],
+    ) {
+        if let Err(e) = self
+            .image_repository
+            .set_image_references(owner, images)
+            .await
+        {
+            tracing::warn!("could not record image references for {owner:?}: {e}");
+        }
+    }
+
     pub async fn delete_single_page(&self, name: &SinglePageName) -> Result<(), HttpError> {
         if self
             .single_page_repository
@@ -120,7 +179,14 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
         self.single_page_repository
             .delete_single_page(name)
-            .await.map_err(map_internal_error)
+            .await.map_err(map_internal_error)?;
+        // Nothing uses this page's images any more.
+        self.set_image_references(
+            &crate::models::image::ImageOwner::single_page(name.as_str()),
+            &[],
+        )
+        .await;
+        Ok(())
     }
     /// The page's working copy, falling back to the published one.
     async fn working_page_item(&self, name: &SinglePageName) -> Result<Option<SinglePageItem>, HttpError> {
@@ -216,6 +282,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 self.single_page_repository
                     .set_single_page_item_draft(name, item_data)
                     .await.map_err(map_internal_error)?;
+                // Both copies: the published one may still be serving.
+                self.record_image_references(name).await;
                 self.stamp_page(name).await?;
                 Ok(())
             }
@@ -361,6 +429,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             }
             return Err(map_internal_error(e));
         }
+        // What the page holds now: publishing promoted the working copy, unpublishing took it off
+        // the site but kept it.
+        self.record_image_references(name).await;
         // Only after the status is stored (see `CollectionService::set_item_status`).
         self.notifier
             .notify(ContentEvent::single_page(name, &metadata))
@@ -604,6 +675,19 @@ mod tests {
         }
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
+        }
+        async fn set_image_references(
+            &self,
+            _owner: &crate::models::image::ImageOwner,
+            _images: &[ImageID],
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
+        async fn get_image_references(
+            &self,
+            _id: &ImageID,
+        ) -> Result<Vec<crate::models::image::ImageOwner>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(Vec::new())
         }
         async fn set_image_deleted_at(
             &self,

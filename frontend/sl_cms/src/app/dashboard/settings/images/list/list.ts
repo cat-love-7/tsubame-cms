@@ -9,8 +9,9 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { apiUrl } from 'app/core/api-url';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
-import { ImageEntry } from 'app/repositories/media/images.repository';
+import { ImageEntry, ImageOwner } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
+import { Observable } from 'rxjs';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 
 /**
@@ -201,20 +202,13 @@ export class List {
    * resolving, so this is the one to reach for when something may still be using it.
    */
   trash(image: ImageEntry) {
-    if (
-      !confirm(
-        this.i18n.translate('content.moveToTrashConfirm', { name: image.original_filename }),
-      )
-    ) {
-      return;
-    }
-    this.images.trashImage(image.id).subscribe({
-      next: () => {
-        this.error.set(null);
-        this.load();
-      },
-      error: (e) => this.error.set(failure('content.trashFailed', e)),
-    });
+    this.confirmRemoval(
+      image,
+      'content.moveToTrashConfirm',
+      'content.usedByTrashConfirm',
+      (id) => this.images.trashImage(id),
+      'content.trashFailed',
+    );
   }
 
   /** Put a trashed image back in the library. */
@@ -234,17 +228,55 @@ export class List {
    * Only offered for an image already in the trash, so it takes two deliberate acts to lose one.
    */
   delete(image: ImageEntry) {
-    if (
-      !confirm(this.i18n.translate('content.deleteImageConfirm', { name: image.original_filename }))
-    ) {
-      return;
-    }
-    this.images.deleteImage(image.id).subscribe({
-      next: () => {
-        this.error.set(null);
-        this.load();
+    this.confirmRemoval(
+      image,
+      'content.deleteImageConfirm',
+      'content.usedByDeleteConfirm',
+      (id) => this.images.deleteImage(id),
+      'content.deleteFailed',
+    );
+  }
+
+  /**
+   * Ask before an image leaves the library, naming what uses it.
+   *
+   * The list comes from the server's reference index, so the question says what the answer would
+   * affect instead of asking the reader to remember: an image that something still shows is worth
+   * a different sentence from one that nothing does.
+   */
+  private confirmRemoval(
+    image: ImageEntry,
+    quietKey: string,
+    usedKey: string,
+    act: (id: number) => Observable<unknown>,
+    failureKey: string,
+  ) {
+    this.images.references(image.id).subscribe({
+      next: (owners) => {
+        const message = owners.length
+          ? this.i18n.translate(usedKey, {
+              name: image.original_filename,
+              count: owners.length,
+              list: owners.map((owner) => this.ownerLabel(owner)).join(', '),
+            })
+          : this.i18n.translate(quietKey, { name: image.original_filename });
+        if (!confirm(message)) {
+          return;
+        }
+        act(image.id).subscribe({
+          next: () => {
+            this.error.set(null);
+            this.load();
+          },
+          error: (e) => this.error.set(failure(failureKey, e)),
+        });
       },
-      error: (e) => this.error.set(failure('content.deleteFailed', e)),
+      error: (e) => this.error.set(failure('content.failedToLoadReferences', e)),
     });
+  }
+
+  /** How one piece of content is named in a warning: a page by name, an item by collection and id. */
+  ownerLabel(owner: ImageOwner): string {
+    return owner.kind === 'single_page' ? owner.name : `${owner.name} #${owner.item}`;
   }
 }

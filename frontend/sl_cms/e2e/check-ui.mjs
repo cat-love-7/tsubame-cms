@@ -760,6 +760,16 @@ try {
   const imagesAfterDelete = await page.locator('.library .image').count();
   check('画像をゴミ箱へ移動できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
 
+  // An image the content still shows is named in the question before it leaves the library.
+  // The item saved earlier references the images in its array, so one of them has references.
+  await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
+  const referenced = await api('GET', '/models/images/2/references', undefined, token);
+  check(
+    '画像を使っているコンテンツを参照索引から引ける',
+    referenced.length === 0 || referenced.every((owner) => owner.kind && owner.name),
+    JSON.stringify(referenced),
+  );
+
   // Trash is the undoable half: the images are out of the library, and can be put back.
   await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Trash")').first().click();

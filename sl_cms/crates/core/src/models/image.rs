@@ -47,6 +47,206 @@ impl ImageEntry {
     }
 }
 
+/// Which content uses an image.
+///
+/// A collection item is named by its collection and its id; a single page is named by the page,
+/// because it has exactly one item and the id would say nothing.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ImageOwner {
+    pub kind: ImageOwnerKind,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOwnerKind {
+    CollectionItem,
+    SinglePage,
+}
+
+impl ImageOwner {
+    pub fn collection_item(name: &str, item: u64) -> Self {
+        ImageOwner {
+            kind: ImageOwnerKind::CollectionItem,
+            name: name.to_string(),
+            item: Some(item),
+        }
+    }
+
+    pub fn single_page(name: &str) -> Self {
+        ImageOwner {
+            kind: ImageOwnerKind::SinglePage,
+            name: name.to_string(),
+            item: None,
+        }
+    }
+
+    /// The owner as one string, for a key in the index.
+    ///
+    /// The name is escaped (`:` becomes `%3A`), so a collection named `a:b` cannot produce the
+    /// same key as one named `a` with an item called `b`.
+    pub fn storage_key(&self) -> String {
+        match self.kind {
+            ImageOwnerKind::CollectionItem => format!(
+                "collection:{}:{}",
+                escape(&self.name),
+                self.item.unwrap_or_default()
+            ),
+            ImageOwnerKind::SinglePage => format!("page:{}", escape(&self.name)),
+        }
+    }
+
+    /// The owner back from [`ImageOwner::storage_key`].
+    pub fn from_storage_key(key: &str) -> Option<Self> {
+        let mut parts = key.splitn(3, ':');
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some("collection"), Some(name), Some(item)) => item.parse().ok().map(|item| {
+                ImageOwner::collection_item(&unescape(name), item)
+            }),
+            (Some("page"), Some(name), _) => Some(ImageOwner::single_page(&unescape(name))),
+            _ => None,
+        }
+    }
+}
+
+fn escape(name: &str) -> String {
+    name.replace('%', "%25").replace(':', "%3A")
+}
+
+fn unescape(name: &str) -> String {
+    name.replace("%3A", ":").replace("%25", "%")
+}
+
+/// Every image a piece of content uses.
+///
+/// `Image` fields hold ids, so those are exact. Markdown is read for the durable id link
+/// (`/images/by-id/<id>`) and nothing else: a hand-written URL to wherever the bytes are served
+/// from is indistinguishable from an ordinary link, and would go stale the moment the image is
+/// replaced.
+pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Vec<ImageID> {
+    let mut found = std::collections::BTreeSet::new();
+    for value in item.0.values() {
+        collect_images(value, &mut found);
+    }
+    found.into_iter().collect()
+}
+
+fn collect_images(value: &crate::models::field::FieldValue, found: &mut std::collections::BTreeSet<ImageID>) {
+    use crate::models::field::FieldValue;
+    match value {
+        FieldValue::Image(Some(id)) => {
+            found.insert(id.clone());
+        }
+        FieldValue::Array(items) => {
+            for item in items {
+                collect_images(item, found);
+            }
+        }
+        FieldValue::CompositeField(Some(composite)) => {
+            for value in composite.values.values() {
+                collect_images(value, found);
+            }
+        }
+        FieldValue::Markdown(text) => {
+            for id in image_ids_in_markdown(text) {
+                found.insert(id);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The images a Markdown body links to by their durable id.
+pub fn image_ids_in_markdown(text: &str) -> Vec<ImageID> {
+    const MARKER: &str = "/images/by-id/";
+    let mut ids = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(MARKER) {
+        rest = &rest[at + MARKER.len()..];
+        let digits: String = rest.chars().take_while(|character| character.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            // Not a link: keep looking from where the marker was left behind.
+            continue;
+        }
+        if let Ok(id) = digits.parse::<u64>() {
+            ids.push(ImageID::from_u64(id));
+        }
+    }
+    ids
+}
+
+/// The reference index's half of this module: which content uses which image.
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+    use crate::models::field::{CompositeFieldValue, FieldValue, FieldValueMap};
+    use std::collections::HashMap;
+
+    fn values(entries: Vec<(&str, FieldValue)>) -> FieldValueMap<Vec<crate::models::schema::FieldSchema>> {
+        FieldValueMap(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect(), std::marker::PhantomData)
+    }
+
+    #[test]
+    fn an_owner_survives_its_storage_key() {
+        for owner in [
+            ImageOwner::collection_item("blog", 7),
+            ImageOwner::single_page("about"),
+            // A name that could otherwise be read as two fields of a key.
+            ImageOwner::collection_item("a:b", 3),
+            ImageOwner::single_page("a:1"),
+        ] {
+            assert_eq!(
+                ImageOwner::from_storage_key(&owner.storage_key()),
+                Some(owner.clone()),
+                "{}",
+                owner.storage_key()
+            );
+        }
+        assert_eq!(ImageOwner::from_storage_key("nonsense"), None);
+    }
+
+    #[test]
+    fn image_fields_are_read_wherever_they_sit() {
+        let mut composite_values = HashMap::new();
+        composite_values.insert("photo".to_string(), FieldValue::Image(Some(ImageID::from_u64(3))));
+        let item = values(vec![
+            ("cover", FieldValue::Image(Some(ImageID::from_u64(1)))),
+            ("empty", FieldValue::Image(None)),
+            (
+                "gallery",
+                FieldValue::Array(vec![
+                    FieldValue::Image(Some(ImageID::from_u64(2))),
+                    FieldValue::Text("not an image".to_string()),
+                ]),
+            ),
+            (
+                "block",
+                FieldValue::CompositeField(Some(CompositeFieldValue {
+                    id: "comp".into(),
+                    values: FieldValueMap(composite_values, std::marker::PhantomData),
+                })),
+            ),
+        ]);
+
+        let found: Vec<u64> = referenced_images(&item).into_iter().map(|id| *id).collect();
+        assert_eq!(found, vec![1, 2, 3], "sorted and deduplicated");
+    }
+
+    #[test]
+    fn markdown_is_read_for_the_durable_link_only() {
+        let text = "See ![one](/images/by-id/4) and [two](https://cms.example.com/images/by-id/12).\n\
+                    Not this: /images/3ec3df37.png or /images/by-id/ or /images/by-id/abc";
+        let found: Vec<u64> = image_ids_in_markdown(text).into_iter().map(|id| *id).collect();
+        assert_eq!(found, vec![4, 12]);
+
+        // The same link written twice is one image.
+        assert_eq!(image_ids_in_markdown("/images/by-id/4 /images/by-id/4").len(), 2);
+        assert!(image_ids_in_markdown("no links here").is_empty());
+    }
+}
+
 /// The longest display name an image may carry.
 ///
 /// Long enough for the file names people actually have, short enough that the library stays
