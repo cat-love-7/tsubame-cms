@@ -430,10 +430,15 @@ mod tests {
     /// hands out works, and the same object without a signature does not.
     #[tokio::test]
     async fn a_presigned_deployment_serves_a_url_that_expires() {
-        let endpoint = crate::test_endpoint();
-        if !emulator_reachable(&endpoint) {
-            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
-            return;
+        // Both halves are needed: the records are in DynamoDB and the bytes are in S3 (MinIO), and
+        // the bare read below has to reach the *bucket* to be about the bucket at all.
+        let dynamo = crate::test_endpoint();
+        let s3 = crate::test_s3_endpoint();
+        for (what, endpoint) in [("DynamoDB", &dynamo), ("S3", &s3)] {
+            if !emulator_reachable(endpoint) {
+                eprintln!("skipped: no {what} at {endpoint} (start it with `docker compose up -d`)");
+                return;
+            }
         }
         let (repository, _table) = crate::open_test_repository_serving(
             "cms_presigned",
@@ -486,30 +491,34 @@ mod tests {
         assert_eq!(signed.status(), 200, "the signature was refused");
         assert_eq!(signed.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
 
-        // The same object without the signature is not readable, which is the point. The key has to
-        // be taken from the URL with the query stripped: keeping it would keep the signature too,
-        // and the read would be refused for a reason that has nothing to do with the bucket being
-        // private.
-        let key = info
+        // The same object without the signature is not readable, which is the point. The key comes
+        // out of the signed URL, so the query is cut off **first**: keeping it would keep the
+        // signature, and the read would then be refused for a reason that has nothing to do with
+        // the bucket being private. The address is the S3 endpoint - a bare read aimed at the
+        // table's endpoint would be answered by something that never looked at the bucket.
+        let key = image
             .url
             .split('?')
             .next()
-            .unwrap_or(&info.url)
+            .unwrap_or(&image.url)
             .rsplit('/')
             .next()
-            .unwrap();
-        let bare = format!("{endpoint}/{bucket}/{key}");
-        let refused = client.get(&bare).send().await.expect("the bucket answers");
-        // Not "not found": the object is there, and the reader is not allowed to have it. The
-        // emulator answers 400 for a request with no authorization at all where S3 answers 403
-        // AccessDenied - the refusal is the same, the status is not, so what this pins is that the
-        // read does not succeed (a bucket that had become readable would answer 200).
+            .expect("the URL has an object key");
         assert!(
-            !refused.status().is_success(),
-            "a private bucket should refuse an unsigned read, got {}",
-            refused.status()
+            !key.is_empty() && !key.contains("X-Amz"),
+            "not an object key: {key}"
         );
-        assert_ne!(refused.status().as_u16(), 404, "the object is there, the reader is not");
+        let bare = format!("{s3}/{bucket}/{key}");
+        let refused = client.get(&bare).send().await.expect("the bucket answers");
+        // Not "not found", and not a success either: the object is there, and a reader without a
+        // signature may not have it. The emulator answers 403 AccessDenied for a request with no
+        // authorization at all (S3 answers 403 as well), so what this pins is that the read is
+        // refused by the bucket for want of a signature.
+        assert_eq!(
+            refused.status(),
+            403,
+            "a private bucket should refuse an unsigned read of an object that is there"
+        );
 
         // And the same mode ties an upload to the image it is for by id, which is what an apply is
         // checked against: a URL that ends in a signature says nothing about whose bytes these are,
@@ -693,19 +702,25 @@ mod tests {
             "with s3:ListBucket, a key that is not there answers 404 - which is what the code reads"
         );
 
-        // And without that permission, the same question has no answer: this is the shape the
-        // policy exists to avoid.
+        // What the emulator cannot show: with the real service, a caller that may not list the
+        // bucket is *refused* (403) for a key that is not there, so "missing" and "not allowed"
+        // look the same and this "not there yet" branch is never reached. That is the reason the
+        // deployment's policy carries `s3:ListBucket` - and MinIO answers 404 whether or not the
+        // policy allows listing, so the emulator pins the policy's shape, not that consequence.
         let Some((stranger, secret)) = crate::restricted_minio_user(&bucket, false) else {
             eprintln!("skipped: no emulator container to make a restricted user in");
             return;
         };
-        let (repository, _table) =
+        let (stranger_repository, _table) =
             crate::open_test_repository_as("cms_permissions_denied", &bucket, &stranger, &secret)
                 .await
                 .expect("a repository as the second restricted user");
         assert!(
-            repository.image_bytes_exist("nothing-here.png").await.is_err(),
-            "without s3:ListBucket the emulator refuses to say whether the key exists"
+            !stranger_repository
+                .image_bytes_exist("nothing-here.png")
+                .await
+                .expect("MinIO answers 404 with or without s3:ListBucket"),
+            "a key that is not there is absent, whatever the policy says"
         );
     }
 

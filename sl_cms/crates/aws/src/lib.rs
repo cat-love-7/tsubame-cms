@@ -386,14 +386,19 @@ pub fn deployment_s3_policy(bucket: &str, list_bucket: bool) -> String {
 
 /// A MinIO user with exactly that policy, and the credentials to sign as it.
 ///
-/// The emulator's root credentials can do anything, which is how a missing `s3:ListBucket` stayed
-/// invisible: with root, a key that is not there answers 404 and the branch that reads it is
-/// reached. A user with the deployment's policy does not have that luxury.
+/// The emulator's root credentials can do anything, so a code path that needs a permission the
+/// deployment does not grant passed here and failed in the cloud - which is how a missing
+/// `s3:GetObject` stayed invisible. Running the same code as a user with the deployment's policy
+/// puts the same wall in front of it.
+///
+/// The name is letters and digits only, because these are not only MinIO's credentials: a test
+/// hands them to the DynamoDB client too, and **DynamoDB Local refuses an access key id with
+/// anything else in it** (`cms-...` reads as "The Access Key ID or security token is invalid").
 ///
 /// `None` when the emulator, `docker` or `mc` is not at hand, which is a test that skips rather
 /// than a test that lies.
 pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String, String)> {
-    let user = format!("cms-{}", uuid::Uuid::new_v4().simple());
+    let user = format!("cms{}", uuid::Uuid::new_v4().simple());
     let secret = uuid::Uuid::new_v4().simple().to_string();
     let policy = deployment_s3_policy(bucket, list_bucket);
     // The JSON has no single quotes in it, so the shell can carry it as it is.
@@ -408,7 +413,17 @@ pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String,
 
 /// Run a shell line inside the emulator container, or answer `None` when there is no container.
 fn run_in_emulator(script: &str) -> Option<()> {
-    let compose = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docker-compose.yml");
+    // The compose file is at the root of the crate's workspace (`sl_cms/`), which is two levels up
+    // from this crate. A path that does not resolve is a mistake in this line, not a missing
+    // emulator: left to the `None` below it would read as a skip, and the test that needs a
+    // restricted user would pass without ever checking the policy.
+    let compose =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
+    assert!(
+        compose.is_file(),
+        "the compose file should be at {}",
+        compose.display()
+    );
     let output = std::process::Command::new("docker")
         .args([
             "compose",

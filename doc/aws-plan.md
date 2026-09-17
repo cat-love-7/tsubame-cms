@@ -499,10 +499,22 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 `infra/lambda.tf` に `s3:GetObject`(HeadObject 用)と `s3:ListBucket`(404 を取り戻すため)を明示。
 
 **エミュレータでも再現できるようにした**: MinIO に**配備と同じポリシーのユーザー**を作り
-(`restricted_minio_user`)、その資格情報で `image_bytes_exist` を呼ぶ。存在するキーは見つかり、
-存在しないキーは **404 = 不在**として返る(`s3:ListBucket` があるおかげ)。`ListBucket` を外した
-ユーザーでは**不在と権限不足を区別できない**(エラーになる)ことも同じテストで固定した — これが
-ポリシーに `s3:ListBucket` がある理由そのもの。
+(`restricted_minio_user`)、その資格情報で `image_bytes_exist` を呼ぶ。配備ポリシーに無い権限を
+コードが使えば 403 になるので、root 資格情報で偶然通っていた状態(上の `s3:GetObject` の件)は
+もう隠れない。**このテストはしばらく一度も走っていなかった**(compose ファイルのパスが 1 階層
+ずれていて、`run_in_emulator` が `None` を返し、テストが「スキップ」として通り抜けていた)。
+いまはパスが解決しなければテストが落ちる。
+
+**エミュレータでは再現できない部分**: 実 S3 は `s3:ListBucket` の無い呼び出しに「存在しない
+キー」も **403** と答える(不在と権限不足を区別させない)が、**MinIO は ListBucket の有無に
+かかわらず 404 を返す**。`ListBucket` を外したユーザーで差が出ないことをテストは明示的に固定し、
+「403 になるので 404 が必要」という理由の側は `infra/lambda.tf` と `deployment_s3_policy` の
+コメントが担う。
+
+そのほか、この経路で踏んだエミュレータの癖: **DynamoDB Local はアクセスキー ID に英数字以外を
+許さない**(`cms-...` は `UnrecognizedClientException`)。制限ユーザーの名前を英数字だけにして
+あるのは、同じ資格情報を DynamoDB クライアントにも渡すテストがあるため。
+
 残る穴は **Terraform とテストのポリシーが二重管理**であること: `deployment_s3_policy` を変える
 ときは `infra/lambda.tf` も見る、というコメントでつないでいる(片方だけ変えてもテストは気づかない)。
 
@@ -526,7 +538,7 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 |---|---|---|
 | ルーター / ドメイン | `oneshot` + **共有契約スイート**(両バックエンド) | — |
 | DynamoDB | DynamoDB Local(`endpoint_url` 差し替え) | GSI の反映遅延、スロットリング、上限 |
-| S3 | **MinIO**(presign → PUT → GET。検証済み) | IAM、CloudFront、転送 |
+| S3 | **MinIO**(presign → PUT → GET。検証済み。不在の 403 化は再現しない) | IAM、CloudFront、転送 |
 | Lambda 起動点 | localhost で `serve` して E2E / `cargo lambda watch`。CI が **arm64 の成果物**をビルドして中身のアーキテクチャまで確認 | イベント形状、コールドスタート、凍結 |
 | Cognito | 鍵を生成して JWKS を注入(単体) | 実プールの設定 |
 | 全体 | — | 使い捨てスタック + 既存 E2E |

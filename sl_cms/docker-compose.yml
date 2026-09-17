@@ -20,9 +20,10 @@
 #
 # One thing they *can* reproduce, now that it matters: MinIO takes a user whose policy is the
 # deployment's, so a permission-dependent branch is exercised against the same walls
-# (`restricted_minio_user` in crates/aws, and the test that uses it). The emulator's root
-# credentials answer 404 for a key that is not there whatever the policy says, which is how a
-# missing `s3:ListBucket` stayed invisible.
+# (`restricted_minio_user` in crates/aws, and the test that uses it). Without that user, root
+# credentials answered for permissions the deployment does not grant, which is how a missing
+# `s3:GetObject` stayed invisible. What MinIO does *not* reproduce: real S3 answers 403 for a key
+# that is not there unless the caller may list the bucket, while MinIO answers 404 either way.
 services:
   dynamodb:
     image: amazon/dynamodb-local:latest
@@ -30,7 +31,9 @@ services:
     # expects; without it each set of credentials gets its own.
     #
     # It insists on *some* signature, as the real service does: the tests hand it the
-    # credentials below (`test` / `test-secret`), while a bare curl is refused.
+    # credentials below (`test` / `test-secret`), while a bare curl is refused. It also refuses an
+    # access key id with anything but letters and digits in it (`UnrecognizedClientException`),
+    # which is why the restricted MinIO user's name has no dash in it.
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
     ports:
       - "8000:8000"
