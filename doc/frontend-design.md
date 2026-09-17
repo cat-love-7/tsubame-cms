@@ -140,3 +140,29 @@ Angular はコンポーネントを再利用する。スナップショットを
   メタデータ・エラー・強調表示)。前の対象の値を残すと、保存で別の対象に書き込む事故になる。
 - テストは `app/core/testing/activated-route.ts` の `stubActivatedRoute` を使い、
   `route.navigate({...})` で切り替えを再現する(`snapshot` だけのスタブでは検証できない)。
+
+## 9. 名前の付け方
+
+同じ名前が2つあると、**それを避けるための書き方が増える**(実際 `dashboard.routes.ts` は
+`List` を7つ、`Edit` を3つ別名で読み込んでいた。しかも別名の綴りが `CollectionList` と
+`schemaCollectionList` で揺れていた)。そうならないための決めごと。
+
+- **コンポーネントのクラス名は `<対象><役割>`**: `CollectionItemList`、`SinglePageEdit`、
+  `CompositeFieldSchema`。`List` や `Edit` だけの名前は付けない。ルート定義は**別名なし**で
+  そのまま import できる状態を保つ。
+- **セレクタは `app-` + kebab で一意**。他のセレクタの**接頭辞にしない**: `app-edit` は
+  `app-edit-schema` の接頭辞だったので、`app-edit` で検索すると別のコンポーネントが出ていた。
+  重複は、たまたま同時に `imports` へ入るまで Angular も文句を言わない(実際
+  `app-single-page-list` が2つあった)。
+- **ファイル名は kebab**: `composite-fields.service.ts`。1語ならそのまま(`list.ts`)。
+  機能ごとのディレクトリ(`dashboard/single-pages/`)と同じ綴りにする。API のリソース名
+  (`single_pages`)に合わせるのは**型の側**の話で、ファイル名ではない。
+- **TS の識別子は camelCase**(変数・メソッド・`@Input()` / `@Output()` の名前:
+  `value`/`valueChange`、`schema`/`schemaChange`)。
+- **API を写した型のフィールドだけ snake_case**(`published_at`、`has_draft`、
+  `original_filename`)。これは**サーバーが返す JSON そのもの**で、写像レイヤを置かない方針の
+  表れ。`app/models/` と `app/repositories/` の型がそうなっている。ここを camelCase に
+  「直す」と、リポジトリごとに変換コードが要る — 直すのではなく、この境目を守る。
+- Rust 側は型が UpperCamelCase で、頭字語も `Id`(`ImageID` ではなく `ImageId`。
+  `CollectionItemId` / `UserId` と揃える)、関数・フィールドは snake_case、JSON のキーは
+  `serde` が決める(`doc/content-api.md` が API の綴り)。
