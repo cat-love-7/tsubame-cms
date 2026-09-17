@@ -491,11 +491,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         let mut claimed: Vec<UniqueValue> = Vec::new();
         for value in values {
-            let reservation = self
+            let reservation = match self
                 .collection_repository
                 .reserve_unique_value(collection_name, item_id, value)
                 .await
-                .map_err(map_internal_error)?;
+            {
+                Ok(reservation) => reservation,
+                Err(e) => {
+                    // A storage failure is not a conflict, but it leaves the same half-claim
+                    // behind: the values claimed before it are held by an item that is not going
+                    // to be saved. Give them back before reporting the failure.
+                    self.release_unique_values(collection_name, item_id, &claimed)
+                        .await;
+                    return Err(map_internal_error(e));
+                }
+            };
             match reservation {
                 Reservation::Claimed => claimed.push(value.clone()),
                 // Holding it already is not this call's doing, so a refusal must not take it away.
@@ -1428,6 +1438,11 @@ mod tests {
         /// A store that answers "the working copy moved" to a promotion, for the refusal the
         /// service has to turn into a 409.
         fail_apply_status: bool,
+        /// Fail the reservation whose number this is (1 for the first), for the half-claim a
+        /// storage failure leaves behind.
+        fail_reserve_on_call: Option<usize>,
+        /// How many reservations have been asked for, so the above can count.
+        reserve_calls: std::sync::atomic::AtomicUsize,
     }
     impl CollectionRepository for MockCollectionRepository {
         async fn get_collection_schema(
@@ -1632,6 +1647,13 @@ mod tests {
             item_id: &CollectionItemId,
             unique: &UniqueValue,
         ) -> Result<Reservation, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            let call = self
+                .reserve_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if self.fail_reserve_on_call == Some(call) {
+                return Err("the unique index is unavailable".into());
+            }
             let mut index = self.unique.write().unwrap();
             let key = (collection_name.clone(), unique.field.clone(), unique.value.clone());
             match index.get(&key) {
@@ -1811,6 +1833,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1882,6 +1906,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1982,6 +2008,15 @@ mod tests {
         fail_schema_save: bool,
         fail_apply_status: bool,
     ) -> Arc<MockCollectionRepository> {
+        test_repository_failing_reserve(schemas, fail_schema_save, fail_apply_status, None)
+    }
+
+    fn test_repository_failing_reserve(
+        schemas: HashMap<CollectionName, CollectionSchema>,
+        fail_schema_save: bool,
+        fail_apply_status: bool,
+        fail_reserve_on_call: Option<usize>,
+    ) -> Arc<MockCollectionRepository> {
         Arc::new(MockCollectionRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
@@ -1991,6 +2026,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save,
             fail_apply_status,
+            fail_reserve_on_call,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -2105,6 +2142,40 @@ mod tests {
 
         assert_eq!(refusal.status_code, 409);
         assert_eq!(refusal.code, "draft_changed");
+    }
+
+    /// A storage failure while claiming the second of two values used to leave the first claimed
+    /// by an item that was never saved, so a value nothing holds stayed blocked for everyone.
+    #[tokio::test]
+    async fn a_failed_reservation_gives_back_what_the_save_already_claimed() {
+        let name = CollectionName::from("blog");
+        let schema = vec![text_field("title", true), text_field("code", true)];
+        // The second reservation is the one that fails.
+        let repository = test_repository_failing_reserve(
+            HashMap::from([(name.clone(), schema)]),
+            false,
+            false,
+            Some(2),
+        );
+        let service = service_over(repository);
+
+        let mut item = item_with("title", "first");
+        item.0
+            .insert("code".to_string(), FieldValue::Text("one".to_string()));
+        let failure = service.create_collection_item(&name, &item).await.unwrap_err();
+        assert_eq!(failure.status_code, 500, "{}", failure.message);
+
+        // The title the failed save claimed is free again: the store no longer fails, so the
+        // claim succeeds if it was given back.
+        let mut retry = item_with("title", "first");
+        retry
+            .0
+            .insert("code".to_string(), FieldValue::Text("two".to_string()));
+        let created = service.create_collection_item(&name, &retry).await;
+        assert!(
+            created.is_ok(),
+            "the title is still claimed by the failed save: {created:?}"
+        );
     }
 
     #[tokio::test]
@@ -2225,6 +2296,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2261,6 +2334,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2298,6 +2373,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2323,6 +2400,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2360,6 +2439,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2391,6 +2472,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2436,6 +2519,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2475,6 +2560,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2515,6 +2602,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2543,6 +2632,8 @@ mod tests {
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
             fail_apply_status: false,
+            fail_reserve_on_call: None,
+            reserve_calls: std::sync::atomic::AtomicUsize::new(0),
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
