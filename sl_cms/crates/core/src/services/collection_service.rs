@@ -57,17 +57,16 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
-        if self
+        let Some(previous) = self
             .collection_repository
             .get_collection_schema(collection_name)
             .await.map_err(map_internal_error)?
-            .is_none()
-        {
+        else {
             return Err(HttpError::NotFound(&format!(
                 "Collection with id '{}' does not exist",
                 collection_name
             )));
-        }
+        };
         // A schema that declares a unique field has to bring the index up to date with the
         // items that are already stored, and refuse to be saved while they share a value.
         let claimed = self.backfill_unique_values(collection_name, schema).await?;
@@ -83,8 +82,52 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             }
             return Err(map_internal_error(e));
         }
+        // The schema is what is stored now, so anything it no longer makes unique has to give its
+        // values back: they are held for items that may not hold them any more, and a later
+        // "unique again" would refuse a value nothing is using.
+        self.release_fields_no_longer_unique(collection_name, &previous, schema)
+            .await;
         Ok(())
     }
+
+    /// Give back the index entries of the fields a schema stops declaring unique.
+    ///
+    /// A failure here leaves a value claimed that nothing holds, which the next schema save puts
+    /// right; it must not report the save that did happen as an error (the same reason a failed
+    /// release after an item write is only a warning).
+    async fn release_fields_no_longer_unique(
+        &self,
+        collection_name: &CollectionName,
+        before: &CollectionSchema,
+        after: &CollectionSchema,
+    ) {
+        for field in before {
+            let still_unique = after
+                .iter()
+                .any(|candidate| candidate.name == field.name && candidate.is_unique());
+            if !field.is_unique() || still_unique {
+                continue;
+            }
+            match self
+                .collection_repository
+                .list_unique_values(collection_name, &field.name)
+                .await
+            {
+                Ok(held) => {
+                    for (item_id, value) in held {
+                        self.release_unique_values(
+                            collection_name,
+                            &item_id,
+                            std::slice::from_ref(&value),
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => tracing::warn!("failed to list the values held for {}: {e}", field.name),
+            }
+        }
+    }
+
     pub async fn get_all_collections(&self) -> Result<Vec<CollectionName>, HttpError> {
         self.collection_repository
             .list_collection_names()
@@ -1717,6 +1760,29 @@ mod tests {
                     Ok(Reservation::Claimed)
                 }
             }
+        }
+
+        async fn list_unique_values(
+            &self,
+            collection_name: &CollectionName,
+            field: &str,
+        ) -> Result<Vec<(CollectionItemId, UniqueValue)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self
+                .unique
+                .read()
+                .unwrap()
+                .iter()
+                .filter(|((name, held_field, _), _)| name == collection_name && held_field == field)
+                .map(|((_, held_field, value), owner)| {
+                    (
+                        owner.clone(),
+                        UniqueValue {
+                            field: held_field.clone(),
+                            value: value.clone(),
+                        },
+                    )
+                })
+                .collect())
         }
 
         async fn find_unique_value(

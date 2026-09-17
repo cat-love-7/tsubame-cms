@@ -1909,6 +1909,100 @@ async fn an_account_can_be_created_without_a_password() {
 /// An item with two unique fields that collides on the second gives back the first: the save is
 /// not happening, so the value it would have held has to be free again - otherwise it stays
 /// reserved by an item that does not exist, and nobody can ever use it.
+/// A field that stops being unique gives its values back.
+///
+/// The index is what refuses a value, and it only ever gave one back while its field was still
+/// unique. Reusing a value while the constraint was off then refused the constraint's return:
+/// the old claim was still there, held for an item that no longer had the value.
+#[tokio::test]
+async fn a_field_that_stops_being_unique_gives_its_values_back() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let schema = |unique: bool| {
+        json!([
+            { "name": "code", "field_type": { "Text": {} }, "required": true, "unique": unique, "width": 12, "height": 1 }
+        ])
+    };
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema(true)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let create = |body: Value| {
+        let token = token.clone();
+        let router = app.router.clone();
+        async move {
+            send(
+                &router,
+                Method::POST,
+                "/models/collections/pages/item",
+                Some(&token),
+                Some(body),
+            )
+            .await
+        }
+    };
+    let (status, first) = create(json!({ "code": "intro" })).await;
+    assert_eq!(status, StatusCode::OK);
+    let first = first.as_u64().expect("the first item's id");
+    let (status, second) = create(json!({ "code": "guide" })).await;
+    assert_eq!(status, StatusCode::OK);
+    let second = second.as_u64().expect("the second item's id");
+
+    // The field stops being unique.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema(false)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // While nothing is unique, the values move: one item takes what the other used to hold.
+    let update = |id: u64, code: &str| {
+        let token = token.clone();
+        let router = app.router.clone();
+        let code = code.to_string();
+        async move {
+            send_raw(
+                &router,
+                Method::PUT,
+                &format!("/models/collections/pages/items/{id}"),
+                Some(&token),
+                Some(json!({ "code": code })),
+            )
+            .await
+        }
+    };
+    let (status, body) = update(first, "news").await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = update(second, "intro").await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // Unique again: one item holds "intro" now, and the index has to say the same.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/collections/pages/schema",
+        Some(&token),
+        Some(schema(true)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a value released with the constraint is still reserved: {}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
 #[tokio::test]
 async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
     let app = test_app().await;

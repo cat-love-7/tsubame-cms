@@ -298,6 +298,17 @@ pub trait CollectionRepository:Send + Sync + 'static {
     /// The item holding a unique value, if any.
     ///
     /// The same point read the reservation uses, so a lookup by slug is not a scan either.
+    /// Every value the index holds for one field of one collection, with the item holding it.
+    ///
+    /// What a schema save needs when a field stops being unique: the index has to give those
+    /// values back, or they stay claimed by items that no longer hold them - and a later "unique
+    /// again" then refuses a value nobody is using.
+    fn list_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        field: &str,
+    ) -> impl Future<Output = Result<Vec<(CollectionItemId, UniqueValue)>, BoxError>> + Send;
+
     fn find_unique_value(
         &self,
         collection_name: &CollectionName,

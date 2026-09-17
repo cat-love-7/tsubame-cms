@@ -956,6 +956,26 @@ impl CollectionRepository for AwsRepository {
         .into())
     }
 
+    async fn list_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        field: &str,
+    ) -> Result<Vec<(CollectionItemId, UniqueValue)>, BoxError> {
+        let inner = self.inner.clone();
+        let partition = key::unique(collection_name.as_str(), field);
+        let mut held = Vec::new();
+        for (value, owner) in list(&inner, &partition, "").await? {
+            held.push((
+                CollectionItemId::from_u64(owner.parse()?),
+                UniqueValue {
+                    field: field.to_string(),
+                    value,
+                },
+            ));
+        }
+        Ok(held)
+    }
+
     async fn find_unique_value(
         &self,
         collection_name: &CollectionName,

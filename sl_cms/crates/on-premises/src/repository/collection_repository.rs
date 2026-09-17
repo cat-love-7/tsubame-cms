@@ -452,6 +452,36 @@ impl CollectionRepository for Repository {
         }
     }
 
+    async fn list_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        field: &str,
+    ) -> Result<Vec<(CollectionItemId, UniqueValue)>, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(UNIQUE_STORE, StoreOptions::create())?;
+        let prefix = format!("unique:{}\u{1f}{}\u{1f}", collection_name.as_str(), field);
+        let reader = env.read()?;
+        let mut held = Vec::new();
+        for result in store.iter_from(&reader, prefix.as_bytes())? {
+            let Ok((key, Value::Str(owner))) = result else {
+                continue;
+            };
+            let key = str::from_utf8(&key)?;
+            let Some(value) = key.strip_prefix(&prefix) else {
+                break;
+            };
+            held.push((
+                CollectionItemId::from_u64(owner.parse()?),
+                UniqueValue {
+                    field: field.to_string(),
+                    value: value.to_string(),
+                },
+            ));
+        }
+        Ok(held)
+    }
+
     async fn find_unique_value(
         &self,
         collection_name: &CollectionName,
