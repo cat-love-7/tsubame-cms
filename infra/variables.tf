@@ -40,6 +40,24 @@ variable "cors_allowed_origins" {
   default     = ["http://localhost:4200"]
 }
 
+variable "app_url" {
+  description = <<-EOT
+    Where the CMS screen is served from, as a browser sees it.
+
+    The identity provider sends the browser back here after a sign-in, and it has to be an address
+    it was told about in advance, so this is not something that can be derived from the API's own
+    URL. It is also the origin the CMS API is called from, so it normally appears in
+    `cors_allowed_origins` as well.
+  EOT
+  type        = string
+  default     = "http://localhost:4200"
+
+  validation {
+    condition     = can(regex("^https?://[^/]+$", var.app_url))
+    error_message = "app_url is an origin without a trailing slash, for example https://cms.example.com."
+  }
+}
+
 variable "cognito_domain_prefix" {
   description = <<-EOT
     The prefix of the hosted sign-in page's address. Cognito requires it to be unique across

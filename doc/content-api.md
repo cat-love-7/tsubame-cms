@@ -703,6 +703,40 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
 - 1 回の上限は **100 件**(各項目はトランザクション + 索引 + Webhook なので、一括は画面が
   1 ページ見せている範囲のための便宜)。空の配列は 400。
 
+## 5.12 外部プロバイダでのサインイン(Cognito)
+
+パスワードを CMS が扱わない配備では、サインインは**プロバイダのページ**で行われ、CMS は
+**トークンを検証するだけ**。`GET /auth/capabilities` の `login_url` がそのページの住所で、
+`password_login: false` が「ここではパスワードを受け取らない」の合図。
+
+流れ:
+
+1. 画面が `login_url` に **PKCE の challenge(S256)・`state`・`redirect_uri`** を足して
+   ブラウザを送る(verifier と state はそのタブの `sessionStorage` に残す)。
+2. プロバイダが `redirect_uri`(`<app_url>/auth/callback`)へ `code` と `state` を返す。
+3. 画面が state を照合し、**サーバーに交換を依頼**する:
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| POST | `/auth/cognito/exchange` | **公開**。`{ code, code_verifier, redirect_uri }` → `{ token, expires_at }` |
+
+4. サーバーがプロバイダのトークンエンドポイント(`login_url` と同じドメインの
+   `/oauth2/token`)へフォーム POST し、`id_token` を返す。**ブラウザから直接交換しない**のは、
+   トークンエンドポイントが CORS ヘッダを返さないため。
+5. 画面はそのトークンをセッションとして採用し、`GET /auth/me` で権限レコードを読む
+   (初回は `BOOTSTRAP_ADMIN_USERNAMES` の誰かなら管理者として作られ、リスト外は 403)。
+
+- **公開クライアントなので secret は無い**。コードが同じ呼び出し元に戻ったことの証明は PKCE
+  verifier だけ。
+- 署名・issuer・audience・期限・`token_use` の検証は `CognitoVerifier`(RS256 + JWKS、
+  キャッシュ 10 分)が行う。
+- 交換ルートは**プロバイダを使う配備だけ**が合成する(on-prem にはコードが無い)。
+- Terraform 側はクライアントに `callback_urls = ["<app_url>/auth/callback"]`、
+  `allowed_oauth_flows = ["code"]`、`allowed_oauth_scopes = ["openid","email"]` を設定する
+  (`app_url` 変数)。これが無いとプロバイダは `redirect_uri is not registered` を返す。
+- CMS のサインアウトは**ローカルのセッションだけ**を消す。プロバイダ側のセッションは残るので、
+  次にサインインすると確認なしで戻る(プロバイダのログアウトを使うのは別途)。
+
 ## 6. まだ無いもの
 
 - **`published_at` を使った差分ビルド**: 値は返っているが、サイト側の実装はこれから。

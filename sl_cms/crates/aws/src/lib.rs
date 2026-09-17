@@ -32,6 +32,19 @@ pub mod settings;
 pub use repository::AwsRepository;
 pub use settings::AwsSettings;
 
+/// Where a sign-in that happened at the provider is finished, or `None` when this deployment
+/// signs users in itself (there is nothing to exchange then).
+///
+/// The token endpoint lives on the pool's own domain, which is what the sign-in URL names, so the
+/// deployment does not need to be told it twice.
+fn cognito_login(settings: &AwsSettings) -> Option<sl_cms_core::http::cognito_login::TokenEndpoint> {
+    let endpoint = sl_cms_core::http::cognito_login::token_endpoint(settings.login_url.as_deref()?)?;
+    Some(sl_cms_core::http::cognito_login::TokenEndpoint {
+        client_id: settings.client_id.clone(),
+        endpoint,
+    })
+}
+
 /// Credentials for a local emulator, or `None` to let the SDK's own chain find them.
 ///
 /// A deployment has nothing to put here: on Lambda the chain resolves the execution role. An
@@ -183,22 +196,26 @@ fn cognito_settings(settings: &AwsSettings) -> CognitoSettings {
     }
 }
 
-/// The whole HTTP surface for this backend.
+/// The whole HTTP surface for this backend, with nothing said about where users sign in.
 ///
-/// Identical to the shared router: image bytes are the object store's business, so this
-/// backend adds no routes of its own.
+/// Used by the adapter tests, which sign in with a token this crate mints itself.
 pub fn build_router(
     module: std::sync::Arc<AppModule<AwsRepository>>,
     cors: tower_http::cors::CorsLayer,
 ) -> axum::Router {
-    build_router_with_login(module, cors, None)
+    build_router_with(module, cors, None, None)
 }
 
-/// The same, saying where users sign in when the deployment knows its provider's page.
-pub fn build_router_with_login(
+/// The same, told where users sign in and where a sign-in the provider started is finished.
+///
+/// Both come from the same settings: `login_url` is what the sign-in screen sends the browser to,
+/// and the token endpoint is derived from it, so a deployment cannot advertise one page and
+/// finish the sign-in at another.
+pub fn build_router_with(
     module: std::sync::Arc<AppModule<AwsRepository>>,
     cors: tower_http::cors::CorsLayer,
     login_url: Option<String>,
+    exchange: Option<sl_cms_core::http::cognito_login::TokenEndpoint>,
 ) -> axum::Router {
     // Sign-in belongs to Cognito here, so the password endpoints do not exist. They are
     // registered anyway, answering 501 with a sentence that says where to sign in: a client
@@ -207,8 +224,14 @@ pub fn build_router_with_login(
                    passwords; GET /auth/capabilities says where to sign in";
     let extra_public = sl_cms_core::http::password_auth::unavailable_public(message)
         .merge(sl_cms_core::http::capabilities::routes(
-            sl_cms_core::models::capabilities::Capabilities::aws(login_url),
+            sl_cms_core::models::capabilities::Capabilities::aws(login_url.clone()),
         ))
+        // Finishing a sign-in the provider started: the code it sent back becomes a session.
+        .merge(
+            exchange
+                .map(sl_cms_core::http::cognito_login::routes)
+                .unwrap_or_default(),
+        )
         // The durable link to an image: the id resolves to wherever the bytes are now. Here that
         // is object storage, so this points at it rather than passing bytes through the API.
         .merge(
@@ -262,10 +285,11 @@ pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error
     warn_about_the_environment(config, &settings);
 
     let module = std::sync::Arc::new(build_deployed_module(config, &settings).await?);
-    let router = build_router_with_login(
+    let router = build_router_with(
         module,
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
         settings.login_url.clone(),
+        cognito_login(&settings),
     );
 
     lambda_http::run(tower::service_fn(move |request| {
@@ -292,9 +316,11 @@ pub async fn run_local(config: &Config) -> Result<(), Box<dyn std::error::Error 
     let module = std::sync::Arc::new(build_app_module(config, &settings).await?);
     warn_about_the_environment(config, &settings);
 
-    let router = build_router(
+    let router = build_router_with(
         module,
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
+        settings.login_url.clone(),
+        cognito_login(&settings),
     );
     let addr = config.socket_addr()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -13,9 +13,11 @@
           {{ (loginUrl() ? 'auth.elsewhereWithLink' : 'auth.elsewhereWithoutLink') | transloco }}
         </p>
         @if (loginUrl()) {
-          <a matButton class="full-width" [href]="loginUrl()" rel="noopener">{{
-            'auth.goToSignIn' | transloco
-          }}</a>
+          <!-- A button rather than a link: the address has to carry a fresh PKCE challenge and a
+               state, which is not something an `href` can hold. -->
+          <button matButton class="full-width" [disabled]="busy()" (click)="signInAtProvider()">
+            {{ 'auth.goToSignIn' | transloco }}
+          </button>
         }
       } @else {
         @if (error(); as problem) {

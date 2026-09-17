@@ -27,6 +27,24 @@ describe('Login', () => {
     await fixture.whenStable();
   });
 
+  // A deployment that signs users in elsewhere offers a button, not a link: the address needs a
+  // fresh PKCE challenge and state, which only this browser can produce.
+  it('sends the browser to the provider with a challenge and a state', async () => {
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: false,
+      password_reset_links: false,
+      login_url: 'https://pool.example.com/login?client_id=abc',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const url = new URL((await component.providerSignInUrl()) as string);
+    expect(url.origin).toBe('https://pool.example.com');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('state')).toBeTruthy();
+    expect(url.searchParams.get('redirect_uri')).toBe(`${window.location.origin}/auth/callback`);
+  });
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });
@@ -82,10 +100,10 @@ describe('Login', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const link: HTMLAnchorElement | null = fixture.nativeElement.querySelector('a.full-width');
-    expect(link?.getAttribute('href')).toBe(
-      'https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc',
-    );
+    // A button, not a link: the address needs a fresh challenge and state, which an `href` cannot
+    // carry. What it produces is checked in the test above.
+    const button: HTMLButtonElement | null = fixture.nativeElement.querySelector('button.full-width');
+    expect(button?.textContent).toContain('Go to sign in');
   });
 
   it('can be switched to Japanese, and remembers the choice', async () => {

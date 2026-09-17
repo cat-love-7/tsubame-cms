@@ -326,6 +326,17 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       指すこと → `deployed_verifier_tests` で達成。
       **残り**: Cognito のユーザー作成・削除・パスワード再設定(`AccountProvisioner`)は未配線
       (アカウント画面はまだ AWS では 501)。
+
+- [x] **Hosted UI でのサインインを最後まで通した**(2026-09)。
+      これまでは `login_url` へのリンクがあるだけで、**Cognito 側に `callback_urls` も
+      OAuth の許可も無く**、戻ってきた `code` を交換する経路も無かった。
+      → Terraform のクライアントに `callback_urls`(`<app_url>/auth/callback`)・
+      `allowed_oauth_flows = ["code"]`・`allowed_oauth_scopes` を設定し、画面が PKCE
+      challenge + `state` + `redirect_uri` を足して送り、`/auth/callback` が state を照合して
+      `POST /auth/cognito/exchange` に交換を依頼する(交換はサーバー: トークンエンドポイントは
+      CORS を返さない)。検証は `CognitoVerifier` が行う。
+      → **完了条件**: challenge が RFC 7636 の例と一致、state 不一致・取り消し・交換拒否の
+      3 経路が画面に出す → フロントの 8 テストで達成。
       → **完了条件**: リスト内の 1 人が初回ログインで管理者、リスト外は 403、2 回目は
       `external_id` で解決
       → **達成**(同じテストで、作成・再解決・無効化・部外者の 4 点を確認)。

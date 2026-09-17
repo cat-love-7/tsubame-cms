@@ -222,6 +222,36 @@ export class AuthService {
   }
 
   /**
+   * Finish a sign-in the identity provider started, with the code it sent back.
+   *
+   * The exchange happens on the server (see `POST /auth/cognito/exchange`), because the provider's
+   * token endpoint answers without CORS headers. What comes back is the token the CMS will verify,
+   * and no account record: the shell reads that (`loadUserIfMissing`), which is also where a
+   * refusal to provision this account is reported.
+   */
+  completeHostedLogin(
+    code: string,
+    codeVerifier: string,
+    redirectUri: string,
+  ): Observable<{ token: string; expires_at: string }> {
+    return this.http
+      .post<{ token: string; expires_at: string }>('/api/auth/cognito/exchange', {
+        code,
+        code_verifier: codeVerifier,
+        redirect_uri: redirectUri,
+      })
+      .pipe(
+        tap((session) => {
+          this.tokenSignal.set(session.token);
+          // Whatever was known before belongs to the session this one replaces.
+          this.userSignal.set(null);
+          writeStorage(TOKEN_KEY, session.token);
+          removeStorage(USER_KEY);
+        }),
+      );
+  }
+
+  /**
    * Read the signed-in account from the server and remember it.
    *
    * Used wherever the CMS holds a token but not (yet) the record it stands for: a page loaded

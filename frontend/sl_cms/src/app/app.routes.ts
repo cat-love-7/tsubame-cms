@@ -15,6 +15,12 @@ export const routes: Routes = [
         loadComponent: () =>
             import('./core/auth/password-reset/password-reset').then(m => m.PasswordReset)
     },
+    // Where the identity provider sends the browser back to. Public for the same reason: the code
+    // in the address is the credential, and there is no session yet.
+    {
+        path: 'auth/callback',
+        loadComponent: () => import('./core/auth/callback/callback').then(m => m.AuthCallback)
+    },
     // Everything else requires a session; the guard redirects to /login otherwise.
     {
         path: '',

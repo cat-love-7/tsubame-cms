@@ -11,6 +11,7 @@ import { CapabilitiesService } from '../../capabilities/capabilities.service';
 import { Message, MessagePipe, apiMessage, t } from '../../i18n/message';
 import { LanguageSwitcher } from '../../../shared/language-switcher/language-switcher';
 import { AuthService } from '../auth.service';
+import { beginHostedLogin } from '../hosted-login';
 
 @Component({
   selector: 'app-login',
@@ -48,6 +49,44 @@ export class Login {
 
   constructor() {
     this.capabilities.load();
+  }
+
+  /**
+   * Go to the identity provider's sign-in page, with everything only this browser knows.
+   *
+   * The address the deployment advertises names the client and the scope; the PKCE challenge and
+   * the `state` are added here (see `hosted-login.ts`), and the provider sends the browser back to
+   * `/auth/callback`, where the code becomes a session.
+   */
+  async signInAtProvider() {
+    if (this.busy()) {
+      return;
+    }
+    this.error.set(null);
+    this.busy.set(true);
+    try {
+      const address = await this.providerSignInUrl();
+      if (address === null) {
+        this.busy.set(false);
+        return;
+      }
+      window.location.assign(address);
+    } catch {
+      // Only a browser that cannot do the cryptography gets here.
+      this.busy.set(false);
+      this.error.set({ key: 'auth.signInNotStarted' });
+    }
+  }
+
+  /**
+   * The address to visit, with the PKCE challenge and the state this browser will need back.
+   *
+   * Kept separate from the navigation so the interesting half can be tested: a browser refuses to
+   * let a page watch its own `location.assign`.
+   */
+  async providerSignInUrl(): Promise<string | null> {
+    const loginUrl = this.loginUrl();
+    return loginUrl ? beginHostedLogin(loginUrl) : null;
   }
 
   submit() {

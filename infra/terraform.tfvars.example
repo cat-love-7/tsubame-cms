@@ -10,6 +10,9 @@ jwt_secret = "change-me-0123456789012345678901234567890123"
 bootstrap_admin_usernames = ["ops@example.com"]
 
 cors_allowed_origins = ["https://cms.example.com"]
+# Where the screen is served from: the provider sends the browser back to <app_url>/auth/callback,
+# which is registered on the pool's client.
+app_url = "https://cms.example.com"
 
 # Cognito's hosted page has to be unique across the whole region.
 cognito_domain_prefix = "sl-cms-staging-example"

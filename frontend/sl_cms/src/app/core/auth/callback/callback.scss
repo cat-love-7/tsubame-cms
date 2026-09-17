@@ -1,0 +1,17 @@
+/// The callback is a moment, not a screen: one card, centred like the sign-in page.
+.callback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+
+  mat-card {
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .full-width {
+    width: 100%;
+  }
+}
