@@ -3696,6 +3696,19 @@ async fn images_can_be_listed_and_deleted() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(bytes, b"PNG-BYTES");
 
+    // Deleting is the second step of the two-step delete, so the image goes to the trash first
+    // (the route refuses a library image; `an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good`
+    // pins that).
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/trash"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
     // Deleting answers with an empty body, like every other mutation.
     let (status, bytes) = send_raw(
         &app.router,
