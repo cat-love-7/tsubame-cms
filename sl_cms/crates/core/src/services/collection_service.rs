@@ -642,7 +642,39 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .into_iter()
             .collect();
 
+        // Every early exit below has to give back what this scan claimed: the schema is not saved
+        // yet, so a claim left behind is an entry for a constraint that does not exist - a value
+        // nobody holds, blocked for everyone. The scan therefore fills this list and never releases
+        // anything itself; the wrapper does, whichever way it ends.
         let mut claimed: Vec<(CollectionItemId, UniqueValue)> = Vec::new();
+        let outcome = self
+            .scan_for_unique_values(collection_name, schema, &items, &drafts, &statuses, &mut claimed)
+            .await;
+        if let Err(e) = outcome {
+            for (id, value) in &claimed {
+                self.release_unique_values(collection_name, id, std::slice::from_ref(value))
+                    .await;
+            }
+            return Err(e);
+        }
+        Ok(claimed)
+    }
+
+    /// Claim every unique value the stored items hold, for a schema that is about to replace the
+    /// one they were written under.
+    ///
+    /// Appends to `claimed` and reports the first refusal; releasing what it claimed is the
+    /// caller's business (see `backfill_unique_values`).
+    #[allow(clippy::too_many_arguments)]
+    async fn scan_for_unique_values(
+        &self,
+        collection_name: &CollectionName,
+        schema: &CollectionSchema,
+        items: &[(CollectionItemId, CollectionItem)],
+        drafts: &HashMap<CollectionItemId, CollectionItem>,
+        statuses: &HashMap<CollectionItemId, crate::models::item_status::ItemMetadata>,
+        claimed: &mut Vec<(CollectionItemId, UniqueValue)>,
+    ) -> Result<(), HttpError> {
         for (item_id, published) in items {
             let working = drafts.get(&item_id);
             let is_published = statuses
@@ -686,12 +718,6 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     Reservation::Claimed => claimed.push((item_id.clone(), value)),
                     Reservation::AlreadyHeld => {}
                     Reservation::Taken { owner } => {
-                        // The schema cannot be made unique while these exist, so put back
-                        // everything this attempt claimed before saying so.
-                        for (id, value) in &claimed {
-                            self.release_unique_values(collection_name, id, std::slice::from_ref(value))
-                                .await;
-                        }
                         return Err(HttpError::Conflict(&format!(
                             "field '{}': the value '{}' is already used by item {}",
                             value.field, value.value, owner
@@ -702,7 +728,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 }
             }
         }
-        Ok(claimed)
+        Ok(())
     }
 
     /// Record when the item's values were last saved.
@@ -2175,6 +2201,91 @@ mod tests {
         assert!(
             created.is_ok(),
             "the title is still claimed by the failed save: {created:?}"
+        );
+    }
+
+    /// The schema scan claims values for a schema that is not saved yet, so *every* way it can end
+    /// early has to give them back - not only the refusal by an owner. A storage failure and a
+    /// slug that is not canonical yet both used to leave the earlier claims behind, and the values
+    /// they named stayed blocked by a constraint that was never saved.
+    #[tokio::test]
+    async fn a_schema_scan_that_stops_early_gives_back_everything_it_claimed() {
+        // One item holding a plain unique value and one slug that is not canonical yet: the scan
+        // claims the first, then refuses the second.
+        let name = CollectionName::from("blog");
+        let stored = vec![text_field("title", false), text_field("address", false)];
+        let mut item = item_with("title", "held");
+        item.0.insert(
+            "address".to_string(),
+            FieldValue::Text("Not A Slug".to_string()),
+        );
+        let repository = test_repository(HashMap::from([(name.clone(), stored.clone())]), false);
+        repository
+            .items
+            .write()
+            .unwrap()
+            .entry(name.clone())
+            .or_default()
+            .insert(CollectionItemId::from_u64(1), item);
+        repository
+            .item_counter
+            .write()
+            .unwrap()
+            .clone_from(&mut 1);
+        let service = service_over(repository.clone());
+
+        let adding_slug = vec![
+            text_field("title", true),
+            FieldSchema {
+                name: "address".to_string(),
+                field_type: FieldType::Slug(Default::default()),
+                required: false,
+                width: 12,
+                height: 1,
+                unique: false,
+            },
+        ];
+        let refusal = service
+            .update_collection_schema(&name, &adding_slug)
+            .await
+            .unwrap_err();
+        assert_eq!(refusal.code, "invalid_slug");
+
+        // The title it claimed on the way is not in the index any more.
+        assert!(
+            repository.unique.read().unwrap().is_empty(),
+            "{:?}",
+            repository.unique.read().unwrap()
+        );
+
+        // And a storage failure part-way through a scan gives back the same way.
+        let both_unique = vec![text_field("title", true), text_field("code", true)];
+        let mut two = item_with("title", "held");
+        two.0.insert("code".to_string(), FieldValue::Text("one".to_string()));
+        let repository = test_repository_failing_reserve(
+            HashMap::from([(name.clone(), stored)]),
+            false,
+            false,
+            Some(2),
+        );
+        repository
+            .items
+            .write()
+            .unwrap()
+            .entry(name.clone())
+            .or_default()
+            .insert(CollectionItemId::from_u64(1), two);
+        let service = service_over(repository.clone());
+
+        let failure = service
+            .update_collection_schema(&name, &both_unique)
+            .await
+            .unwrap_err();
+        assert_eq!(failure.status_code, 500, "{}", failure.message);
+        assert!(
+            repository.unique.read().unwrap().is_empty(),
+            "{:?}",
+            repository.unique.read().unwrap()
         );
     }
 
