@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -275,6 +275,35 @@ describe('Edit', () => {
 
   // The failure side of the same delay: a refusal about the item that was left must not mark the
   // fields of the item now on screen.
+  // Leaving the screen destroys the component, and a save already on its way used to pass the
+  // guard anyway: the signals it compared were still the ones it captured. The answer then took the
+  // reader back to the list the save was pressed from, from wherever they had gone.
+  it('does nothing when a save answers after the screen was destroyed', async () => {
+    const held = new Subject<void>();
+    stub.heldUpdates = held;
+    const fixture = TestBed.createComponent(Edit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+
+    component.save();
+    fixture.destroy();
+    held.next();
+    held.complete();
+    await fixture.whenStable();
+
+    // The save had already been sent, so it reached the server; what must not happen is the screen
+    // acting on the answer: no trip back to the list, and nothing written to a form nobody sees.
+    expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(component.notice()).toBeNull();
+    expect(component.error()).toBeNull();
+  });
+
   it('reports nothing about a save that failed on the item the reader left', async () => {
     const fixture = TestBed.createComponent(Edit);
     fixture.detectChanges();

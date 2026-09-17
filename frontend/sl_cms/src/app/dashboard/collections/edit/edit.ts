@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -40,6 +40,8 @@ import { ValueField } from 'app/shared/value-field/value-field';
 export class Edit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  /** When this screen goes away, so does everything it still has in flight (see the constructor). */
+  private destroyRef = inject(DestroyRef);
   private collectionsService = inject(CollectionsService);
   private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
@@ -114,6 +116,14 @@ export class Edit implements HasUnsavedChanges {
   private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
+    // A destroyed screen is nobody's screen: the answers still on their way belong to a load that
+    // no longer exists, so the generation moves on and every guard that compares it - `stillOn`,
+    // and the token checks in the loads below - answers "no". Without this, a save that landed
+    // after the reader had gone elsewhere still passed the guard, and took them back to the list
+    // the save was pressed from.
+    this.destroyRef.onDestroy(() => {
+      this.loadToken += 1;
+    });
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const name = params.get('name') ?? '';
       const id = params.get('id') === null ? null : Number(params.get('id'));
@@ -138,7 +148,9 @@ export class Edit implements HasUnsavedChanges {
     this.problemField.set(null);
     this.fieldErrors = {};
 
-    this.collectionsService.getCollectionSchema(name).subscribe({
+    this.collectionsService.getCollectionSchema(name).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (schema) => {
         if (token !== this.loadToken) {
           return;
@@ -162,7 +174,9 @@ export class Edit implements HasUnsavedChanges {
   }
 
   private loadItem(schema: CollectionSchema, id: number, token: number) {
-    this.collectionsService.getCollectionItem(this.collectionName(), id).subscribe({
+    this.collectionsService.getCollectionItem(this.collectionName(), id).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (values) => {
         if (token !== this.loadToken) {
           return;
@@ -180,7 +194,9 @@ export class Edit implements HasUnsavedChanges {
   }
 
   private loadMetadata(id: number, token: number) {
-    this.collectionsService.getItemMetadata(this.collectionName(), id).subscribe({
+    this.collectionsService.getItemMetadata(this.collectionName(), id).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (metadata) => {
         if (token === this.loadToken) {
           this.metadata.set(metadata);
@@ -248,7 +264,7 @@ export class Edit implements HasUnsavedChanges {
       ? this.collectionsService.publishItem(target.name, target.id)
       : this.collectionsService.unpublishItem(target.name, target.id);
 
-    request.subscribe({
+    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (metadata) => {
         // The answer is about the item that was on screen when the button was pressed; by now
         // the editor may be showing another one.
@@ -316,7 +332,10 @@ export class Edit implements HasUnsavedChanges {
     }
     this.error.set(null);
     this.notice.set(null);
-    this.collectionsService.createPreviewLink(this.collectionName(), this.itemId() as number).subscribe({
+    this.collectionsService
+      .createPreviewLink(this.collectionName(), this.itemId() as number)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
@@ -365,7 +384,9 @@ export class Edit implements HasUnsavedChanges {
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.
     if (id === null) {
-      this.collectionsService.createCollectionItem(name, values).subscribe({
+      this.collectionsService.createCollectionItem(name, values).pipe(
+        takeUntilDestroyed(this.destroyRef),
+      ).subscribe({
         next: (created) => {
           // The form, its saved baseline and the address all describe the create screen this was
           // pressed on: writing any of them once the reader has gone elsewhere would attribute a
@@ -385,7 +406,9 @@ export class Edit implements HasUnsavedChanges {
         },
       });
     } else {
-      this.collectionsService.updateCollectionItem(name, id, values).subscribe({
+      this.collectionsService.updateCollectionItem(name, id, values).pipe(
+        takeUntilDestroyed(this.destroyRef),
+      ).subscribe({
         next: () => {
           if (!this.stillOn(started)) {
             return;
@@ -430,7 +453,12 @@ export class Edit implements HasUnsavedChanges {
     return { name: this.collectionName(), id: this.itemId(), generation: this.loadToken };
   }
 
-  /** Whether the screen is still on the item a slow answer was about, as it was then. */
+  /**
+   * Whether the screen is still on the item a slow answer was about, as it was then.
+   *
+   * A screen that has been destroyed is not that screen: the generation moves on when it goes (see
+   * the constructor), so nothing it asked for is ever answered into it.
+   */
   private stillOn(target: { name: string; id: number | null; generation: number }): boolean {
     return (
       this.collectionName() === target.name &&

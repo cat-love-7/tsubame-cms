@@ -1,4 +1,4 @@
-import { Component, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -35,6 +35,8 @@ import { ValueField } from 'app/shared/value-field/value-field';
 })
 export class Edit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
+  /** When this screen goes away, so does everything it still has in flight (see the constructor). */
+  private destroyRef = inject(DestroyRef);
   private pages = inject(SinglePagesService);
   private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
@@ -83,6 +85,13 @@ export class Edit implements HasUnsavedChanges {
   private fieldErrors: { [field: string]: Message } = {};
 
   constructor() {
+    // A destroyed screen is nobody's screen: the answers still on their way belong to a load that
+    // no longer exists, so the generation moves on and every guard that compares it - `stillOn`,
+    // and the token checks in the loads below - answers "no". Without this, a save and publish that
+    // landed after the reader had gone elsewhere still released the page.
+    this.destroyRef.onDestroy(() => {
+      this.loadToken += 1;
+    });
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const name = params.get('name') ?? '';
       if (name !== this.pageName()) {
@@ -104,7 +113,9 @@ export class Edit implements HasUnsavedChanges {
     this.problemField.set(null);
     this.fieldErrors = {};
 
-    this.pages.getPageSchema(name).subscribe({
+    this.pages.getPageSchema(name).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (schema) => {
         if (token !== this.loadToken) {
           return;
@@ -123,7 +134,9 @@ export class Edit implements HasUnsavedChanges {
   }
 
   private loadItem(schema: CollectionSchema, token: number) {
-    this.pages.getPageItem(this.pageName()).subscribe({
+    this.pages.getPageItem(this.pageName()).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (values) => {
         if (token !== this.loadToken) {
           return;
@@ -159,7 +172,7 @@ export class Edit implements HasUnsavedChanges {
     const name = started.name;
     const request = published ? this.pages.publishPage(name) : this.pages.unpublishPage(name);
 
-    request.subscribe({
+    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (metadata) => {
         // The answer belongs to the page that was on screen when the button was pressed.
         if (!this.stillOn(started)) {
@@ -218,7 +231,9 @@ export class Edit implements HasUnsavedChanges {
   sharePreview() {
     this.error.set(null);
     this.notice.set(null);
-    this.pages.createPreviewLink(this.pageName()).subscribe({
+    this.pages.createPreviewLink(this.pageName()).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: async (link) => {
         const url = absoluteApiUrl(link.path);
         this.previewUrl.set(url);
@@ -266,7 +281,9 @@ export class Edit implements HasUnsavedChanges {
     // pressed for, whatever the sidebar shows by the time the answer arrives.
     const start = this.start();
     const name = start.name;
-    this.pages.updatePageItem(name, values).subscribe({
+    this.pages.updatePageItem(name, values).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: () => {
         // Everything below describes *this* form - what it holds, what it was, what it is told -
         // so none of it may be written once the screen is on another page, or on the same page
@@ -294,7 +311,9 @@ export class Edit implements HasUnsavedChanges {
   }
 
   private loadMetadata(token: number) {
-    this.pages.getPageMetadata(this.pageName()).subscribe({
+    this.pages.getPageMetadata(this.pageName()).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
       next: (metadata) => {
         if (token === this.loadToken) {
           this.metadata.set(metadata);
@@ -319,7 +338,12 @@ export class Edit implements HasUnsavedChanges {
     return { name: this.pageName(), generation: this.loadToken };
   }
 
-  /** Whether the screen is still on the page a slow answer was about, as it was then. */
+  /**
+   * Whether the screen is still on the page a slow answer was about, as it was then.
+   *
+   * A screen that has been destroyed is not that screen: the generation moves on when it goes (see
+   * the constructor), so nothing it asked for is ever answered into it.
+   */
   private stillOn(start: { name: string; generation: number }): boolean {
     return this.pageName() === start.name && this.loadToken === start.generation;
   }

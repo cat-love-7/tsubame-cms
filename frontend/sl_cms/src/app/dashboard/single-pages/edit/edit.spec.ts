@@ -258,6 +258,28 @@ describe('Edit', () => {
     expect(component.values()).toEqual({ title: 'Home' });
   });
 
+  // The same delay one step further: leaving the route destroys the screen, and a "save and
+  // publish" that answers afterwards must not release the page from wherever the reader has gone.
+  it('publishes nothing when the save answers after the screen was destroyed', async () => {
+    const held = new Subject<void>();
+    stub.heldSave = held;
+    const fresh = TestBed.createComponent(Edit);
+    const component = fresh.componentInstance;
+    component.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    component.saveAndPublish();
+    fresh.destroy();
+    held.next();
+    held.complete();
+    await fresh.whenStable();
+
+    // The save had already been sent; the answer must not turn it into a publish.
+    expect(stub.saved).toEqual([{ title: 'About us' }]);
+    expect(stub.published).toEqual([]);
+    expect(component.notice()).toBeNull();
+  });
+
   it('reports nothing about a save that failed on the page the reader left', async () => {
     const fresh = TestBed.createComponent(Edit);
     const component = fresh.componentInstance;
