@@ -20,6 +20,9 @@ pub struct ImageData {
     /// Absent in records written before the trash existed, which is why it has a default.
     #[serde(default)]
     pub deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The upload this image is waiting for, if a replacement was requested and not applied.
+    #[serde(default)]
+    pub pending_replacement: Option<String>,
 }
 
 /// Where the image reference index lives: which content uses which image.
@@ -135,8 +138,9 @@ impl ImageRepository for Repository {
             original_filename: upload_info.original_filename.clone(),
             file_name: save_file_name.clone(),
             uploaded_at: chrono::Utc::now(),
-            // A fresh upload is in the library, not the trash.
+            // A fresh upload is in the library, not the trash, and is waiting for nothing.
             deleted_at: None,
+            pending_replacement: None,
         };
         store.put(&mut writer, new_id.to_le_bytes(), &Value::Str(&serde_json::to_string(&image_data)?))?;
         self.counter_store.put(&mut writer, "image", &Value::U64(new_id))?;
@@ -176,9 +180,11 @@ impl ImageRepository for Repository {
 
     async fn generate_replacement_upload_url(
         &self,
-        _id: &ImageID,
+        id: &ImageID,
         ext: &str,
     ) -> Result<ReplacementInfo, BoxError> {
+        // Read-modify-write of the image record, so it is serialised with the other writers.
+        let _guard = self.begin();
         // A fresh file name rather than an overwrite: the browser (and anything in front of it)
         // caches by URL, so bytes that change under one URL keep showing the old image.
         let file_name = match sanitize_ext(ext) {
@@ -187,6 +193,27 @@ impl ImageRepository for Repository {
         };
         let upload_key = uuid::Uuid::new_v4().to_string();
         self.register_upload_key(upload_key.clone(), file_name.clone());
+
+        // Recorded on the image itself: the apply is answered by id, and this is what says which
+        // upload is *this* image's. A point read in place of a search of every record for one that
+        // happens to name the file.
+        {
+            let env = self.rkv.read().map_err(|e| e.to_string())?;
+            let store = env.open_single("image", StoreOptions::create())?;
+            let reader = env.read()?;
+            let mut data = match store.get(&reader, id.to_le_bytes())? {
+                Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+                _ => return Err("Image not found".into()),
+            };
+            data.pending_replacement = Some(file_name.clone());
+            let mut writer = env.write()?;
+            store.put(
+                &mut writer,
+                id.to_le_bytes(),
+                &Value::Str(&serde_json::to_string(&data)?),
+            )?;
+            writer.commit()?;
+        }
 
         Ok(ReplacementInfo {
             upload_url: format!("/images/{}?key={}", file_name, upload_key),
@@ -220,6 +247,8 @@ impl ImageRepository for Repository {
             uploaded_at: previous.uploaded_at,
             // Replacing the bytes does not take an image out of the trash, or put it back in.
             deleted_at: previous.deleted_at,
+            // And the upload it came from is no longer waiting for anything.
+            pending_replacement: None,
         };
         let mut writer = env.write()?;
         store.put(
@@ -239,26 +268,14 @@ impl ImageRepository for Repository {
         Ok(())
     }
 
-    async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, BoxError> {
-        let _guard = self.begin();
-        let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
-        let reader = env.read()?;
-        for result in store.iter_start(&reader)? {
-            let Ok((key, Value::Str(s))) = result else {
-                continue;
-            };
-            let Ok(raw_id) = <[u8; 8]>::try_from(key) else {
-                continue;
-            };
-            let Ok(data) = serde_json::from_str::<ImageData>(&s) else {
-                continue;
-            };
-            if data.file_name == file_name {
-                return Ok(Some(ImageID::from_u64(u64::from_le_bytes(raw_id))));
-            }
-        }
-        Ok(None)
+    async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
+        Ok(self.get_image_data(id)?.map(|data| data.file_name))
+    }
+
+    async fn pending_replacement(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
+        Ok(self
+            .get_image_data(id)?
+            .and_then(|data| data.pending_replacement))
     }
 
     async fn set_image_references(

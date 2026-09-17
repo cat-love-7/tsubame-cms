@@ -640,9 +640,10 @@ mod tests {
 
     /// The image store a service test needs: what exists, and which file each record names.
     ///
-    /// `image_named` answers from `file_names` rather than from the URLs this double invents, which
-    /// is the same rule the adapters follow: the file name is a fact about the record, not something
-    /// to be read back out of however the image happens to be served.
+    /// `image_file_name` answers from `file_names` rather than from the URLs this double invents,
+    /// which is the same rule the adapters follow: the file name is a fact about the record, not
+    /// something to be read back out of however the image happens to be served. Nothing here is
+    /// ever waiting for a replacement, so `pending_replacement` answers `None`.
     #[derive(Default)]
     struct MockImageRepository {
         file_names: std::sync::RwLock<std::collections::HashMap<ImageID, String>>,
@@ -693,14 +694,12 @@ mod tests {
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(self
-                .file_names
-                .read()
-                .unwrap()
-                .iter()
-                .find(|(_, named)| named.as_str() == file_name)
-                .map(|(id, _)| id.clone()))
+        async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self.file_names.read().unwrap().get(id).cloned())
+        }
+
+        async fn pending_replacement(&self, _id: &ImageID) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(None)
         }
 
         async fn set_image_references(

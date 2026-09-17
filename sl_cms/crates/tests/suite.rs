@@ -2689,15 +2689,15 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-/// The bytes of one image cannot be given to another: two records naming one file would mean one of
-/// them losing its picture when the other is replaced.
+/// An image only ever takes the upload it was given: the file name is the server's to choose, and
+/// the server records which one it chose *for this image* when the replacement is requested.
 ///
-/// The file name is not part of the API, so it is read from the upload URL the server hands out -
-/// and the point of the test is that the *server* decides from its records, not from the URL it
-/// happens to serve the image with: in a deployment that signs those URLs, a comparison against the
-/// URL would never match, and the check would stop working without saying anything.
+/// The file name is not part of the API, so it is read from the upload URLs the server hands out -
+/// and the point of the test is that the server decides by id, not from a URL it happens to serve
+/// with: in a deployment that signs those URLs, a comparison against the URL would never match, and
+/// the check would stop working without saying anything.
 #[tokio::test]
-async fn the_bytes_of_one_image_cannot_be_given_to_another() {
+async fn an_image_only_takes_the_upload_it_was_given() {
     // The bytes are put through this router, which is only how they travel where the CMS serves
     // them itself. An object-storage deployment hands the browser a presigned URL to S3 instead;
     // the same rule is pinned there, in `aws::repository::images`, against those URLs.
@@ -2708,62 +2708,103 @@ async fn the_bytes_of_one_image_cannot_be_given_to_another() {
     let app = test_app().await;
     let token = app.admin_token.clone();
 
-    // Two images, each with its own upload and its own bytes.
-    let mut names = Vec::new();
-    for name in ["one.png", "two.png"] {
+    /// Ask for an upload, send some bytes to it, and answer with the file name it went to.
+    async fn upload(app: &TestApp, token: &str, what: &str) -> String {
         let (status, info) = send(
             &app.router,
             Method::POST,
             "/models/images/get_upload_url",
-            Some(&token),
-            Some(json!({ "original_filename": name, "ext": "png" })),
+            Some(token),
+            Some(json!({ "original_filename": what, "ext": "png" })),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        let upload_url = info["upload_url"].as_str().unwrap().to_string();
-        names.push(file_name_of(&upload_url));
-
-        let request = Request::builder()
-            .method(Method::PUT)
-            .uri(&upload_url)
-            .header(header::AUTHORIZATION, format!("Bearer {token}"))
-            .body(Body::from("PNG-BYTES"))
-            .unwrap();
-        let response = app.router.clone().oneshot(request).await.unwrap();
-        assert!(
-            response.status().is_success(),
-            "the upload was refused: {}",
-            response.status()
-        );
+        put_bytes(app, token, info["upload_url"].as_str().unwrap()).await;
+        file_name_of(info["upload_url"].as_str().unwrap())
     }
-    assert_ne!(names[0], names[1], "two uploads share a file name");
 
-    // Image 1, pointed at the file image 2 owns: refused.
+    // Two images, each with its own upload and its own bytes.
+    let first = upload(&app, &token, "one.png").await;
+    let second = upload(&app, &token, "two.png").await;
+    assert_ne!(first, second, "two uploads share a file name");
+
+    // Image 1, pointed at the file image 2 owns and nobody asked it to take: refused.
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
         "/models/images/1",
         Some(&token),
-        Some(json!({ "file_name": names[1] })),
+        Some(json!({ "file_name": second })),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
-        "image 1 should not be pointed at image 2's file: {}",
+        "image 1 took a file it was not given: {}",
         String::from_utf8_lossy(&body)
     );
 
-    // And its own file is a no-op rather than a refusal: the screen sends what it was given.
+    // A replacement it *was* given: the request names the file, the upload arrives, and the apply
+    // takes it.
+    let (status, replacement) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/1/replace",
+        Some(&token),
+        Some(json!({ "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let pending = replacement["file_name"].as_str().unwrap().to_string();
+    put_bytes(&app, &token, replacement["upload_url"].as_str().unwrap()).await;
+
+    // Even now, someone else's file is not this image's to take...
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/1",
+        Some(&token),
+        Some(json!({ "file_name": second })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // ...while the upload it asked for is applied, and applying it again is a no-op rather than a
+    // refusal: the screen sends what it was given.
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
         "/models/images/1",
         Some(&token),
-        Some(json!({ "file_name": names[0] })),
+        Some(json!({ "file_name": pending })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/1",
+        Some(&token),
+        Some(json!({ "file_name": pending })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+}
+
+/// Put some bytes where the upload URL says, the way the browser does.
+async fn put_bytes(app: &TestApp, token: &str, upload_url: &str) {
+    let request = Request::builder()
+        .method(Method::PUT)
+        .uri(upload_url)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from("PNG-BYTES"))
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert!(
+        response.status().is_success(),
+        "the upload was refused: {}",
+        response.status()
+    );
 }
 
 /// The stored file name at the end of an upload URL, whichever deployment handed it out.

@@ -189,19 +189,36 @@ impl<R: ImageRepository> ImageService<R> {
         if !is_safe_file_name(file_name) {
             return Err(HttpError::BadRequest("Invalid image file name"));
         }
-        // Whether the image is there at all. Its URL is not needed: what a replacement changes is
-        // which file the record names, and that is answered below.
-        if self
+        // What the record names now, which is also the answer to "is there such an image". Asked by
+        // id: the record knows its own file, and nothing has to be searched for.
+        let Some(current) = self
             .repository
-            .get_image(&id)
+            .image_file_name(&id)
             .await
             .map_err(map_internal_error)?
-            .is_none()
-        {
+        else {
             return Err(HttpError::NotFound(&format!(
                 "Image with id '{}' does not exist",
                 id
             )));
+        };
+
+        // The file name is the server's to choose, and the server recorded the one it chose for
+        // *this* image when the replacement was requested. An apply naming anything else - another
+        // image's file, or one no request produced - is not this image's to take. (Pointing an
+        // image at the file it already serves is a no-op rather than a refusal: the screen sends
+        // what it was given, and a second click on the same file is not a mistake worth refusing.)
+        if file_name != current {
+            let pending = self
+                .repository
+                .pending_replacement(&id)
+                .await
+                .map_err(map_internal_error)?;
+            if pending.as_deref() != Some(file_name) {
+                return Err(HttpError::BadRequest(
+                    "that is not the upload this replacement was for",
+                ));
+            }
         }
 
         // The bytes have to be there, or the image would serve nothing.
@@ -213,29 +230,6 @@ impl<R: ImageRepository> ImageService<R> {
             return Err(HttpError::NotFound(
                 "the uploaded image is not there yet",
             ));
-        }
-
-        // Whose file is this? One lookup answers both questions below, and it asks the records
-        // rather than the URLs they are served with: in the signed mode a URL ends in a signature,
-        // so a comparison against it would never match - and the check would stop working without
-        // saying anything.
-        let owner = self
-            .repository
-            .image_named(file_name)
-            .await
-            .map_err(map_internal_error)?;
-        match owner {
-            // Replacing an image with itself is a no-op rather than an error: the screen sends what
-            // it was given, and a second click on the same file is not a mistake worth refusing.
-            Some(owner) if owner == id => return Ok(()),
-            // Two records naming one file would mean one of them losing its bytes when either is
-            // replaced.
-            Some(_) => {
-                return Err(HttpError::BadRequest(
-                    "those bytes belong to another image",
-                ))
-            }
-            None => {}
         }
 
         self.repository

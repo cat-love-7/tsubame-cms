@@ -31,6 +31,9 @@ struct ImageData {
     /// Absent in records written before the trash existed, which is why it has a default.
     #[serde(default)]
     deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// The upload this image is waiting for, if a replacement was requested and not applied.
+    #[serde(default)]
+    pending_replacement: Option<String>,
 }
 
 impl AwsRepository {
@@ -117,8 +120,9 @@ impl ImageRepository for AwsRepository {
             original_filename: upload_info.original_filename.clone(),
             file_name: file_name.clone(),
             uploaded_at: chrono::Utc::now(),
-            // A fresh upload is in the library, not the trash.
+            // A fresh upload is in the library, not the trash, and is waiting for nothing.
             deleted_at: None,
+            pending_replacement: None,
         };
         write(
             &inner,
@@ -151,7 +155,7 @@ impl ImageRepository for AwsRepository {
 
     async fn generate_replacement_upload_url(
         &self,
-        _id: &ImageID,
+        id: &ImageID,
         ext: &str,
     ) -> Result<ReplacementInfo, BoxError> {
         let inner = self.inner.clone();
@@ -160,6 +164,12 @@ impl ImageRepository for AwsRepository {
         let file_name = match sanitize_ext(ext) {
             Some(ext) => format!("{}.{}", uuid::Uuid::new_v4(), ext),
             None => uuid::Uuid::new_v4().to_string(),
+        };
+        // The image has to be there before an upload is signed for it, so that a URL never names a
+        // record that does not exist.
+        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(**id)).await? {
+            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
+            None => return Err("Image not found".into()),
         };
         let config = PresigningConfig::expires_in(UPLOAD_URL_TTL)
             .map_err(|e| format!("could not build the upload URL: {e}"))?;
@@ -171,6 +181,18 @@ impl ImageRepository for AwsRepository {
             .presigned(config)
             .await
             .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
+
+        // Recorded on the image itself: the apply is answered by id, and this is what says which
+        // upload is *this* image's. Written only once a URL exists, so a signing failure leaves
+        // whatever was waiting before still waiting.
+        data.pending_replacement = Some(file_name.clone());
+        write(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(**id),
+            &AwsRepository::encode(&data)?,
+        )
+        .await?;
 
         Ok(ReplacementInfo {
             upload_url: request.uri().to_string(),
@@ -218,6 +240,8 @@ impl ImageRepository for AwsRepository {
             uploaded_at: previous.uploaded_at,
             // Replacing the bytes does not take an image out of the trash, or put it back in.
             deleted_at: previous.deleted_at,
+            // And the upload it came from is no longer waiting for anything.
+            pending_replacement: None,
         };
         write(
             &inner,
@@ -259,18 +283,22 @@ impl ImageRepository for AwsRepository {
         .await
     }
 
-    async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, BoxError> {
+    async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
         let inner = self.inner.clone();
-        for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
-            let Ok(id) = sk.trim_start_matches("image#").parse::<u64>() else {
-                continue;
-            };
-            let data: ImageData = AwsRepository::decode(&data)?;
-            if data.file_name == file_name {
-                return Ok(Some(ImageID::from_u64(id)));
-            }
+        let raw = **id;
+        match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => Ok(Some(AwsRepository::decode::<ImageData>(&data)?.file_name)),
+            None => Ok(None),
         }
-        Ok(None)
+    }
+
+    async fn pending_replacement(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
+        let inner = self.inner.clone();
+        let raw = **id;
+        match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
+            Some(data) => Ok(AwsRepository::decode::<ImageData>(&data)?.pending_replacement),
+            None => Ok(None),
+        }
     }
 
     async fn set_image_references(
@@ -456,16 +484,57 @@ mod tests {
         );
         assert_ne!(refused.status().as_u16(), 404, "the object is there, the reader is not");
 
-        // And the same mode answers "whose file is this?" from the records: a URL that ends in a
-        // signature would never match a file name, so a check written against the URL would let
-        // one image take another's bytes here without a word.
+        // And the same mode ties an upload to the image it is for by id, which is what an apply is
+        // checked against: a URL that ends in a signature says nothing about whose bytes these are,
+        // and a search for whichever record names a file says nothing about an upload no record
+        // names yet.
         assert_eq!(
-            repository.image_named(key).await.unwrap(),
-            Some(info.id.clone()),
+            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            Some(key),
+        );
+        assert_eq!(repository.pending_replacement(&info.id).await.unwrap(), None);
+
+        // A replacement signs a file name and records it on the image, so the apply can be
+        // answered by id - and applying forgets it.
+        let replacement = repository
+            .generate_replacement_upload_url(&info.id, "png")
+            .await
+            .expect("a signed replacement");
+        assert_eq!(
+            repository.pending_replacement(&info.id).await.unwrap(),
+            Some(replacement.file_name.clone())
+        );
+        let replaced = repository
+            .generate_replacement_upload_url(&info.id, "png")
+            .await
+            .expect("a second signed replacement");
+        assert_eq!(
+            repository.pending_replacement(&info.id).await.unwrap(),
+            Some(replaced.file_name.clone()),
+            "the newest request is the one waiting"
         );
         assert_eq!(
-            repository.image_named("nobody's-file.png").await.unwrap(),
-            None
+            client
+                .put(&replaced.upload_url)
+                .body(vec![9u8])
+                .send()
+                .await
+                .expect("the presigned PUT should be reachable")
+                .status(),
+            200
+        );
+        repository
+            .replace_image(&info.id, &replaced.file_name)
+            .await
+            .expect("the replacement applies");
+        assert_eq!(
+            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            Some(replaced.file_name.as_str())
+        );
+        assert_eq!(
+            repository.pending_replacement(&info.id).await.unwrap(),
+            None,
+            "nothing is waiting once it has been applied"
         );
     }
 

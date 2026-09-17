@@ -16,13 +16,26 @@ pub trait ImageRepository: Send + Sync {
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
 
-    /// Which image's record names this stored file, if any.
+    /// The file an image's record currently names, or `None` when there is no such image.
     ///
-    /// Asked of the records rather than of the URLs they are served with: a URL is a presentation
-    /// of the file name (and in the signed mode it does not even end in it), so deciding "these
-    /// bytes are already another image's" from one is a comparison that silently stops matching
-    /// the day the way a deployment serves images changes.
-    fn image_named(&self, file_name: &str) -> impl Future<Output = Result<Option<ImageID>, BoxError>> + Send;
+    /// Asked by id, so it is a point read: the record already knows its own file, and there is
+    /// nothing to search for.
+    fn image_file_name(
+        &self,
+        id: &ImageID,
+    ) -> impl Future<Output = Result<Option<String>, BoxError>> + Send;
+
+    /// The file this image was signed an upload for, while a replacement is waiting.
+    ///
+    /// Recorded by [`ImageRepository::generate_replacement_upload_url`] and forgotten by
+    /// [`ImageRepository::replace_image`]: the file name is the server's to choose, and recording
+    /// which one it chose *for this image* is what makes an apply answerable by id. Without it, an
+    /// apply could only be checked against the file names other records happen to use - which says
+    /// nothing about an upload that no record names yet.
+    fn pending_replacement(
+        &self,
+        id: &ImageID,
+    ) -> impl Future<Output = Result<Option<String>, BoxError>> + Send;
 
     /// Record which images one piece of content uses, replacing what it used before.
     ///
@@ -58,10 +71,12 @@ pub trait ImageRepository: Send + Sync {
         id: &ImageID,
         original_filename: &str,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
-    /// Hand out a place to upload replacement bytes, under a file name of the adapter's choosing.
+    /// Hand out a place to upload replacement bytes, under a file name of the adapter's choosing,
+    /// and record that file as this image's pending one.
     ///
-    /// The record is untouched: [`ImageRepository::replace_image`] points the image at the new
-    /// bytes once they exist, so an upload that fails leaves the current image serving.
+    /// The bytes the image serves are untouched: [`ImageRepository::replace_image`] points the
+    /// image at the new bytes once they exist, so an upload that fails leaves the current image
+    /// serving. What is recorded is only which file the server offered *this* image.
     fn generate_replacement_upload_url(
         &self,
         id: &ImageID,
@@ -72,7 +87,7 @@ pub trait ImageRepository: Send + Sync {
         &self,
         file_name: &str,
     ) -> impl Future<Output = Result<bool, BoxError>> + Send;
-    /// Point an image at `file_name`, deleting the bytes it used to name.
+    /// Point an image at the bytes it was given, and forget the pending upload.
     fn replace_image(
         &self,
         id: &ImageID,
