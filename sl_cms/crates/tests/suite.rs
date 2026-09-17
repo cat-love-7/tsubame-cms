@@ -2769,8 +2769,20 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // ...while the upload it asked for is applied, and applying it again is a no-op rather than a
-    // refusal: the screen sends what it was given.
+    // ...and naming the file it already serves is a no-op that leaves the upload it is waiting for
+    // waiting: re-clicking the old file must not cancel the replacement that was just signed.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/1",
+        Some(&token),
+        Some(json!({ "file_name": first })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    // The upload it asked for is applied, and applying it again is a no-op rather than a refusal:
+    // the screen sends what it was given.
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,

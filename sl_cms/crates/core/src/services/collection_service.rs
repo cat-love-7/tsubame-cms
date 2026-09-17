@@ -1443,7 +1443,7 @@ mod tests {
     use crate::models::image::{
         Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
     };
-    use crate::repositories::image_repository::ImageRepository;
+    use crate::repositories::image_repository::{ImageRepository, Replacement};
 
     use super::*;
     use crate::models::user::UserId;
@@ -1775,8 +1775,7 @@ mod tests {
     ///
     /// `image_file_name` answers from `file_names` rather than from the URLs this double invents,
     /// which is the same rule the adapters follow: the file name is a fact about the record, not
-    /// something to be read back out of however the image happens to be served. Nothing here is
-    /// ever waiting for a replacement, so `pending_replacement` answers `None`.
+    /// something to be read back out of however the image happens to be served.
     #[derive(Default)]
     struct MockImageRepository {
         file_names: std::sync::RwLock<std::collections::HashMap<ImageID, String>>,
@@ -1818,8 +1817,10 @@ mod tests {
         async fn image_bytes_exist(&self, _file_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(true)
         }
-        async fn replace_image(&self, _id: &ImageID, _file_name: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
+        async fn replace_image(&self, _id: &ImageID, _file_name: &str) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // These tests never go through a replacement; answering `Applied` keeps the double
+            // out of the way of the content they are about.
+            Ok(Replacement::Applied)
         }
         async fn rename_image(&self, _id: &ImageID, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
@@ -1829,10 +1830,6 @@ mod tests {
         }
         async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(self.file_names.read().unwrap().get(id).cloned())
-        }
-
-        async fn pending_replacement(&self, _id: &ImageID) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(None)
         }
 
         async fn set_image_references(

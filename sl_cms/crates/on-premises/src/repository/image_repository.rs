@@ -9,7 +9,7 @@ use sl_cms_core::models::image::{
     ImageOwner,
 };
 use crate::repository::Repository;
-use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository};
+use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
 use sl_cms_core::repositories::local_image_bytes::LocalImageBytes;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -183,7 +183,9 @@ impl ImageRepository for Repository {
         id: &ImageID,
         ext: &str,
     ) -> Result<ReplacementInfo, BoxError> {
-        // Read-modify-write of the image record, so it is serialised with the other writers.
+        // Read-modify-write of the image record, and the whole of it is under the one lock: an
+        // apply that landed in between would otherwise be written back over from the record read
+        // before it, naming bytes that apply had already deleted.
         let _guard = self.begin();
         // A fresh file name rather than an overwrite: the browser (and anything in front of it)
         // caches by URL, so bytes that change under one URL keep showing the old image.
@@ -196,7 +198,8 @@ impl ImageRepository for Repository {
 
         // Recorded on the image itself: the apply is answered by id, and this is what says which
         // upload is *this* image's. A point read in place of a search of every record for one that
-        // happens to name the file.
+        // happens to name the file. Only the file is changed - the rest of the record is carried
+        // over from the read that the lock makes current.
         {
             let env = self.rkv.read().map_err(|e| e.to_string())?;
             let store = env.open_single("image", StoreOptions::create())?;
@@ -225,7 +228,11 @@ impl ImageRepository for Repository {
         Ok(self.image_path(file_name)?.is_file())
     }
 
-    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<(), BoxError> {
+    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<Replacement, BoxError> {
+        // Read, decide and write under the one lock: an apply that decided against a record and
+        // then waited to write it could take an upload a newer request had already replaced, or
+        // forget one recorded in between - and a request that wrote back a record it read before
+        // this apply would point the image at bytes this apply deleted.
         let _guard = self.begin();
         // The path check happens before anything is written: the name comes from the server's own
         // upload URL, but a record must never be pointed outside the images directory.
@@ -238,6 +245,16 @@ impl ImageRepository for Repository {
             Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
             _ => return Err("Image not found".into()),
         };
+
+        // Already showing it: nothing to write, and in particular nothing to forget.
+        if previous.file_name == file_name {
+            return Ok(Replacement::Applied);
+        }
+        // Only the upload this image was signed is its to take. Anything else - another image's
+        // file, or one no request produced - is not, and saying so is this adapter's answer.
+        if previous.pending_replacement.as_deref() != Some(file_name) {
+            return Ok(Replacement::NotWaiting);
+        }
 
         let updated = ImageData {
             original_filename: previous.original_filename.clone(),
@@ -265,17 +282,11 @@ impl ImageRepository for Repository {
                 fs::remove_file(path).ok();
             }
         }
-        Ok(())
+        Ok(Replacement::Applied)
     }
 
     async fn image_file_name(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
         Ok(self.get_image_data(id)?.map(|data| data.file_name))
-    }
-
-    async fn pending_replacement(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
-        Ok(self
-            .get_image_data(id)?
-            .and_then(|data| data.pending_replacement))
     }
 
     async fn set_image_references(

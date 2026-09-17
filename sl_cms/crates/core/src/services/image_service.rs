@@ -5,7 +5,7 @@ use crate::models::image::{
     is_safe_display_name, is_safe_file_name, is_safe_image_ext, ImageEntry, ImageID, NewImageInfo,
     NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
 };
-use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::image_repository::{ImageRepository, Replacement};
 
 pub struct ImageService<R: ImageRepository> {
     repository: Arc<R>,
@@ -185,6 +185,10 @@ impl<R: ImageRepository> ImageService<R> {
     /// The file name comes back from [`ImageService::request_replacement`], so this finishes a
     /// replacement rather than starting one. It is checked against storage: a record is never
     /// pointed at bytes that are not there, which is what makes "upload first, then swap" safe.
+    ///
+    /// The upload it takes has to be the one this image is waiting for, and taking it is what ends
+    /// the wait: an apply naming anything else leaves the wait alone, and so does naming the file
+    /// the image already serves.
     pub async fn replace_image(&self, id: ImageID, file_name: &str) -> Result<(), HttpError> {
         if !is_safe_file_name(file_name) {
             return Err(HttpError::BadRequest("Invalid image file name"));
@@ -203,25 +207,8 @@ impl<R: ImageRepository> ImageService<R> {
             )));
         };
 
-        // The file name is the server's to choose, and the server recorded the one it chose for
-        // *this* image when the replacement was requested. An apply naming anything else - another
-        // image's file, or one no request produced - is not this image's to take. (Pointing an
-        // image at the file it already serves is a no-op rather than a refusal: the screen sends
-        // what it was given, and a second click on the same file is not a mistake worth refusing.)
-        if file_name != current {
-            let pending = self
-                .repository
-                .pending_replacement(&id)
-                .await
-                .map_err(map_internal_error)?;
-            if pending.as_deref() != Some(file_name) {
-                return Err(HttpError::BadRequest(
-                    "that is not the upload this replacement was for",
-                ));
-            }
-        }
-
-        // The bytes have to be there, or the image would serve nothing.
+        // The bytes have to be there, or the image would serve nothing. Asked of the file the
+        // caller named, whether or not it changes anything.
         if !self
             .repository
             .image_bytes_exist(file_name)
@@ -232,9 +219,29 @@ impl<R: ImageRepository> ImageService<R> {
             ));
         }
 
-        self.repository
+        // Pointing an image at the file it already serves is a no-op rather than a refusal: the
+        // screen sends what it was given, and a second click on the same file is not a mistake
+        // worth refusing. Answering here (rather than applying it again) is what leaves a
+        // replacement that is waiting for some *other* upload waiting.
+        if file_name == current {
+            return Ok(());
+        }
+
+        // The file name is the server's to choose, and the server recorded the one it chose for
+        // *this* image when the replacement was requested. An apply naming anything else - another
+        // image's file, or one no request produced - is not this image's to take. The repository
+        // answers that as it consumes the upload, in one step.
+        match self
+            .repository
             .replace_image(&id, file_name)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)?
+        {
+            Replacement::Applied => Ok(()),
+            Replacement::NotWaiting => Err(HttpError::BadRequest(
+                "that is not the upload this replacement was for",
+            )),
+        }
     }
 
     /// Where an image is served from right now, or `None` when there is no such image.

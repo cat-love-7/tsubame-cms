@@ -182,6 +182,42 @@ async fn write(inner: &Inner, pk: &str, sk: &str, data: &str) -> Result<(), BoxE
     Ok(())
 }
 
+/// Write a record, but only while it is still the record the caller read.
+///
+/// `expected` is the stored JSON, so the condition covers the whole record: an image record is one
+/// blob, and "change only this one field" is not something the table can express. `false` is not an
+/// error - it means somebody wrote in between, and the caller decides what that means.
+async fn write_if_unchanged(
+    inner: &Inner,
+    pk: &str,
+    sk: &str,
+    expected: &str,
+    data: &str,
+) -> Result<bool, BoxError> {
+    let answer = inner
+        .client
+        .put_item()
+        .table_name(&inner.table)
+        .item("pk", AttributeValue::S(pk.to_string()))
+        .item("sk", AttributeValue::S(sk.to_string()))
+        .item("data", AttributeValue::S(data.to_string()))
+        .condition_expression("#data = :expected")
+        .expression_attribute_names("#data", "data")
+        .expression_attribute_values(":expected", AttributeValue::S(expected.to_string()))
+        .send()
+        .await;
+    match answer {
+        Ok(_) => Ok(true),
+        Err(e)
+            if e.as_service_error().and_then(|e| e.code())
+                == Some("ConditionalCheckFailedException") =>
+        {
+            Ok(false)
+        }
+        Err(e) => Err(format!("dynamodb put_item failed: {}", describe(&e)).into()),
+    }
+}
+
 async fn remove(inner: &Inner, pk: &str, sk: &str) -> Result<(), BoxError> {
     inner
         .client
@@ -1011,6 +1047,56 @@ mod tests {
         assert!(repository.get_collection_schema(&name).await.unwrap().is_none());
         assert!(repository.list_collection_names().await.unwrap().is_empty());
         assert!(repository.list_collection_items(&name).await.unwrap().is_empty());
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// A write is refused when the record changed under the caller that is writing it.
+    ///
+    /// This is what keeps a replacement request from writing the record it read back over an apply
+    /// that landed in between: the apply has already deleted the bytes the stale record names, so
+    /// restoring it would leave the image serving nothing.
+    #[tokio::test]
+    async fn a_write_from_a_stale_read_is_refused() {
+        let endpoint = crate::test_endpoint();
+        if !emulator_reachable(&endpoint) {
+            eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_stale").await.expect("a table for this test");
+        let inner = repository.inner.clone();
+        let (pk, sk) = (key::IMAGE_INDEX, key::image(1));
+
+        write(&inner, pk, &sk, "{\"file_name\":\"old.png\"}").await.unwrap();
+        let stale = read(&inner, pk, &sk).await.unwrap().expect("the record");
+
+        // Somebody else moves the record on - an apply, say - and this writer then writes back what
+        // it read.
+        write(&inner, pk, &sk, "{\"file_name\":\"new.png\"}").await.unwrap();
+        assert!(
+            !write_if_unchanged(&inner, pk, &sk, &stale, "{\"file_name\":\"old.png\"}")
+                .await
+                .unwrap(),
+            "a write from a stale read should be refused"
+        );
+        assert_eq!(
+            read(&inner, pk, &sk).await.unwrap().as_deref(),
+            Some("{\"file_name\":\"new.png\"}"),
+            "the refusal should leave the newer record alone"
+        );
+
+        // The same write lands while the record is still the one that was read.
+        let current = read(&inner, pk, &sk).await.unwrap().expect("the record");
+        assert!(
+            write_if_unchanged(&inner, pk, &sk, &current, "{\"file_name\":\"new.png\",\"pending\":\"next\"}")
+                .await
+                .unwrap(),
+            "a write from the current record should land"
+        );
+        assert_eq!(
+            read(&inner, pk, &sk).await.unwrap().as_deref(),
+            Some("{\"file_name\":\"new.png\",\"pending\":\"next\"}")
+        );
 
         repository.delete_table().await.unwrap();
     }

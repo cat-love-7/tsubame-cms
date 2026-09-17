@@ -15,11 +15,17 @@ use sl_cms_core::models::image::{
     sanitize_ext, Image, ImageID, NewImageInfo, NewImageRequest, ReplacementInfo,
     ImageOwner,
 };
-use sl_cms_core::repositories::image_repository::ImageRepository;
+use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
 
 /// How long an upload URL is good for. Long enough for a slow phone on a train, short enough
 /// that a leaked URL is not a standing invitation.
 const UPLOAD_URL_TTL: Duration = Duration::from_secs(15 * 60);
+
+/// How many times a change re-reads an image record that changed under it.
+///
+/// The window is one round trip wide and a loss means only that somebody else got there first, so
+/// a handful is plenty; after that something is wrong that a caller should hear about.
+const RECORD_ATTEMPTS: usize = 5;
 
 /// What the table remembers about an uploaded image. The bytes are in S3 under `file_name`,
 /// which is also the last segment of the URL.
@@ -70,6 +76,43 @@ async fn serve_url(inner: &Inner, file_name: &str) -> Result<String, BoxError> {
             Ok(request.uri().to_string())
         }
     }
+}
+
+/// Read an image record, change it with `change`, and write it back only while it is still the
+/// record that was read.
+///
+/// An image record is one blob, so writing one field of it back means writing all of it - and a
+/// blob written from a read a replacement has since invalidated would restore the file name of
+/// bytes that replacement deleted, leaving the image serving nothing. The write is therefore
+/// conditional on the record not having changed, and a refusal is read again and applied to the
+/// record as it now is.
+async fn change_image(
+    inner: &Inner,
+    id: u64,
+    change: impl Fn(&mut ImageData),
+) -> Result<(), BoxError> {
+    for _ in 0..RECORD_ATTEMPTS {
+        let Some(stored) = read(inner, key::IMAGE_INDEX, &key::image(id)).await? else {
+            return Err("Image not found".into());
+        };
+        let mut data: ImageData = AwsRepository::decode(&stored)?;
+        change(&mut data);
+        if write_if_unchanged(
+            inner,
+            key::IMAGE_INDEX,
+            &key::image(id),
+            &stored,
+            &AwsRepository::encode(&data)?,
+        )
+        .await?
+        {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "the record for image {id} kept changing under a change after {RECORD_ATTEMPTS} attempts"
+    )
+    .into())
 }
 
 impl ImageRepository for AwsRepository {
@@ -166,11 +209,9 @@ impl ImageRepository for AwsRepository {
             None => uuid::Uuid::new_v4().to_string(),
         };
         // The image has to be there before an upload is signed for it, so that a URL never names a
-        // record that does not exist.
-        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(**id)).await? {
-            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
-            None => return Err("Image not found".into()),
-        };
+        // record that does not exist. Nothing is signed in vain either: the change below writes only
+        // to a record that is still there, and an id that is gone is an error before the URL is
+        // handed back.
         let config = PresigningConfig::expires_in(UPLOAD_URL_TTL)
             .map_err(|e| format!("could not build the upload URL: {e}"))?;
         let request = inner
@@ -183,17 +224,11 @@ impl ImageRepository for AwsRepository {
             .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
 
         // Recorded on the image itself: the apply is answered by id, and this is what says which
-        // upload is *this* image's. Written only once a URL exists, so a signing failure leaves
-        // whatever was waiting before still waiting.
-        data.pending_replacement = Some(file_name.clone());
-        write(
-            &inner,
-            key::IMAGE_INDEX,
-            &key::image(**id),
-            &AwsRepository::encode(&data)?,
-        )
+        // upload is *this* image's. Only the newest request stays waiting.
+        change_image(&inner, **id, |data| {
+            data.pending_replacement = Some(file_name.clone())
+        })
         .await?;
-
         Ok(ReplacementInfo {
             upload_url: request.uri().to_string(),
             file_name,
@@ -224,36 +259,54 @@ impl ImageRepository for AwsRepository {
         }
     }
 
-    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<(), BoxError> {
+    async fn replace_image(&self, id: &ImageID, file_name: &str) -> Result<Replacement, BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
-        let previous = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
-            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
-            None => return Err("Image not found".into()),
-        };
+        // Checked and consumed in one conditional write: the record is written back only while it
+        // is still the one this attempt read, so an apply cannot take an upload a newer request has
+        // replaced, nor forget one recorded after this attempt read the record. A refusal means the
+        // record changed under it, which is read again and answered again.
+        for _ in 0..RECORD_ATTEMPTS {
+            let Some(stored) = read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? else {
+                return Err("Image not found".into());
+            };
+            let previous: ImageData = AwsRepository::decode(&stored)?;
 
-        let updated = ImageData {
-            original_filename: previous.original_filename.clone(),
-            file_name: file_name.to_string(),
-            // The first upload is when the image entered the library; replacing what it shows
-            // does not change that, just as re-publishing does not change `published_at`.
-            uploaded_at: previous.uploaded_at,
-            // Replacing the bytes does not take an image out of the trash, or put it back in.
-            deleted_at: previous.deleted_at,
-            // And the upload it came from is no longer waiting for anything.
-            pending_replacement: None,
-        };
-        write(
-            &inner,
-            key::IMAGE_INDEX,
-            &key::image(raw),
-            &AwsRepository::encode(&updated)?,
-        )
-        .await?;
+            // Already showing it: nothing to write, and in particular nothing to forget - a
+            // replacement waiting for some other upload has to stay waiting.
+            if previous.file_name == file_name {
+                return Ok(Replacement::Applied);
+            }
+            // Only the upload this image was signed is its to take.
+            if previous.pending_replacement.as_deref() != Some(file_name) {
+                return Ok(Replacement::NotWaiting);
+            }
 
-        // What it used to name is now unreferenced, so it goes. A missing object is not an
-        // error: the previous upload may never have completed.
-        if previous.file_name != file_name {
+            let updated = ImageData {
+                original_filename: previous.original_filename.clone(),
+                file_name: file_name.to_string(),
+                // The first upload is when the image entered the library; replacing what it shows
+                // does not change that, just as re-publishing does not change `published_at`.
+                uploaded_at: previous.uploaded_at,
+                // Replacing the bytes does not take an image out of the trash, or put it back in.
+                deleted_at: previous.deleted_at,
+                // And the upload it came from is no longer waiting for anything.
+                pending_replacement: None,
+            };
+            if !write_if_unchanged(
+                &inner,
+                key::IMAGE_INDEX,
+                &key::image(raw),
+                &stored,
+                &AwsRepository::encode(&updated)?,
+            )
+            .await?
+            {
+                continue;
+            }
+
+            // What it used to name is now unreferenced, so it goes. A missing object is not an
+            // error: the previous upload may never have completed.
             inner
                 .s3
                 .delete_object()
@@ -262,24 +315,19 @@ impl ImageRepository for AwsRepository {
                 .send()
                 .await
                 .map_err(|e| format!("could not delete the replaced image: {}", describe(&e)))?;
+            return Ok(Replacement::Applied);
         }
-        Ok(())
+        Err(format!(
+            "the record for image {raw} kept changing under a replacement after {RECORD_ATTEMPTS} attempts"
+        )
+        .into())
     }
 
     async fn rename_image(&self, id: &ImageID, original_filename: &str) -> Result<(), BoxError> {
         let inner = self.inner.clone();
-        let raw = **id;
-        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
-            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
-            None => return Err("Image not found".into()),
-        };
-        data.original_filename = original_filename.to_string();
-        write(
-            &inner,
-            key::IMAGE_INDEX,
-            &key::image(raw),
-            &AwsRepository::encode(&data)?,
-        )
+        change_image(&inner, **id, |data| {
+            data.original_filename = original_filename.to_string()
+        })
         .await
     }
 
@@ -288,15 +336,6 @@ impl ImageRepository for AwsRepository {
         let raw = **id;
         match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
             Some(data) => Ok(Some(AwsRepository::decode::<ImageData>(&data)?.file_name)),
-            None => Ok(None),
-        }
-    }
-
-    async fn pending_replacement(&self, id: &ImageID) -> Result<Option<String>, BoxError> {
-        let inner = self.inner.clone();
-        let raw = **id;
-        match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
-            Some(data) => Ok(AwsRepository::decode::<ImageData>(&data)?.pending_replacement),
             None => Ok(None),
         }
     }
@@ -350,19 +389,7 @@ impl ImageRepository for AwsRepository {
         at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
-        let raw = **id;
-        let mut data = match read(&inner, key::IMAGE_INDEX, &key::image(raw)).await? {
-            Some(data) => AwsRepository::decode::<ImageData>(&data)?,
-            None => return Err("Image not found".into()),
-        };
-        data.deleted_at = at;
-        write(
-            &inner,
-            key::IMAGE_INDEX,
-            &key::image(raw),
-            &AwsRepository::encode(&data)?,
-        )
-        .await
+        change_image(&inner, **id, |data| data.deleted_at = at).await
     }
 
     async fn delete_image(&self, id: &ImageID) -> Result<(), BoxError> {
@@ -492,30 +519,39 @@ mod tests {
             repository.image_file_name(&info.id).await.unwrap().as_deref(),
             Some(key),
         );
-        assert_eq!(repository.pending_replacement(&info.id).await.unwrap(), None);
+        // Nothing has been signed yet, so the file it serves is not an upload it is waiting for -
+        // and naming it anyway changes nothing.
+        assert_eq!(
+            repository.replace_image(&info.id, key).await.unwrap(),
+            Replacement::Applied,
+            "the file the image already serves is not a change",
+        );
+        assert_eq!(
+            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            Some(key),
+        );
 
         // A replacement signs a file name and records it on the image, so the apply can be
-        // answered by id - and applying forgets it.
-        let replacement = repository
+        // answered by id; only the newest request stays waiting.
+        let first = repository
             .generate_replacement_upload_url(&info.id, "png")
             .await
             .expect("a signed replacement");
-        assert_eq!(
-            repository.pending_replacement(&info.id).await.unwrap(),
-            Some(replacement.file_name.clone())
-        );
-        let replaced = repository
+        let second = repository
             .generate_replacement_upload_url(&info.id, "png")
             .await
             .expect("a second signed replacement");
+        assert_ne!(first.file_name, second.file_name, "two uploads share a key");
         assert_eq!(
-            repository.pending_replacement(&info.id).await.unwrap(),
-            Some(replaced.file_name.clone()),
-            "the newest request is the one waiting"
+            repository.replace_image(&info.id, &first.file_name).await.unwrap(),
+            Replacement::NotWaiting,
+            "an upload a newer request has replaced is not this image's to take",
         );
+
+        // The newest request's upload takes the image, and the bytes it used to serve go with it.
         assert_eq!(
             client
-                .put(&replaced.upload_url)
+                .put(&second.upload_url)
                 .body(vec![9u8])
                 .send()
                 .await
@@ -523,18 +559,50 @@ mod tests {
                 .status(),
             200
         );
-        repository
-            .replace_image(&info.id, &replaced.file_name)
-            .await
-            .expect("the replacement applies");
         assert_eq!(
-            repository.image_file_name(&info.id).await.unwrap().as_deref(),
-            Some(replaced.file_name.as_str())
+            repository
+                .replace_image(&info.id, &second.file_name)
+                .await
+                .unwrap(),
+            Replacement::Applied
         );
         assert_eq!(
-            repository.pending_replacement(&info.id).await.unwrap(),
-            None,
-            "nothing is waiting once it has been applied"
+            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            Some(second.file_name.as_str())
+        );
+        let old = client
+            .get(serve_url(&repository.inner, key).await.unwrap())
+            .send()
+            .await
+            .expect("the bucket answers");
+        assert_eq!(old.status(), 404, "the replaced bytes should be gone");
+
+        // Applying the file it now serves again is a no-op rather than a refusal - and it leaves
+        // what is waiting waiting, so a re-clicked replacement cannot cancel the upload that was
+        // just signed for.
+        let third = repository
+            .generate_replacement_upload_url(&info.id, "png")
+            .await
+            .expect("a third signed replacement");
+        assert_eq!(
+            repository.replace_image(&info.id, &second.file_name).await.unwrap(),
+            Replacement::Applied,
+            "what it already serves is still not a change",
+        );
+        assert_eq!(
+            client
+                .put(&third.upload_url)
+                .body(vec![7u8])
+                .send()
+                .await
+                .expect("the presigned PUT should be reachable")
+                .status(),
+            200
+        );
+        assert_eq!(
+            repository.replace_image(&info.id, &third.file_name).await.unwrap(),
+            Replacement::Applied,
+            "the upload it was waiting for was still waiting",
         );
     }
 
