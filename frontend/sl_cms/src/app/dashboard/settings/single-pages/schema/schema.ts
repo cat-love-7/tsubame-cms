@@ -6,7 +6,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { FieldSchema } from 'app/models/schema/fields';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
 
 /** Schema editor for one single page. Reuses the schema editor the collections use. */

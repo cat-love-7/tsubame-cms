@@ -40,7 +40,7 @@ import { EnumField } from "../enum-field/enum-field";
 import { CompositeField } from '../composite-field/composite-field';
 import { TextField } from "../text-field/text-field";
 import { FieldWidthPresets } from 'app/core/field-layout';
-import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 
 @Component({
   selector: 'app-field',

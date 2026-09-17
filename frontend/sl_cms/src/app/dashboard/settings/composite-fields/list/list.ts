@@ -12,7 +12,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
-import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 
 interface DefinitionRow {
   id: string;

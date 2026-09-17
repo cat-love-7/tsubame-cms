@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, shareReplay } from 'rxjs';
 
 import { CompositeFieldDefinition } from 'app/models/schema/collection';
-import { CompositeFieldRepository } from 'app/repositories/schema/composite_fields.repository';
+import { CompositeFieldRepository } from 'app/repositories/schema/composite-fields.repository';
 
 @Injectable({
   providedIn: 'root',

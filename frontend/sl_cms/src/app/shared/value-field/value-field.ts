@@ -28,7 +28,7 @@ import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/
 import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
-import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { ImagesService } from 'app/services/media/images.service';
 
 type FieldKind =

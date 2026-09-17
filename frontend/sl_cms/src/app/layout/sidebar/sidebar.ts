@@ -8,7 +8,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { map, Observable, combineLatest} from 'rxjs';
 
 interface SidebarItem {

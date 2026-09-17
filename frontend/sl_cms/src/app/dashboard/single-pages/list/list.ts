@@ -9,7 +9,7 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadata, ItemStatus } from 'app/models/item-status';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 
 /**

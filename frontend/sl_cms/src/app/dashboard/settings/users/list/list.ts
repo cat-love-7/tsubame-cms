@@ -26,7 +26,7 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 interface RoleOption {
   value: Role;

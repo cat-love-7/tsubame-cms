@@ -12,7 +12,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 @Component({
   selector: 'app-single-page-schema-list',

@@ -6,7 +6,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { FieldSchema } from 'app/models/schema/fields';
-import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
 
 /**

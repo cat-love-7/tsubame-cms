@@ -8,7 +8,7 @@ import { CompositeFieldDefinition } from 'app/models/schema/collection';
 import { FieldSchema, FieldType } from 'app/models/schema/fields';
 import { FieldValue } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
-import { CompositeFieldsService } from 'app/services/schema/composite_fields.service';
+import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { ValueField } from './value-field';

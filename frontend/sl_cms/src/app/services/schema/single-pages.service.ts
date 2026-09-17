@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { ItemMetadata, PreviewLink } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
-import { SinglePageRepository } from 'app/repositories/schema/single_pages.repository';
+import { SinglePageRepository } from 'app/repositories/schema/single-pages.repository';
 
 @Injectable({
   providedIn: 'root',

@@ -15,7 +15,7 @@ import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { ContentValue } from 'app/models/values/collection';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 import { ValueField } from 'app/shared/value-field/value-field';

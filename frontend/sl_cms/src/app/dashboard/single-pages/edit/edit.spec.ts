@@ -7,7 +7,7 @@ import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
-import { SinglePagesService } from 'app/services/schema/single_pages.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 import { t } from 'app/core/i18n/message';
 
