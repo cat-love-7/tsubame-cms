@@ -189,16 +189,20 @@ impl<R: ImageRepository> ImageService<R> {
         if !is_safe_file_name(file_name) {
             return Err(HttpError::BadRequest("Invalid image file name"));
         }
-        let Some(current) = self
+        // Whether the image is there at all. Its URL is not needed: what a replacement changes is
+        // which file the record names, and that is answered below.
+        if self
             .repository
             .get_image(&id)
-            .await.map_err(map_internal_error)?
-        else {
+            .await
+            .map_err(map_internal_error)?
+            .is_none()
+        {
             return Err(HttpError::NotFound(&format!(
                 "Image with id '{}' does not exist",
                 id
             )));
-        };
+        }
 
         // The bytes have to be there, or the image would serve nothing.
         if !self
@@ -211,26 +215,27 @@ impl<R: ImageRepository> ImageService<R> {
             ));
         }
 
-        // And they must not be another image's: two records naming one file would mean one of
-        // them losing its bytes when either is replaced.
-        let taken = self
+        // Whose file is this? One lookup answers both questions below, and it asks the records
+        // rather than the URLs they are served with: in the signed mode a URL ends in a signature,
+        // so a comparison against it would never match - and the check would stop working without
+        // saying anything.
+        let owner = self
             .repository
-            .get_all_images()
-            .await.map_err(map_internal_error)?
-            .into_iter()
-            .any(|(other_id, image)| {
-                other_id != id && image.url.ends_with(&format!("/{file_name}"))
-            });
-        if taken {
-            return Err(HttpError::BadRequest(
-                "those bytes belong to another image",
-            ));
-        }
-
-        // Replacing an image with itself is a no-op rather than an error: the screen sends what
-        // it was given, and a second click on the same file is not a mistake worth refusing.
-        if current.url.ends_with(&format!("/{file_name}")) {
-            return Ok(());
+            .image_named(file_name)
+            .await
+            .map_err(map_internal_error)?;
+        match owner {
+            // Replacing an image with itself is a no-op rather than an error: the screen sends what
+            // it was given, and a second click on the same file is not a mistake worth refusing.
+            Some(owner) if owner == id => return Ok(()),
+            // Two records naming one file would mean one of them losing its bytes when either is
+            // replaced.
+            Some(_) => {
+                return Err(HttpError::BadRequest(
+                    "those bytes belong to another image",
+                ))
+            }
+            None => {}
         }
 
         self.repository

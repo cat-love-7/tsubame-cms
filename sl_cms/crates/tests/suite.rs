@@ -2689,6 +2689,98 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+/// The bytes of one image cannot be given to another: two records naming one file would mean one of
+/// them losing its picture when the other is replaced.
+///
+/// The file name is not part of the API, so it is read from the upload URL the server hands out -
+/// and the point of the test is that the *server* decides from its records, not from the URL it
+/// happens to serve the image with: in a deployment that signs those URLs, a comparison against the
+/// URL would never match, and the check would stop working without saying anything.
+#[tokio::test]
+async fn the_bytes_of_one_image_cannot_be_given_to_another() {
+    // The bytes are put through this router, which is only how they travel where the CMS serves
+    // them itself. An object-storage deployment hands the browser a presigned URL to S3 instead;
+    // the same rule is pinned there, in `aws::repository::images`, against those URLs.
+    if !Backend::SERVES_IMAGE_BYTES {
+        eprintln!("skipped: this backend hands the browser a signed URL instead of serving bytes");
+        return;
+    }
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    // Two images, each with its own upload and its own bytes.
+    let mut names = Vec::new();
+    for name in ["one.png", "two.png"] {
+        let (status, info) = send(
+            &app.router,
+            Method::POST,
+            "/models/images/get_upload_url",
+            Some(&token),
+            Some(json!({ "original_filename": name, "ext": "png" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let upload_url = info["upload_url"].as_str().unwrap().to_string();
+        names.push(file_name_of(&upload_url));
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri(&upload_url)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from("PNG-BYTES"))
+            .unwrap();
+        let response = app.router.clone().oneshot(request).await.unwrap();
+        assert!(
+            response.status().is_success(),
+            "the upload was refused: {}",
+            response.status()
+        );
+    }
+    assert_ne!(names[0], names[1], "two uploads share a file name");
+
+    // Image 1, pointed at the file image 2 owns: refused.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/1",
+        Some(&token),
+        Some(json!({ "file_name": names[1] })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "image 1 should not be pointed at image 2's file: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // And its own file is a no-op rather than a refusal: the screen sends what it was given.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/models/images/1",
+        Some(&token),
+        Some(json!({ "file_name": names[0] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+}
+
+/// The stored file name at the end of an upload URL, whichever deployment handed it out.
+///
+/// Backend-relative (`/images/<file>?key=...`) on-premises, an absolute presigned S3 URL on AWS;
+/// both put the object's key in the last path segment, before any query.
+fn file_name_of(upload_url: &str) -> String {
+    upload_url
+        .split('?')
+        .next()
+        .unwrap_or(upload_url)
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the
 /// unique index holds and what a URL resolves. Two spellings of one slug therefore cannot become
 /// two items, which is the whole reason the type exists.

@@ -259,6 +259,20 @@ impl ImageRepository for AwsRepository {
         .await
     }
 
+    async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, BoxError> {
+        let inner = self.inner.clone();
+        for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
+            let Ok(id) = sk.trim_start_matches("image#").parse::<u64>() else {
+                continue;
+            };
+            let data: ImageData = AwsRepository::decode(&data)?;
+            if data.file_name == file_name {
+                return Ok(Some(ImageID::from_u64(id)));
+            }
+        }
+        Ok(None)
+    }
+
     async fn set_image_references(
         &self,
         owner: &ImageOwner,
@@ -417,13 +431,41 @@ mod tests {
         assert_eq!(signed.status(), 200, "the signature was refused");
         assert_eq!(signed.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
 
-        // The same object without the signature is not readable, which is the point.
-        let bare = format!("{endpoint}/{bucket}/{}", info.url.rsplit('/').next().unwrap());
+        // The same object without the signature is not readable, which is the point. The key has to
+        // be taken from the URL with the query stripped: keeping it would keep the signature too,
+        // and the read would be refused for a reason that has nothing to do with the bucket being
+        // private.
+        let key = info
+            .url
+            .split('?')
+            .next()
+            .unwrap_or(&info.url)
+            .rsplit('/')
+            .next()
+            .unwrap();
+        let bare = format!("{endpoint}/{bucket}/{key}");
         let refused = client.get(&bare).send().await.expect("the bucket answers");
+        // Not "not found": the object is there, and the reader is not allowed to have it. The
+        // emulator answers 400 for a request with no authorization at all where S3 answers 403
+        // AccessDenied - the refusal is the same, the status is not, so what this pins is that the
+        // read does not succeed (a bucket that had become readable would answer 200).
         assert!(
-            refused.status().is_client_error(),
+            !refused.status().is_success(),
             "a private bucket should refuse an unsigned read, got {}",
             refused.status()
+        );
+        assert_ne!(refused.status().as_u16(), 404, "the object is there, the reader is not");
+
+        // And the same mode answers "whose file is this?" from the records: a URL that ends in a
+        // signature would never match a file name, so a check written against the URL would let
+        // one image take another's bytes here without a word.
+        assert_eq!(
+            repository.image_named(key).await.unwrap(),
+            Some(info.id.clone()),
+        );
+        assert_eq!(
+            repository.image_named("nobody's-file.png").await.unwrap(),
+            None
         );
     }
 
@@ -496,7 +538,14 @@ mod tests {
             .await
             .unwrap()
             .expect("the record");
-        let file_name = stored.url.rsplit('/').next().unwrap_or_default();
+        let file_name = stored
+            .url
+            .split('?')
+            .next()
+            .unwrap_or(&stored.url)
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
         assert!(
             repository.image_bytes_exist(file_name).await.unwrap(),
             "an upload that is there has to be found"

@@ -16,6 +16,14 @@ pub trait ImageRepository: Send + Sync {
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageID) -> impl Future<Output = Result<(), BoxError>> + Send;
 
+    /// Which image's record names this stored file, if any.
+    ///
+    /// Asked of the records rather than of the URLs they are served with: a URL is a presentation
+    /// of the file name (and in the signed mode it does not even end in it), so deciding "these
+    /// bytes are already another image's" from one is a comparison that silently stops matching
+    /// the day the way a deployment serves images changes.
+    fn image_named(&self, file_name: &str) -> impl Future<Output = Result<Option<ImageID>, BoxError>> + Send;
+
     /// Record which images one piece of content uses, replacing what it used before.
     ///
     /// Called when the content is saved (with the union of what the published and the working

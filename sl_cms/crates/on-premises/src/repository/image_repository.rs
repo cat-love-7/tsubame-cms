@@ -239,6 +239,28 @@ impl ImageRepository for Repository {
         Ok(())
     }
 
+    async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single("image", StoreOptions::create())?;
+        let reader = env.read()?;
+        for result in store.iter_start(&reader)? {
+            let Ok((key, Value::Str(s))) = result else {
+                continue;
+            };
+            let Ok(raw_id) = <[u8; 8]>::try_from(key) else {
+                continue;
+            };
+            let Ok(data) = serde_json::from_str::<ImageData>(&s) else {
+                continue;
+            };
+            if data.file_name == file_name {
+                return Ok(Some(ImageID::from_u64(u64::from_le_bytes(raw_id))));
+            }
+        }
+        Ok(None)
+    }
+
     async fn set_image_references(
         &self,
         owner: &ImageOwner,

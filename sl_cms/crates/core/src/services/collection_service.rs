@@ -1771,7 +1771,24 @@ mod tests {
         }
     }
 
-    struct MockImageRepository {}
+    /// The image store a service test needs: what exists, and which file each record names.
+    ///
+    /// `image_named` answers from `file_names` rather than from the URLs this double invents, which
+    /// is the same rule the adapters follow: the file name is a fact about the record, not something
+    /// to be read back out of however the image happens to be served.
+    #[derive(Default)]
+    struct MockImageRepository {
+        file_names: std::sync::RwLock<std::collections::HashMap<ImageID, String>>,
+    }
+
+    impl MockImageRepository {
+        fn name(&self, id: &ImageID, file_name: &str) {
+            self.file_names
+                .write()
+                .unwrap()
+                .insert(id.clone(), file_name.to_string());
+        }
+    }
     impl ImageRepository for MockImageRepository {
         async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Some(Image {
@@ -1809,6 +1826,16 @@ mod tests {
         async fn delete_image(&self, _id: &ImageID) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
+        async fn image_named(&self, file_name: &str) -> Result<Option<ImageID>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(self
+                .file_names
+                .read()
+                .unwrap()
+                .iter()
+                .find(|(_, named)| named.as_str() == file_name)
+                .map(|(id, _)| id.clone()))
+        }
+
         async fn set_image_references(
             &self,
             _owner: &crate::models::image::ImageOwner,
@@ -1865,7 +1892,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
@@ -1938,7 +1965,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier))
     }
 
@@ -2066,7 +2093,7 @@ mod tests {
             Arc::new(MockCompositeFieldRepository {
                 schemas: Arc::new(RwLock::new(HashMap::new())),
             }),
-            Arc::new(MockImageRepository {}),
+            Arc::new(MockImageRepository::default()),
             Arc::new(NoopNotifier),
         )
     }
@@ -2413,7 +2440,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.create_collection_item(
@@ -2451,7 +2478,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.create_collection_item(
@@ -2490,7 +2517,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await;
@@ -2517,7 +2544,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999)).await;
@@ -2556,7 +2583,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
@@ -2589,7 +2616,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
@@ -2636,7 +2663,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.update_collection_item(
@@ -2677,7 +2704,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.get_collection_items(&"test_composite".into()).await;
@@ -2719,7 +2746,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1)).await;
@@ -2749,7 +2776,7 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository {};
+        let image_repository = MockImageRepository::default();
         let service = CollectionService::new(Arc::new(collection_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
 
         let result = service.delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999)).await;
