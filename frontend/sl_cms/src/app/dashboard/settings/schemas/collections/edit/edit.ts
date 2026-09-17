@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { EditSchema } from "../../shared/edit-schema/edit-schema";
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { CollectionSchema } from 'app/models/schema/collection';
@@ -17,6 +17,8 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 export class CollectionSchemaEdit {
   private route = inject(ActivatedRoute);
   private collectionsService = inject(CollectionsService);
+  /** When this screen goes away, so does everything it still has in flight. */
+  private destroyRef = inject(DestroyRef);
   /** A signal, and read from the parameter stream: switching collections reuses this component. */
   public collectionName = signal('');
   /**
@@ -28,33 +30,75 @@ export class CollectionSchemaEdit {
   /** What the last save did, or the failure to show: keys, so they follow a language change. */
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
+  /** Which visit to a schema the answers on screen belong to (see `load`). */
+  private loadToken = 0;
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const name = params.get('name') ?? '';
       if (name !== this.collectionName()) {
-        this.collectionName.set(name);
-        this.collectionSchema.set([]);
-        this.status.set(null);
-        this.error.set(null);
-        this.collectionsService.getCollectionSchema(name).subscribe({
-          next: (schema: CollectionSchema) => this.collectionSchema.set(schema),
-          error: (e) => this.error.set(failure('content.loadFailed', e)),
-        });
+        this.load(name);
       }
     });
   }
 
+  /** Everything on screen belongs to one schema, so a switch starts from nothing. */
+  private load(name: string) {
+    // Switching schemas reuses this component, and the schema on screen is what `save` sends: a
+    // slow answer for the schema the reader left would otherwise be edited here and written over
+    // *this* collection's. The generation is what says which answer is still wanted.
+    const token = ++this.loadToken;
+    this.collectionName.set(name);
+    this.collectionSchema.set([]);
+    this.status.set(null);
+    this.error.set(null);
+
+    this.collectionsService
+      .getCollectionSchema(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema: CollectionSchema) => {
+          if (token === this.loadToken) {
+            this.collectionSchema.set(schema);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.loadFailed', e));
+          }
+        },
+      });
+  }
+
   save(schema: FieldSchema[]) {
-    this.collectionsService.updateCollectionSchema(this.collectionName(), schema).subscribe({
-      next: () => {
-        this.error.set(null);
-        this.status.set(t('common.saved'));
-      },
-      error: (e) => {
-        this.status.set(null);
-        this.error.set(failure('content.saveFailed', e));
-      },
-    });
+    const started = this.start();
+    this.collectionsService
+      .updateCollectionSchema(started.name, schema)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          this.error.set(null);
+          this.status.set(t('common.saved'));
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.status.set(null);
+            this.error.set(failure('content.saveFailed', e));
+          }
+        },
+      });
+  }
+
+  /** The schema an act is about, and the load it belongs to, captured when the act starts. */
+  private start(): { name: string; generation: number } {
+    return { name: this.collectionName(), generation: this.loadToken };
+  }
+
+  /** Whether the screen is still on the schema a slow answer was about, as it was then. */
+  private stillOn(started: { name: string; generation: number }): boolean {
+    return this.collectionName() === started.name && this.loadToken === started.generation;
   }
 }

@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -25,32 +25,63 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
 export class CompositeFieldSchema {
   private route = inject(ActivatedRoute);
   private compositeFields = inject(CompositeFieldsService);
+  /** When this screen goes away, so does everything it still has in flight. */
+  private destroyRef = inject(DestroyRef);
 
   /** A signal, and read from the parameter stream: switching definitions reuses this component. */
   public compositeId = signal('');
   public schema = signal<FieldSchema[]>([]);
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
+  /** Which visit to a definition the answers on screen belong to (see `load`). */
+  private loadToken = 0;
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const id = params.get('id') ?? '';
       if (id !== this.compositeId()) {
-        this.compositeId.set(id);
-        this.schema.set([]);
-        this.status.set(null);
-        this.error.set(null);
-        this.compositeFields.getCompositeFieldSchema(id).subscribe({
-          next: (schema) => this.schema.set(schema),
-          error: (e) => this.error.set(failure('content.failedToLoadDefinition', e)),
-        });
+        this.load(id);
       }
     });
   }
 
+  /** Everything on screen belongs to one definition, so a switch starts from nothing. */
+  private load(id: string) {
+    // See the collection schema editor: a slow answer for the definition the reader left must not
+    // be edited here and written over this definition.
+    const token = ++this.loadToken;
+    this.compositeId.set(id);
+    this.schema.set([]);
+    this.status.set(null);
+    this.error.set(null);
+
+    this.compositeFields
+      .getCompositeFieldSchema(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema) => {
+          if (token === this.loadToken) {
+            this.schema.set(schema);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadDefinition', e));
+          }
+        },
+      });
+  }
+
   save(schema: FieldSchema[]) {
-    this.compositeFields.updateCompositeFieldSchema(this.compositeId(), schema).subscribe({
+    const started = { id: this.compositeId(), generation: this.loadToken };
+    this.compositeFields
+      .updateCompositeFieldSchema(started.id, schema)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: () => {
+        if (!this.stillOn(started)) {
+          return;
+        }
         // Content forms read the definitions from a cache, so it has to be dropped or they
         // would keep rendering the previous shape.
         this.compositeFields.invalidate();
@@ -58,9 +89,17 @@ export class CompositeFieldSchema {
         this.status.set(t('common.saved'));
       },
       error: (e) => {
+        if (!this.stillOn(started)) {
+          return;
+        }
         this.status.set(null);
         this.error.set(failure('content.saveFailed', e));
       },
     });
+  }
+
+  /** Whether the screen is still on the definition a slow answer was about, as it was then. */
+  private stillOn(started: { id: string; generation: number }): boolean {
+    return this.compositeId() === started.id && this.loadToken === started.generation;
   }
 }

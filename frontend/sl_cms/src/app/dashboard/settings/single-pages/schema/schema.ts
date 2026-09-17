@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -19,39 +19,82 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
 export class SinglePageSchema {
   private route = inject(ActivatedRoute);
   private pages = inject(SinglePagesService);
+  /** When this screen goes away, so does everything it still has in flight. */
+  private destroyRef = inject(DestroyRef);
 
   /** A signal, and read from the parameter stream: switching pages reuses this component. */
   public pageName = signal('');
   public schema = signal<FieldSchema[]>([]);
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
+  /** Which visit to a schema the answers on screen belong to (see `load`). */
+  private loadToken = 0;
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const name = params.get('name') ?? '';
       if (name !== this.pageName()) {
-        this.pageName.set(name);
-        this.schema.set([]);
-        this.status.set(null);
-        this.error.set(null);
-        this.pages.getPageSchema(name).subscribe({
-          next: (schema) => this.schema.set(schema),
-          error: (e) => this.error.set(failure('content.failedToLoadSchema', e)),
-        });
+        this.load(name);
       }
     });
   }
 
+  /** Everything on screen belongs to one page's schema, so a switch starts from nothing. */
+  private load(name: string) {
+    // See the collection schema editor: a slow answer for the page the reader left must not be
+    // edited here and written over this page's schema.
+    const token = ++this.loadToken;
+    this.pageName.set(name);
+    this.schema.set([]);
+    this.status.set(null);
+    this.error.set(null);
+
+    this.pages
+      .getPageSchema(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema) => {
+          if (token === this.loadToken) {
+            this.schema.set(schema);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadSchema', e));
+          }
+        },
+      });
+  }
+
   save(schema: FieldSchema[]) {
-    this.pages.updatePageSchema(this.pageName(), schema).subscribe({
-      next: () => {
-        this.error.set(null);
-        this.status.set(t('common.saved'));
-      },
-      error: (e) => {
-        this.status.set(null);
-        this.error.set(failure('content.saveFailed', e));
-      },
-    });
+    const started = this.start();
+    this.pages
+      .updatePageSchema(started.name, schema)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          this.error.set(null);
+          this.status.set(t('common.saved'));
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.status.set(null);
+            this.error.set(failure('content.saveFailed', e));
+          }
+        },
+      });
+  }
+
+  /** The schema an act is about, and the load it belongs to, captured when the act starts. */
+  private start(): { name: string; generation: number } {
+    return { name: this.pageName(), generation: this.loadToken };
+  }
+
+  /** Whether the screen is still on the schema a slow answer was about, as it was then. */
+  private stillOn(started: { name: string; generation: number }): boolean {
+    return this.pageName() === started.name && this.loadToken === started.generation;
   }
 }
