@@ -395,9 +395,14 @@ pub fn deployment_s3_policy(bucket: &str, list_bucket: bool) -> String {
 /// hands them to the DynamoDB client too, and **DynamoDB Local refuses an access key id with
 /// anything else in it** (`cms-...` reads as "The Access Key ID or security token is invalid").
 ///
-/// `None` when the emulator, `docker` or `mc` is not at hand, which is a test that skips rather
-/// than a test that lies.
+/// `None` when the emulator is not running at all, which is a test that skips rather than a test
+/// that lies. Everything after that check is this test's own setup, and a setup step that fails is
+/// a failure ([`run_in_emulator`] says why).
+#[cfg(test)]
 pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String, String)> {
+    if !crate::repository::emulator_reachable(&test_s3_endpoint()) {
+        return None;
+    }
     let user = format!("cms{}", uuid::Uuid::new_v4().simple());
     let secret = uuid::Uuid::new_v4().simple().to_string();
     let policy = deployment_s3_policy(bucket, list_bucket);
@@ -407,16 +412,22 @@ pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String,
         root = test_access_key(),
         password = test_secret_key(),
     );
-    run_in_emulator(&script)?;
+    run_in_emulator(&script);
     Some((user, secret))
 }
 
-/// Run a shell line inside the emulator container, or answer `None` when there is no container.
-fn run_in_emulator(script: &str) -> Option<()> {
+/// Run a shell line inside the emulator container, and fail loudly when it does not run.
+///
+/// Answering `None` for a failed command, the way an absent emulator is answered, hides the
+/// failures that matter: a policy MinIO will not accept, a user it will not create, a command
+/// whose syntax is wrong. The test then reports success having checked nothing, which is exactly
+/// what happened to this helper (`cargo test` was green; the policy was never applied). The caller
+/// has already established that there is an emulator; from there, a failure is a failure.
+#[cfg(test)]
+fn run_in_emulator(script: &str) {
     // The compose file is at the root of the crate's workspace (`sl_cms/`), which is two levels up
     // from this crate. A path that does not resolve is a mistake in this line, not a missing
-    // emulator: left to the `None` below it would read as a skip, and the test that needs a
-    // restricted user would pass without ever checking the policy.
+    // emulator.
     let compose =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
     assert!(
@@ -428,7 +439,7 @@ fn run_in_emulator(script: &str) -> Option<()> {
         .args([
             "compose",
             "-f",
-            compose.to_str()?,
+            compose.to_str().expect("a compose path that is not UTF-8"),
             "exec",
             "-T",
             "s3",
@@ -437,15 +448,17 @@ fn run_in_emulator(script: &str) -> Option<()> {
             script,
         ])
         .output()
-        .ok()?;
-    if !output.status.success() {
-        tracing::debug!(
-            "could not set up the emulator's users: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return None;
-    }
-    Some(())
+        .unwrap_or_else(|e| {
+            panic!(
+                "could not run docker against the emulator at {}: {e}",
+                compose.display()
+            )
+        });
+    assert!(
+        output.status.success(),
+        "the emulator refused the setup: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// A repository over a fresh table, serving images the way the given mode says.

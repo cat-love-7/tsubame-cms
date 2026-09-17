@@ -483,6 +483,13 @@ mod tests {
             "the URL should be a signature: {}",
             image.url
         );
+        // The lifetime the repository was built with (300s, above) is in the signature: this is the
+        // part a deployment sets with `AWS_IMAGE_URL_TTL_SECONDS`, and the URL is only good for it.
+        assert!(
+            image.url.contains("X-Amz-Expires=300"),
+            "the URL should carry the configured lifetime: {}",
+            image.url
+        );
         let signed = client
             .get(&image.url)
             .send()
@@ -617,13 +624,16 @@ mod tests {
 
     /// What a deployment's S3 permissions actually allow, against the emulator.
     ///
-    /// The emulator's root credentials can do anything, which is how a missing `s3:ListBucket`
-    /// stayed invisible: with root, a key that is not there answers 404 and the code's "not there
-    /// yet" branch is reached. As a user with the deployment's policy (`infra/lambda.tf`, mirrored
-    /// by `deployment_s3_policy`), a key that is there is found, and one that is not is answered
-    /// *as absent* - which is what `s3:ListBucket` buys. Without it the emulator refuses to say,
-    /// and the CMS cannot tell "missing" from "not allowed": the failure the policy keeps out of
-    /// reach.
+    /// The emulator's root credentials can do anything, so a code path that needs a permission the
+    /// deployment does not grant passes here and fails in the cloud: that is how a missing
+    /// `s3:GetObject` stayed invisible. Running the same code as a user with the deployment's
+    /// policy (`infra/lambda.tf`, mirrored by `deployment_s3_policy`) puts the same wall in front
+    /// of it: a key that is there is found, and one that is not is absent.
+    ///
+    /// The one thing this cannot show is what the policy is *for*: with real S3 a caller that may
+    /// not list the bucket is refused for a key that is not there, while MinIO answers 404 either
+    /// way. `infra/lambda.tf` carries that reason, and the last part of this test states what the
+    /// emulator does instead of pretending to check it.
     #[tokio::test]
     async fn finding_an_upload_needs_the_permissions_the_deployment_grants() {
         use sl_cms_core::repositories::image_repository::ImageRepository;
@@ -631,6 +641,14 @@ mod tests {
         let endpoint = crate::test_endpoint();
         if !emulator_reachable(&endpoint) {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
+            return;
+        }
+        // The bucket is the part this test is about, and making the restricted user needs the
+        // emulator: an absent emulator is a skip, and one that refuses is a failure (see
+        // `run_in_emulator`).
+        let s3 = crate::test_s3_endpoint();
+        if !emulator_reachable(&s3) {
+            eprintln!("skipped: no S3 at {s3} (start it with `docker compose up -d`)");
             return;
         }
         let (root, _table) = crate::open_test_repository("cms_permissions")
@@ -696,10 +714,9 @@ mod tests {
             repository.image_bytes_exist(file_name).await.unwrap(),
             "an upload that is there has to be found"
         );
-        assert_eq!(
-            repository.image_bytes_exist("nothing-here.png").await.unwrap(),
-            false,
-            "with s3:ListBucket, a key that is not there answers 404 - which is what the code reads"
+        assert!(
+            !repository.image_bytes_exist("nothing-here.png").await.unwrap(),
+            "a key that is not there is answered *as absent*, which is what the code reads"
         );
 
         // What the emulator cannot show: with the real service, a caller that may not list the
