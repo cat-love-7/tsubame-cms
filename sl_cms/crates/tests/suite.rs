@@ -19,7 +19,7 @@ use axum::Router;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use sl_cms_core::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
+use sl_cms_core::models::collection::{CollectionItemId, CollectionName};
 use sl_cms_core::models::pagination::DEFAULT_PAGE_LIMIT;
 use sl_cms_core::models::single_page::SinglePageName;
 use sl_cms_core::models::user::Permission;

@@ -1133,7 +1133,7 @@ mod tests {
         );
         assert_eq!(
             repository.find_unique_value(&name, &value("intro")).await.unwrap(),
-            Some(one.clone())
+            Some(one)
         );
 
         // Ours already: not a conflict with itself, and nothing for a caller to give back.
@@ -1151,7 +1151,7 @@ mod tests {
                 .reserve_unique_value(&name, &two, &value("intro"))
                 .await
                 .unwrap(),
-            Reservation::Taken { owner: one.clone() }
+            Reservation::Taken { owner: one }
         );
 
         // Released: free again, and the next claim really lands.

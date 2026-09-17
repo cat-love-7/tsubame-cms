@@ -648,15 +648,6 @@ mod tests {
     struct MockImageRepository {
         file_names: std::sync::RwLock<std::collections::HashMap<ImageID, String>>,
     }
-
-    impl MockImageRepository {
-        fn name(&self, id: &ImageID, file_name: &str) {
-            self.file_names
-                .write()
-                .unwrap()
-                .insert(id.clone(), file_name.to_string());
-        }
-    }
     impl ImageRepository for MockImageRepository {
         async fn get_image(&self, id: &ImageID) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Some(Image {
