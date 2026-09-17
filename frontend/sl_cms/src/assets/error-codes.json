@@ -18,7 +18,8 @@
     "unknown_composite_field",
     "composite_id_mismatch",
     "nested_arrays",
-    "invalid_slug"
+    "invalid_slug",
+    "draft_changed"
   ],
   "status": [
     "bad_request",

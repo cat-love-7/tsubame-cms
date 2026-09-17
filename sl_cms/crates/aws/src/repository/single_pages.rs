@@ -101,7 +101,9 @@ impl SinglePageRepository for AwsRepository {
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = page_name.clone();
-        let data = AwsRepository::encode(item_data)?;
+        // Stored canonically, so a promotion can compare it with what the publisher read (see
+        // `apply_page_status`).
+        let data = canonical_draft(item_data);
         write(&inner, &key::page(&name), key::DRAFT, &data).await
     }
 
@@ -154,15 +156,29 @@ impl SinglePageRepository for AwsRepository {
             return write(&inner, &partition, key::META, &data).await;
         };
         let draft_data = AwsRepository::encode(&draft)?;
-        // One transaction, for the reason in `CollectionRepository::apply_item_status`.
-        transact(
+        // One transaction, for the reason in `CollectionRepository::apply_item_status`, and the
+        // delete is conditional on the working copy still being the one the caller read: a save
+        // landing in between would otherwise be deleted by the promotion.
+        let expected = canonical_draft(&draft);
+        let outcome = transact(
             &inner,
             vec![
                 put_in_transaction(&inner, &partition, key::ITEM, &draft_data)?,
-                delete_in_transaction(&inner, &partition, key::DRAFT)?,
+                delete_draft_in_transaction(&inner, &partition, key::DRAFT, &expected)?,
                 put_in_transaction(&inner, &partition, key::META, &data)?,
             ],
         )
-        .await
+        .await?;
+        match outcome {
+            TransactOutcome::Applied => Ok(()),
+            // Position 1 is the draft delete above.
+            TransactOutcome::Refused { write: 1 } => {
+                Err(Box::new(ApplyStatusError::DraftChanged))
+            }
+            TransactOutcome::Refused { write } => Err(format!(
+                "publishing page {name} was refused by write {write}, which has no condition"
+            )
+            .into()),
+        }
     }
 }

@@ -7,6 +7,8 @@ use crate::repository::{
 };
 use sl_cms_core::repositories::collection_repository::{
     CollectionRepository, Reservation, UniqueValue,
+    ApplyStatusError,
+    canonical_draft,
 };
 use rkv::{StoreOptions, Value};
 use std::error::Error;
@@ -289,6 +291,26 @@ impl CollectionRepository for Repository {
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
 
         let metadata_key = collection_item_metadata_key(collection_name.as_str(), **item_id);
+        // The promotion is conditional on the working copy still being the one the caller read: a
+        // save that landed in between is newer than the content about to be published, and deleting
+        // it would throw that work away. The storage lock makes this read and the write below one
+        // step, so nothing can slip in between them either.
+        if let Some(draft) = draft {
+            let reader = env.read()?;
+            let draft_key = collection_item_draft_key(collection_name.as_str(), **item_id);
+            let stored = match draft_store.get(&reader, draft_key.as_bytes())? {
+                Some(Value::Str(stored)) => stored,
+                // Nothing there: the working copy this caller read is gone (another publish has
+                // promoted it, or the item was deleted), which is the same answer as a changed one.
+                _ => return Err(Box::new(ApplyStatusError::DraftChanged)),
+            };
+            // Readable in either shape: records written before the canonical rendering existed were
+            // saved in hash order, and comparing their content is what matters.
+            let stored: CollectionItem = serde_json::from_str(&stored)?;
+            if canonical_draft(&stored) != canonical_draft(draft) {
+                return Err(Box::new(ApplyStatusError::DraftChanged));
+            }
+        }
         // One write transaction: the published copy, the working copy it replaces and the
         // status land together, so no reader can see a half-applied publish.
         let mut writer = env.write()?;
@@ -375,7 +397,9 @@ impl CollectionRepository for Repository {
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         let key = collection_item_draft_key(collection_name.as_str(), **item_id);
         let mut writer = env.write()?;
-        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(item_data)?))?;
+        // Stored in the canonical rendering, so a promotion can compare it with what the publisher
+        // read without the two renderings differing only in the order a `HashMap` was walked.
+        store.put(&mut writer, key.as_bytes(), &Value::Str(&canonical_draft(item_data)))?;
         writer.commit()?;
         Ok(())
     }

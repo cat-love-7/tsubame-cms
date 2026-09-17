@@ -2,6 +2,7 @@ use sl_cms_core::models::item_status::ItemMetadata;
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 use crate::repository::{page_draft_key, page_metadata_key, Repository, DRAFT_STORE, METADATA_STORE};
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
+use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
 use rkv::{StoreOptions, Value};
 use std::error::Error;
 
@@ -92,7 +93,21 @@ impl SinglePageRepository for Repository {
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
 
         let metadata_key = page_metadata_key(page_name.as_str());
-        // One write transaction, as for collection items.
+        // One write transaction, as for collection items, and the promotion is conditional on the
+        // working copy still being the one the caller read: a save that landed in between is newer
+        // than the content about to be published, and deleting it would throw that work away.
+        if let Some(draft) = draft {
+            let reader = env.read()?;
+            let draft_key = page_draft_key(page_name.as_str());
+            let stored = match draft_store.get(&reader, draft_key.as_bytes())? {
+                Some(Value::Str(stored)) => stored,
+                _ => return Err(Box::new(ApplyStatusError::DraftChanged)),
+            };
+            let stored: SinglePageItem = serde_json::from_str(&stored)?;
+            if canonical_draft(&stored) != canonical_draft(draft) {
+                return Err(Box::new(ApplyStatusError::DraftChanged));
+            }
+        }
         let mut writer = env.write()?;
         if let Some(draft) = draft {
             item_store.put(
@@ -175,7 +190,9 @@ impl SinglePageRepository for Repository {
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         let key = page_draft_key(page_name.as_str());
         let mut writer = env.write()?;
-        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(item_data)?))?;
+        // Stored in the canonical rendering, so a promotion can compare it with what the publisher
+        // read (see `apply_page_status`).
+        store.put(&mut writer, key.as_bytes(), &Value::Str(&canonical_draft(item_data)))?;
         writer.commit()?;
         Ok(())
     }

@@ -28,6 +28,8 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "nested_arrays",
     // A slug with nothing usable in it: nothing survives normalisation (see `models::slug`).
     "invalid_slug",
+    // Publishing lost a race with a save: the working copy changed after it was read.
+    "draft_changed",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -72,6 +74,8 @@ pub const ERROR_CODES: &[&str] = &[
     "composite_id_mismatch",
     "nested_arrays",
     "invalid_slug",
+    // Publishing lost a race with a save: the working copy changed after it was read.
+    "draft_changed",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",

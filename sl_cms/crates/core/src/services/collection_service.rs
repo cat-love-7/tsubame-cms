@@ -5,6 +5,7 @@ use chrono::Utc;
 
 use crate::models::collection::{CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema};
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
+use crate::repositories::collection_repository::ApplyStatusError;
 use crate::models::field::{FieldValue, FieldValueMap};
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
@@ -1065,6 +1066,15 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         {
             self.release_unique_values(collection_name, &item_id, &reserve)
                 .await;
+            // The content moved between the read and the promotion, so this is the editor's turn:
+            // what it has on screen is not what is stored, and only it knows whether to save again
+            // or to publish what is there now.
+            if e.downcast_ref::<ApplyStatusError>() == Some(&ApplyStatusError::DraftChanged) {
+                return Err(HttpError::Conflict(
+                    "the item was saved again while it was being published",
+                )
+                .with_code("draft_changed"));
+            }
             return Err(map_internal_error(e));
         }
         self.release_unique_values(collection_name, &item_id, &release)
@@ -1245,6 +1255,7 @@ mod tests {
     use crate::repositories::image_repository::ImageRepository;
 
     use super::*;
+    use crate::models::user::UserId;
     use crate::repositories::collection_repository::{Reservation, UniqueValue};
     use crate::webhook::NotifyFuture;
     use crate::webhook::NoopNotifier;
@@ -1259,6 +1270,9 @@ mod tests {
         unique: Arc<RwLock<HashMap<(CollectionName, String, String), CollectionItemId>>>,
         /// A store that refuses to write a schema, for the rollback a failed save has to do.
         fail_schema_save: bool,
+        /// A store that answers "the working copy moved" to a promotion, for the refusal the
+        /// service has to turn into a 409.
+        fail_apply_status: bool,
     }
     impl CollectionRepository for MockCollectionRepository {
         async fn get_collection_schema(
@@ -1433,6 +1447,9 @@ mod tests {
             draft: Option<&CollectionItem>,
             metadata: &ItemMetadata,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            if self.fail_apply_status {
+                return Err(Box::new(ApplyStatusError::DraftChanged));
+            }
             // The mock has no transaction to offer, and nothing here can fail half-way, so it
             // does in a row what the real adapters do as one step.
             if let Some(draft) = draft {
@@ -1617,6 +1634,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1687,6 +1705,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1779,6 +1798,14 @@ mod tests {
         schemas: HashMap<CollectionName, CollectionSchema>,
         fail_schema_save: bool,
     ) -> Arc<MockCollectionRepository> {
+        test_repository_that(schemas, fail_schema_save, false)
+    }
+
+    fn test_repository_that(
+        schemas: HashMap<CollectionName, CollectionSchema>,
+        fail_schema_save: bool,
+        fail_apply_status: bool,
+    ) -> Arc<MockCollectionRepository> {
         Arc::new(MockCollectionRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
@@ -1787,6 +1814,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save,
+            fail_apply_status,
         })
     }
 
@@ -1869,6 +1897,38 @@ mod tests {
             .unwrap_err();
         assert_eq!(stolen.status_code, 409);
         assert_eq!(stolen.code, "value_taken");
+    }
+
+    /// A promotion refused because the working copy moved is not a storage failure: it is the
+    /// editor's turn, so the answer carries the code the screen has wording for.
+    #[tokio::test]
+    async fn a_publish_refused_because_the_working_copy_moved_answers_409() {
+        let name = CollectionName::from("blog");
+        let schema = vec![text_field("title", false)];
+        let repository = test_repository_that(HashMap::from([(name.clone(), schema)]), false, true);
+        let service = service_over(repository);
+
+        let id = CollectionItemId::from_u64(
+            service
+                .create_collection_item(&name, &item_with("title", "kept"))
+                .await
+                .unwrap(),
+        );
+        let refusal = service
+            .set_item_status(
+                &name,
+                id,
+                ItemStatus::Published,
+                PublishedBy {
+                    id: UserId::from("user-1"),
+                    username: "admin".to_string(),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(refusal.status_code, 409);
+        assert_eq!(refusal.code, "draft_changed");
     }
 
     #[tokio::test]
@@ -1988,6 +2048,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2023,6 +2084,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2059,6 +2121,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2083,6 +2146,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2119,6 +2183,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2149,6 +2214,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2193,6 +2259,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2231,6 +2298,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2270,6 +2338,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2297,6 +2366,7 @@ mod tests {
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
             fail_schema_save: false,
+            fail_apply_status: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

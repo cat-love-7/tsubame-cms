@@ -19,7 +19,9 @@ use axum::Router;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
+use sl_cms_core::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use sl_cms_core::models::pagination::DEFAULT_PAGE_LIMIT;
+use sl_cms_core::models::single_page::SinglePageName;
 use sl_cms_core::models::user::Permission;
 use sl_cms_core::preview_link::PreviewTarget;
 use sl_cms_core::webhook::{Notifier, WebhookNotifier};
@@ -1975,6 +1977,202 @@ async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
         StatusCode::OK,
         "the title claimed by the refused save is still reserved: {created}"
     );
+}
+
+/// Publishing promotes the working copy the publisher read, and only that one.
+///
+/// The race this is about needs no interleaving to stage: the repository is asked directly, with
+/// content that is no longer the stored one. That is exactly what a save landing between the
+/// caller's read and the promotion looks like from the repository's side, and the answer has to be
+/// a refusal rather than a promotion that deletes the newer save.
+#[tokio::test]
+async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
+    use sl_cms_core::models::field::FieldValue;
+    use sl_cms_core::models::item_status::ItemStatus;
+    use sl_cms_core::repositories::collection_repository::{ApplyStatusError, CollectionRepository};
+
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let name = CollectionName::from("moving");
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/collections/moving/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/moving/item",
+        Some(&token),
+        Some(json!({ "title": "first" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = CollectionItemId::from_u64(created.as_u64().expect("the item id"));
+
+    let storage = app.backend().storage();
+    let read = storage.get_collection_item_draft(&name, &id).await.unwrap();
+    let read = read.expect("the item was saved as a working copy");
+
+    // Somebody saves again, which is what moves the working copy under the publisher.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &format!("/models/collections/moving/items/{}", *id),
+        Some(&token),
+        Some(json!({ "title": "second" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let metadata = storage
+        .get_item_metadata(&name, &id)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .with_status(ItemStatus::Published, None);
+
+    // The content the publisher read is not the stored one any more.
+    let refused = storage
+        .apply_item_status(&name, &id, Some(&read), &metadata)
+        .await
+        .expect_err("promoting the older working copy has to be refused");
+    assert_eq!(
+        refused.downcast_ref::<ApplyStatusError>(),
+        Some(&ApplyStatusError::DraftChanged),
+        "{refused}"
+    );
+
+    // Nothing was applied: the item is still unpublished and the newer save is still there.
+    let stored = storage.get_collection_item_draft(&name, &id).await.unwrap();
+    assert_eq!(
+        stored
+            .expect("the newer working copy")
+            .get("title")
+            .map(|value| match value {
+                FieldValue::Text(text) => text.clone(),
+                other => format!("{other:?}"),
+            }),
+        Some("second".to_string())
+    );
+    assert!(!storage
+        .get_item_metadata(&name, &id)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .is_published());
+
+    // And publishing what is actually stored works.
+    let current = storage.get_collection_item_draft(&name, &id).await.unwrap();
+    storage
+        .apply_item_status(&name, &id, current.as_ref(), &metadata)
+        .await
+        .expect("promoting the stored working copy");
+    assert!(storage
+        .get_item_metadata(&name, &id)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .is_published());
+
+    // A publish with nothing pending is not affected: the working copy is gone now.
+    assert!(storage.get_collection_item_draft(&name, &id).await.unwrap().is_none());
+}
+
+/// The same race, for a single page: a page has exactly one working copy, so it has the same
+/// promotion to lose.
+#[tokio::test]
+async fn publishing_a_page_working_copy_that_changed_under_it_is_refused() {
+    use sl_cms_core::models::item_status::ItemStatus;
+    use sl_cms_core::repositories::collection_repository::ApplyStatusError;
+    use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
+
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let name = SinglePageName::from("about");
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/models/single_pages/about/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let save = |body: Value| {
+        let router = app.router.clone();
+        let token = token.clone();
+        async move {
+            send(
+                &router,
+                Method::PUT,
+                "/models/single_pages/about/item",
+                Some(&token),
+                Some(body),
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(save(json!({ "title": "first" })).await, StatusCode::OK);
+
+    let storage = app.backend().storage();
+    let read = storage
+        .get_single_page_item_draft(&name)
+        .await
+        .unwrap()
+        .expect("the page was saved as a working copy");
+
+    assert_eq!(save(json!({ "title": "second" })).await, StatusCode::OK);
+
+    let metadata = storage
+        .get_page_metadata(&name)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .with_status(ItemStatus::Published, None);
+
+    let refused = storage
+        .apply_page_status(&name, Some(&read), &metadata)
+        .await
+        .expect_err("promoting the older working copy has to be refused");
+    assert_eq!(
+        refused.downcast_ref::<ApplyStatusError>(),
+        Some(&ApplyStatusError::DraftChanged),
+        "{refused}"
+    );
+    assert!(!storage
+        .get_page_metadata(&name)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .is_published());
+    assert!(storage.get_single_page_item_draft(&name).await.unwrap().is_some());
+
+    // The stored working copy still publishes.
+    let current = storage.get_single_page_item_draft(&name).await.unwrap();
+    storage
+        .apply_page_status(&name, current.as_ref(), &metadata)
+        .await
+        .expect("promoting the stored working copy");
+    assert!(storage
+        .get_page_metadata(&name)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+        .is_published());
 }
 
 /// A slug is normalised when it is written, so one canonical spelling is what is stored, what the

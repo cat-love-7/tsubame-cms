@@ -4,6 +4,7 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::models::error::{HttpError, map_internal_error};
+use crate::repositories::collection_repository::ApplyStatusError;
 use crate::models::image::{Image, ImageID};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{
@@ -345,9 +346,21 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             // The content the site serves just changed, so the release moves `updated_at`.
             metadata = metadata.released(chrono::Utc::now());
         }
-        self.single_page_repository
+        if let Err(e) = self
+            .single_page_repository
             .apply_page_status(name, pending.as_ref(), &metadata)
-            .await.map_err(map_internal_error)?;
+            .await
+        {
+            // The same race as a collection item's publish: the page was saved again while it was
+            // being published, so the editor is the one that has to look again.
+            if e.downcast_ref::<ApplyStatusError>() == Some(&ApplyStatusError::DraftChanged) {
+                return Err(HttpError::Conflict(
+                    "the page was saved again while it was being published",
+                )
+                .with_code("draft_changed"));
+            }
+            return Err(map_internal_error(e));
+        }
         // Only after the status is stored (see `CollectionService::set_item_status`).
         self.notifier
             .notify(ContentEvent::single_page(name, &metadata))

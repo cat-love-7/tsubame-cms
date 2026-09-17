@@ -13,7 +13,7 @@ use crate::settings::AwsSettings;
 use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use sl_cms_core::models::item_status::ItemMetadata;
 use sl_cms_core::repositories::collection_repository::{
-    CollectionRepository, Reservation, UniqueValue,
+    ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
 use sl_cms_core::repositories::image_repository::BoxError;
 
@@ -293,11 +293,17 @@ fn put_in_transaction(
         .build())
 }
 
-/// One `Delete` inside a `TransactWriteItems`.
-fn delete_in_transaction(
+/// One `Delete` inside a `TransactWriteItems`, refused unless the record is still what the caller
+/// read.
+///
+/// Used to promote a working copy: the delete is the part that throws work away, so it is the part
+/// that has to be conditional. A record written before the canonical rendering existed (in hash
+/// order) does not match, which refuses the publish once - the next save stores it canonically.
+fn delete_draft_in_transaction(
     inner: &Inner,
     pk: &str,
     sk: &str,
+    expected: &str,
 ) -> Result<aws_sdk_dynamodb::types::TransactWriteItem, BoxError> {
     Ok(aws_sdk_dynamodb::types::TransactWriteItem::builder()
         .delete(
@@ -305,21 +311,60 @@ fn delete_in_transaction(
                 .table_name(&inner.table)
                 .key("pk", AttributeValue::S(pk.to_string()))
                 .key("sk", AttributeValue::S(sk.to_string()))
+                .condition_expression("#data = :expected")
+                .expression_attribute_names("#data", "data")
+                .expression_attribute_values(
+                    ":expected",
+                    AttributeValue::S(expected.to_string()),
+                )
                 .build()?,
         )
         .build())
 }
 
+/// What applying a transaction did.
+enum TransactOutcome {
+    /// Every write landed.
+    Applied,
+    /// A write was refused by its condition, and nothing landed. The index is the position in the
+    /// list of writes, which is how DynamoDB reports it (`CancellationReasons` lines up with the
+    /// request).
+    Refused { write: usize },
+}
+
 /// Apply `writes` as one transaction: all of them, or none.
-async fn transact(inner: &Inner, writes: Vec<aws_sdk_dynamodb::types::TransactWriteItem>) -> Result<(), BoxError> {
-    inner
+async fn transact(
+    inner: &Inner,
+    writes: Vec<aws_sdk_dynamodb::types::TransactWriteItem>,
+) -> Result<TransactOutcome, BoxError> {
+    match inner
         .client
         .transact_write_items()
         .set_transact_items(Some(writes))
         .send()
         .await
-        .map_err(|e| format!("dynamodb transact_write_items failed: {}", describe(&e)))?;
-    Ok(())
+    {
+        Ok(_) => Ok(TransactOutcome::Applied),
+        Err(e) => {
+            // A condition that does not hold cancels the transaction, and the caller usually wants
+            // to know *which* condition rather than only that something was refused.
+            let refused = match e.as_service_error() {
+                Some(
+                    aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsError::TransactionCanceledException(
+                        cancelled,
+                    ),
+                ) => cancelled
+                    .cancellation_reasons()
+                    .iter()
+                    .position(|reason| reason.code() == Some("ConditionalCheckFailed")),
+                _ => None,
+            };
+            match refused {
+                Some(write) => Ok(TransactOutcome::Refused { write }),
+                None => Err(format!("dynamodb transact_write_items failed: {}", describe(&e)).into()),
+            }
+        }
+    }
 }
 
 /// Drop the table behind a repository.
@@ -570,7 +615,9 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        let data = AwsRepository::encode(item_data)?;
+        // The canonical rendering, so a promotion can compare the record with what the publisher
+        // read (see `apply_item_status`).
+        let data = canonical_draft(item_data);
         write(&inner, &key::collection(&name), &key::draft(id), &data).await
     }
 
@@ -836,15 +883,31 @@ impl CollectionRepository for AwsRepository {
         // with itself — the delivery API reads the copy and the admin list reads the
         // status. DynamoDB's transaction costs two writes per item, which is the price of
         // never showing that state.
-        transact(
+        // The draft is stored in its canonical rendering, which is what makes this condition a
+        // content comparison rather than a byte comparison: a save that landed after the caller
+        // read the working copy changed that rendering, and publishing the older content would
+        // delete the newer save.
+        let expected = canonical_draft(&draft);
+        let outcome = transact(
             &inner,
             vec![
                 put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
-                delete_in_transaction(&inner, &partition, &key::draft(*id))?,
+                delete_draft_in_transaction(&inner, &partition, &key::draft(*id), &expected)?,
                 put_in_transaction(&inner, &partition, &metadata_key, &data)?,
             ],
         )
-        .await
+        .await?;
+        match outcome {
+            TransactOutcome::Applied => Ok(()),
+            // Position 1 is the draft delete above.
+            TransactOutcome::Refused { write: 1 } => {
+                Err(Box::new(ApplyStatusError::DraftChanged))
+            }
+            TransactOutcome::Refused { write } => Err(format!(
+                "publishing item {id} was refused by write {write}, which has no condition"
+            )
+            .into()),
+        }
     }
 
     async fn list_item_metadata(

@@ -261,7 +261,8 @@
     "unknown_composite_field": "'{{field}}' refers to a composite field that does not exist.",
     "composite_id_mismatch": "'{{field}}' holds a different composite field than the schema names.",
     "nested_arrays": "'{{field}}' holds an array inside an array, which is not supported.",
-    "invalid_slug": "'{{field}}' has nothing a URL could use: a slug is made of letters, digits and hyphens."
+    "invalid_slug": "'{{field}}' has nothing a URL could use: a slug is made of letters, digits and hyphens.",
+    "draft_changed": "This item was saved again while it was being published. What you see is not what is stored: open it again and publish once more."
   },
   "nav": {
     "documents": "Documents",

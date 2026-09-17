@@ -17,6 +17,133 @@ pub struct UniqueValue {
     pub value: String,
 }
 
+/// Why a status change was refused in a way the caller can act on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApplyStatusError {
+    /// The working copy is no longer the one the caller read: a save landed in between, and
+    /// promoting the older content would delete what that save wrote.
+    ///
+    /// The caller's answer is to read the item again and decide afresh - which is why this is
+    /// separate from a storage failure, where retrying the same thing is what a caller cannot do.
+    DraftChanged,
+}
+
+impl std::fmt::Display for ApplyStatusError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ApplyStatusError::DraftChanged => write!(
+                formatter,
+                "the working copy changed after it was read"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ApplyStatusError {}
+
+/// A stable rendering of a working copy: what "still the same working copy" is decided by.
+///
+/// The values are held in a `HashMap`, so the same content can serialise in different orders and
+/// comparing two renderings would compare hash seeds. Sorting every object's keys on the way makes
+/// the rendering depend on the content alone, which is what the working copy is *stored* as and
+/// what a promotion compares against it.
+///
+/// Serialising these values cannot fail (the keys are strings), and the fallback is only here so a
+/// request path never panics; an empty rendering would only ever compare equal to another empty
+/// one.
+pub fn canonical_draft(draft: &CollectionItem) -> String {
+    let value = serde_json::to_value(draft).unwrap_or(serde_json::Value::Null);
+    serde_json::to_string(&sorted(value)).unwrap_or_default()
+}
+
+/// The same value with every object's keys in order, at every depth.
+fn sorted(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(entries) => {
+            let mut keys: Vec<String> = entries.keys().cloned().collect();
+            keys.sort();
+            let mut ordered = serde_json::Map::new();
+            for key in keys {
+                let entry = entries.get(&key).cloned().unwrap_or(serde_json::Value::Null);
+                ordered.insert(key, sorted(entry));
+            }
+            serde_json::Value::Object(ordered)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(sorted).collect())
+        }
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::field::{FieldValue, FieldValueMap};
+    use std::collections::HashMap;
+
+    fn item(entries: &[(&str, &str)]) -> CollectionItem {
+        FieldValueMap(
+            entries
+                .iter()
+                .map(|(key, value)| (key.to_string(), FieldValue::Text(value.to_string())))
+                .collect::<HashMap<_, _>>(),
+            std::marker::PhantomData,
+        )
+    }
+
+    /// The values live in a `HashMap`, so the same content renders in any order; the marker is
+    /// what a publish compares, and comparing hash order would refuse publishes at random.
+    #[test]
+    fn the_same_working_copy_renders_the_same_way_whatever_order_it_was_built_in() {
+        assert_eq!(
+            canonical_draft(&item(&[("title", "kept"), ("subtitle", "also")])),
+            canonical_draft(&item(&[("subtitle", "also"), ("title", "kept")]))
+        );
+    }
+
+    #[test]
+    fn a_changed_working_copy_renders_differently() {
+        let before = item(&[("title", "before"), ("count", "1")]);
+        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "after"), ("count", "1")])));
+        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "before"), ("count", "2")])));
+        // A field that disappeared is a change as much as one whose value did.
+        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "before")])));
+    }
+
+    #[test]
+    fn nested_values_are_ordered_too() {
+        // A composite inside an array, built in a different key order each time.
+        let nested = |label: &str, other_first: bool| {
+            let inner = |pairs: [(&str, &str); 2]| {
+                FieldValueMap(
+                    pairs
+                        .iter()
+                        .map(|(key, value)| (key.to_string(), FieldValue::Text(value.to_string())))
+                        .collect::<HashMap<_, _>>(),
+                    std::marker::PhantomData,
+                )
+            };
+            let pairs = if other_first {
+                [("label", label), ("count", "1")]
+            } else {
+                [("count", "1"), ("label", label)]
+            };
+            let mut item = item(&[("title", "kept")]);
+            item.0.insert(
+                "parts".to_string(),
+                FieldValue::CompositeField(Some(crate::models::field::CompositeFieldValue {
+                    id: "comp".into(),
+                    values: inner(pairs),
+                })),
+            );
+            item
+        };
+        assert_eq!(canonical_draft(&nested("one", true)), canonical_draft(&nested("one", false)));
+        assert_ne!(canonical_draft(&nested("one", true)), canonical_draft(&nested("two", true)));
+    }
+}
+
 /// What claiming a unique value did.
 ///
 /// "It is ours now" and "it was ours already" are different answers, because only the first is
@@ -133,6 +260,13 @@ pub trait CollectionRepository:Send + Sync + 'static {
     /// naming content that is still the old one. So this is one operation, not three calls
     /// that happen to be made together. `draft` is the working copy to promote, or `None`
     /// when there is nothing pending and only the status changes.
+    ///
+    /// The promotion is **conditional on the working copy still being `draft`**, compared by
+    /// [`canonical_draft`] (which is what a save stores it as). A save that lands between the
+    /// caller's read and this call would otherwise be deleted by the promotion: the editor's
+    /// newest work would disappear while the screen said it had been published. An implementation
+    /// that finds a different rendering answers [`ApplyStatusError::DraftChanged`] and changes
+    /// nothing.
     fn apply_item_status(
         &self,
         collection_name: &CollectionName,
