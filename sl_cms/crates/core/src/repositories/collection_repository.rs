@@ -18,10 +18,16 @@ pub struct UniqueValue {
 }
 
 /// What claiming a unique value did.
+///
+/// "It is ours now" and "it was ours already" are different answers, because only the first is
+/// something a caller can give back: a schema save that fails has to release what *it* claimed,
+/// and releasing a value the item already held would take the value away from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reservation {
-    /// The item holds it now: nobody did, or it already did.
-    Held,
+    /// Nobody held it, and the item does now.
+    Claimed,
+    /// The item held it already: nothing about the index changed.
+    AlreadyHeld,
     /// Another item holds it, so the write that wanted it cannot go ahead.
     Taken { owner: CollectionItemId },
 }

@@ -402,21 +402,27 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         item_id: &CollectionItemId,
         values: &[UniqueValue],
     ) -> Result<(), HttpError> {
-        for (index, value) in values.iter().enumerate() {
+        let mut claimed: Vec<UniqueValue> = Vec::new();
+        for value in values {
             let reservation = self
                 .collection_repository
                 .reserve_unique_value(collection_name, item_id, value)
                 .await
                 .map_err(map_internal_error)?;
-            if let Reservation::Taken { owner } = reservation {
-                self.release_unique_values(collection_name, item_id, &values[..index])
-                    .await;
-                return Err(HttpError::Conflict(&format!(
-                    "field '{}': the value '{}' is already used by item {}",
-                    value.field, value.value, owner
-                ))
-                .with_code("value_taken")
-                .with_field(&value.field));
+            match reservation {
+                Reservation::Claimed => claimed.push(value.clone()),
+                // Holding it already is not this call's doing, so a refusal must not take it away.
+                Reservation::AlreadyHeld => {}
+                Reservation::Taken { owner } => {
+                    self.release_unique_values(collection_name, item_id, &claimed)
+                        .await;
+                    return Err(HttpError::Conflict(&format!(
+                        "field '{}': the value '{}' is already used by item {}",
+                        value.field, value.value, owner
+                    ))
+                    .with_code("value_taken")
+                    .with_field(&value.field));
+                }
             }
         }
         Ok(())
@@ -578,7 +584,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .await
                     .map_err(map_internal_error)?
                 {
-                    Reservation::Held => claimed.push((item_id.clone(), value)),
+                    // Only what this attempt claimed: a value the item held before the schema
+                    // was saved has to survive a rollback untouched.
+                    Reservation::Claimed => claimed.push((item_id.clone(), value)),
+                    Reservation::AlreadyHeld => {}
                     Reservation::Taken { owner } => {
                         // The schema cannot be made unique while these exist, so put back
                         // everything this attempt claimed before saying so.
@@ -1248,6 +1257,8 @@ mod tests {
         drafts: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), CollectionItem>>>,
         /// The unique index: (collection, field, value) to the item that holds it.
         unique: Arc<RwLock<HashMap<(CollectionName, String, String), CollectionItemId>>>,
+        /// A store that refuses to write a schema, for the rollback a failed save has to do.
+        fail_schema_save: bool,
     }
     impl CollectionRepository for MockCollectionRepository {
         async fn get_collection_schema(
@@ -1267,6 +1278,9 @@ mod tests {
             collection_name: &CollectionName,
             schema: &CollectionSchema,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            if self.fail_schema_save {
+                return Err("the schema store is unavailable".into());
+            }
             self.schemas.write().unwrap().insert(collection_name.clone(), schema.clone());
             Ok(())
         }
@@ -1450,9 +1464,10 @@ mod tests {
             let key = (collection_name.clone(), unique.field.clone(), unique.value.clone());
             match index.get(&key) {
                 Some(owner) if owner != item_id => Ok(Reservation::Taken { owner: owner.clone() }),
-                _ => {
+                Some(_) => Ok(Reservation::AlreadyHeld),
+                None => {
                     index.insert(key, item_id.clone());
-                    Ok(Reservation::Held)
+                    Ok(Reservation::Claimed)
                 }
             }
         }
@@ -1601,6 +1616,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1670,6 +1686,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1755,6 +1772,103 @@ mod tests {
 
         let retrieved_schema = service.get_collection_schema(&"test_collection".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
+    }
+
+    /// Everything a mock store needs, with the index and the schemas the test placed in it.
+    fn test_repository(
+        schemas: HashMap<CollectionName, CollectionSchema>,
+        fail_schema_save: bool,
+    ) -> Arc<MockCollectionRepository> {
+        Arc::new(MockCollectionRepository {
+            schemas: Arc::new(RwLock::new(schemas)),
+            items: Arc::new(RwLock::new(HashMap::new())),
+            item_counter: Arc::new(RwLock::new(0)),
+            item_metadata: Arc::new(RwLock::new(HashMap::new())),
+            drafts: Arc::new(RwLock::new(HashMap::new())),
+            unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save,
+        })
+    }
+
+    fn service_over(
+        repository: Arc<MockCollectionRepository>,
+    ) -> CollectionService<MockCollectionRepository, MockCompositeFieldRepository, MockImageRepository>
+    {
+        CollectionService::new(
+            repository,
+            Arc::new(MockCompositeFieldRepository {
+                schemas: Arc::new(RwLock::new(HashMap::new())),
+            }),
+            Arc::new(MockImageRepository {}),
+            Arc::new(NoopNotifier),
+        )
+    }
+
+    fn text_field(name: &str, unique: bool) -> FieldSchema {
+        FieldSchema {
+            name: name.to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: false,
+            width: 12,
+            height: 1,
+            unique,
+        }
+    }
+
+    fn item_with(field: &str, value: &str) -> CollectionItem {
+        FieldValueMap(
+            HashMap::from([(field.to_string(), FieldValue::Text(value.to_string()))]),
+            std::marker::PhantomData,
+        )
+    }
+
+    /// The schema save re-claims every value the collection holds - that is what puts the index in
+    /// step with a new schema - and a rollback used to give *all* of them back, including the ones
+    /// the items already held. The index was then missing entries for values that were still in
+    /// use: lookups failed, and a second item could take a value that was taken.
+    #[tokio::test]
+    async fn a_failed_schema_save_leaves_the_values_the_collection_already_holds() {
+        let name = CollectionName::from("blog");
+        let schema = vec![text_field("title", true)];
+        let repository = test_repository(HashMap::from([(name.clone(), schema.clone())]), true);
+        let service = service_over(repository);
+
+        let held = CollectionItemId::from_u64(
+            service
+                .create_collection_item(&name, &item_with("title", "kept"))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            service
+                .get_item_by_unique_value(&name, "title", "kept")
+                .await
+                .unwrap()
+                .0,
+            held
+        );
+
+        // The save fails, after the backfill had re-claimed `kept` for the new schema.
+        let changed = vec![text_field("title", true), text_field("subtitle", false)];
+        let failure = service.update_collection_schema(&name, &changed).await.unwrap_err();
+        assert_eq!(failure.status_code, 500, "{}", failure.message);
+
+        // The value still belongs to the item that holds it...
+        assert_eq!(
+            service
+                .get_item_by_unique_value(&name, "title", "kept")
+                .await
+                .unwrap()
+                .0,
+            held
+        );
+        // ...so nobody else can take it.
+        let stolen = service
+            .create_collection_item(&name, &item_with("title", "kept"))
+            .await
+            .unwrap_err();
+        assert_eq!(stolen.status_code, 409);
+        assert_eq!(stolen.code, "value_taken");
     }
 
     #[tokio::test]
@@ -1873,6 +1987,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1907,6 +2022,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1942,6 +2058,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -1965,6 +2082,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2000,6 +2118,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2029,6 +2148,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2072,6 +2192,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2109,6 +2230,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2147,6 +2269,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -2173,6 +2296,7 @@ mod tests {
             item_metadata: Arc::new(RwLock::new(HashMap::new())),
             drafts: Arc::new(RwLock::new(HashMap::new())),
             unique: Arc::new(RwLock::new(HashMap::new())),
+            fail_schema_save: false,
         };
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),

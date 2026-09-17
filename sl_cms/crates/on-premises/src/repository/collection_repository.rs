@@ -394,8 +394,9 @@ impl CollectionRepository for Repository {
         let key = unique_key(collection_name.as_str(), unique);
         let reader = env.read()?;
         match store.get(&reader, key.as_bytes())? {
-            // Already ours: a save that keeps its value is not a conflict with itself.
-            Some(Value::Str(owner)) if owner == item_id.to_string() => Ok(Reservation::Held),
+            // Already ours: a save that keeps its value is not a conflict with itself, and there is
+            // nothing for the caller to give back if its own write then fails.
+            Some(Value::Str(owner)) if owner == item_id.to_string() => Ok(Reservation::AlreadyHeld),
             Some(Value::Str(owner)) => Ok(Reservation::Taken {
                 owner: CollectionItemId::from_u64(owner.parse()?),
             }),
@@ -403,7 +404,7 @@ impl CollectionRepository for Repository {
                 let mut writer = env.write()?;
                 store.put(&mut writer, key.as_bytes(), &Value::Str(&item_id.to_string()))?;
                 writer.commit()?;
-                Ok(Reservation::Held)
+                Ok(Reservation::Claimed)
             }
         }
     }

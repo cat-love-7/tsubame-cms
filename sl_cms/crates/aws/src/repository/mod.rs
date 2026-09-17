@@ -714,12 +714,15 @@ impl CollectionRepository for AwsRepository {
         let unique = unique.clone();
         let id = item_id.clone();
         let partition = key::unique(collection.as_str(), &unique.field);
-        // Two answers are possible when the conditional write is refused: somebody holds the
-        // value, or it was released between the write and the read that would name the holder.
-        // The second is not a refusal at all - the value is free - so try the write again rather
-        // than reporting a claim that was never made. (A loop rather than a recursion: the
-        // window is a round trip wide, and after a handful of attempts something is wrong that
-        // a caller should hear about.)
+        // One write, and what it means depends on what was there: creating the entry is a claim
+        // this caller can give back, while finding it already ours is not. The write is conditional
+        // on the entry being *absent*, so a success is unambiguous, and a refusal is followed by a
+        // read that says whether it is ours, somebody else's, or gone.
+        //
+        // Gone is possible - the holder released it between the write and the read - and is not a
+        // refusal at all, so the write is tried again rather than reporting a claim that was never
+        // made. (A loop rather than a recursion: the window is a round trip wide, and after a
+        // handful of attempts something is wrong a caller should hear about.)
         for _ in 0..RESERVE_ATTEMPTS {
             let answer = inner
                 .client
@@ -728,24 +731,28 @@ impl CollectionRepository for AwsRepository {
                 .item("pk", AttributeValue::S(partition.clone()))
                 .item("sk", AttributeValue::S(unique.value.clone()))
                 .item("data", AttributeValue::S(id.to_string()))
-                // Absent, or already ours: a save that keeps its own value is not a conflict.
-                .condition_expression("attribute_not_exists(pk) OR #data = :id")
-                .expression_attribute_names("#data", "data")
-                .expression_attribute_values(":id", AttributeValue::S(id.to_string()))
+                .condition_expression("attribute_not_exists(pk)")
                 .send()
                 .await;
             match answer {
-                Ok(_) => return Ok(Reservation::Held),
+                Ok(_) => return Ok(Reservation::Claimed),
                 Err(e)
                     if e.as_service_error().and_then(|e| e.code())
                         == Some("ConditionalCheckFailedException") =>
                 {
-                    // Say who holds it, so the refusal can name the item rather than only the
-                    // value. Nothing there means it is free now: claim it.
-                    if let Some(owner) = read(&inner, &partition, &unique.value).await? {
-                        return Ok(Reservation::Taken {
-                            owner: CollectionItemId::from_u64(owner.parse()?),
-                        });
+                    match read(&inner, &partition, &unique.value).await? {
+                        // Ours already: not a conflict with itself, and nothing to give back.
+                        Some(owner) if owner == id.to_string() => {
+                            return Ok(Reservation::AlreadyHeld)
+                        }
+                        // Say who holds it, so the refusal can name the item rather than only the
+                        // value.
+                        Some(owner) => {
+                            return Ok(Reservation::Taken {
+                                owner: CollectionItemId::from_u64(owner.parse()?),
+                            })
+                        }
+                        None => continue,
                     }
                 }
                 Err(e) => return Err(format!("dynamodb put_item failed: {}", describe(&e)).into()),
@@ -973,20 +980,20 @@ mod tests {
                 .reserve_unique_value(&name, &one, &value("intro"))
                 .await
                 .unwrap(),
-            Reservation::Held
+            Reservation::Claimed
         );
         assert_eq!(
             repository.find_unique_value(&name, &value("intro")).await.unwrap(),
             Some(one.clone())
         );
 
-        // Ours already: not a conflict with itself.
+        // Ours already: not a conflict with itself, and nothing for a caller to give back.
         assert_eq!(
             repository
                 .reserve_unique_value(&name, &one, &value("intro"))
                 .await
                 .unwrap(),
-            Reservation::Held
+            Reservation::AlreadyHeld
         );
 
         // Taken: the answer names the item, so a refusal can too.
@@ -1009,7 +1016,7 @@ mod tests {
                 .reserve_unique_value(&name, &two, &value("intro"))
                 .await
                 .unwrap(),
-            Reservation::Held
+            Reservation::Claimed
         );
         assert_eq!(
             repository.find_unique_value(&name, &value("intro")).await.unwrap(),
