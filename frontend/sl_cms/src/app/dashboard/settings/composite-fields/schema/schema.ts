@@ -5,6 +5,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
+import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
@@ -22,7 +24,7 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })
-export class CompositeFieldSchema {
+export class CompositeFieldSchema implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   private compositeFields = inject(CompositeFieldsService);
   /** When this screen goes away, so does everything it still has in flight. */
@@ -35,6 +37,8 @@ export class CompositeFieldSchema {
   public error = signal<Message | null>(null);
   /** Which visit to a definition the answers on screen belong to (see `load`). */
   private loadToken = 0;
+  /** What the schema held when it was last in step with the server (see the collection editor). */
+  private saved = signal('');
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -62,6 +66,7 @@ export class CompositeFieldSchema {
         next: (schema) => {
           if (token === this.loadToken) {
             this.schema.set(schema);
+            this.saved.set(fingerprint(schema));
           }
         },
         error: (e) => {
@@ -87,6 +92,7 @@ export class CompositeFieldSchema {
         this.compositeFields.invalidate();
         this.error.set(null);
         this.status.set(t('common.saved'));
+        this.saved.set(fingerprint(this.schema()));
       },
       error: (e) => {
         if (!this.stillOn(started)) {
@@ -96,6 +102,11 @@ export class CompositeFieldSchema {
         this.error.set(failure('content.saveFailed', e));
       },
     });
+  }
+
+  /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */
+  hasUnsavedChanges(): boolean {
+    return fingerprint(this.schema()) !== this.saved();
   }
 
   /** Whether the screen is still on the definition a slow answer was about, as it was then. */

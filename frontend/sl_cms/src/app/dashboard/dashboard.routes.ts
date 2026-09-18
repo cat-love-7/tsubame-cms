@@ -73,10 +73,12 @@ const dashboardRoutes: Routes = [
   {
     path: 'settings/schemas/collections/create',
     component: CollectionSchemaCreate,
+    canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/schemas/collections/edit/:name',
     component: CollectionSchemaEdit,
+    canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/single-pages',
@@ -85,6 +87,7 @@ const dashboardRoutes: Routes = [
   {
     path: 'settings/single-pages/:name/schema',
     component: SinglePageSchema,
+    canDeactivate: [unsavedChangesGuard],
   },
   // Composite fields: reusable groups of fields that other schemas reference by id.
   {
@@ -94,6 +97,7 @@ const dashboardRoutes: Routes = [
   {
     path: 'settings/composite-fields/:id/schema',
     component: CompositeFieldSchema,
+    canDeactivate: [unsavedChangesGuard],
   },
   // Accounts, for administrators. The server enforces the same rule.
   {

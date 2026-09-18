@@ -5,6 +5,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
+import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
@@ -16,7 +18,7 @@ import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })
-export class SinglePageSchema {
+export class SinglePageSchema implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   private pages = inject(SinglePagesService);
   /** When this screen goes away, so does everything it still has in flight. */
@@ -29,6 +31,8 @@ export class SinglePageSchema {
   public error = signal<Message | null>(null);
   /** Which visit to a schema the answers on screen belong to (see `load`). */
   private loadToken = 0;
+  /** What the schema held when it was last in step with the server (see the collection editor). */
+  private saved = signal('');
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -56,6 +60,7 @@ export class SinglePageSchema {
         next: (schema) => {
           if (token === this.loadToken) {
             this.schema.set(schema);
+            this.saved.set(fingerprint(schema));
           }
         },
         error: (e) => {
@@ -78,6 +83,7 @@ export class SinglePageSchema {
           }
           this.error.set(null);
           this.status.set(t('common.saved'));
+          this.saved.set(fingerprint(this.schema()));
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -91,6 +97,11 @@ export class SinglePageSchema {
   /** The schema an act is about, and the load it belongs to, captured when the act starts. */
   private start(): { name: string; generation: number } {
     return { name: this.pageName(), generation: this.loadToken };
+  }
+
+  /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */
+  hasUnsavedChanges(): boolean {
+    return fingerprint(this.schema()) !== this.saved();
   }
 
   /** Whether the screen is still on the schema a slow answer was about, as it was then. */

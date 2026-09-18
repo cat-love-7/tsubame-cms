@@ -56,6 +56,23 @@ describe('CollectionSchemaEdit', () => {
     expect(component.collectionSchema().map((f) => f.name)).toEqual(['pageOnly']);
   });
 
+  // Leaving with a schema that has not been saved has to be asked about, the same as leaving an
+  // item editor with unsaved values.
+  it('answers the guard about unsaved edits', async () => {
+    // The load has to land first: what is on screen when it does is what "unsaved" is measured
+    // against.
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne((request) => request.method === 'GET').flush([]);
+    await fixture.whenStable();
+    expect(component.hasUnsavedChanges()).toBe(false);
+
+    component.collectionSchema.set([
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+    ]);
+
+    expect(component.hasUnsavedChanges()).toBe(true);
+  });
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });

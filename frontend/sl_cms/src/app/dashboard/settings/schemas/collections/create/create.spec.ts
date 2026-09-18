@@ -20,6 +20,13 @@ describe('CollectionSchemaCreate', () => {
     await fixture.whenStable();
   });
 
+  // A typed name that has not been created yet is work the reader would lose.
+  it('answers the guard about a name that is not created yet', () => {
+    expect(component.hasUnsavedChanges()).toBe(false);
+    component.name = 'blog';
+    expect(component.hasUnsavedChanges()).toBe(true);
+  });
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });

@@ -7,6 +7,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
+import { fingerprint } from 'app/core/value-changes';
 
 @Component({
   selector: 'app-collection-schema-edit',
@@ -14,7 +16,7 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
-export class CollectionSchemaEdit {
+export class CollectionSchemaEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   private collectionsService = inject(CollectionsService);
   /** When this screen goes away, so does everything it still has in flight. */
@@ -32,6 +34,14 @@ export class CollectionSchemaEdit {
   public error = signal<Message | null>(null);
   /** Which visit to a schema the answers on screen belong to (see `load`). */
   private loadToken = 0;
+  /**
+   * What the schema held when it was last in step with the server.
+   *
+   * The child editor mutates the array it is given (fields added, moved, resized), so a signal
+   * would not see it: the comparison is a rendering of the two, and `hasUnsavedChanges` is asked
+   * for on the way out rather than watched.
+   */
+  private saved = signal('');
 
   constructor() {
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -60,6 +70,7 @@ export class CollectionSchemaEdit {
         next: (schema: CollectionSchema) => {
           if (token === this.loadToken) {
             this.collectionSchema.set(schema);
+            this.saved.set(fingerprint(schema));
           }
         },
         error: (e) => {
@@ -82,6 +93,7 @@ export class CollectionSchemaEdit {
           }
           this.error.set(null);
           this.status.set(t('common.saved'));
+          this.saved.set(fingerprint(this.collectionSchema()));
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -95,6 +107,11 @@ export class CollectionSchemaEdit {
   /** The schema an act is about, and the load it belongs to, captured when the act starts. */
   private start(): { name: string; generation: number } {
     return { name: this.collectionName(), generation: this.loadToken };
+  }
+
+  /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */
+  hasUnsavedChanges(): boolean {
+    return fingerprint(this.collectionSchema()) !== this.saved();
   }
 
   /** Whether the screen is still on the schema a slow answer was about, as it was then. */
