@@ -1,5 +1,5 @@
-use crate::models::field::{FieldSchema, FieldValueMap, FieldValueResponse};
 use crate::models::identity::{StringId, UintId};
+use crate::models::values::{FieldSchema, FieldValueMap, FieldValueResponse};
 use std::collections::HashMap;
 
 pub type CollectionSchema = Vec<FieldSchema>;
@@ -15,7 +15,7 @@ mod tests {
     use std::{collections::HashMap, marker::PhantomData};
 
     use super::*;
-    use crate::models::field::{FieldType, FieldValue, TextFieldOptions};
+    use crate::models::values::{FieldType, FieldValue, TextFieldOptions};
 
     fn create_test_schema() -> CollectionSchema {
         vec![

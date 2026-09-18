@@ -26,6 +26,15 @@ import {
  * | Array              | array of the declared item types                                    |
  * | CompositeField     | object keyed by the composite's own field names                     |
  */
+/**
+ * A whole form's values, by field name.
+ *
+ * A collection item and a single page hold the same thing - a value per field - and differ in
+ * everything around it (an id, a working copy, a status). This is the shape they share, so the
+ * two named aliases below are about which one a screen means rather than about a different type.
+ */
+export type FieldValues = { [field: string]: FieldValue };
+
 export type FieldValue =
   string | number | boolean | null | FieldValue[] | { [field: string]: FieldValue };
 

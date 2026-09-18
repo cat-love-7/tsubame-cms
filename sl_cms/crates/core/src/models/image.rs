@@ -129,7 +129,7 @@ fn unescape(name: &str) -> String {
 /// (`/images/by-id/<id>`) and nothing else: a hand-written URL to wherever the bytes are served
 /// from is indistinguishable from an ordinary link, and would go stale the moment the image is
 /// replaced.
-pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Vec<ImageId> {
+pub fn referenced_images<T>(item: &crate::models::values::FieldValueMap<T>) -> Vec<ImageId> {
     let mut found = std::collections::BTreeSet::new();
     for value in item.0.values() {
         collect_images(value, &mut found);
@@ -138,10 +138,10 @@ pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Ve
 }
 
 fn collect_images(
-    value: &crate::models::field::FieldValue,
+    value: &crate::models::values::FieldValue,
     found: &mut std::collections::BTreeSet<ImageId>,
 ) {
-    use crate::models::field::FieldValue;
+    use crate::models::values::FieldValue;
     match value {
         FieldValue::Image(Some(id)) => {
             found.insert(id.clone());
@@ -191,7 +191,7 @@ pub fn image_ids_in_markdown(text: &str) -> Vec<ImageId> {
 #[cfg(test)]
 mod reference_tests {
     use super::*;
-    use crate::models::field::{CompositeFieldValue, FieldValue, FieldValueMap};
+    use crate::models::values::{CompositeFieldValue, FieldValue, FieldValueMap};
     use std::collections::HashMap;
 
     fn values(

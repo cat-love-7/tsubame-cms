@@ -7,7 +7,6 @@ use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
-use crate::models::field::{FieldValue, FieldValueMap};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
@@ -15,6 +14,7 @@ use crate::models::schema::{
     CompositeFieldId, SchemaScope, has_unique_fields, unique_values, validate_composite_references,
     validate_schema,
 };
+use crate::models::values::{FieldValue, FieldValueMap};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -1580,10 +1580,10 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::collection::CollectionName;
-    use crate::models::field::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
-    use crate::models::field::{FieldSchema, FieldType, FieldValue};
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
     use crate::models::schema::CompositeFieldId;
+    use crate::models::values::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
+    use crate::models::values::{FieldSchema, FieldType, FieldValue};
     use crate::repositories::image_repository::{ImageRepository, Replacement};
 
     use super::*;
@@ -2267,7 +2267,7 @@ mod tests {
     }
 
     fn create_test_item_response(title: &str, count: f64) -> CollectionItemResponse {
-        use crate::models::field::FieldValueResponse;
+        use crate::models::values::FieldValueResponse;
         HashMap::from([
             (
                 "title".to_string(),

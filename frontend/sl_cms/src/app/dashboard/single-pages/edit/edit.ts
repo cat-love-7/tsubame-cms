@@ -13,7 +13,8 @@ import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
-import { ContentValue } from 'app/models/values/collection';
+import { ContentValue } from 'app/models/values/single-page';
+
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';

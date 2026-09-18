@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::models::{
-    field::{FieldSchema, FieldValueMap, FieldValueResponse},
     identity::StringId,
+    values::{FieldSchema, FieldValueMap, FieldValueResponse},
 };
 pub type SinglePageSchema = Vec<FieldSchema>;
 

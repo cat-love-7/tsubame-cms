@@ -7,8 +7,8 @@ use axum::{Json, Router};
 use crate::app_module::Storage;
 use crate::http::{AppState, AuthenticatedUser, require_admin};
 use crate::models::error::HttpError;
-use crate::models::field::CompositeFieldSchema;
 use crate::models::schema::CompositeFieldId;
+use crate::models::values::CompositeFieldSchema;
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()

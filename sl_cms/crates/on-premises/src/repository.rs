@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 pub mod collections;
 pub mod composite_fields;
+pub mod credentials;
 pub mod images;
 pub mod single_pages;
 pub mod users;

@@ -2114,7 +2114,7 @@ async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
 /// a refusal rather than a promotion that deletes the newer save.
 #[tokio::test]
 async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
-    use sl_cms_core::models::field::FieldValue;
+    use sl_cms_core::models::values::FieldValue;
     use sl_cms_core::models::item_status::ItemStatus;
     use sl_cms_core::repositories::collection_repository::{ApplyStatusError, CollectionRepository};
 

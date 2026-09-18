@@ -1,7 +1,7 @@
 use crate::repository::{COMPOSITE_FIELD_SCHEMA_STORE, RkvRepository};
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::field::CompositeFieldSchema;
 use sl_cms_core::models::schema::CompositeFieldId;
+use sl_cms_core::models::values::CompositeFieldSchema;
 use sl_cms_core::repositories::composite_field_repository::CompositeFieldRepository;
 use std::collections::HashMap;
 use std::error::Error;
@@ -73,7 +73,7 @@ impl CompositeFieldRepository for RkvRepository {
 
 #[cfg(test)]
 mod tests {
-    use sl_cms_core::models::field::{FieldSchema, FieldType, TextFieldOptions};
+    use sl_cms_core::models::values::{FieldSchema, FieldType, TextFieldOptions};
 
     use super::*;
     use rkv::backend::{SafeMode, SafeModeEnvironment};

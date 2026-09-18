@@ -535,12 +535,12 @@ mod tests {
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
 
-    use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
-    use crate::models::field::{
-        FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
-    };
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
     use crate::models::schema::CompositeFieldId;
+    use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
+    use crate::models::values::{
+        FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
+    };
     use crate::repositories::image_repository::Replacement;
 
     use super::*;

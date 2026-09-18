@@ -1,7 +1,6 @@
 pub mod capabilities;
 pub mod collection;
 pub mod error;
-pub mod field;
 pub mod identity;
 pub mod image;
 pub mod item_status;
@@ -10,3 +9,4 @@ pub mod schema;
 pub mod single_page;
 pub mod slug;
 pub mod user;
+pub mod values;

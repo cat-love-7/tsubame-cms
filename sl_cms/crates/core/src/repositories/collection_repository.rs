@@ -83,7 +83,7 @@ fn sorted(value: serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::field::{FieldValue, FieldValueMap};
+    use crate::models::values::{FieldValue, FieldValueMap};
     use std::collections::HashMap;
 
     fn item(entries: &[(&str, &str)]) -> CollectionItem {
@@ -145,7 +145,7 @@ mod tests {
             let mut item = item(&[("title", "kept")]);
             item.0.insert(
                 "parts".to_string(),
-                FieldValue::CompositeField(Some(crate::models::field::CompositeFieldValue {
+                FieldValue::CompositeField(Some(crate::models::values::CompositeFieldValue {
                     id: "comp".into(),
                     values: inner(pairs),
                 })),

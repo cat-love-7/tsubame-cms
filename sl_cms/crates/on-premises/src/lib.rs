@@ -15,7 +15,6 @@ use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
-pub mod credentials;
 pub mod repository;
 
 /// Number of named LMDB databases the environment is allowed to open.

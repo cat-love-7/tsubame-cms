@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::error::FieldRefusal;
 use crate::models::identity::StringId;
 
-use super::field::FieldValue;
+use super::values::FieldValue;
 use crate::repositories::collection_repository::UniqueValue;
 
 #[cfg(test)]
@@ -323,7 +323,7 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
 /// the same as blank.
 pub fn unique_values(
     fields: &[FieldSchema],
-    item: &crate::models::field::FieldValueMap<Vec<FieldSchema>>,
+    item: &crate::models::values::FieldValueMap<Vec<FieldSchema>>,
 ) -> Vec<UniqueValue> {
     let mut values = Vec::new();
     for field in fields {

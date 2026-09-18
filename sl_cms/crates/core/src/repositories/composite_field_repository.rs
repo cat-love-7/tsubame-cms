@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::{collections::HashMap, error::Error};
 
-use crate::models::{field::CompositeFieldSchema, schema::CompositeFieldId};
+use crate::models::{schema::CompositeFieldId, values::CompositeFieldSchema};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 

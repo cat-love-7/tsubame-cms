@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
-use crate::models::field::{CompositeFieldSchema, FieldSchema};
 use crate::models::schema::{
     CompositeFieldId, SchemaScope, validate_composite_references, validate_no_composite_cycles,
     validate_schema,
 };
+use crate::models::values::{CompositeFieldSchema, FieldSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 
 pub struct CompositeFieldService<CFR: CompositeFieldRepository> {
@@ -153,8 +153,8 @@ mod tests {
     use std::sync::{Arc, RwLock};
     use std::vec;
 
-    use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
-    use crate::models::field::{FieldSchema, FieldType};
+    use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
+    use crate::models::values::{FieldSchema, FieldType};
 
     use super::*;
 

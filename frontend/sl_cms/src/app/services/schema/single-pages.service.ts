@@ -5,7 +5,8 @@ import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
 
 import { CollectionSchema } from 'app/models/schema/collection';
-import { ContentValue } from 'app/models/values/collection';
+import { ContentValue } from 'app/models/values/single-page';
+
 import { SinglePageRepository } from 'app/repositories/schema/single-pages.repository';
 
 @Injectable({

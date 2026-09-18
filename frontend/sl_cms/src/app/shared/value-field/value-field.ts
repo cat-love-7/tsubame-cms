@@ -35,7 +35,8 @@ import {
   isTextFieldSchema,
 } from 'app/models/schema/fields';
 import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
-import { ContentValue } from 'app/models/values/collection';
+import { ContentValue } from 'app/models/values/single-page';
+
 import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';

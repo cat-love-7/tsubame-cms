@@ -7,7 +7,7 @@ import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
 
 import { CollectionSchema } from 'app/models/schema/collection';
-import { ContentValue } from 'app/models/values/collection';
+import { ContentValue } from 'app/models/values/single-page';
 
 /**
  * Single pages ("single documents"): one schema and exactly one item per page, unlike a
