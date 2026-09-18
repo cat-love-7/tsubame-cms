@@ -57,4 +57,4 @@ cd infra && terraform fmt -check && terraform validate
   `cargo build` and `cargo test` must be warning-free; `cargo clippy` has older lints that are
   not yet worth a rewrite - do not add new ones.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
-  (`crates/aws/src/lib.rs`); changing one means changing the other (`doc/aws-plan.md`).
+  (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
