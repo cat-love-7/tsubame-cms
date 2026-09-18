@@ -37,8 +37,9 @@ cd infra && terraform fmt -check && terraform validate
 - **Comments explain why, not what.** A comment that restates the line below it is noise; one that
   says what the alternative would break is the point.
 - **Docs and UI text**: `doc/` is Japanese, code comments and commit messages are English.
-- **Contract tests are written once** in `crates/tests/suite.rs` and must pass against both
-  adapters. Adapter-specific tests (emulators, presigning, permissions) live with the adapter.
+- **Contract tests are written once** in `crates/tests/suite/` (one file per topic; `mod.rs` is the
+  harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
+  permissions) live with the adapter.
 - **Refusal codes are a contract across three places**: the Rust lists in
   `core/src/models/error.rs`, `frontend/sl_cms/src/assets/error-codes.json`, and the
   `errors.<code>` entries in `assets/i18n/en.json` / `ja.json`. A Rust test fails if the first two

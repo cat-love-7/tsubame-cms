@@ -1,11 +1,12 @@
 //! The HTTP contract suite, and the harness that runs it against a storage backend.
 //!
-//! The suite itself is `suite.rs` at the root of this package. It is compiled once per backend
-//! by the files in `tests/`, each of which defines which backend it is and then includes it:
+//! The suite itself is `suite/` at the root of this package: one file per topic, with `suite/mod.rs`
+//! holding the harness. It is compiled once per backend by the files in `tests/`, each of which
+//! defines which backend it is and then pulls the directory in as a module:
 //!
 //! ```text
-//! tests/on_premises.rs -> type Backend = OnPremises; mod contract { include!("../suite.rs") }
-//! tests/aws.rs         -> type Backend = Aws;        mod contract { include!("../suite.rs") }
+//! tests/on_premises.rs -> type Backend = OnPremises; #[path = "../suite/mod.rs"] mod contract;
+//! tests/aws.rs         -> type Backend = Aws;        #[path = "../suite/mod.rs"] mod contract;
 //! ```
 //!
 //! That is the reason this package exists. The suite is the contract, so a backend that passes

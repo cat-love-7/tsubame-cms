@@ -217,8 +217,9 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
   `http::local_images` にあり、各バックエンドの `build_router` が載せるかどうかを決める。
 - 片側だけのビルドは `cargo build -p sl-cms-aws`(rkv をコンパイルしない。依存クレートは
   519 ↔ 946)。`default-members` で素の `cargo build` / `cargo test` は on-premises のまま。
-- 契約スイートは `suite.rs` を 2 つのランナーが `include!` する形で、**1 コマンドで両方**に
-  対して走る(43 × 2)。バイトを扱う 3 件は `Backend::SERVES_IMAGE_BYTES` で自分を飛ばす。
+- 契約スイートは `suite/`(話題ごとのファイル + `mod.rs` のハーネス)を 2 つのランナーが
+  `#[path]` でモジュールとして取り込む形で、**1 コマンドで両方**に対して走る(71 × 2)。
+  バイトを扱うテストは `Backend::SERVES_IMAGE_BYTES` で自分を飛ばす。
 - AWS の契約スイートは**エミュレータが無ければ失敗する**(黙って通らない)。
   `scripts/test-rust.sh` がポートを見てファイルごとスキップし、CI の `rust-aws` ジョブは
   `docker-compose.yml` からエミュレータを起動して本気で走らせる。

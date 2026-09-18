@@ -9,6 +9,5 @@ use sl_cms_tests::backends::Aws;
 
 type Backend = Aws;
 
-mod contract {
-    include!("../suite.rs");
-}
+#[path = "../suite/mod.rs"]
+mod contract;
