@@ -18,6 +18,15 @@ resource "aws_cognito_user_pool" "cms" {
     minimum_length = 8
   }
 
+  # TOTP, optional: an account may turn it on, and nobody is locked out of a deployment because
+  # they have not set it up yet. "Required" is a policy decision for whoever runs it; this is the
+  # half that has to exist before that decision can be made at all.
+  mfa_configuration = "OPTIONAL"
+
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
   admin_create_user_config {
     # An account an administrator creates has to change its password on first use.
     allow_admin_create_user_only = true

@@ -18,6 +18,20 @@ So this is a configuration that Terraform agrees is well-formed, not one that ha
 The first `apply` is where IAM semantics, service quotas, the Cognito domain's global uniqueness
 and the bucket policy meet reality.
 
+## Before two people apply it
+
+The table holds everything, so two things are on by default and one is left to the operator:
+
+* **`deletion_protection = true`** (the variable's default). `terraform destroy` then fails on the
+  table instead of taking every account, collection and page with it. A scratch deployment sets
+  the variable to false *deliberately*.
+* **State has to live somewhere shared** before a second pair of hands runs `plan`. The commented
+  `backend "s3"` block in `versions.tf` is the shape to fill in (bucket + lock table); without it,
+  each operator has their own state file and the second `apply` is a guess.
+* **MFA is available, not required** (`mfa_configuration = "OPTIONAL"` with TOTP). Turning it into
+  a requirement is a policy for whoever runs this deployment, and it is a one-line change to
+  `REQUIRED` once every account has enrolled.
+
 ## Using it
 
 ```bash

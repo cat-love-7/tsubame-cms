@@ -159,9 +159,14 @@ variable "point_in_time_recovery" {
 }
 
 variable "deletion_protection" {
-  description = "Refuse to destroy the table. Off for a deployment that is still being built."
+  description = <<-EOT
+    Refuse to destroy the table. On by default: the table holds every account, collection, item
+    and page, and `terraform destroy` is one word away from all of it. A scratch deployment that
+    really does want it gone sets this to false (and most of them want a separate project name
+    instead, so a mistake cannot reach production).
+  EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "waf_rate_limit" {
