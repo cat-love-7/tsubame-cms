@@ -321,13 +321,47 @@ impl Display for HttpError {
 impl Error for HttpError {}
 
 /// Convert any error into an opaque 500, so internal details are not leaked to clients.
+///
+/// The detail goes to the log and nowhere else. It used to be the body's message, which made the
+/// sentence above untrue: a storage error names the table, the key or the query it failed on, and
+/// a client (or anyone who can make the request fail) has no business reading that.
 pub fn map_internal_error<E: std::fmt::Display>(e: E) -> HttpError {
-    HttpError::InternalServerError(&e.to_string())
+    tracing::error!("internal error: {e}");
+    HttpError::InternalServerError(OPAQUE_INTERNAL_MESSAGE)
 }
+
+/// What every 500 says, whatever went wrong: the log has the rest.
+pub const OPAQUE_INTERNAL_MESSAGE: &str = "the request could not be completed";
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 500 says nothing about what went wrong, whatever it was.
+    ///
+    /// The message used to be the error's own `Display`, so a DynamoDB failure answered with the
+    /// table and the key it was about. The detail belongs in the log.
+    #[tokio::test]
+    async fn a_500_body_carries_no_internal_detail() {
+        use axum::response::IntoResponse;
+
+        let response = map_internal_error(
+            "dynamodb put_item failed: ResourceNotFoundException: table cms-prod-7f3a not found",
+        )
+        .into_response();
+        assert_eq!(response.status(), 500);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .expect("the body");
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("internal_error"),
+            "the code is what a client can translate: {body}"
+        );
+        for leak in ["dynamodb", "cms-prod-7f3a", "ResourceNotFound", "put_item"] {
+            assert!(!body.contains(leak), "the body leaked {leak}: {body}");
+        }
+    }
 
     #[test]
     fn constructors_carry_the_expected_status() {

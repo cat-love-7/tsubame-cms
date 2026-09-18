@@ -566,8 +566,10 @@ fn validate_password(password: &str) -> Result<(), HttpError> {
     Ok(())
 }
 
+/// The same 500 as everywhere else: the detail is logged, not answered (see
+/// [`crate::models::error::map_internal_error`]).
 fn internal<E: std::fmt::Display>(e: E) -> HttpError {
-    HttpError::InternalServerError(&e.to_string())
+    crate::models::error::map_internal_error(e)
 }
 
 #[cfg(test)]

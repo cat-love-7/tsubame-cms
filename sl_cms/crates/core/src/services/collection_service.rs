@@ -391,7 +391,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 if self
                     .collection_repository
                     .get_collection_item(collection_name, &item_id)
-                    .await.map_err(|e| HttpError::InternalServerError(&e.to_string()))?
+                    .await.map_err(map_internal_error)?
                     .is_none()
                 {
                     return Err(HttpError::NotFound(&format!(
@@ -406,7 +406,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     &self
                         .composite_field_repository
                         .list_composite_field_schemas()
-                        .await.map_err(|e| HttpError::InternalServerError(&e.to_string()))?,
+                        .await.map_err(map_internal_error)?,
                     &schema,
                 ).map_err(|e| e.into_http_error())?;
                 // Everything below works from the normalised copy.
