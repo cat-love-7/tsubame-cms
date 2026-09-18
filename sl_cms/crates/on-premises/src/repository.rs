@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
-pub mod collection_repository;
-pub mod composite_field_repository;
-pub mod image_repository;
-pub mod single_page_repository;
-pub mod user_repository;
+pub mod collections;
+pub mod composite_fields;
+pub mod images;
+pub mod single_pages;
+pub mod users;
 
 /// Store holding the images: what was uploaded, and the file each record names.
 pub(crate) const IMAGE_STORE: &str = "image";

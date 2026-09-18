@@ -12,6 +12,13 @@ with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese
 | `sl_cms/crates/aws` | DynamoDB + S3 + Lambda adapter |
 | `sl_cms/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
 | `frontend/sl_cms/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
+
+Both adapters lay their repositories out the same way, and it is worth keeping that way: the
+traits live in `core/src/repositories/<trait>.rs` (one per trait), an adapter implements them in
+`<adapter>/src/repository/<resource>.rs` (one per *resource*: `images`, `collections`,
+`single_pages`, `composite_fields`, `users`), and the module file (`repository.rs`) holds what is
+shared - the key layout, the read/write helpers, and the tests that span resources. A file name
+that says "repository" tells a reader nothing they did not already know from the directory.
 | `infra/` | Terraform |
 | `doc/` | design documents, in Japanese: `content-api.md` is the API contract |
 
