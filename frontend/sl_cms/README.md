@@ -1,6 +1,13 @@
 # SlCms
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.4.
+The CMS's admin interface: an Angular 22 standalone application (zoneless, signals, OnPush) that
+talks to the API in `sl_cms/`. It is served by the same binary in a deployment, and by the dev
+server below while working on it.
+
+The rules this code follows - route parameters, the `apiUrl` boundary, the translation-key
+contract, the `error-codes.json` contract, how `repositories/` and `services/` divide the work -
+are in [`doc/frontend-design.md`](../doc/frontend-design.md). The repository root has an
+`.github/copilot-instructions.md` for the same conventions in short form.
 
 ## Development server
 
@@ -58,14 +65,16 @@ is faster and stable; `ng test` keeps the isolated default. The end-to-end check
 
 ## Running end-to-end tests
 
-For end-to-end (e2e) testing, run:
+The e2e check drives a real browser against a running backend (`npm run e2e`, which is
+`node e2e/check-ui.mjs`). It seeds what it needs through the API, so it can be run against a
+fresh database; `scripts/test-e2e.sh` starts both halves and is what CI runs. See
+[`e2e/README.md`](e2e/README.md) for what it covers and how to point it somewhere else.
 
 ```bash
-ng e2e
+npm run e2e
 ```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
 
 ## Additional Resources
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+For the Angular CLI itself, see the
+[CLI Overview and Command Reference](https://angular.dev/tools/cli).
