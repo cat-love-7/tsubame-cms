@@ -1,17 +1,17 @@
 use sl_cms_core::models::item_status::ItemMetadata;
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
-use crate::repository::{page_draft_key, page_metadata_key, Repository, DRAFT_STORE, METADATA_STORE};
+use crate::repository::{page_draft_key, page_metadata_key, RkvRepository, DRAFT_STORE, METADATA_STORE, SINGLE_PAGE_ITEM_STORE, SINGLE_PAGE_SCHEMA_STORE};
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
 use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
 use rkv::{StoreOptions, Value};
 use std::error::Error;
 
 
-impl SinglePageRepository for Repository {
+impl SinglePageRepository for RkvRepository {
     async fn get_single_page_schema(&self, page_name: &SinglePageName) -> Result<Option<SinglePageSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("single_page_schema", StoreOptions::create())?;
+        let store = env.open_single(SINGLE_PAGE_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, page_name.as_bytes())? {
             Some(Value::Str(s)) => {
@@ -24,7 +24,7 @@ impl SinglePageRepository for Repository {
     async fn list_all_page_names(&self) -> Result<Vec<SinglePageName>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("single_page_schema", StoreOptions::create())?;
+        let store = env.open_single(SINGLE_PAGE_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut pages = Vec::new();
         for result in store.iter_start(&reader)? {
@@ -37,7 +37,7 @@ impl SinglePageRepository for Repository {
     async fn add_single_page_schema(&self, page_name: &SinglePageName, schema: &SinglePageSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
-        let store = env.open_single("single_page_schema", StoreOptions::create())?;
+        let store = env.open_single(SINGLE_PAGE_SCHEMA_STORE, StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
         let mut writer = env.write()?;
         store.put(&mut writer, page_name.as_bytes(), &Value::Str(&schema_str))?;
@@ -47,8 +47,8 @@ impl SinglePageRepository for Repository {
     async fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("single_page_schema", StoreOptions::create())?;
-        let item_store = env.open_single("single_page_item", StoreOptions::create())?;
+        let store = env.open_single(SINGLE_PAGE_SCHEMA_STORE, StoreOptions::create())?;
+        let item_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         // Opened before the transactions: LMDB rejects a database handle created after
         // the transaction that uses it began.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -87,7 +87,7 @@ impl SinglePageRepository for Repository {
     ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let item_store = env.open_single("single_page_item", StoreOptions::create())?;
+        let item_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         // Opened before the transaction begins (see `delete_single_page`).
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -169,7 +169,7 @@ impl SinglePageRepository for Repository {
     async fn get_single_page_item(&self, page_name: &SinglePageName) -> Result<Option<SinglePageItem>,Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let collection_store = env.open_single("single_page_item", StoreOptions::create())?;
+        let collection_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match collection_store.get(&reader, page_name.as_bytes())? {
             Some(Value::Str(s)) => {
@@ -182,7 +182,7 @@ impl SinglePageRepository for Repository {
     async fn update_single_page_item(&self, page_name: &SinglePageName, item_data: &SinglePageItem) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let collection_store = env.open_single("single_page_item", StoreOptions::create())?;
+        let collection_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, page_name.as_bytes(), &Value::Str(&item_str))?;

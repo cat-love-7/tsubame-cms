@@ -51,7 +51,7 @@ pub fn images_dir(config: &Config) -> std::path::PathBuf {
 }
 
 /// Build the on-premises composition root described by `config`.
-pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
+pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository> {
     let rkv_dir = rkv_dir(config);
     std::fs::create_dir_all(&rkv_dir).expect("failed to create the rkv data directory");
 
@@ -68,7 +68,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
             .expect("failed to open the rkv environment")
     };
 
-    let repository = Arc::new(repository::Repository::new(env, images_dir(config)));
+    let repository = Arc::new(repository::RkvRepository::new(env, images_dir(config)));
     let token_issuer = TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours);
     let notifier = sl_cms_core::webhook::build_notifier(
         config.webhook_urls.clone(),
@@ -99,7 +99,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::Repository> {
 /// layer — is what lets the same `http` module serve a backend whose object store does all of
 /// that.
 pub fn build_router(
-    module: std::sync::Arc<AppModule<repository::Repository>>,
+    module: std::sync::Arc<AppModule<repository::RkvRepository>>,
     cors: tower_http::cors::CorsLayer,
 ) -> axum::Router {
     // Everything this backend has that a deployment without local storage does not: serving and
@@ -122,7 +122,7 @@ pub fn build_router(
 /// setup here means the tests never open an LMDB environment themselves, so a second adapter
 /// only has to offer an equivalent helper. It is public because the contract suite is a crate
 /// of its own, so it cannot reach a `#[cfg(test)]` item here.
-pub fn open_test_repository(dir: &std::path::Path) -> Arc<repository::Repository> {
+pub fn open_test_repository(dir: &std::path::Path) -> Arc<repository::RkvRepository> {
     let env = {
         let mut manager = Manager::<SafeModeEnvironment>::singleton()
             .write()
@@ -131,7 +131,7 @@ pub fn open_test_repository(dir: &std::path::Path) -> Arc<repository::Repository
             .get_or_create_with_capacity(dir, MAX_NAMED_DATABASES, Rkv::with_capacity::<SafeMode>)
             .expect("failed to open the rkv environment")
     };
-    Arc::new(repository::Repository::new(env, dir.join("images")))
+    Arc::new(repository::RkvRepository::new(env, dir.join("images")))
 }
 
 #[cfg(test)]

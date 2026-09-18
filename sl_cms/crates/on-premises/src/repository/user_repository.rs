@@ -1,17 +1,17 @@
 use rkv::{StoreOptions, Value};
 
 use sl_cms_core::models::user::{normalize_username, User, UserId};
-use crate::repository::{Repository, IDENTITY_STORE};
+use crate::repository::{RkvRepository, IDENTITY_STORE, USER_STORE};
 use sl_cms_core::repositories::user_repository::{BoxError, UserRepository};
 
-impl Repository {
+impl RkvRepository {
     /// The lookup itself, without the storage lock.
     ///
     /// `delete_user` already holds the lock and a `std::sync::Mutex` is not reentrant, so
     /// the shared part lives here and `get_user_from_id` is the locking wrapper.
     fn user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, user_id.as_bytes())? {
             Some(Value::Str(s)) => {
@@ -25,7 +25,7 @@ impl Repository {
     }
 }
 
-impl UserRepository for Repository {
+impl UserRepository for RkvRepository {
     async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
         let _guard = self.begin();
         self.user_from_id(user_id)
@@ -61,7 +61,7 @@ impl UserRepository for Repository {
     async fn add_user(&self, user: &User) -> Result<UserId, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         // Opened before the transaction, for the reason given in `delete_collection`.
         let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
@@ -86,7 +86,7 @@ impl UserRepository for Repository {
     async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let previous = match store.get(&reader, user_id.as_bytes())? {
@@ -119,7 +119,7 @@ impl UserRepository for Repository {
         // administrator has changed in the meantime (see `UserRepository::record_login`).
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut user = match store.get(&reader, user_id.as_bytes())? {
             Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?,
@@ -135,7 +135,7 @@ impl UserRepository for Repository {
     async fn list_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut users = Vec::new();
         for result in store.iter_start(&reader)? {
@@ -156,7 +156,7 @@ impl UserRepository for Repository {
             return Ok(());
         }
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("user", StoreOptions::create())?;
+        let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let external_id = match store.get(&reader, user_id.as_bytes())? {

@@ -60,7 +60,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// The server refuses to start in that state without credentials, rather than coming up with
 /// an unauthenticated CMS.
 async fn bootstrap_admin(
-    module: &sl_cms_core::app_module::AppModule<sl_cms_on_premises::repository::Repository>,
+    module: &sl_cms_core::app_module::AppModule<sl_cms_on_premises::repository::RkvRepository>,
     config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(user) = module.auth_service.bootstrap_admin(

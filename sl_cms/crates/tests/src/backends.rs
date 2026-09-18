@@ -15,7 +15,7 @@ use sl_cms_core::http;
 use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_core::models::user::{Permission, User};
 use sl_cms_core::repositories::user_repository::UserRepository;
-use sl_cms_on_premises::repository::Repository;
+use sl_cms_on_premises::repository::RkvRepository;
 
 use crate::{ADMIN_EMAIL, ADMIN_PASSWORD, TestBackend, TEST_SECRET, TEST_TOKEN_TTL_HOURS};
 
@@ -31,12 +31,12 @@ fn mint(user: &User) -> String {
 /// The local adapter: an rkv environment and an image directory, in a scratch directory of
 /// their own that goes away when the run does.
 pub struct OnPremises {
-    repository: Arc<Repository>,
+    repository: Arc<RkvRepository>,
     dir: PathBuf,
 }
 
 impl TestBackend for OnPremises {
-    type Storage = Repository;
+    type Storage = RkvRepository;
 
     const SERVES_IMAGE_BYTES: bool = true;
     const PASSWORD_LOGIN: bool = true;

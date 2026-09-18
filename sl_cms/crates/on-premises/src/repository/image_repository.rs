@@ -8,7 +8,7 @@ use sl_cms_core::models::image::{
     ReplacementInfo,
     ImageOwner,
 };
-use crate::repository::Repository;
+use crate::repository::{RkvRepository, IMAGE_STORE};
 use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
 use sl_cms_core::repositories::local_image_bytes::LocalImageBytes;
 
@@ -42,12 +42,12 @@ fn image_owner_key(id: &ImageId, owner: &ImageOwner) -> String {
     format!("{}{}", image_prefix(id), owner.storage_key())
 }
 
-impl Repository {
+impl RkvRepository {
     /// The lookup itself, without the storage lock: `delete_image` already holds it, and a
     /// `std::sync::Mutex` is not reentrant.
     fn image_data(&self, id: &ImageId) -> Result<Option<ImageData>, BoxError> {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, id.to_le_bytes())? {
             Some(Value::Str(s)) => {
@@ -75,7 +75,7 @@ impl Repository {
     }
 }
 
-impl ImageRepository for Repository {
+impl ImageRepository for RkvRepository {
     async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, BoxError> {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
@@ -91,7 +91,7 @@ impl ImageRepository for Repository {
     async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut images = Vec::new();
         for result in store.iter_start(&reader)? {
@@ -118,7 +118,7 @@ impl ImageRepository for Repository {
     async fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         // Write transaction first, then the read snapshot that reads the id counter,
         // so concurrent uploaders cannot allocate the same id.
         let mut writer = env.write()?;
@@ -161,7 +161,7 @@ impl ImageRepository for Repository {
     async fn rename_image(&self, id: &ImageId, original_filename: &str) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut data = match store.get(&reader, id.to_le_bytes())? {
             Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
@@ -202,7 +202,7 @@ impl ImageRepository for Repository {
         // over from the read that the lock makes current.
         {
             let env = self.rkv.read().map_err(|e| e.to_string())?;
-            let store = env.open_single("image", StoreOptions::create())?;
+            let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
             let reader = env.read()?;
             let mut data = match store.get(&reader, id.to_le_bytes())? {
                 Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
@@ -239,7 +239,7 @@ impl ImageRepository for Repository {
         self.image_path(file_name)?;
 
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let previous = match store.get(&reader, id.to_le_bytes())? {
             Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
@@ -374,7 +374,7 @@ impl ImageRepository for Repository {
     ) -> Result<(), BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut data = match store.get(&reader, id.to_le_bytes())? {
             Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
@@ -401,7 +401,7 @@ impl ImageRepository for Repository {
         }
 
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("image", StoreOptions::create())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.delete(&mut writer, id.to_le_bytes())?;
         writer.commit()?;
@@ -412,7 +412,7 @@ impl ImageRepository for Repository {
 
 /// The bytes themselves: this adapter stores them on disk and hands out its own upload URL,
 /// so it is the one that authorises and serves the transfers (see [`LocalImageBytes`]).
-impl LocalImageBytes for Repository {
+impl LocalImageBytes for RkvRepository {
     async fn take_upload_key(&self, key: &str) -> Result<Option<String>, BoxError> {
         Ok(self.consume_upload_key(key))
     }

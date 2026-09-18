@@ -19,7 +19,7 @@ use sl_cms_core::models::user::UserId;
 use sl_cms_core::repositories::local_credentials::LocalCredentials;
 use sl_cms_core::repositories::user_repository::BoxError;
 
-use crate::repository::{Repository, CREDENTIAL_STORE};
+use crate::repository::{RkvRepository, CREDENTIAL_STORE};
 
 /// Hash `password` with a fresh random salt.
 pub fn hash_password(password: &str) -> Result<String, String> {
@@ -39,8 +39,8 @@ pub fn verify_password(password: &str, stored_hash: &str) -> bool {
         .is_ok()
 }
 
-impl Repository {
-    /// The stored PHC string. The caller must hold the storage lock (see [`Repository::begin`]),
+impl RkvRepository {
+    /// The stored PHC string. The caller must hold the storage lock (see [`RkvRepository::begin`]),
     /// because rkv opens the store on every call and LMDB refuses to open one while another
     /// transaction is active.
     pub(crate) fn stored_password(&self, user_id: &UserId) -> Result<Option<String>, BoxError> {
@@ -54,7 +54,7 @@ impl Repository {
     }
 }
 
-impl LocalCredentials for Repository {
+impl LocalCredentials for RkvRepository {
     async fn set_password(&self, user_id: &UserId, password: &str) -> Result<(), BoxError> {
         let hash = hash_password(password).map_err(|e| e.to_string())?;
         let _guard = self.begin();

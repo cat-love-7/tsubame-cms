@@ -29,7 +29,7 @@ export const routes: Routes = [
         children: [
             {
                 path: '',
-                loadChildren: () => import('./dashboard/dashboard.routes').then(m => m.DashboardRoutingModule)
+                loadChildren: () => import('./dashboard/dashboard.routes').then((m) => m.dashboardRoutes)
             }
         ]
     }

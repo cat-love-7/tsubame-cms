@@ -1,45 +1,36 @@
-import { NgModule } from '@angular/core';
-import { RouterModule, Routes } from '@angular/router';
+import { Routes } from '@angular/router';
 
 import { unsavedChangesGuard } from 'app/core/unsaved-changes.guard';
 
-import { Password } from './account/password/password';
-import { CollectionItemEdit } from './collections/edit/edit';
-import { CollectionItemList } from './collections/list/list';
-import { Index } from './index';
-import { CollectionSchemaCreate } from './settings/schemas/collections/create/create';
-import { CollectionSchemaEdit } from './settings/schemas/collections/edit/edit';
-import { CollectionSchemaList } from './settings/schemas/collections/list/list';
-import { CompositeFieldList } from './settings/composite-fields/list/list';
-import { CompositeFieldSchema } from './settings/composite-fields/schema/schema';
-import { ImageLibrary } from './settings/images/list/list';
-import { SinglePageSchemaList } from './settings/single-pages/list/list';
-import { SinglePageSchema } from './settings/single-pages/schema/schema';
-import { UsersList } from './settings/users/list/list';
-import { SinglePageEdit } from './single-pages/edit/edit';
-import { SinglePageList } from './single-pages/list/list';
-
-const dashboardRoutes: Routes = [
+/**
+ * The dashboard's routes, one lazy chunk per screen.
+ *
+ * `loadComponent` rather than a static import of fifteen components: as one chunk, a reader who
+ * opens the image library downloads the schema editors, the account list and every other screen
+ * with it. The guard is imported directly - it is a few lines, and it has to be there before the
+ * first screen is activated.
+ */
+export const dashboardRoutes: Routes = [
   {
     path: '',
-    component: Index,
+    loadComponent: () => import('./index').then((m) => m.Index),
   },
   // Content: list an arbitrary collection's items and edit one of them. The item editor
   // doubles as the create screen (no `id` in the path means "new").
   {
     path: 'collections/:name',
-    component: CollectionItemList,
+    loadComponent: () => import('./collections/list/list').then((m) => m.CollectionItemList),
   },
   // Both item screens hold edits until their save button is pressed, so leaving is asked about
   // (`unsavedChangesGuard`).
   {
     path: 'collections/:name/create',
-    component: CollectionItemEdit,
+    loadComponent: () => import('./collections/edit/edit').then((m) => m.CollectionItemEdit),
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'collections/:name/edit/:id',
-    component: CollectionItemEdit,
+    loadComponent: () => import('./collections/edit/edit').then((m) => m.CollectionItemEdit),
     canDeactivate: [unsavedChangesGuard],
   },
   // Single pages ("single documents"): one schema and exactly one item each, so there is no
@@ -47,11 +38,11 @@ const dashboardRoutes: Routes = [
   // releases content without opening the page.
   {
     path: 'single-pages',
-    component: SinglePageList,
+    loadComponent: () => import('./single-pages/list/list').then((m) => m.SinglePageList),
   },
   {
     path: 'single-pages/:name',
-    component: SinglePageEdit,
+    loadComponent: () => import('./single-pages/edit/edit').then((m) => m.SinglePageEdit),
     canDeactivate: [unsavedChangesGuard],
   },
   // The image library. Content rather than configuration: an editor uploads the images their
@@ -59,7 +50,7 @@ const dashboardRoutes: Routes = [
   // bookmark is a link someone kept.
   {
     path: 'images',
-    component: ImageLibrary,
+    loadComponent: () => import('./settings/images/list/list').then((m) => m.ImageLibrary),
   },
   {
     path: 'settings/images',
@@ -68,57 +59,45 @@ const dashboardRoutes: Routes = [
   // Schema editing.
   {
     path: 'settings/schemas/collections',
-    component: CollectionSchemaList,
+    loadComponent: () => import('./settings/schemas/collections/list/list').then((m) => m.CollectionSchemaList),
   },
   {
     path: 'settings/schemas/collections/create',
-    component: CollectionSchemaCreate,
+    loadComponent: () => import('./settings/schemas/collections/create/create').then((m) => m.CollectionSchemaCreate),
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/schemas/collections/edit/:name',
-    component: CollectionSchemaEdit,
+    loadComponent: () => import('./settings/schemas/collections/edit/edit').then((m) => m.CollectionSchemaEdit),
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/single-pages',
-    component: SinglePageSchemaList,
+    loadComponent: () => import('./settings/single-pages/list/list').then((m) => m.SinglePageSchemaList),
   },
   {
     path: 'settings/single-pages/:name/schema',
-    component: SinglePageSchema,
+    loadComponent: () => import('./settings/single-pages/schema/schema').then((m) => m.SinglePageSchema),
     canDeactivate: [unsavedChangesGuard],
   },
   // Composite fields: reusable groups of fields that other schemas reference by id.
   {
     path: 'settings/composite-fields',
-    component: CompositeFieldList,
+    loadComponent: () => import('./settings/composite-fields/list/list').then((m) => m.CompositeFieldList),
   },
   {
     path: 'settings/composite-fields/:id/schema',
-    component: CompositeFieldSchema,
+    loadComponent: () => import('./settings/composite-fields/schema/schema').then((m) => m.CompositeFieldSchema),
     canDeactivate: [unsavedChangesGuard],
   },
   // Accounts, for administrators. The server enforces the same rule.
   {
     path: 'settings/users',
-    component: UsersList,
+    loadComponent: () => import('./settings/users/list/list').then((m) => m.UsersList),
   },
   // Open to every signed-in account, read-only ones included.
   {
     path: 'account',
-    component: Password,
+    loadComponent: () => import('./account/password/password').then((m) => m.Password),
   },
 ];
-
-/**
- * Only routing lives here now. `CollectionRepository`, `CollectionsService` and the
- * composite-field equivalents are `providedIn: 'root'`, so re-declaring them here (and
- * again on `Sidebar`) only created duplicate instances.
- */
-@NgModule({
-  declarations: [],
-  imports: [RouterModule.forChild(dashboardRoutes)],
-  exports: [RouterModule],
-})
-export class DashboardRoutingModule {}

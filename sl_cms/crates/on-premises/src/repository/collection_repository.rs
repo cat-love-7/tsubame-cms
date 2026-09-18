@@ -1,10 +1,6 @@
 use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
 use sl_cms_core::models::item_status::ItemMetadata;
-use crate::repository::{
-    collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
-    collection_metadata_prefix, unique_key, Repository, DRAFT_STORE, METADATA_STORE,
-    UNIQUE_STORE,
-};
+use crate::repository::{collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key, collection_metadata_prefix, unique_key, RkvRepository, DRAFT_STORE, METADATA_STORE, UNIQUE_STORE, COLLECTION_SCHEMA_STORE};
 use sl_cms_core::repositories::collection_repository::{
     CollectionRepository, Reservation, UniqueValue,
     ApplyStatusError,
@@ -13,11 +9,11 @@ use sl_cms_core::repositories::collection_repository::{
 use rkv::{StoreOptions, Value};
 use std::error::Error;
 
-impl CollectionRepository for Repository {
+impl CollectionRepository for RkvRepository {
     async fn get_collection_schema(&self, collection_name: &CollectionName) -> Result<Option<CollectionSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("collection_schema", StoreOptions::create())?;
+        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, collection_name.as_bytes())? {
             Some(Value::Str(s)) => {
@@ -30,7 +26,7 @@ impl CollectionRepository for Repository {
     async fn list_collection_names(&self) -> Result<Vec<CollectionName>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("collection_schema", StoreOptions::create())?;
+        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut collections = Vec::new();
         for result in store.iter_start(&reader)? {
@@ -43,7 +39,7 @@ impl CollectionRepository for Repository {
     async fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
-        let store = env.open_single("collection_schema", StoreOptions::create())?;
+        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
         let mut writer = env.write()?;
         store.put(&mut writer, collection_name.as_bytes(), &Value::Str(&schema_str))?;
@@ -53,7 +49,7 @@ impl CollectionRepository for Repository {
     async fn delete_collection(&self, collection_name: &CollectionName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("collection_schema", StoreOptions::create())?;
+        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
         let item_store = env.open_single(format!("collection_{}", collection_name).as_str(), StoreOptions::create())?;
         // Open (and, on first use, create) the metadata store *before* starting any
         // transaction. LMDB rejects a database handle that was created after the

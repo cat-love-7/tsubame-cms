@@ -10,6 +10,27 @@ pub mod single_page_repository;
 pub mod image_repository;
 pub mod user_repository;
 
+/// Store holding the images: what was uploaded, and the file each record names.
+pub(crate) const IMAGE_STORE: &str = "image";
+
+/// Store holding account records (identity and authorisation, not credentials).
+pub(crate) const USER_STORE: &str = "user";
+
+/// Store holding a collection's field definitions.
+pub(crate) const COLLECTION_SCHEMA_STORE: &str = "collection_schema";
+
+/// Store holding reusable field groups, keyed by their id.
+pub(crate) const COMPOSITE_FIELD_SCHEMA_STORE: &str = "composite_field_schema";
+
+/// Store holding a single page's field definition.
+pub(crate) const SINGLE_PAGE_SCHEMA_STORE: &str = "single_page_schema";
+
+/// Store holding a single page's published content.
+pub(crate) const SINGLE_PAGE_ITEM_STORE: &str = "single_page_item";
+
+/// Store holding the per-partition id counters (`ADD` in DynamoDB, a counter here).
+pub(crate) const COUNTER_STORE: &str = "id_counter";
+
 /// Store holding draft/published metadata, keyed per item.
 ///
 /// Kept apart from the item's values so nothing has to be migrated when this grows, and
@@ -92,7 +113,7 @@ pub(crate) fn page_draft_key(page_name: &str) -> String {
     format!("page:{page_name}")
 }
 
-pub struct Repository {
+pub struct RkvRepository {
     pub rkv: Arc<RwLock<Rkv<SafeModeEnvironment>>>,
     pub counter_store: SingleStore<SafeModeDatabase>,
 
@@ -120,12 +141,12 @@ pub struct Repository {
     images_dir: PathBuf,
 }
 
-impl Repository {
+impl RkvRepository {
     pub fn new(rkv: Arc<RwLock<Rkv<SafeModeEnvironment>>>, images_dir: PathBuf) -> Self {
         let binding = Arc::clone(&rkv);
         let env = binding.read().unwrap();
-        let counter_store = env.open_single("id_counter", StoreOptions::create()).unwrap();
-        Repository {
+        let counter_store = env.open_single(COUNTER_STORE, StoreOptions::create()).unwrap();
+        RkvRepository {
             rkv,
             counter_store,
             ops: Mutex::new(()),

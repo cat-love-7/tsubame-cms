@@ -1,16 +1,16 @@
 use sl_cms_core::models::field::CompositeFieldSchema;
 use sl_cms_core::models::schema::CompositeFieldId;
-use crate::repository::Repository;
+use crate::repository::{RkvRepository, COMPOSITE_FIELD_SCHEMA_STORE};
 use sl_cms_core::repositories::composite_field_repository::{CompositeFieldRepository};
 use rkv::{StoreOptions, Value};
 use std::collections::HashMap;
 use std::error::Error;
 
-impl CompositeFieldRepository for Repository {
+impl CompositeFieldRepository for RkvRepository {
     async fn list_composite_field_schemas(&self) -> Result<HashMap<CompositeFieldId,CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("composite_field_schema", StoreOptions::create())?;
+        let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut schemas = HashMap::new();
         for result in store.iter_start(&reader)? {
@@ -25,7 +25,7 @@ impl CompositeFieldRepository for Repository {
     async fn get_composite_field_schema(&self, id: &CompositeFieldId) -> Result<Option<CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("composite_field_schema", StoreOptions::create())?;
+        let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, id.as_bytes())? {
             Some(Value::Str(s)) => {
@@ -38,7 +38,7 @@ impl CompositeFieldRepository for Repository {
     async fn add_composite_field_schema(&self,id: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e|e.to_string())?;
-        let store = env.open_single("composite_field_schema", StoreOptions::create())?;
+        let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
         let mut writer = env.write()?;
         store.put(&mut writer, id.as_bytes(), &Value::Str(&schema_str))?;
@@ -48,7 +48,7 @@ impl CompositeFieldRepository for Repository {
     async fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
-        let store = env.open_single("composite_field_schema", StoreOptions::create())?;
+        let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.delete(&mut writer, id.as_bytes())?;
         writer.commit()?;
@@ -72,7 +72,7 @@ mod tests {
         static THREAD_ID: RefCell<u32> = RefCell::new(0);
     }
 
-    fn setup_repository() -> Repository {
+    fn setup_repository() -> RkvRepository {
         static COUNT: AtomicU32 = AtomicU32::new(0);
         let id = COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
@@ -93,7 +93,7 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
         let created_arc = manager.get_or_create(path.as_path(), Rkv::new::<SafeMode>).unwrap();
-        Repository::new(Arc::clone(&created_arc), path.join("images"))
+        RkvRepository::new(Arc::clone(&created_arc), path.join("images"))
     }
     fn teardown_repository() {
         let id = THREAD_ID.with(|p| p.borrow().clone());
@@ -166,7 +166,7 @@ mod tests {
         // Manually corrupt the data
         {
             let env = repository.rkv.read().unwrap();
-            let store = env.open_single("composite_field_schema", StoreOptions::create()).unwrap();
+            let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create()).unwrap();
             let mut writer = env.write().unwrap();
             store.put(&mut writer, b"test_schema", &Value::Str("invalid_json")).unwrap();
             writer.commit().unwrap();
