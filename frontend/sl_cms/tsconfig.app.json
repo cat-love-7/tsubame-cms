@@ -3,6 +3,14 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    // TypeScript 6 no longer infers the source root for an emitting project: with `outDir` set and
+    // no `rootDir`, `tsc -p tsconfig.app.json` is an error (TS5011, "the common source directory
+    // of 'tsconfig.app.json' is './src'"), and the layout would gain a `src/` segment. Angular's
+    // build never emits this way - it type-checks with `noEmit`, which is why nothing failed - but
+    // an editor or a `tsc` run would. The sources are all under `src`, so this is what that path
+    // names. (`tsconfig.spec.json` needs none: its inputs include `vitest.config.ts` at the root,
+    // so the project root is already the common directory.)
+    "rootDir": "./src",
     "outDir": "./out-tsc/app",
     "types": []
   },

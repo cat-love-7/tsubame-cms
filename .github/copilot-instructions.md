@@ -57,6 +57,9 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
   `route.paramMap` / `route.queryParamMap` (never `route.snapshot`): the router reuses a component
   when only a parameter changes. A screen that holds edits implements `HasUnsavedChanges` so
   `unsavedChangesGuard` can ask.
+- **TypeScript 6 needs an explicit `rootDir`** in a project that emits: `tsconfig.app.json` sets it
+  beside `outDir`, because without it `tsc -p tsconfig.app.json` is TS5011 - while `ng build`, which
+  type-checks with `noEmit`, stays green and hides it.
 - **API types keep the server's `snake_case`** (`published_at`, `has_draft`): there is no mapping
   layer, and adding one to "fix" the casing is not wanted. Component state and inputs are
   camelCase.
