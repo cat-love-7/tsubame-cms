@@ -16,8 +16,8 @@ import ja from '../../../assets/i18n/ja.json';
 export class BundledTranslocoLoader implements TranslocoLoader {
   getTranslation(language: string): Observable<Translation> {
     const catalogs: Record<string, Translation> = {
-      en: en as Translation,
-      ja: ja as Translation,
+      en: en,
+      ja: ja,
     };
     return of(catalogs[language] ?? (en as Translation));
   }

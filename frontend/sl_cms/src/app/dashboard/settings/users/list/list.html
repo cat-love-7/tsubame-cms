@@ -144,7 +144,7 @@
               <p class="hint">{{ 'accounts.resourcesHint' | transloco }}</p>
               <div class="resource-grid">
                 @for (name of collections; track name) {
-                  <label class="resource">
+                  <div class="resource">
                     <span class="resource-name">
                       {{ 'accounts.resourceCollection' | transloco: { name } }}
                     </span>
@@ -159,10 +159,10 @@
                         }}</mat-option>
                       }
                     </mat-select>
-                  </label>
+                  </div>
                 }
                 @for (name of pages; track name) {
-                  <label class="resource">
+                  <div class="resource">
                     <span class="resource-name">
                       {{ 'accounts.resourceSinglePage' | transloco: { name } }}
                     </span>
@@ -177,7 +177,7 @@
                         }}</mat-option>
                       }
                     </mat-select>
-                  </label>
+                  </div>
                 }
               </div>
               <div class="resource-actions">

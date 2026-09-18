@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import {
   ItemMetadata,
   ItemMetadataMap,
@@ -16,7 +16,7 @@ import { Observable } from 'rxjs';
   providedIn: 'root',
 })
 export class CollectionsService {
-  constructor(private collectionRepository: CollectionRepository) {}
+  private collectionRepository = inject(CollectionRepository);
   getAllCollectionNames(): Observable<string[]> {
     return this.collectionRepository.getAllCollectionNames();
   }

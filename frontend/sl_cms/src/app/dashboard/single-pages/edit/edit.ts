@@ -11,6 +11,7 @@ import { fingerprint } from 'app/core/value-changes';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
+import { PreviewLink } from 'app/models/links';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { ContentValue } from 'app/models/values/single-page';
@@ -20,6 +21,12 @@ import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 import { ValueField } from 'app/shared/value-field/value-field';
+
+/** The page a request was started for (see the collection item editor). */
+interface StartedPage {
+  name: string;
+  generation: number;
+}
 
 /**
  * Edit the content of one single page.
@@ -254,24 +261,10 @@ export class SinglePageEdit implements HasUnsavedChanges {
       .createPreviewLink(started.name)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: async (link) => {
-          if (!this.stillOn(started)) {
-            return;
-          }
-          const url = absoluteApiUrl(link.path);
-          this.previewUrl.set(url);
-          // Copying is asynchronous, so the screen can move on while the clipboard is written: what
-          // is said about the link has to be about the page it is for.
-          const copied = await copyToClipboard(url);
-          if (!this.stillOn(started)) {
-            return;
-          }
-          const expires = this.dates.format(link.expires_at);
-          this.notice.set(
-            copied
-              ? t('content.previewCopied', { expires })
-              : t('content.previewNotCopied', { expires }),
-          );
+        next: (link) => {
+          // The clipboard write is asynchronous and nothing waits for it (see the collection item
+          // editor).
+          void this.copyPreviewLink(link, started);
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -279,6 +272,26 @@ export class SinglePageEdit implements HasUnsavedChanges {
           }
         },
       });
+  }
+
+  /**
+   * Put a minted link on the clipboard, and report how that went (see the collection item
+   * editor).
+   */
+  private async copyPreviewLink(link: PreviewLink, started: StartedPage) {
+    if (!this.stillOn(started)) {
+      return;
+    }
+    const url = absoluteApiUrl(link.path);
+    this.previewUrl.set(url);
+    const copied = await copyToClipboard(url);
+    if (!this.stillOn(started)) {
+      return;
+    }
+    const expires = this.dates.format(link.expires_at);
+    this.notice.set(
+      copied ? t('content.previewCopied', { expires }) : t('content.previewNotCopied', { expires }),
+    );
   }
 
   /** Ask again after a load that failed (see the collection item editor). */
@@ -373,7 +386,7 @@ export class SinglePageEdit implements HasUnsavedChanges {
    * "the same page, still as it was" from "the same page, opened again since" - a save that
    * answers after a reload must not decide that the reloaded form has been saved.
    */
-  private start(): { name: string; generation: number } {
+  private start(): StartedPage {
     return { name: this.pageName(), generation: this.loadToken };
   }
 
@@ -383,7 +396,7 @@ export class SinglePageEdit implements HasUnsavedChanges {
    * A screen that has been destroyed is not that screen: the generation moves on when it goes (see
    * the constructor), so nothing it asked for is ever answered into it.
    */
-  private stillOn(start: { name: string; generation: number }): boolean {
+  private stillOn(start: StartedPage): boolean {
     return this.pageName() === start.name && this.loadToken === start.generation;
   }
 

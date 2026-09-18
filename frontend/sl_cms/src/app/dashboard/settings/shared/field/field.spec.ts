@@ -1,10 +1,11 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 
 import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { Field } from './field';
 
 /** A field as the schema editor holds it: a name, a type, and a place on the grid. */
@@ -20,7 +21,7 @@ function field(overrides: Partial<FieldSchema> = {}): FieldSchema {
 
 describe('Field', () => {
   let component: Field;
-  let fixture: ComponentFixture<Field>;
+  let fixture: TypedFixture<Field>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -96,7 +97,7 @@ describe('Field', () => {
     fixture.detectChanges();
 
     const labels = Array.from(
-      fixture.nativeElement.querySelectorAll('mat-label'),
+      fixture.nativeElement.querySelectorAll<HTMLElement>('mat-label'),
       (label: HTMLElement) => label.textContent?.trim(),
     );
     expect(labels).toContain('Field Name');
@@ -104,7 +105,7 @@ describe('Field', () => {
 
     // The width presets: fractions need no translation, the one word does.
     const presets = Array.from(
-      fixture.nativeElement.querySelectorAll('.width-presets button'),
+      fixture.nativeElement.querySelectorAll<HTMLElement>('.width-presets button'),
       (button: HTMLElement) => button.textContent?.trim(),
     );
     expect(presets).toContain('1/2');
@@ -233,7 +234,7 @@ describe('Field', () => {
 
   // Switching type must not hand the field the shared default object: the widgets write into it.
   it('gives the field a copy of the type it switches to', () => {
-    const fresh = TestBed.createComponent(Field);
+    const fresh: TypedFixture<Field> = TestBed.createComponent(Field);
     fresh.componentInstance.field = {
       name: 'title',
       field_type: 'Number',

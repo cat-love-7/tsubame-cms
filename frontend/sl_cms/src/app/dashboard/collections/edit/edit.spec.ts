@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
@@ -12,6 +12,7 @@ import { CollectionsService } from 'app/services/schema/collections.service';
 
 import { t } from 'app/core/i18n/message';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { CollectionItemEdit } from './edit';
 import { formatDateTime } from 'app/core/i18n/date-format';
 
@@ -127,7 +128,7 @@ function saveButton(element: HTMLElement): HTMLButtonElement {
   if (!button) {
     throw new Error('no Save button');
   }
-  return button as HTMLButtonElement;
+  return button;
 }
 
 function previewButton(element: HTMLElement): HTMLButtonElement {
@@ -150,7 +151,7 @@ function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   if (!button) {
     throw new Error(`no button labelled "${label}"`);
   }
-  return button as HTMLButtonElement;
+  return button;
 }
 
 /** Permissions are the server's business; the screens are only told what to offer. */
@@ -194,7 +195,7 @@ describe('CollectionItemEdit', () => {
   // Opening another item reuses this component, so the parameter has to be followed rather than
   // read once: the URL changed while the previous item's values stayed in the form.
   it('loads another item when the parameter changes', async () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     expect(stub.requested).toEqual([7]);
 
@@ -209,7 +210,7 @@ describe('CollectionItemEdit', () => {
 
   // Switching collection keeps the same route, so the schema and the rows have to follow too.
   it('loads another collection when the name changes', async () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
 
     route.navigate({ name: 'pages', id: '7' });
@@ -224,7 +225,7 @@ describe('CollectionItemEdit', () => {
   it('ignores an answer for the item that was open before', async () => {
     const slowFirst = new Subject<unknown>();
     stub.heldItems.set(7, slowFirst);
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
 
     // Switch to item 9 while item 7's answer is still on its way, and let 9 arrive.
@@ -247,7 +248,7 @@ describe('CollectionItemEdit', () => {
   // Publishing copies what the server has, so with edits still in the form it would put the
   // previous version on the site while the screen showed the new one.
   it('saves before publishing when the form has unsaved edits, and only then', async () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     component.metadata.set({ ...stub.metadata, status: 'published', has_draft: true });
@@ -280,7 +281,7 @@ describe('CollectionItemEdit', () => {
   it('publishes nothing when the reader left before the save landed', async () => {
     const held = new Subject<void>();
     stub.heldUpdates = held;
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     component.setValue(
@@ -312,7 +313,7 @@ describe('CollectionItemEdit', () => {
   it('does nothing when a save answers after the screen was destroyed', async () => {
     const held = new Subject<void>();
     stub.heldUpdates = held;
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
@@ -336,7 +337,7 @@ describe('CollectionItemEdit', () => {
   });
 
   it('reports nothing about a save that failed on the item the reader left', async () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     component.setValue(
@@ -361,7 +362,7 @@ describe('CollectionItemEdit', () => {
   });
 
   it('does not publish when the save was refused', async () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     stub.saveRefusal = { error: { code: 'value_taken', field: 'title', message: 'taken' } };
@@ -378,7 +379,7 @@ describe('CollectionItemEdit', () => {
   });
 
   it('answers the guard about unsaved edits, and warns a reload', () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     expect(component.hasUnsavedChanges()).toBe(false);
@@ -389,9 +390,10 @@ describe('CollectionItemEdit', () => {
     );
     expect(component.hasUnsavedChanges()).toBe(true);
 
-    const event = { preventDefault: vi.fn() } as unknown as BeforeUnloadEvent;
+    const preventDefault = vi.fn();
+    const event = { preventDefault } as unknown as BeforeUnloadEvent;
     component.warnBeforeLeaving(event);
-    expect(event.preventDefault).toHaveBeenCalled();
+    expect(preventDefault).toHaveBeenCalled();
   });
 
   // The form holds nothing until the item arrives, and the server holds the item: a save before
@@ -399,7 +401,7 @@ describe('CollectionItemEdit', () => {
   it('does not offer to edit or save before the item has loaded', async () => {
     const slow = new Subject<unknown>();
     stub.heldItems.set(7, slow);
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
     const component = fresh.componentInstance;
 
@@ -422,7 +424,7 @@ describe('CollectionItemEdit', () => {
   it('offers the form once the item has loaded', async () => {
     const slow = new Subject<unknown>();
     stub.heldItems.set(7, slow);
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
     const component = fresh.componentInstance;
     expect(saveButton(fresh.nativeElement).disabled).toBe(true);
@@ -440,7 +442,7 @@ describe('CollectionItemEdit', () => {
   });
 
   it('should create', () => {
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     const component = fixture.componentInstance;
     fixture.detectChanges();
 
@@ -450,14 +452,14 @@ describe('CollectionItemEdit', () => {
   // The schema's width/height used to be ignored here entirely, which made the layout
   // shown by the schema editor meaningless.
   it('lays fields out using the width and height from the schema', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.componentInstance.schema.set([
       { name: 'a', field_type: 'Number', required: false, width: 6, height: 2 },
       { name: 'b', field_type: 'Boolean', required: false, width: 6, height: 1 },
     ]);
     fresh.detectChanges();
 
-    const cells = fresh.nativeElement.querySelectorAll('.field-cell') as NodeListOf<HTMLElement>;
+    const cells = fresh.nativeElement.querySelectorAll<HTMLElement>('.field-cell');
     expect(cells.length).toBe(2);
     expect(cells[0].style.gridColumn).toBe('span 6');
     expect(cells[0].style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 2)');
@@ -467,7 +469,7 @@ describe('CollectionItemEdit', () => {
   // Bad input used to be caught by normalising the JSON buffers at save time; now the
   // value fields own their input and report problems, so the refusal lives here.
   it('refuses to save while a field reports a problem', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     const component = fresh.componentInstance;
     component.setFieldError(
       { name: 'numbers', field_type: 'Number', required: false, width: 12, height: 1 },
@@ -483,7 +485,7 @@ describe('CollectionItemEdit', () => {
   it('says that a saved change is not published yet', () => {
     // Only a published item with pending changes says so; a draft is obvious already.
     stub.metadata = { ...stub.metadata, status: 'published', has_draft: true };
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     expect(fresh.nativeElement.querySelector('.draft-note')).toBeTruthy();
@@ -498,7 +500,7 @@ describe('CollectionItemEdit', () => {
       status: 409,
       error: { code: 'value_taken', message: "field 'title': the value is taken", field: 'title' },
     };
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     fresh.componentInstance.save();
@@ -514,7 +516,7 @@ describe('CollectionItemEdit', () => {
   // A refusal names the input as a path, so one about something inside a composite still marks
   // the composite's cell rather than nothing at all.
   it('marks the cell a refusal named, including one inside it', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.componentInstance.schema.set([
       {
         name: 'seo',
@@ -535,7 +537,7 @@ describe('CollectionItemEdit', () => {
   // A problem the widget found itself (a text outside its lengths) is the reader's to fix, so it
   // marks the input exactly like a refusal from the server does.
   it('marks the field a widget reported a problem for, and unmarks it when it is fixed', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
     const component = fresh.componentInstance;
     const title = {
@@ -566,14 +568,14 @@ describe('CollectionItemEdit', () => {
       },
     ];
     stub.item = { title: 'toolong' };
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     expect(fresh.componentInstance.problemField()).toBe('title');
   });
 
   it('mints a preview link and shows it with its expiry', async () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     const button = previewButton(fresh.nativeElement);
@@ -609,7 +611,7 @@ describe('CollectionItemEdit', () => {
     try {
       const held = new Subject<{ path: string; expires_at: string }>();
       stub.heldPreviews = held;
-      const fixture = TestBed.createComponent(CollectionItemEdit);
+      const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
       fixture.detectChanges();
       const component = fixture.componentInstance;
 
@@ -646,7 +648,7 @@ describe('CollectionItemEdit', () => {
         return of(stub.metadata);
       }),
     );
-    const fixture = TestBed.createComponent(CollectionItemEdit);
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     route.navigate({ name: 'blog' });
@@ -670,7 +672,7 @@ describe('CollectionItemEdit', () => {
   });
 
   it('publishes the item it is editing without saving the form', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     const badge = fresh.nativeElement.querySelector('app-item-status .badge') as HTMLElement;
@@ -681,7 +683,7 @@ describe('CollectionItemEdit', () => {
 
     expect(stub.published).toEqual([7]);
     expect(fresh.componentInstance.published()).toBe(true);
-    expect(fresh.nativeElement.querySelector('app-item-status .badge').textContent?.trim()).toBe(
+    expect(fresh.nativeElement.querySelector('app-item-status .badge')?.textContent?.trim()).toBe(
       'Published',
     );
     // The control now offers the opposite action.
@@ -698,7 +700,7 @@ describe('CollectionItemEdit', () => {
       updated_at: '2024-01-01T00:00:00Z',
       has_draft: false,
     };
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     // The editor names whoever published the version that is live.
@@ -724,7 +726,7 @@ describe('CollectionItemEdit', () => {
       updated_at: '2024-01-02T00:00:00Z',
       has_draft: true,
     };
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     // Both acts are offered: releasing the changes, and taking the item down.
@@ -759,7 +761,7 @@ describe('CollectionItemEdit (new item)', () => {
 
   /** There is no status to show until the item exists on the server. */
   it('offers no publish control before the item is saved', () => {
-    const fresh = TestBed.createComponent(CollectionItemEdit);
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
     expect(fresh.componentInstance.isNew()).toBe(true);

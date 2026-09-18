@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
 import { CompositeFieldDefinition } from 'app/models/schema/collection';
@@ -11,6 +11,7 @@ import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
+import { TypedFixture } from 'app/core/testing/fixture';
 import { ValueField } from './value-field';
 
 function field(
@@ -83,7 +84,7 @@ function filesChosen(names: string[]): Event {
 }
 
 describe('ValueField', () => {
-  let fixture: ComponentFixture<ValueField>;
+  let fixture: TypedFixture<ValueField>;
   let images: StubImagesService;
 
   beforeEach(async () => {
@@ -202,8 +203,8 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     const cells = Array.from(
-      fixture.nativeElement.querySelectorAll('fieldset.composite .field-cell'),
-    ) as HTMLElement[];
+      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite .field-cell'),
+    );
     expect(cells.length).toBe(2);
     expect(cells[0].style.gridColumn).toBe('span 8');
     expect(cells[0].style.minHeight).toBe('calc(var(--field-row-unit, 72px) * 2)');
@@ -490,9 +491,7 @@ describe('ValueField', () => {
     component.openLibrary(false);
     fixture.detectChanges();
 
-    const thumbs = fixture.nativeElement.querySelectorAll(
-      '.thumb',
-    ) as NodeListOf<HTMLButtonElement>;
+    const thumbs = fixture.nativeElement.querySelectorAll<HTMLElement>('.thumb');
     expect(thumbs.length).toBe(2);
 
     thumbs[0].click();
@@ -510,7 +509,7 @@ describe('ValueField', () => {
     ]);
 
     expect(component.isImageArray()).toBe(true);
-    const items = fixture.nativeElement.querySelectorAll('.array-item');
+    const items = fixture.nativeElement.querySelectorAll<HTMLElement>('.array-item');
     expect(items.length).toBe(1);
     expect(items[0].querySelector('img')?.getAttribute('src')).toBe('/api/images/logo.png');
     // The JSON editor is behind the toggle, not in the way.
@@ -534,9 +533,7 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     // Multi mode: clicking ticks rather than choosing, until the add button is pressed.
-    const thumbs = fixture.nativeElement.querySelectorAll(
-      '.thumb',
-    ) as NodeListOf<HTMLButtonElement>;
+    const thumbs = fixture.nativeElement.querySelectorAll<HTMLElement>('.thumb');
     thumbs[0].click();
     thumbs[1].click();
     fixture.detectChanges();
@@ -647,7 +644,7 @@ describe('ValueField', () => {
   it('edits an image array that lives inside a composite', () => {
     const component = create(field('block', { CompositeField: { id: 'gallery' } }), {
       images: [{ id: 3, url: '/images/logo.png' }],
-    } as unknown as FieldValue);
+    });
     fixture.detectChanges();
 
     // Sub-fields are edited by this same component, so the nested array gets the same UI.
@@ -674,7 +671,7 @@ describe('ValueField', () => {
   it('edits a composite array element by element', () => {
     const component = create(field('blocks', { Array: [{ CompositeField: { id: 'seo' } }] }), [
       { id: 'seo', values: { description: 'first' } },
-    ] as unknown as FieldValue);
+    ]);
     // A second pass, as the other composite tests do: the sub-editor resolves its definition
     // while the first one runs.
     fixture.detectChanges();
@@ -730,7 +727,7 @@ describe('ValueField', () => {
       [
         { id: 'gallery', values: { images: [] } },
         { id: 'seo', values: { description: 'second' } },
-      ] as unknown as FieldValue,
+      ],
     );
     fixture.detectChanges();
 
@@ -752,7 +749,7 @@ describe('ValueField', () => {
     component.valueChange.subscribe((value) => changes.push(value));
 
     component.addElement();
-    component.setElementValues(0, { description: 'typed' } as unknown as FieldValue);
+    component.setElementValues(0, { description: 'typed' });
 
     expect(changes.at(-1)).toEqual([{ id: 'seo', values: { description: 'typed' } }]);
   });
@@ -763,7 +760,7 @@ describe('ValueField', () => {
     // element whose own array is empty draws nothing. (That is also what makes the schema legal.)
     create(field('blocks', { Array: [{ CompositeField: { id: 'tree' } }] }), [
       { id: 'tree', values: { line: 'root', children: [] } },
-    ] as unknown as FieldValue);
+    ]);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(1);
@@ -783,7 +780,7 @@ describe('ValueField', () => {
           children: [{ id: 'tree', values: { line: 'leaf', children: [] } }],
         },
       },
-    ] as unknown as FieldValue);
+    ]);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(2);

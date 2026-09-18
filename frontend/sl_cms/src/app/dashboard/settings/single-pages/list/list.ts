@@ -57,7 +57,7 @@ export class SinglePageSchemaList {
     this.pages.createPage(name, []).subscribe({
       next: () => {
         this.newName = '';
-        this.router.navigate(['/settings/single-pages', name, 'schema']);
+        void this.router.navigate(['/settings/single-pages', name, 'schema']);
       },
       error: (e) => this.error.set(failure('content.createFailed', e)),
     });

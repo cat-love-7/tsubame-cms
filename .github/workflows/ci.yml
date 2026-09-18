@@ -87,6 +87,7 @@ jobs:
           cache-dependency-path: frontend/sl_cms/package-lock.json
       - run: npm ci
       - run: npm run format:check
+      - run: npm run lint
       - run: ../../scripts/test-frontend.sh
 
   lambda-artifact:

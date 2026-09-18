@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { App } from './app';
 
 describe('App', () => {
@@ -13,7 +14,7 @@ describe('App', () => {
   });
 
   it('should create the app', () => {
-    const fixture = TestBed.createComponent(App);
+    const fixture: TypedFixture<App> = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     expect(app).toBeTruthy();
   });
@@ -21,9 +22,9 @@ describe('App', () => {
   // `app.html` is only `<router-outlet>`, so there is no <h1> to assert on (the previous
   // version of this test checked for one and could never pass).
   it('should render the router outlet', async () => {
-    const fixture = TestBed.createComponent(App);
+    const fixture: TypedFixture<App> = TestBed.createComponent(App);
     await fixture.whenStable();
-    const compiled = fixture.nativeElement as HTMLElement;
+    const compiled = fixture.nativeElement;
     expect(compiled.querySelector('router-outlet')).toBeTruthy();
   });
 });

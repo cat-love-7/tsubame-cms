@@ -22,8 +22,8 @@ describe('translation catalogs', () => {
   // Imported rather than read from disk: the catalogs are part of the build, so a file that
   // does not parse fails the build itself, and no Node file APIs are needed here.
   const catalogs: Record<string, Record<string, unknown>> = {
-    en: en as Record<string, unknown>,
-    ja: ja as Record<string, unknown>,
+    en: en,
+    ja: ja,
   };
 
   it('hold exactly the same keys', () => {

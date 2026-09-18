@@ -46,7 +46,7 @@ export class CollectionSchemaCreate implements HasUnsavedChanges {
     this.collectionsService.createCollection(name, []).subscribe({
       next: () => {
         // `navigate` (not `navigateByUrl`) so the name is URL-encoded.
-        this.router.navigate(['/settings/collections', name, 'schema']);
+        void this.router.navigate(['/settings/collections', name, 'schema']);
       },
       error: (e) => this.error.set(failure('content.createFailed', e)),
     });

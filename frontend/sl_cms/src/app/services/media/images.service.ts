@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { map, Observable, switchMap } from 'rxjs';
 
 import {
@@ -13,7 +13,7 @@ import {
   providedIn: 'root',
 })
 export class ImagesService {
-  constructor(private images: ImageRepository) {}
+  private images = inject(ImageRepository);
 
   /**
    * Upload `file` and resolve to the info the server recorded for it, so the caller can

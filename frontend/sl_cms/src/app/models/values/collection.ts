@@ -1,4 +1,4 @@
-import { FieldValue, FieldValues } from './fields';
+import { FieldValues } from './fields';
 
 /** A collection item's values. */
 export type CollectionValue = FieldValues;

@@ -23,6 +23,7 @@ import {
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
+import { PasswordResetLink } from 'app/models/links';
 import { UsersService } from 'app/services/auth/users.service';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -173,20 +174,27 @@ export class UsersList {
     this.error.set(null);
     this.status.set(null);
     this.users.issuePasswordResetLink(user.id).subscribe({
-      next: async (link) => {
-        const url = passwordResetUrl(link.token);
-        this.resetLink.set(url);
-        this.resetFor.set(user.username);
-        const copied = await copyToClipboard(url);
-        const expires = this.dates.format(link.expires_at);
-        this.status.set(
-          copied
-            ? t('accounts.resetLinkCopied', { user: user.username, expires })
-            : t('accounts.resetLinkNotCopied', { user: user.username, expires }),
-        );
+      next: (link) => {
+        // The clipboard write is asynchronous and nothing waits for it; the method that does it
+        // says so by returning a promise this handler deliberately drops.
+        void this.copyResetLink(link, user);
       },
       error: (e) => this.error.set(failure('accounts.issueResetLinkFailed', e)),
     });
+  }
+
+  /** Put a reset link on the clipboard, and report how that went. */
+  private async copyResetLink(link: PasswordResetLink, user: CurrentUser) {
+    const url = passwordResetUrl(link.token);
+    this.resetLink.set(url);
+    this.resetFor.set(user.username);
+    const copied = await copyToClipboard(url);
+    const expires = this.dates.format(link.expires_at);
+    this.status.set(
+      copied
+        ? t('accounts.resetLinkCopied', { user: user.username, expires })
+        : t('accounts.resetLinkNotCopied', { user: user.username, expires }),
+    );
   }
 
   /** Store the overrides for one account; only entries that differ are sent. */

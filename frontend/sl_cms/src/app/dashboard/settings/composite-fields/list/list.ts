@@ -69,7 +69,7 @@ export class CompositeFieldList {
       next: () => {
         this.compositeFields.invalidate();
         this.newId = '';
-        this.router.navigate(['/settings/composite-fields', id, 'schema']);
+        void this.router.navigate(['/settings/composite-fields', id, 'schema']);
       },
       error: (e) => this.error.set(failure('content.createFailed', e)),
     });

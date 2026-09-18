@@ -1,7 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { PageEvent } from '@angular/material/paginator';
+import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -11,6 +10,7 @@ import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
 import { CollectionItemEntry, CollectionItemPage } from 'app/models/values/collection';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { CollectionItemList } from './list';
 import { formatDateTime } from 'app/core/i18n/date-format';
 
@@ -124,7 +124,7 @@ function items(count: number): CollectionItemEntry[] {
 }
 
 /** Rows rendered in the table body. */
-function rows(fixture: ComponentFixture<CollectionItemList>): number {
+function rows(fixture: TypedFixture<CollectionItemList>): number {
   return fixture.nativeElement.querySelectorAll('tbody tr').length;
 }
 
@@ -147,7 +147,7 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 
 describe('CollectionItemList', () => {
   let component: CollectionItemList;
-  let fixture: ComponentFixture<CollectionItemList>;
+  let fixture: TypedFixture<CollectionItemList>;
   let stub: StubCollectionsService;
   let route: ReturnType<typeof stubActivatedRoute>;
 
@@ -266,7 +266,7 @@ describe('CollectionItemList', () => {
 
   it('hides a published item again', () => {
     stub.metadata = { '1': metadata({ status: 'published' }) };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     const button = fresh.nativeElement.querySelector(
@@ -288,7 +288,7 @@ describe('CollectionItemList', () => {
         published_by: { id: 'u1', username: 'publisher@example.com' },
       }),
     };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     const note = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
@@ -296,14 +296,14 @@ describe('CollectionItemList', () => {
 
     // A draft has no publisher to show, even though it was published before.
     stub.metadata = { '1': metadata({ status: 'draft', published_by: null }) };
-    const other = TestBed.createComponent(CollectionItemList);
+    const other: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     other.detectChanges();
     expect(other.nativeElement.querySelector('.publisher')).toBeNull();
   });
 
   it('shows when each item was last saved', () => {
     stub.metadata = { '1': metadata({ updated_at: '2024-05-06T07:08:09Z', has_draft: false }) };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     // The wording is locale dependent, so compare against the same formatting.
@@ -313,7 +313,7 @@ describe('CollectionItemList', () => {
 
   it('marks an item whose changes are not published yet', () => {
     stub.metadata = { '1': metadata({ status: 'published', has_draft: true }) };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     expect(fresh.componentInstance.hasDraft(1)).toBe(true);
@@ -324,7 +324,7 @@ describe('CollectionItemList', () => {
   /** Pending changes on a published row can be released without taking it down first. */
   it('releases the waiting changes of a published row', () => {
     stub.metadata = { '1': metadata({ status: 'published', has_draft: true }) };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     const release = fresh.nativeElement.querySelector(
@@ -342,7 +342,7 @@ describe('CollectionItemList', () => {
 
   it('offers no release button when a published row has nothing waiting', () => {
     stub.metadata = { '1': metadata({ status: 'published' }) };
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     expect(
@@ -353,7 +353,7 @@ describe('CollectionItemList', () => {
 
   /** Content saved before the CMS recorded timestamps has nothing to show. */
   it('shows a dash when the update time is unknown', () => {
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     expect(fresh.componentInstance.updatedAt(1)).toBe('—');
@@ -364,7 +364,7 @@ describe('CollectionItemList', () => {
 
   it('asks for one page and shows how many items there are in total', () => {
     stub.all = items(60);
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     expect(stub.requested[0]).toEqual({ limit: 25, offset: 0 });
@@ -376,10 +376,10 @@ describe('CollectionItemList', () => {
 
   it('asks the server for the next window when the pager moves', () => {
     stub.all = items(60);
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
-    fresh.componentInstance.onPage({ pageIndex: 2, pageSize: 25, length: 60 } as PageEvent);
+    fresh.componentInstance.onPage({ pageIndex: 2, pageSize: 25, length: 60 });
     fresh.detectChanges();
 
     expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 50 });
@@ -388,10 +388,10 @@ describe('CollectionItemList', () => {
 
   it('honours a different page size', () => {
     stub.all = items(60);
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
-    fresh.componentInstance.onPage({ pageIndex: 0, pageSize: 10, length: 60 } as PageEvent);
+    fresh.componentInstance.onPage({ pageIndex: 0, pageSize: 10, length: 60 });
     fresh.detectChanges();
 
     expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 10, offset: 0 });
@@ -401,10 +401,10 @@ describe('CollectionItemList', () => {
   it('steps back a page when the last row of the final page is deleted', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     stub.all = items(26);
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
-    fresh.componentInstance.onPage({ pageIndex: 1, pageSize: 25, length: 26 } as PageEvent);
+    fresh.componentInstance.onPage({ pageIndex: 1, pageSize: 25, length: 26 });
     fresh.detectChanges();
     expect(rows(fresh)).toBe(1);
 
@@ -424,7 +424,7 @@ describe('CollectionItemList', () => {
       [1, { title: 'one' }],
       [2, { title: 'two' }],
     ];
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
     const component = fresh.componentInstance;
     component.toggleAll();
@@ -446,7 +446,7 @@ describe('CollectionItemList', () => {
 
   // Duplicating is only useful if the next act is editing the copy.
   it('copies an item and opens the copy', () => {
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -460,7 +460,7 @@ describe('CollectionItemList', () => {
   it('stays on the same page when the deletion leaves it populated', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     stub.all = items(60);
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     fresh.componentInstance.delete(1);
@@ -487,7 +487,7 @@ describe('CollectionItemList (read-only account)', () => {
   });
 
   it('offers nothing the server would refuse', () => {
-    const fresh = TestBed.createComponent(CollectionItemList);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
     expect(fresh.nativeElement.querySelector('button[aria-label^="publish item"]')).toBeNull();

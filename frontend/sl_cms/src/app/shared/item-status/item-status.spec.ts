@@ -1,9 +1,10 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { ItemStatusBadge } from './item-status';
 
 describe('ItemStatusBadge', () => {
-  let fixture: ComponentFixture<ItemStatusBadge>;
+  let fixture: TypedFixture<ItemStatusBadge>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [ItemStatusBadge] }).compileComponents();

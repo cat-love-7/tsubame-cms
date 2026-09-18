@@ -1,4 +1,4 @@
-import { Component, inject, Injector } from '@angular/core';
+import { Component, inject, Injector, OnInit } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -33,7 +33,7 @@ interface SidebarItem {
     TranslocoPipe,
   ],
 })
-export class Sidebar {
+export class Sidebar implements OnInit {
   private collectionsService = inject(CollectionsService);
   private singlePagesService = inject(SinglePagesService);
   private auth = inject(AuthService);

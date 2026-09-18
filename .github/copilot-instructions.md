@@ -27,6 +27,7 @@ that says "repository" tells a reader nothing they did not already know from the
 ```bash
 ./scripts/test-rust.sh        # both adapters; the AWS half needs the emulators
 ./scripts/test-frontend.sh    # ng test (Vitest) + ng build
+cd frontend/sl_cms && npm run lint && npm run format:check
 ./scripts/test-e2e.sh         # real browser against a real backend, own servers on 8080/4200
 docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
 cd infra && terraform fmt -check && terraform validate
@@ -46,6 +47,10 @@ cd infra && terraform fmt -check && terraform validate
   drift, and a frontend test fails if a catalogue is missing a key.
 - **Every UI string goes through Transloco**; `keys.spec.ts` fails on a key that is in one
   catalogue and not the other.
+- **The frontend lint reads the types** (`eslint.config.mjs`, `npm run lint`): a floating promise,
+  a leaked `any` or an unused import is an error. A spec types its fixture with `TypedFixture`
+  (`app/core/testing/fixture.ts`), never Angular's `ComponentFixture`, whose `nativeElement` is
+  `any` and makes every query on it unchecked.
 - **A 500 says nothing.** Internal detail goes to the log (`map_internal_error`), never to the body.
 - **The frontend never hardcodes `/api`**: use `apiUrl()`. Screens read route parameters from
   `route.paramMap` (never `route.snapshot`), and a screen that holds edits implements

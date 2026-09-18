@@ -11,6 +11,7 @@ import { fingerprint } from 'app/core/value-changes';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message';
 import { ItemMetadata } from 'app/models/item-status';
+import { PreviewLink } from 'app/models/links';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { CollectionValue } from 'app/models/values/collection';
@@ -19,6 +20,18 @@ import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 import { ValueField } from 'app/shared/value-field/value-field';
+
+/**
+ * The item a request was started for.
+ *
+ * The sidebar and the item list reuse this screen, so an answer can arrive while a different item
+ * is on it; carrying what the request started from is what lets that answer be dropped.
+ */
+interface StartedItem {
+  name: string;
+  id: number | null;
+  generation: number;
+}
 
 /**
  * Create/edit one collection item.
@@ -270,7 +283,9 @@ export class CollectionItemEdit implements HasUnsavedChanges {
     if (this.routeItemId() !== null) {
       return;
     }
-    this.router.navigate(['/collections', target.name, 'edit', target.id], { replaceUrl: true });
+    void this.router.navigate(['/collections', target.name, 'edit', target.id], {
+      replaceUrl: true,
+    });
   }
 
   /** Take the item off the site. Its working copy is kept. */
@@ -367,24 +382,10 @@ export class CollectionItemEdit implements HasUnsavedChanges {
       .createPreviewLink(started.name, id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: async (link) => {
-          if (!this.stillOn(started)) {
-            return;
-          }
-          const url = absoluteApiUrl(link.path);
-          this.previewUrl.set(url);
-          // Copying is asynchronous, so the screen can move on while the clipboard is written:
-          // what is said about the link has to be about the item it is for.
-          const copied = await copyToClipboard(url);
-          if (!this.stillOn(started)) {
-            return;
-          }
-          const expires = this.dates.format(link.expires_at);
-          this.notice.set(
-            copied
-              ? t('content.previewCopied', { expires })
-              : t('content.previewNotCopied', { expires }),
-          );
+        next: (link) => {
+          // The clipboard write is asynchronous and nothing waits for it; the method that does it
+          // says so by returning a promise this handler deliberately drops.
+          void this.copyPreviewLink(link, started);
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -392,6 +393,28 @@ export class CollectionItemEdit implements HasUnsavedChanges {
           }
         },
       });
+  }
+
+  /**
+   * Put a minted link on the clipboard, and report how that went.
+   *
+   * Copying is asynchronous, so the screen can move on while the clipboard is written: what is
+   * said about the link has to be about the item it is for.
+   */
+  private async copyPreviewLink(link: PreviewLink, started: StartedItem) {
+    if (!this.stillOn(started)) {
+      return;
+    }
+    const url = absoluteApiUrl(link.path);
+    this.previewUrl.set(url);
+    const copied = await copyToClipboard(url);
+    if (!this.stillOn(started)) {
+      return;
+    }
+    const expires = this.dates.format(link.expires_at);
+    this.notice.set(
+      copied ? t('content.previewCopied', { expires }) : t('content.previewNotCopied', { expires }),
+    );
   }
 
   /** Ask again after a load that failed: the form stays off the screen until something arrives,
@@ -498,7 +521,7 @@ export class CollectionItemEdit implements HasUnsavedChanges {
    * same item was opened again - or after the reader left and came back - must not decide that the
    * form on screen has been saved, and must not report a refusal about it.
    */
-  private start(): { name: string; id: number | null; generation: number } {
+  private start(): StartedItem {
     return { name: this.collectionName(), id: this.itemId(), generation: this.loadToken };
   }
 
@@ -508,7 +531,7 @@ export class CollectionItemEdit implements HasUnsavedChanges {
    * A screen that has been destroyed is not that screen: the generation moves on when it goes (see
    * the constructor), so nothing it asked for is ever answered into it.
    */
-  private stillOn(target: { name: string; id: number | null; generation: number }): boolean {
+  private stillOn(target: StartedItem): boolean {
     return (
       this.collectionName() === target.name &&
       this.itemId() === target.id &&
@@ -545,6 +568,6 @@ export class CollectionItemEdit implements HasUnsavedChanges {
   }
 
   private goBackToList(name: string) {
-    this.router.navigate(['/collections', name]);
+    void this.router.navigate(['/collections', name]);
   }
 }

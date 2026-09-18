@@ -318,7 +318,7 @@ export class AuthService {
 
   logout(): void {
     this.clear();
-    this.router.navigate(['/login']);
+    void this.router.navigate(['/login']);
   }
 
   /** Drop the session without navigating (used when the server rejects the token). */

@@ -162,7 +162,7 @@ export class EditSchema {
    */
   startResize(field: FieldSchema, axis: ResizeAxis, event: PointerEvent) {
     const target = event.target as HTMLElement;
-    const grid = target.closest('.field-grid') as HTMLElement | null;
+    const grid = target.closest('.field-grid');
     if (!grid) {
       return;
     }

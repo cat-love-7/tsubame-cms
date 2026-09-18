@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable, shareReplay } from 'rxjs';
 
 import { CompositeFieldDefinition } from 'app/models/schema/collection';
@@ -8,7 +8,7 @@ import { CompositeFieldRepository } from 'app/repositories/schema/composite-fiel
   providedIn: 'root',
 })
 export class CompositeFieldsService {
-  constructor(private compositeFieldRepository: CompositeFieldRepository) {}
+  private compositeFieldRepository = inject(CompositeFieldRepository);
 
   private all$?: Observable<{ [id: string]: CompositeFieldDefinition }>;
 

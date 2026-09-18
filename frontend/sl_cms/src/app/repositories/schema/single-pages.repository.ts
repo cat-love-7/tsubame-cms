@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { apiUrl } from 'app/core/api-url';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { ItemMetadata } from 'app/models/item-status';
@@ -17,7 +17,7 @@ import { ContentValue } from 'app/models/values/single-page';
   providedIn: 'root',
 })
 export class SinglePageRepository {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
 
   listPageNames(): Observable<string[]> {
     return this.http.get<string[]>(apiUrl('/models/single_pages'));

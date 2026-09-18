@@ -1,8 +1,9 @@
 import { Component, signal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 
 import { isStatusError } from '../http-error';
+import { TypedFixture } from 'app/core/testing/fixture';
 import { Message, MessagePipe, apiMessage, failure, t } from './message';
 
 /** What `HttpClient` hands an error callback: a status, and the body the server sent. */
@@ -74,14 +75,14 @@ describe('message helpers', () => {
 });
 
 describe('MessagePipe', () => {
-  let fixture: ComponentFixture<Host>;
+  let fixture: TypedFixture<Host>;
 
   /** The catalogs are bundled but still arrive through an observable, hence `whenStable`. */
   async function render(message: Message | null): Promise<string> {
     fixture.componentInstance.message.set(message);
     await fixture.whenStable();
     fixture.detectChanges();
-    return (fixture.nativeElement as HTMLElement).textContent?.trim() ?? '';
+    return fixture.nativeElement.textContent?.trim() ?? '';
   }
 
   beforeEach(() => {

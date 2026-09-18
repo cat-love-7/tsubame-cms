@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -11,6 +11,7 @@ import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 import { t } from 'app/core/i18n/message';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { SinglePageEdit } from './edit';
 
 class StubSinglePagesService {
@@ -114,7 +115,7 @@ function saveButton(element: HTMLElement): HTMLButtonElement {
   if (!button) {
     throw new Error('no Save button');
   }
-  return button as HTMLButtonElement;
+  return button;
 }
 
 /** Whether the screen offers a button with this label (the label is what a user reads). */
@@ -131,7 +132,7 @@ function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   if (!button) {
     throw new Error(`no button labelled "${label}"`);
   }
-  return button as HTMLButtonElement;
+  return button;
 }
 
 /** Permissions are the server's business; the screens are only told what to offer. */
@@ -153,7 +154,7 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 
 describe('SinglePageEdit', () => {
   let component: SinglePageEdit;
-  let fixture: ComponentFixture<SinglePageEdit>;
+  let fixture: TypedFixture<SinglePageEdit>;
   let stub: StubSinglePagesService;
   let route: ReturnType<typeof stubActivatedRoute>;
 
@@ -182,7 +183,7 @@ describe('SinglePageEdit', () => {
   it('does not offer to edit or save before the page has loaded', async () => {
     const slow = new Subject<unknown>();
     stub.heldItem = slow;
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
     const component = fresh.componentInstance;
 
@@ -222,7 +223,7 @@ describe('SinglePageEdit', () => {
   });
 
   it('lays fields out on the shared grid', () => {
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.schema.set([
       { name: 'title', field_type: 'Number', required: false, width: 8, height: 1 },
     ]);
@@ -233,7 +234,7 @@ describe('SinglePageEdit', () => {
   });
 
   it('refuses to save while a field reports a problem', () => {
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.setFieldError(
       { name: 'body', field_type: 'Number', required: false, width: 12, height: 1 },
@@ -249,7 +250,7 @@ describe('SinglePageEdit', () => {
   // Saving used to navigate to the schema list, which has no publish control: the reader had to
   // find the page again to put it on the site.
   it('stays on the page after saving, and shows what was saved', () => {
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.values.set({ title: 'About us' });
     fresh.detectChanges();
 
@@ -264,7 +265,7 @@ describe('SinglePageEdit', () => {
   });
 
   it('saves and publishes in one act', () => {
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.values.set({ title: 'About us' });
     fresh.detectChanges();
 
@@ -282,7 +283,7 @@ describe('SinglePageEdit', () => {
   it('publishes the page the save was about, not the one on screen when it lands', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -304,7 +305,7 @@ describe('SinglePageEdit', () => {
   it('writes nothing into the page the reader moved to', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -328,7 +329,7 @@ describe('SinglePageEdit', () => {
   it('publishes nothing when the save answers after the screen was destroyed', async () => {
     const held = new Subject<void>();
     stub.heldSave = held;
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -346,7 +347,7 @@ describe('SinglePageEdit', () => {
   });
 
   it('reports nothing about a save that failed on the page the reader left', async () => {
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     const component = fresh.componentInstance;
     component.values.set({ title: 'About us' });
     fresh.detectChanges();
@@ -381,7 +382,7 @@ describe('SinglePageEdit', () => {
     try {
       const held = new Subject<{ path: string; expires_at: string }>();
       stub.heldPreviews = held;
-      const fresh = TestBed.createComponent(SinglePageEdit);
+      const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
       const component = fresh.componentInstance;
       fresh.detectChanges();
 
@@ -418,7 +419,7 @@ describe('SinglePageEdit', () => {
         stubAuth(true, false, false),
       ],
     });
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     expect(hasButton(fresh.nativeElement, 'Save')).toBe(true);
@@ -449,7 +450,7 @@ describe('SinglePageEdit', () => {
       updated_at: '2024-01-01T00:00:00Z',
       has_draft: false,
     };
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     // The editor names whoever published the version that is live.
@@ -473,7 +474,7 @@ describe('SinglePageEdit', () => {
       updated_at: '2024-01-02T00:00:00Z',
       has_draft: true,
     };
-    const fresh = TestBed.createComponent(SinglePageEdit);
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
     expect(publishButton(fresh.nativeElement, 'Publish changes')).toBeTruthy();

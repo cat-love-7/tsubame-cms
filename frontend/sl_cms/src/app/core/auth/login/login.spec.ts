@@ -1,14 +1,15 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { HttpTestingController } from '@angular/common/http/testing';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { Login } from './login';
 
 describe('Login', () => {
   let component: Login;
-  let fixture: ComponentFixture<Login>;
+  let fixture: TypedFixture<Login>;
   let httpMock: HttpTestingController;
 
   beforeEach(async () => {
@@ -116,7 +117,7 @@ describe('Login', () => {
     // browser guessed is exactly the person who cannot look behind a sign-in for a setting.
     const japanese = [...fixture.nativeElement.querySelectorAll('button')].find(
       (button: HTMLButtonElement) => button.textContent?.includes('日本語'),
-    ) as HTMLButtonElement | undefined;
+    );
     expect(japanese).toBeTruthy();
     japanese!.click();
     await fixture.whenStable();

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser } from 'app/core/auth/auth.service';
@@ -15,7 +15,7 @@ import {
   providedIn: 'root',
 })
 export class UsersService {
-  constructor(private users: UsersRepository) {}
+  private users = inject(UsersRepository);
 
   list(): Observable<CurrentUser[]> {
     return this.users.list();

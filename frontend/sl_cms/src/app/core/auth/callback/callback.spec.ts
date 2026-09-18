@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 
 import { AuthService } from '../auth.service';
-import { beginHostedLogin, forgetSignIn, pendingSignIn } from '../hosted-login';
+import { beginHostedLogin, pendingSignIn } from '../hosted-login';
 import { AuthCallback } from './callback';
 
 describe('AuthCallback', () => {

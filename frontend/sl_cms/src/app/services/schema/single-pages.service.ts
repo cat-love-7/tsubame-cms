@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { ItemMetadata } from 'app/models/item-status';
@@ -13,7 +13,7 @@ import { SinglePageRepository } from 'app/repositories/schema/single-pages.repos
   providedIn: 'root',
 })
 export class SinglePagesService {
-  constructor(private pages: SinglePageRepository) {}
+  private pages = inject(SinglePageRepository);
 
   listPageNames(): Observable<string[]> {
     return this.pages.listPageNames();

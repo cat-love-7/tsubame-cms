@@ -191,7 +191,7 @@ export class ValueField implements OnInit, OnChanges {
   kind(): FieldKind {
     const type = this.field.field_type;
     if (typeof type === 'string') {
-      return type as FieldKind;
+      return type;
     }
     if ('Text' in type) return 'Text';
     if ('Slug' in type) return 'Slug';
@@ -494,7 +494,7 @@ export class ValueField implements OnInit, OnChanges {
       return;
     }
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
       if (!Array.isArray(parsed)) {
         this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
         return;
@@ -901,7 +901,7 @@ export class ValueField implements OnInit, OnChanges {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
       return {};
     }
-    const record = value as ContentValue;
+    const record = value;
     const declaresValues = schema.some((field) => field.name === 'values');
     const wrapped = record['values'];
     if (
@@ -910,7 +910,7 @@ export class ValueField implements OnInit, OnChanges {
       typeof wrapped === 'object' &&
       !Array.isArray(wrapped)
     ) {
-      return wrapped as ContentValue;
+      return wrapped;
     }
     return record;
   }

@@ -323,7 +323,7 @@ export class CollectionItemList {
     this.collectionsService.duplicateItem(this.collectionName(), id).subscribe({
       next: (created) => {
         this.error.set(null);
-        this.router.navigate(['/collections', this.collectionName(), 'edit', created]);
+        void this.router.navigate(['/collections', this.collectionName(), 'edit', created]);
       },
       error: (e) => this.error.set(failure('content.duplicateFailed', e)),
     });

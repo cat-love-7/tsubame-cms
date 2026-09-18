@@ -16,10 +16,7 @@ const sources = (
   import.meta as unknown as {
     glob(pattern: string, options: Record<string, unknown>): Record<string, string>;
   }
-).glob('../../**/*.{html,ts}', { query: '?raw', import: 'default', eager: true }) as Record<
-  string,
-  string
->;
+).glob('../../**/*.{html,ts}', { query: '?raw', import: 'default', eager: true });
 
 /** Just the code that ships: not the specs, and not this file. */
 const CODE = Object.entries(sources).filter(
@@ -69,8 +66,8 @@ function keyExists(tree: Record<string, unknown>, key: string): boolean {
 
 describe('translation keys used by the code', () => {
   const catalogs: Record<string, Record<string, unknown>> = {
-    en: en as Record<string, unknown>,
-    ja: ja as Record<string, unknown>,
+    en: en,
+    ja: ja,
   };
 
   const used = new Map<string, string[]>();

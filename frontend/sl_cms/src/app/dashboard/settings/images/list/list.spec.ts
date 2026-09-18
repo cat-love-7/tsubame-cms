@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -8,6 +8,7 @@ import { t } from 'app/core/i18n/message';
 import { ImageEntry, NewImageInfo } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { ImageLibrary } from './list';
 
 /** A fake library, so uploading and deleting can be observed without HTTP. */
@@ -123,7 +124,7 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 }
 
 describe('Image library', () => {
-  let fixture: ComponentFixture<ImageLibrary>;
+  let fixture: TypedFixture<ImageLibrary>;
   let stub: StubImagesService;
 
   beforeEach(async () => {
@@ -154,7 +155,7 @@ describe('Image library', () => {
 
   it('says so when the library is empty', () => {
     stub.library = [];
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     // Query the fresh fixture, not the one from the shared setup.
@@ -166,7 +167,7 @@ describe('Image library', () => {
   // library offers; only the trash destroys.
   it('moves an image to the trash, where it can be put back', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
     const component = fresh.componentInstance;
 
@@ -201,7 +202,7 @@ describe('Image library', () => {
       { kind: 'collection_item', name: 'blog', item: 7 },
       { kind: 'single_page', name: 'about' },
     ]);
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.trash(stub.library[0]);
@@ -217,7 +218,7 @@ describe('Image library', () => {
   it('asks the shorter question when nothing uses the image', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     confirmSpy.mockClear();
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.trash(stub.library[0]);
@@ -228,7 +229,7 @@ describe('Image library', () => {
 
   it('leaves the image in the library when the trashing is declined', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.trash(stub.library[0]);
@@ -255,7 +256,7 @@ describe('Image library', () => {
 
   it('deletes a trashed image for good, after confirming', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
     const component = fresh.componentInstance;
     component.trash(stub.library[0]);
@@ -325,7 +326,7 @@ describe('Image library', () => {
   // The name is a label, and the id is what content references: renaming must not disturb
   // anything else, which is what the inline editor is for.
   it('renames an image in place, without touching anything else', () => {
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.startRename(stub.library[0]);
@@ -339,7 +340,7 @@ describe('Image library', () => {
   });
 
   it('refuses a name that is empty or a path, without asking the server', () => {
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     for (const bad of ['   ', 'a/b.png', 'a\\b.png']) {
@@ -355,7 +356,7 @@ describe('Image library', () => {
   });
 
   it('leaves the name alone when the edit is cancelled', () => {
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.startRename(stub.library[0]);
@@ -371,7 +372,7 @@ describe('Image library', () => {
   // Replacing is not renaming and not deleting: the image keeps its id and its name, and content
   // that references it shows the new picture without being touched.
   it('replaces what an image shows, keeping its id', () => {
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.onReplacementSelected(stub.library[0], fileChosen('new.png'));
@@ -386,7 +387,7 @@ describe('Image library', () => {
 
   it('reports a replacement that failed, and keeps the image', () => {
     stub.replaceImage = () => throwError(() => new Error('upload failed'));
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     fresh.componentInstance.onReplacementSelected(stub.library[0], fileChosen('new.png'));
@@ -402,7 +403,7 @@ describe('Image library', () => {
   // The link that is worth writing into a Markdown body: it names the image by id, so it points
   // at whatever the image shows when the page is read.
   it('offers the durable link, and says so when it cannot copy it', async () => {
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     fresh.detectChanges();
 
     await fresh.componentInstance.copyLink(stub.library[0]);
@@ -437,7 +438,7 @@ describe('Image library', () => {
         },
       ],
     });
-    const fresh = TestBed.createComponent(ImageLibrary);
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
     await fresh.whenStable();
     fresh.detectChanges();
 

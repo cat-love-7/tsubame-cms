@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { apiUrl } from 'app/core/api-url';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
@@ -42,7 +42,7 @@ export interface UserChange {
   providedIn: 'root',
 })
 export class UsersRepository {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
 
   list(): Observable<CurrentUser[]> {
     return this.http.get<CurrentUser[]>(apiUrl('/auth/users'));

@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
@@ -50,7 +50,7 @@ export interface ImageEntry {
   providedIn: 'root',
 })
 export class ImageRepository {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
 
   /** Ask the server where to upload an image, and under which id it will be recorded. */
   requestUploadUrl(request: NewImageRequest): Observable<NewImageInfo> {

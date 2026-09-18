@@ -54,7 +54,7 @@ export class AuthCallback implements OnInit {
         // The code is single-use; the verifier goes with it.
         forgetSignIn();
         this.busy.set(false);
-        this.router.navigate(['/']);
+        void this.router.navigate(['/']);
       },
       error: (e) => {
         forgetSignIn();

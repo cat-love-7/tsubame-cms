@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { FormsModule } from '@angular/forms';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -105,9 +106,9 @@ export class Login {
     this.auth.login(this.username.trim(), this.password).subscribe({
       next: () => {
         this.busy.set(false);
-        this.router.navigate(['/']);
+        void this.router.navigate(['/']);
       },
-      error: (response) => {
+      error: (response: HttpErrorResponse) => {
         this.busy.set(false);
         if (response?.status === 429) {
           // Too many failures: `Retry-After` says how long the wait is, so the message can be
@@ -123,7 +124,7 @@ export class Login {
         // Otherwise the API's own answer: the wording of a code this client knows, or the
         // English message as it came, which is what a client that does not know the reason can
         // honestly show. Nothing at all means the request never reached the server.
-        const body = response?.error;
+        const body: unknown = response?.error;
         const answered = (typeof body === 'string' && body !== '') || typeof body === 'object';
         this.error.set(answered ? apiMessage(response) : t('auth.signInFailed'));
       },

@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 
@@ -8,6 +8,7 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { SinglePageList } from './list';
 
 function metadata(overrides: Partial<ItemMetadata> = {}): ItemMetadata {
@@ -82,7 +83,7 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 
 describe('Single page list', () => {
   let component: SinglePageList;
-  let fixture: ComponentFixture<SinglePageList>;
+  let fixture: TypedFixture<SinglePageList>;
   let stub: StubSinglePagesService;
 
   beforeEach(async () => {
@@ -119,7 +120,7 @@ describe('Single page list', () => {
   function button(element: HTMLElement, label: string): HTMLButtonElement | undefined {
     return Array.from(element.querySelectorAll('button')).find((candidate) =>
       (candidate.getAttribute('aria-label') ?? '').includes(label),
-    ) as HTMLButtonElement | undefined;
+    );
   }
 
   it('should create', () => {
@@ -140,7 +141,7 @@ describe('Single page list', () => {
       ...stub.statuses,
       about: { ...stub.statuses['about'], has_draft: true },
     };
-    const fresh = TestBed.createComponent(SinglePageList);
+    const fresh: TypedFixture<SinglePageList> = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 
@@ -185,7 +186,7 @@ describe('Single page list', () => {
         stubAuth(false, false, false),
       ],
     });
-    const fresh = TestBed.createComponent(SinglePageList);
+    const fresh: TypedFixture<SinglePageList> = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 
@@ -195,7 +196,7 @@ describe('Single page list', () => {
   it('says so when there are no pages yet', async () => {
     stub.names = [];
     stub.statuses = {};
-    const fresh = TestBed.createComponent(SinglePageList);
+    const fresh: TypedFixture<SinglePageList> = TestBed.createComponent(SinglePageList);
     await fresh.whenStable();
     fresh.detectChanges();
 

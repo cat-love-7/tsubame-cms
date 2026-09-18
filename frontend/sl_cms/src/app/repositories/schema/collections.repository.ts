@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { apiUrl } from 'app/core/api-url';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
 import {
@@ -25,7 +25,7 @@ import {
   providedIn: 'root',
 })
 export class CollectionRepository {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
   getAllCollectionNames(): Observable<string[]> {
     return this.http.get<string[]>(apiUrl('/models/collections'));
   }

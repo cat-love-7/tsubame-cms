@@ -61,7 +61,7 @@ export class PasswordReset {
       next: () => {
         this.busy.set(false);
         // Signed in with the new password: there is no reason to ask for it again.
-        this.router.navigate(['/']);
+        void this.router.navigate(['/']);
       },
       error: (e) => {
         this.busy.set(false);

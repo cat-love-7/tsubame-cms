@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { apiUrl } from 'app/core/api-url';
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CompositeFieldDefinition } from 'app/models/schema/collection';
@@ -13,7 +13,7 @@ import { CompositeFieldDefinition } from 'app/models/schema/collection';
   providedIn: 'root',
 })
 export class CompositeFieldRepository {
-  constructor(private http: HttpClient) {}
+  private http = inject(HttpClient);
 
   /** Every definition, keyed by id. */
   getAllCompositeFields(): Observable<{ [id: string]: CompositeFieldDefinition }> {

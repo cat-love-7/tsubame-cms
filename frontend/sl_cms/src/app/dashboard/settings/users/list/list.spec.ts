@@ -1,14 +1,15 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
-import { AuthService, CurrentUser, Permission } from 'app/core/auth/auth.service';
+import { AuthService, CurrentUser } from 'app/core/auth/auth.service';
 import { t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { UsersList } from './list';
 
 function account(overrides: Partial<CurrentUser> = {}): CurrentUser {
@@ -57,7 +58,7 @@ class StubUsersService {
 }
 
 describe('Accounts', () => {
-  let fixture: ComponentFixture<UsersList>;
+  let fixture: TypedFixture<UsersList>;
   let stub: StubUsersService;
 
   beforeEach(async () => {
@@ -181,7 +182,7 @@ describe('Accounts', () => {
   // absent, so these read "Changed the administrator flag of ." and "Enabled ." - and the
   // identifier an account is known by is its username.
   it('names the account in what it says it did', () => {
-    const fresh = TestBed.createComponent(UsersList);
+    const fresh: TypedFixture<UsersList> = TestBed.createComponent(UsersList);
     fresh.detectChanges();
 
     fresh.componentInstance.setAdmin(stub.accounts[0], true);

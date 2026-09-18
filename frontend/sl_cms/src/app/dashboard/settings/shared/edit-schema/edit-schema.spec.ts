@@ -1,9 +1,10 @@
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 
 import { DefaultFieldLayout, FieldSchema } from 'app/models/schema/fields';
+import { TypedFixture } from 'app/core/testing/fixture';
 import { EditSchema } from './edit-schema';
 
 function field(name: string): FieldSchema {
@@ -17,7 +18,7 @@ function field(name: string): FieldSchema {
 
 describe('EditSchema', () => {
   let component: EditSchema;
-  let fixture: ComponentFixture<EditSchema>;
+  let fixture: TypedFixture<EditSchema>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -108,7 +109,7 @@ describe('EditSchema', () => {
   // What the form held is not what the server reads: a limit typed into a text input arrives as a
   // string, and the server refuses the whole schema over it.
   it('saves the text limits as numbers, whatever the input handed back', () => {
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     fresh.componentInstance.schema = [
       {
         name: 'title',
@@ -130,7 +131,7 @@ describe('EditSchema', () => {
   it('places each field on the shared grid using its own width and height', () => {
     // A fresh fixture: the shared one has already been change-detected, and mutating an
     // input afterwards trips the dev-mode ExpressionChangedAfterItHasBeenChecked check.
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     fresh.componentInstance.schema = [{ ...field('a'), width: 4, height: 3 }];
     fresh.detectChanges();
 
@@ -141,7 +142,7 @@ describe('EditSchema', () => {
   });
 
   /** jsdom has no layout, so the grid is given a width and pointer capture is stubbed. */
-  function prepareResize(fresh: ComponentFixture<EditSchema>, width: number, height: number) {
+  function prepareResize(fresh: TypedFixture<EditSchema>, width: number, height: number) {
     fresh.componentInstance.schema = [{ ...field('a'), width, height }];
     fresh.detectChanges();
 
@@ -160,7 +161,7 @@ describe('EditSchema', () => {
   }
 
   it('resizes a field by dragging its right edge', () => {
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     const { handle, pointer } = prepareResize(fresh, 4, 1);
 
     const right = handle('.resize-handle-right');
@@ -174,7 +175,7 @@ describe('EditSchema', () => {
   });
 
   it('resizes a field by dragging its bottom edge', () => {
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     const { handle, pointer } = prepareResize(fresh, 6, 1);
 
     const bottom = handle('.resize-handle-bottom');
@@ -188,7 +189,7 @@ describe('EditSchema', () => {
   });
 
   it('emits the schema once a resize ends', () => {
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     const { handle, pointer } = prepareResize(fresh, 4, 1);
     const emitted: FieldSchema[][] = [];
     fresh.componentInstance.schemaChange.subscribe((schema) => emitted.push(schema));
@@ -204,7 +205,7 @@ describe('EditSchema', () => {
   });
 
   it('previews the layout with the same widgets the content editor uses', () => {
-    const fresh = TestBed.createComponent(EditSchema);
+    const fresh: TypedFixture<EditSchema> = TestBed.createComponent(EditSchema);
     fresh.componentInstance.schema = [field('a')];
     fresh.detectChanges();
 

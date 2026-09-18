@@ -1,6 +1,7 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { MatChipEditedEvent, MatChipInputEvent } from '@angular/material/chips';
 
+import { TypedFixture } from 'app/core/testing/fixture';
 import { EnumField } from './enum-field';
 
 /** What the chip input hands `addEnumOption`. */
@@ -15,7 +16,7 @@ function edited(value: string): MatChipEditedEvent {
 
 describe('EnumField', () => {
   let component: EnumField;
-  let fixture: ComponentFixture<EnumField>;
+  let fixture: TypedFixture<EnumField>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -74,7 +75,7 @@ describe('EnumField', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const chips = fixture.nativeElement.querySelectorAll('mat-chip-row') as NodeListOf<HTMLElement>;
+    const chips = fixture.nativeElement.querySelectorAll('mat-chip-row');
     expect(chips.length).toBe(2);
     expect(chips[0].textContent).toContain('draft');
 

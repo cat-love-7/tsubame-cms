@@ -32,7 +32,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
     catchError((error: HttpErrorResponse) => {
       if (error.status === 401 && !external) {
         auth.clear();
-        router.navigate(['/login']);
+        void router.navigate(['/login']);
       }
       return throwError(() => error);
     }),

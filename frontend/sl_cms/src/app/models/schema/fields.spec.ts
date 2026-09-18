@@ -90,15 +90,13 @@ describe('newFieldType', () => {
 
     first.Text.max_length = 20;
     expect(second.Text.max_length).toBeUndefined();
-    expect(
-      (FieldDefaults.Text as { Text: { max_length?: number } }).Text.max_length,
-    ).toBeUndefined();
+    expect(FieldDefaults.Text.Text.max_length).toBeUndefined();
   });
 
   it('copies the kinds that hold arrays and objects', () => {
     const enumField = newFieldType('TextEnum') as { TextEnum: string[] };
     enumField.TextEnum.push('published');
-    expect((FieldDefaults.TextEnum as { TextEnum: string[] }).TextEnum).toEqual([]);
+    expect(FieldDefaults.TextEnum.TextEnum).toEqual([]);
 
     const array = newFieldType('Array') as { Array: unknown[] };
     array.Array.push('Number');
