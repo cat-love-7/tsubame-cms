@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
+import { stubActivatedRoute } from 'app/core/testing/activated-route';
 
 import { AuthService } from '../auth.service';
 import { PasswordReset } from './password-reset';
@@ -11,19 +12,18 @@ describe('PasswordReset', () => {
   let httpMock: HttpTestingController;
   let auth: AuthService;
   let router: Router;
+  let route: ReturnType<typeof stubActivatedRoute>;
 
   async function create(token: string) {
     TestBed.resetTestingModule();
+    route = stubActivatedRoute({}, { token });
     await TestBed.configureTestingModule({
       imports: [PasswordReset],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { queryParamMap: { get: () => token } } },
-        },
+        { provide: ActivatedRoute, useValue: route },
       ],
     }).compileComponents();
 
@@ -69,6 +69,25 @@ describe('PasswordReset', () => {
     });
     expect(auth.user()?.username).toBe('editor@example.com');
     expect(navigate).toHaveBeenCalledWith(['/']);
+  });
+
+  // Opening another link on this screen is the same route with a different query, so the router
+  // keeps the component and only the parameters change. The token sent has to be the new one: with
+  // a token read once, a second link would reset nothing and say "already used".
+  it('sends the token the address names now, not the one the screen opened with', async () => {
+    await create('spent-token');
+    const component = fixture.componentInstance;
+
+    route.navigateQuery({ token: 'the-new-token' });
+    component.next = 'chosen-password';
+    component.repeated = 'chosen-password';
+    component.save();
+
+    const request = httpMock.expectOne('/api/auth/password-reset');
+    expect(request.request.body).toEqual({
+      token: 'the-new-token',
+      new_password: 'chosen-password',
+    });
   });
 
   // The password *was* changed: a failure to read the account back is not a failed reset, and

@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -36,11 +37,25 @@ export class PasswordReset {
   private router = inject(Router);
   private auth = inject(AuthService);
 
-  private token = this.route.snapshot.queryParamMap.get('token') ?? '';
+  /**
+   * The token in the address.
+   *
+   * Read from the stream rather than from the snapshot: opening another link on this screen is the
+   * same route with a different query, so the router keeps the component, and a token captured once
+   * would send the previous link's.
+   */
+  private token = '';
+
   public next = '';
   public repeated = '';
   public error = signal<Message | null>(null);
   public busy = signal(false);
+
+  constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      this.token = params.get('token') ?? '';
+    });
+  }
 
   save() {
     if (this.busy()) {

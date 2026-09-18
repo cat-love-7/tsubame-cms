@@ -54,8 +54,9 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
   `any` and makes every query on it unchecked.
 - **A 500 says nothing.** Internal detail goes to the log (`map_internal_error`), never to the body.
 - **The frontend never hardcodes `/api`**: use `apiUrl()`. Screens read route parameters from
-  `route.paramMap` (never `route.snapshot`), and a screen that holds edits implements
-  `HasUnsavedChanges` so `unsavedChangesGuard` can ask.
+  `route.paramMap` / `route.queryParamMap` (never `route.snapshot`): the router reuses a component
+  when only a parameter changes. A screen that holds edits implements `HasUnsavedChanges` so
+  `unsavedChangesGuard` can ask.
 - **API types keep the server's `snake_case`** (`published_at`, `has_draft`): there is no mapping
   layer, and adding one to "fix" the casing is not wanted. Component state and inputs are
   camelCase.

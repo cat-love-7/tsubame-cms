@@ -141,6 +141,12 @@ Angular はコンポーネントを再利用する。スナップショットを
 - テストは `app/core/testing/activated-route.ts` の `stubActivatedRoute` を使い、
   `route.navigate({...})` で切り替えを再現する(`snapshot` だけのスタブでは検証できない)。
 
+**クエリパラメータも同じ**。同じルートで `?token=...` だけが変わってもコンポーネントは再利用される
+ので、`route.queryParamMap` を購読する: パスワードリセット画面の `token`、Cognito コールバックの
+`code` / `state` がこれにあたる(どちらも一度読んで保持すると、2 つ目のリンクで**前の
+トークン/コードを送ってしまう**)。スタブは第 2 引数でクエリを渡し、`route.navigateQuery({...})` で
+切り替えを再現する。画面に出さない値なので signal にはしない。
+
 ## 9. 名前の付け方
 
 同じ名前が2つあると、**それを避けるための書き方が増える**(実際 `dashboard.routes.ts` は
