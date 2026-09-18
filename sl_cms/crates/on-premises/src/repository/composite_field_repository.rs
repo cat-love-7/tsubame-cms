@@ -81,20 +81,27 @@ mod tests {
             *id_cell = id;
         });
 
-        let strpath = format!("./data/on_premises/test_rkv_composite_{}",id);
-        let path = std::path::Path::new(&strpath);
+        // The system's temporary directory, not `./data/...`: a test that writes where the server
+        // keeps its data leaves the repository dirty when it panics (which is exactly when nobody
+        // is looking at the disk), and two checkouts on one machine would share the directory.
+        let path = std::env::temp_dir().join(format!(
+            "sl-cms-test-composite-{}-{}",
+            std::process::id(),
+            id
+        ));
 
-        fs::create_dir_all(path).unwrap();
+        fs::create_dir_all(&path).unwrap();
         let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
-        let created_arc = manager.get_or_create(path, Rkv::new::<SafeMode>).unwrap();
+        let created_arc = manager.get_or_create(path.as_path(), Rkv::new::<SafeMode>).unwrap();
         Repository::new(Arc::clone(&created_arc), path.join("images"))
     }
     fn teardown_repository() {
-        let id = THREAD_ID.with(|p| {
-            p.borrow().clone()
-        });
-        let strpath = format!("./data/on_premises/test_rkv_composite_{}",id);
-        let path = std::path::Path::new(&strpath);
+        let id = THREAD_ID.with(|p| p.borrow().clone());
+        let path = std::env::temp_dir().join(format!(
+            "sl-cms-test-composite-{}-{}",
+            std::process::id(),
+            id
+        ));
         if path.exists() {
             fs::remove_dir_all(path).unwrap();
         }

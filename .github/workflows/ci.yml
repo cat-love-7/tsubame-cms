@@ -17,9 +17,14 @@ jobs:
   rust:
     name: Rust (core, local adapter, binaries)
     runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: `stable` moves under the build, and a night-time release should not be able to
+      # break a branch nobody touched. Bumping it is a commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sl_cms
@@ -28,9 +33,14 @@ jobs:
   rust-aws:
     name: Rust (aws adapter, emulators)
     runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: `stable` moves under the build, and a night-time release should not be able to
+      # break a branch nobody touched. Bumping it is a commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sl_cms
@@ -60,6 +70,9 @@ jobs:
   frontend:
     name: Angular
     runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend/sl_cms
@@ -76,9 +89,14 @@ jobs:
   lambda-artifact:
     name: Lambda artifact (arm64)
     runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: `stable` moves under the build, and a night-time release should not be able to
+      # break a branch nobody touched. Bumping it is a commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           # The artifact is built for Graviton; nothing here runs it, but it has to build - and a
           # cross build is the kind of thing that rots quietly when only one machine ever does it.
@@ -108,12 +126,17 @@ jobs:
   e2e:
     name: Browser end-to-end
     runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 40
     # Slower than the other two and it needs a browser download, so it is not what every push
     # waits on for a first signal.
     needs: [rust, frontend]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: `stable` moves under the build, and a night-time release should not be able to
+      # break a branch nobody touched. Bumping it is a commit.
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sl_cms

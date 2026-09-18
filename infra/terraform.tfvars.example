@@ -3,7 +3,8 @@ region     = "eu-west-1"
 project    = "sl-cms"
 environment = "staging"
 
-# Signs preview and reset links. At least 40 characters, and different per deployment.
+# Signs preview and reset links. At least 32 characters (the minimum the server enforces), and
+# different per deployment; 40 or more is what a generated secret looks like.
 jwt_secret = "change-me-0123456789012345678901234567890123"
 
 # Who may become the first administrator by signing in.
