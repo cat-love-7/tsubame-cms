@@ -1,4 +1,5 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -22,7 +23,7 @@ import { callbackUrl, forgetSignIn, pendingSignIn } from '../hosted-login';
   templateUrl: './callback.html',
   styleUrl: './callback.scss',
 })
-export class AuthCallback implements OnInit {
+export class AuthCallback {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private auth = inject(AuthService);
@@ -30,10 +31,20 @@ export class AuthCallback implements OnInit {
   public error = signal<Message | null>(null);
   public busy = signal(true);
 
-  ngOnInit() {
-    const code = this.route.snapshot.queryParamMap.get('code');
-    const state = this.route.snapshot.queryParamMap.get('state');
+  constructor() {
+    // The code and the state are query parameters, read from the stream for the reason the reset
+    // screen reads its token from one: the router reuses this component when only the query
+    // changes, and a code captured once would be the previous, spent one.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      this.exchange(params.get('code'), params.get('state'));
+    });
+  }
+
+  private exchange(code: string | null, state: string | null) {
     const pending = pendingSignIn();
+
+    this.busy.set(true);
+    this.error.set(null);
 
     if (!code) {
       // The provider came back without a code: a cancelled sign-in says `error=access_denied`.
