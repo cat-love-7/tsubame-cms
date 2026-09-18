@@ -39,10 +39,10 @@ pub use settings::{AwsSettings, ImageDelivery};
 /// deployment does not need to be told it twice.
 fn cognito_login(settings: &AwsSettings) -> Option<sl_cms_core::http::cognito_login::TokenEndpoint> {
     let endpoint = sl_cms_core::http::cognito_login::token_endpoint(settings.login_url.as_deref()?)?;
-    Some(sl_cms_core::http::cognito_login::TokenEndpoint {
-        client_id: settings.client_id.clone(),
+    Some(sl_cms_core::http::cognito_login::TokenEndpoint::new(
+        settings.client_id.clone(),
         endpoint,
-    })
+    ))
 }
 
 /// Credentials for a local emulator, or `None` to let the SDK's own chain find them.

@@ -114,19 +114,66 @@ fn expiry(expires_in: Option<u64>) -> String {
 pub struct TokenEndpoint {
     pub client_id: String,
     pub endpoint: String,
+    /// One client for every exchange: building one per request spins up a TLS stack each time,
+    /// and this route is on the sign-in path where that is the slowest thing it does. Built on
+    /// first use, because the TLS provider is installed by the request path and a client built
+    /// before that would panic.
+    client: std::sync::OnceLock<reqwest::Client>,
+}
+
+impl TokenEndpoint {
+    /// The endpoint one deployment signs users in at.
+    pub fn new(client_id: String, endpoint: String) -> Self {
+        TokenEndpoint {
+            client_id,
+            endpoint,
+            client: std::sync::OnceLock::new(),
+        }
+    }
+}
+
+/// Why an exchange did not produce a session.
+///
+/// The two are answered differently because they *are* different: the provider refusing is about
+/// the code the browser brought back (401, and the reader is told nothing more - a used code, a
+/// wrong verifier and an unknown client look the same from here), while not reaching it is our
+/// problem (500, and the detail goes to the log rather than to the reader).
+enum ExchangeFailure {
+    Refused,
+    Unavailable(String),
+}
+
+impl ExchangeFailure {
+    fn into_http(self) -> HttpError {
+        match self {
+            ExchangeFailure::Refused => {
+                HttpError::Unauthorized("the sign-in could not be completed")
+            }
+            ExchangeFailure::Unavailable(detail) => {
+                tracing::warn!("the sign-in could not reach the provider: {detail}");
+                crate::models::error::map_internal_error(
+                    "the provider's token endpoint could not be reached",
+                )
+            }
+        }
+    }
 }
 
 impl TokenEndpoint {
     /// Ask the provider to turn the code into tokens.
-    async fn exchange(&self, request: &ExchangeRequest) -> Result<Session, String> {
+    async fn exchange(&self, request: &ExchangeRequest) -> Result<Session, ExchangeFailure> {
         crate::webhook::install_crypto_provider();
-        let response = reqwest::Client::new()
+        let client = self.client.get_or_init(|| {
+            crate::webhook::install_crypto_provider();
+            reqwest::Client::new()
+        });
+        let response = client
             .post(&self.endpoint)
             .header("content-type", "application/x-www-form-urlencoded")
             .body(form_body(&exchange_form(&self.client_id, request)))
             .send()
             .await
-            .map_err(|e| format!("the token endpoint could not be reached: {e}"))?;
+            .map_err(|e| ExchangeFailure::Unavailable(format!("could not be reached: {e}")))?;
         let status = response.status();
         if !status.is_success() {
             // The provider's own words are worth the log, and not worth the reader: a code that
@@ -134,16 +181,19 @@ impl TokenEndpoint {
             // here, and none of them is the reader's business to tell apart.
             let body = response.text().await.unwrap_or_default();
             tracing::warn!("the token exchange was refused ({status}): {body}");
-            return Err("the sign-in could not be completed".to_string());
+            return Err(ExchangeFailure::Refused);
         }
         // Read as text and parse here, for the same reason the form is written by hand: this build
         // of reqwest carries no serde integration.
         let body = response
             .text()
             .await
-            .map_err(|e| format!("the token endpoint answered something unreadable: {e}"))?;
-        let tokens: ProviderTokens = serde_json::from_str(&body)
-            .map_err(|e| format!("the token endpoint answered something unexpected: {e}"))?;
+            .map_err(|e| {
+                ExchangeFailure::Unavailable(format!("answered something unreadable: {e}"))
+            })?;
+        let tokens: ProviderTokens = serde_json::from_str(&body).map_err(|e| {
+            ExchangeFailure::Unavailable(format!("answered something unexpected: {e}"))
+        })?;
         Ok(Session {
             token: tokens.id_token,
             expires_at: expiry(tokens.expires_in),
@@ -162,7 +212,7 @@ async fn exchange_code(
     let session = endpoint
         .exchange(&request)
         .await
-        .map_err(|reason| HttpError::Unauthorized(&reason))?;
+        .map_err(ExchangeFailure::into_http)?;
     Ok((StatusCode::OK, Json(session)))
 }
 
@@ -179,6 +229,46 @@ pub fn routes<R: Storage>(endpoint: TokenEndpoint) -> Router<AppState<R>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two failures are answered differently, and neither answers with the reason.
+    ///
+    /// A provider that refuses is about the code the browser brought back: 401, and nothing about
+    /// which of the reasons it was. A provider we could not reach is our problem, not the reader's
+    /// credentials - and the detail (host, TLS, parse position) belongs in the log.
+    #[tokio::test]
+    async fn an_unreachable_provider_is_not_a_401() {
+        let endpoint = TokenEndpoint::new(
+            "abc".to_string(),
+            "http://127.0.0.1:1/oauth2/token".to_string(),
+        );
+        let request = ExchangeRequest {
+            code: "code".to_string(),
+            code_verifier: "verifier".to_string(),
+            redirect_uri: "http://localhost:4200/auth/callback".to_string(),
+        };
+
+        let failure = match endpoint.exchange(&request).await {
+            Ok(_) => panic!("a port nothing listens on answered"),
+            Err(failure) => failure,
+        };
+        let http = failure.into_http();
+        assert_eq!(
+            http.status_code, 500,
+            "an outage is not the reader's credentials"
+        );
+        assert!(
+            !http.message.contains("127.0.0.1") && !http.message.contains("oauth2"),
+            "the reason leaked: {}",
+            http.message
+        );
+    }
+
+    #[test]
+    fn a_refusal_says_only_that_it_could_not_be_completed() {
+        let http = ExchangeFailure::Refused.into_http();
+        assert_eq!(http.status_code, 401);
+        assert_eq!(http.message, "the sign-in could not be completed");
+    }
 
     const LOGIN: &str = "https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc&response_type=code&scope=openid+email";
 
