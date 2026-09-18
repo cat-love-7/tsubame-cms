@@ -5,7 +5,7 @@ import { HttpTestingController } from '@angular/common/http/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 
-import { CollectionSchemaEdit } from './edit';
+import { CollectionSchemaEdit } from './schema';
 
 describe('CollectionSchemaEdit', () => {
   let component: CollectionSchemaEdit;

@@ -100,7 +100,7 @@ export class Sidebar {
               {
                 name: 'Collections',
                 nameKey: 'content.collections',
-                link: '/settings/schemas/collections',
+                link: '/settings/collections',
               },
               {
                 name: 'Single pages',

@@ -9,7 +9,7 @@ import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
 import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
-import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
+import { EditSchema } from '../../shared/edit-schema/edit-schema';
 
 /** Schema editor for one single page. Reuses the schema editor the collections use. */
 @Component({

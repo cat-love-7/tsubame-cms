@@ -58,21 +58,35 @@ export const dashboardRoutes: Routes = [
   },
   // Schema editing.
   {
-    path: 'settings/schemas/collections',
+    path: 'settings/collections',
     loadComponent: () =>
-      import('./settings/schemas/collections/list/list').then((m) => m.CollectionSchemaList),
+      import('./settings/collections/list/list').then((m) => m.CollectionSchemaList),
+  },
+  {
+    path: 'settings/collections/create',
+    loadComponent: () =>
+      import('./settings/collections/create/create').then((m) => m.CollectionSchemaCreate),
+    canDeactivate: [unsavedChangesGuard],
+  },
+  {
+    path: 'settings/collections/:name/schema',
+    loadComponent: () =>
+      import('./settings/collections/schema/schema').then((m) => m.CollectionSchemaEdit),
+    canDeactivate: [unsavedChangesGuard],
+  },
+  // The addresses these screens used to have, under `settings/schemas/`: a bookmark is a link
+  // someone kept, and so is an entry in the browser's history.
+  {
+    path: 'settings/schemas/collections',
+    redirectTo: 'settings/collections',
   },
   {
     path: 'settings/schemas/collections/create',
-    loadComponent: () =>
-      import('./settings/schemas/collections/create/create').then((m) => m.CollectionSchemaCreate),
-    canDeactivate: [unsavedChangesGuard],
+    redirectTo: 'settings/collections/create',
   },
   {
     path: 'settings/schemas/collections/edit/:name',
-    loadComponent: () =>
-      import('./settings/schemas/collections/edit/edit').then((m) => m.CollectionSchemaEdit),
-    canDeactivate: [unsavedChangesGuard],
+    redirectTo: 'settings/collections/:name/schema',
   },
   {
     path: 'settings/single-pages',

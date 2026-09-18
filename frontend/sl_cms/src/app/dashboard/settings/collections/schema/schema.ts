@@ -13,8 +13,8 @@ import { fingerprint } from 'app/core/value-changes';
 @Component({
   selector: 'app-collection-schema-edit',
   imports: [EditSchema, MessagePipe],
-  templateUrl: './edit.html',
-  styleUrl: './edit.scss',
+  templateUrl: './schema.html',
+  styleUrl: './schema.scss',
 })
 export class CollectionSchemaEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);

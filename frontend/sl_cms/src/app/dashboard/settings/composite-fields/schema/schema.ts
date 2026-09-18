@@ -9,7 +9,7 @@ import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
 import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
-import { EditSchema } from '../../schemas/shared/edit-schema/edit-schema';
+import { EditSchema } from '../../shared/edit-schema/edit-schema';
 
 /**
  * Schema editor for one composite field definition.
