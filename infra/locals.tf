@@ -36,8 +36,10 @@ locals {
       COGNITO_LOGIN_URL         = local.login_url
       BOOTSTRAP_ADMIN_USERNAMES = join(",", var.bootstrap_admin_usernames)
       CORS_ALLOWED_ORIGINS      = join(",", var.cors_allowed_origins)
-      JWT_SECRET                = var.jwt_secret
-      WEBHOOK_URLS              = join(",", var.webhook_urls)
+      # Only the ARN: the value is read from Secrets Manager at startup, so it is in neither the
+      # function's configuration nor the state file.
+      JWT_SECRET_ARN = var.jwt_secret_arn
+      WEBHOOK_URLS   = join(",", var.webhook_urls)
       # Which of the two ways this deployment serves an image's bytes, and how long a signature
       # lasts when it does. `AWS_IMAGE_BASE_URL` (a CDN in front of the bucket) only means anything
       # for the address mode: a signature names the bucket itself.

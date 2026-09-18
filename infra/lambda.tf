@@ -61,6 +61,14 @@ data "aws_iam_policy_document" "function" {
     resources = [aws_s3_bucket.images.arn]
   }
 
+  # The signing secret, read once at startup (`resolve_jwt_secret`). Scoped to the one secret:
+  # the function has no business reading any other.
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.jwt_secret_arn]
+  }
+
   statement {
     effect    = "Allow"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]

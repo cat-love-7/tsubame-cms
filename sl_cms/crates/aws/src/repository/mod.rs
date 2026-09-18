@@ -134,7 +134,7 @@ impl AwsRepository {
 ///
 /// `SdkError`'s `Display` collapses to "service error", which is useless in a log: the code and
 /// message it sent are the interesting part.
-fn describe<E, R>(error: &SdkError<E, R>) -> String
+pub(crate) fn describe<E, R>(error: &SdkError<E, R>) -> String
 where
     E: ProvideErrorMetadata + std::fmt::Debug,
     R: std::fmt::Debug,

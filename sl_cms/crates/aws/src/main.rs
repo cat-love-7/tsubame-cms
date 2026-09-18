@@ -13,7 +13,13 @@ async fn main() {
     // visible at the entry point rather than hidden in whichever client happens to be built first.
     sl_cms_core::webhook::install_crypto_provider();
 
-    let config = Config::from_env().unwrap_or_else(|error| fatal(error.into()));
+    let mut config = Config::from_env().unwrap_or_else(|error| fatal(error.into()));
+    // A deployment may keep the signing secret in Secrets Manager and pass only its ARN: the
+    // secret is then in neither the function's configuration nor Terraform's state. A deployment
+    // that sets JWT_SECRET itself is left alone.
+    if let Err(error) = sl_cms_aws::resolve_jwt_secret(&mut config).await {
+        fatal(error);
+    }
 
     let running_on_lambda = std::env::var("AWS_LAMBDA_RUNTIME_API").is_ok();
     let result = if running_on_lambda {

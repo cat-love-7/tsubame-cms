@@ -37,7 +37,9 @@ The table holds everything, so two things are on by default and one is left to t
 ```bash
 scripts/build-lambda.sh                 # writes infra/build/sl-cms-aws-arm64.zip (the default)
 cd infra
-cp terraform.tfvars.example terraform.tfvars   # fill in jwt_secret and who may administer
+#   aws secretsmanager create-secret --name sl-cms/jwt-secret \
+#     --secret-string "$(openssl rand -base64 48)"
+cp terraform.tfvars.example terraform.tfvars   # fill in jwt_secret_arn and who may administer
 terraform init
 terraform plan
 terraform apply

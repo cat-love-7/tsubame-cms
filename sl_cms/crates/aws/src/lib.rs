@@ -461,6 +461,68 @@ fn run_in_emulator(script: &str) {
     );
 }
 
+/// Where a deployment keeps the signing secret: Secrets Manager, when it says so.
+///
+/// `JWT_SECRET` still wins - a deployment that sets both asked for the environment variable, and
+/// a local run has neither. An ARN is what makes the process fetch one, and the fetch is what
+/// keeps the secret out of the Lambda configuration and out of Terraform's state.
+///
+/// Split out from the call so the decision is testable without reaching AWS.
+fn secret_arn_to_fetch<'a>(has_env_secret: bool, arn: Option<&'a str>) -> Option<&'a str> {
+    if has_env_secret {
+        return None;
+    }
+    arn.map(str::trim).filter(|arn| !arn.is_empty())
+}
+
+/// Read the signing secret from Secrets Manager when the deployment names one there.
+///
+/// Called before anything is built, so a secret that cannot be read stops the process rather than
+/// leaving it to mint tokens with an ephemeral key that nobody else knows (see
+/// `Config::jwt_secret_is_ephemeral`).
+pub async fn resolve_jwt_secret(
+    config: &mut sl_cms_core::config::Config,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    use sl_cms_core::config::MIN_JWT_SECRET_LEN;
+
+    let arn = std::env::var("JWT_SECRET_ARN").ok();
+    let Some(arn) = secret_arn_to_fetch(!config.jwt_secret_is_ephemeral, arn.as_deref()) else {
+        return Ok(());
+    };
+
+    // Region and credentials come from the environment, as they do for the execution role.
+    let shared = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .load()
+        .await;
+    let answer = aws_sdk_secretsmanager::Client::new(&shared)
+        .get_secret_value()
+        .secret_id(arn)
+        .send()
+        .await
+        .map_err(|e| {
+            format!(
+                "could not read the signing secret from Secrets Manager: {}",
+                crate::repository::describe(&e)
+            )
+        })?;
+
+    let Some(secret) = answer.secret_string() else {
+        return Err("the signing secret has no string value".into());
+    };
+    if secret.len() < MIN_JWT_SECRET_LEN {
+        return Err(format!(
+            "the signing secret in Secrets Manager is {} characters; {MIN_JWT_SECRET_LEN} is the minimum",
+            secret.len()
+        )
+        .into());
+    }
+
+    config.jwt_secret = secret.as_bytes().to_vec();
+    config.jwt_secret_is_ephemeral = false;
+    tracing::info!("the signing key was read from Secrets Manager");
+    Ok(())
+}
+
 /// A repository over a fresh table, serving images the way the given mode says.
 ///
 /// What a test needs to see both deployments: the same CMS, one with a readable bucket and one
@@ -552,6 +614,25 @@ pub async fn open_test_repository(
     let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
     repository.create_table().await?;
     Ok((repository, table))
+}
+
+#[cfg(test)]
+mod secret_tests {
+    use super::secret_arn_to_fetch;
+
+    /// A secret is fetched only when the deployment asked for one and did not set the variable.
+    #[test]
+    fn a_secret_is_fetched_only_when_the_deployment_names_one() {
+        let arn = "arn:aws:secretsmanager:eu-west-1:1:secret:sl-cms/jwt-AbCdEf";
+        assert_eq!(secret_arn_to_fetch(false, Some(arn)), Some(arn));
+        assert_eq!(secret_arn_to_fetch(false, Some("   ")), None, "blank is not an ARN");
+        assert_eq!(secret_arn_to_fetch(false, None), None, "a local run has neither");
+        assert_eq!(
+            secret_arn_to_fetch(true, Some(arn)),
+            None,
+            "JWT_SECRET was set: that is the one the deployment asked for"
+        );
+    }
 }
 
 #[cfg(test)]

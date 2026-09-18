@@ -16,13 +16,23 @@ variable "environment" {
   default     = "staging"
 }
 
-variable "jwt_secret" {
+variable "jwt_secret_arn" {
   description = <<-EOT
-    Signs preview links and password-reset links — the same secret the on-premises deployment
-    uses. Cognito issues the sign-in tokens, so this one no longer signs those.
+    The ARN of the Secrets Manager secret that signs preview links and password-reset links -
+    the same secret the on-premises deployment uses. Cognito issues the sign-in tokens, so this
+    one no longer signs those.
+
+    The secret is created outside Terraform, on purpose: a value that passes through this
+    configuration would sit in the state file, and in whatever carries it there. Create it once
+    with
+
+      aws secretsmanager create-secret --name sl-cms/jwt-secret \
+        --secret-string "$(openssl rand -base64 48)"
+
+    and put the ARN it prints here. The function reads it at startup; `JWT_SECRET` (used by a
+    local run, and by the on-premises binary) is not set in this deployment.
   EOT
   type        = string
-  sensitive   = true
 }
 
 variable "bootstrap_admin_usernames" {
