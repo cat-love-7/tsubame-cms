@@ -1,0 +1,15 @@
+# The parts of the S3 backend that differ per deployment:
+#
+#   cd infra
+#   cp backend.hcl.example backend.hcl      # fill in the bucket `infra/bootstrap` printed
+#   terraform init -backend-config=backend.hcl
+#
+# Copy it rather than commit it: the bucket belongs to one account. Everything here reaches
+# `terraform init`, which writes it into `.terraform/` and into plan files, so credentials do not
+# belong in this file - the backend reads those from the environment, as the provider does.
+
+bucket = "CHANGE-ME-sl-cms-tfstate"
+# One key per deployment, so several can share the bucket.
+key    = "sl-cms/staging/terraform.tfstate"
+# Keep this the same as `var.region` in `terraform.tfvars`: a backend cannot read a variable.
+region = "eu-west-1"

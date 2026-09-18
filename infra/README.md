@@ -8,8 +8,8 @@ page, and the Lambda function the API runs as.
 
 | Check | Where it runs |
 |---|---|
-| `terraform fmt -check` | here |
-| `terraform init -backend=false` + `terraform validate` | here, against the real providers |
+| `terraform fmt -check -recursive` | here |
+| `terraform init -backend=false` + `terraform validate` | here, against the real providers, for `infra/` and `infra/bootstrap/` |
 | `terraform plan` / `apply` | **nowhere yet** — they need AWS credentials |
 | The function actually answering an invocation | **nothing yet**; that is staging |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`) |
@@ -20,19 +20,35 @@ and the bucket policy meet reality.
 
 ## Before two people apply it
 
-The table holds everything, so two things are on by default and one is left to the operator:
+Three things stand between a mistake and a lost deployment:
 
 * **`deletion_protection = true`** (the variable's default). `terraform destroy` then fails on the
   table instead of taking every account, collection and page with it. A scratch deployment sets
   the variable to false *deliberately*.
-* **State has to live somewhere shared** before a second pair of hands runs `plan`. The commented
-  `backend "s3"` block in `versions.tf` is the shape to fill in (bucket + lock table); without it,
-  each operator has their own state file and the second `apply` is a guess.
+* **State lives in S3, in a bucket that has to exist first.** `infra/bootstrap/` is the one root
+  applied by hand: it creates the bucket, turns versioning on (that is what makes a bad apply
+  recoverable) and refuses to be destroyed. Locking is S3's own (`use_lockfile`: a `<key>.tflock`
+  object beside the state) — the DynamoDB table older configurations locked with is deprecated and
+  goes away in a future Terraform.
 * **MFA is available, not required** (`mfa_configuration = "OPTIONAL"` with TOTP). Turning it into
   a requirement is a policy for whoever runs this deployment, and it is a one-line change to
   `REQUIRED` once every account has enrolled.
 
 ## Using it
+
+Once, to give the main configuration somewhere to keep its state:
+
+```bash
+cd infra/bootstrap
+terraform init
+terraform apply -var state_bucket=<a globally unique name>   # prints the bucket
+cd ..
+cp backend.hcl.example backend.hcl    # fill in the bucket it printed; keep the region
+terraform init -backend-config=backend.hcl
+cd ..                                # back to the repository root
+```
+
+Then, per deployment:
 
 ```bash
 scripts/build-lambda.sh                 # writes infra/build/sl-cms-aws-arm64.zip (the default)
@@ -40,14 +56,16 @@ cd infra
 #   aws secretsmanager create-secret --name sl-cms/jwt-secret \
 #     --secret-string "$(openssl rand -base64 48)"
 cp terraform.tfvars.example terraform.tfvars   # fill in jwt_secret_arn and who may administer
-terraform init
 terraform plan
 terraform apply
 ```
 
-The backend the plan talks about is the local one (`backend "local"`, the default). A shared
-deployment wants an S3 backend so two operators cannot apply different plans; that is a block to
-add, not a default to guess.
+`backend.hcl` is what makes the state shared: `terraform init` writes it to the bucket under the
+key the file names, so two operators who run `plan` at once share one state and one lock instead of
+two guesses. It is not committed (it names one account's bucket); `backend.hcl.example` is the
+shape. `bootstrap/` keeps its own state locally — it is the thing that makes the remote state
+possible, so it cannot use it — and that file is worth keeping: without it the bucket still exists,
+but Terraform no longer knows it made it.
 
 ## What the deployment is told
 

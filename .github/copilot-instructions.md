@@ -30,7 +30,8 @@ that says "repository" tells a reader nothing they did not already know from the
 cd frontend/sl_cms && npm run lint && npm run format:check
 ./scripts/test-e2e.sh         # real browser against a real backend, own servers on 8080/4200
 docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
-cd infra && terraform fmt -check && terraform validate
+(cd infra && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
+(cd infra/bootstrap && terraform init -backend=false && terraform validate)
 ```
 
 ## Rules that are easy to get wrong
@@ -63,3 +64,6 @@ cd infra && terraform fmt -check && terraform validate
   not yet worth a rewrite - do not add new ones.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
   (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
+- **Terraform state is remote** (`infra/` uses the S3 backend with `use_lockfile`, configured
+  through `infra/backend.hcl`). `infra/bootstrap/` is the one root applied by hand, once: it makes
+  the state bucket, and it is the only root whose state is local.

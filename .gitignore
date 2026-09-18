@@ -25,9 +25,12 @@ Thumbs.db
 *.launch
 
 # --- Terraform (infra) ---
-/infra/.terraform/
-/infra/.terraform.lock.hcl
-/infra/*.tfstate
-/infra/*.tfstate.*
+# `**/` so the bootstrap root (`infra/bootstrap/`) is covered by the same rules.
+/infra/**/.terraform/
+/infra/**/.terraform.lock.hcl
+/infra/**/*.tfstate
+/infra/**/*.tfstate.*
 /infra/build/
 /infra/terraform.tfvars
+# The backend's per-deployment half; `infra/backend.hcl.example` is the shape.
+/infra/backend.hcl
