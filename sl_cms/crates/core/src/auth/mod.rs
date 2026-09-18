@@ -65,7 +65,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     pub async fn has_any_user(&self) -> Result<bool, HttpError> {
         Ok(!self
             .repository
-            .get_all_users()
+            .list_users()
             .await
             .map_err(internal)?
             .is_empty())
@@ -303,7 +303,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     async fn ensure_another_active_admin(&self, excluding: &UserId) -> Result<(), HttpError> {
         let others = self
             .repository
-            .get_all_users()
+            .list_users()
             .await
             .map_err(internal)?
             .into_iter()
@@ -320,7 +320,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     pub async fn list_users(&self) -> Result<Vec<UserResponse>, HttpError> {
         let mut users: Vec<User> = self
             .repository
-            .get_all_users()
+            .list_users()
             .await
             .map_err(internal)?
             .into_iter()
@@ -679,7 +679,7 @@ mod tests {
                 .insert(user_id.to_string(), user.clone());
             Ok(())
         }
-        async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
+        async fn list_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
             Ok(self
                 .users
                 .read()

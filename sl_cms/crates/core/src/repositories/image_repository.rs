@@ -25,7 +25,7 @@ pub enum Replacement {
 /// stores them itself (see [`crate::repositories::local_image_bytes::LocalImageBytes`]).
 pub trait ImageRepository: Send + Sync {
     fn get_image(&self, id: &ImageId) -> impl Future<Output = Result<Option<Image>, BoxError>> + Send;
-    fn get_all_images(&self) -> impl Future<Output = Result<Vec<(ImageId, Image)>, BoxError>> + Send;
+    fn list_images(&self) -> impl Future<Output = Result<Vec<(ImageId, Image)>, BoxError>> + Send;
     fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageId) -> impl Future<Output = Result<(), BoxError>> + Send;
 

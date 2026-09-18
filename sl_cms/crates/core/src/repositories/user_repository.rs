@@ -47,7 +47,7 @@ pub trait UserRepository: Send + Sync + 'static {
     /// the read of `last_login` and the write of it are one step.
     fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> impl Future<Output = Result<(), BoxError>> + Send;
 
-    fn get_all_users(&self) -> impl Future<Output = Result<Vec<(UserId, User)>, BoxError>> + Send;
+    fn list_users(&self) -> impl Future<Output = Result<Vec<(UserId, User)>, BoxError>> + Send;
 
     fn delete_user(&self, user_id: &UserId) -> impl Future<Output = Result<(), BoxError>> + Send;
 }

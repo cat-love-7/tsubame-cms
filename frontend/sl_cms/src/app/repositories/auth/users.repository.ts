@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { apiUrl } from 'app/core/api-url';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -45,19 +46,19 @@ export class UsersRepository {
   constructor(private http: HttpClient) {}
 
   list(): Observable<CurrentUser[]> {
-    return this.http.get<CurrentUser[]>('/api/auth/users');
+    return this.http.get<CurrentUser[]>(apiUrl('/auth/users'));
   }
 
   create(user: NewUser): Observable<CurrentUser> {
-    return this.http.post<CurrentUser>('/api/auth/users', user);
+    return this.http.post<CurrentUser>(apiUrl('/auth/users'), user);
   }
 
   update(id: string, change: UserChange): Observable<CurrentUser> {
-    return this.http.patch<CurrentUser>(`/api/auth/users/${id}`, change);
+    return this.http.patch<CurrentUser>(apiUrl(`/auth/users/${id}`), change);
   }
 
   remove(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/auth/users/${id}`);
+    return this.http.delete<void>(apiUrl(`/auth/users/${id}`));
   }
 
   /**
@@ -67,7 +68,7 @@ export class UsersRepository {
    * thing that works for an account with no address on file.
    */
   issuePasswordResetLink(id: string): Observable<PasswordResetLink> {
-    return this.http.post<PasswordResetLink>(`/api/auth/users/${id}/password-reset-link`, null);
+    return this.http.post<PasswordResetLink>(apiUrl(`/auth/users/${id}/password-reset-link`), null);
   }
 
   /** An administrator setting someone else's password. */
@@ -78,7 +79,7 @@ export class UsersRepository {
    * this one included, so the caller has to adopt the replacement to stay signed in.
    */
   changeOwnPassword(currentPassword: string, newPassword: string): Observable<PasswordChanged> {
-    return this.http.post<PasswordChanged>('/api/auth/me/password', {
+    return this.http.post<PasswordChanged>(apiUrl('/auth/me/password'), {
       current_password: currentPassword,
       new_password: newPassword,
     });

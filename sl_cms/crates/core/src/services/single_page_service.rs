@@ -67,7 +67,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .add_single_page_schema(name, schema)
             .await.map_err(map_internal_error)
     }
-    pub async fn get_all_page_names(&self) -> Result<Vec<SinglePageName>, HttpError> {
+    pub async fn list_page_names(&self) -> Result<Vec<SinglePageName>, HttpError> {
         self.single_page_repository
             .list_all_page_names()
             .await.map_err(map_internal_error)
@@ -219,7 +219,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // cheap way to answer that is one query rather than one per value.
         let images: HashMap<ImageId, Image> = self
             .image_repository
-            .get_all_images()
+            .list_images()
             .await
             .map_err(map_internal_error)?
             .into_iter()
@@ -474,7 +474,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// Pages visible to the public delivery API.
     pub async fn list_published_page_names(&self) -> Result<Vec<SinglePageName>, HttpError> {
         let mut names = Vec::new();
-        for name in self.get_all_page_names().await? {
+        for name in self.list_page_names().await? {
             let metadata = self
                 .single_page_repository
                 .get_page_metadata(&name)
@@ -689,7 +689,7 @@ mod tests {
                 deleted_at: None,
             }))
         }
-        async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(vec![])
         }
         async fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -868,12 +868,12 @@ mod tests {
     #[tokio::test]
     async fn test_create_single_page_service() {
         let service = create_test_service();
-        assert!(service.get_all_page_names().await.is_ok());
+        assert!(service.list_page_names().await.is_ok());
     }
     #[tokio::test]
     async fn test_get_all_pages_empty() {
         let service = create_test_service();
-        let page_names = service.get_all_page_names().await.unwrap();
+        let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names.len(), 0);
     }
 
@@ -901,7 +901,7 @@ mod tests {
         let result = service.add_single_page_schema(&"test_page".into(), &schema).await;
         assert!(result.is_ok());
 
-        let page_names = service.get_all_page_names().await.unwrap();
+        let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names, vec!["test_page".into()]);
         let retrieved_schema = service.get_single_page_schema(&"test_page".into()).await.unwrap();
         assert_eq!(retrieved_schema, schema);
@@ -990,7 +990,7 @@ mod tests {
         let result = service.delete_single_page(&"test_page".into()).await;
         assert!(result.is_ok());
 
-        let page_names = service.get_all_page_names().await.unwrap();
+        let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names.len(), 0);
     }
     #[tokio::test]
@@ -1012,7 +1012,7 @@ mod tests {
         assert!(result.is_err());
 
         assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
-        let page_names = service.get_all_page_names().await.unwrap();
+        let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names, vec!["test_page".into()]);
     }
 

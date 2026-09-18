@@ -3,12 +3,9 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 
-import { AuthService } from './auth.service';
+import { API_BASE } from 'app/core/api-url';
 
-/** The API prefix this application talks to, for telling our URLs from everyone else's. */
-function apiBase(): string {
-  return '/api';
-}
+import { AuthService } from './auth.service';
 
 /**
  * Attaches the bearer token to every request and signs the user out when the server
@@ -25,7 +22,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   // Only this API gets the token. Image bytes go straight to object storage on AWS, and an
   // `Authorization` header there would be at best ignored and at worst a signature mismatch;
   // a rejection from S3 is not this session being over either.
-  const external = /^https?:\/\//i.test(request.url) && !request.url.startsWith(apiBase());
+  const external = /^https?:\/\//i.test(request.url) && !request.url.startsWith(API_BASE);
   const authorised =
     token && !external
       ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } })

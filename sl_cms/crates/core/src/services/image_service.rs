@@ -36,7 +36,7 @@ impl<R: ImageRepository> ImageService<R> {
     async fn entries(&self, trashed: bool) -> Result<Vec<ImageEntry>, HttpError> {
         let mut images = self
             .repository
-            .get_all_images()
+            .list_images()
             .await.map_err(map_internal_error)?;
         // Sorted here rather than trusted from the store: the on-premises adapter iterates
         // in key-byte order, which stops being numeric order once ids pass 255.

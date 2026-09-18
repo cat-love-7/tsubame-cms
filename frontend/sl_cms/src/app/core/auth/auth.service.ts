@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { apiUrl } from 'app/core/api-url';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
@@ -189,7 +190,7 @@ export class AuthService {
   }
 
   login(username: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/auth/login', { username, password }).pipe(
+    return this.http.post<LoginResponse>(apiUrl('/auth/login'), { username, password }).pipe(
       tap((response) => {
         this.tokenSignal.set(response.token);
         this.userSignal.set(response.user);
@@ -210,7 +211,7 @@ export class AuthService {
    */
   completePasswordReset(token: string, newPassword: string): Observable<PasswordChanged> {
     return this.http
-      .post<PasswordChanged>('/api/auth/password-reset', { token, new_password: newPassword })
+      .post<PasswordChanged>(apiUrl('/auth/password-reset'), { token, new_password: newPassword })
       .pipe(
         tap((changed) => {
           // A reset link belongs to one account, and this browser may be signed in as another: the
@@ -242,7 +243,7 @@ export class AuthService {
     redirectUri: string,
   ): Observable<{ token: string; expires_at: string }> {
     return this.http
-      .post<{ token: string; expires_at: string }>('/api/auth/cognito/exchange', {
+      .post<{ token: string; expires_at: string }>(apiUrl('/auth/cognito/exchange'), {
         code,
         code_verifier: codeVerifier,
         redirect_uri: redirectUri,
@@ -265,7 +266,7 @@ export class AuthService {
    * with a token from storage and nothing beside it, and the moment after a password reset.
    */
   loadUser(): Observable<CurrentUser> {
-    return this.http.get<CurrentUser>('/api/auth/me').pipe(
+    return this.http.get<CurrentUser>(apiUrl('/auth/me')).pipe(
       tap((user) => {
         this.userSignal.set(user);
         writeStorage(USER_KEY, JSON.stringify(user));

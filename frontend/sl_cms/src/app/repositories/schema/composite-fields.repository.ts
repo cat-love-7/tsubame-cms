@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { apiUrl } from 'app/core/api-url';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -17,23 +18,23 @@ export class CompositeFieldRepository {
   /** Every definition, keyed by id. */
   getAllCompositeFields(): Observable<{ [id: string]: CompositeFieldDefinition }> {
     return this.http.get<{ [id: string]: CompositeFieldDefinition }>(
-      '/api/models/composite_fields',
+      apiUrl('/models/composite_fields'),
     );
   }
 
   getCompositeFieldSchema(id: string): Observable<CompositeFieldDefinition> {
-    return this.http.get<CompositeFieldDefinition>(`/api/models/composite_fields/${id}`);
+    return this.http.get<CompositeFieldDefinition>(apiUrl(`/models/composite_fields/${id}`));
   }
 
   createCompositeField(id: string, schema: CompositeFieldDefinition): Observable<void> {
-    return this.http.post<void>(`/api/models/composite_fields/${id}`, schema);
+    return this.http.post<void>(apiUrl(`/models/composite_fields/${id}`), schema);
   }
 
   updateCompositeFieldSchema(id: string, schema: CompositeFieldDefinition): Observable<void> {
-    return this.http.put<void>(`/api/models/composite_fields/${id}`, schema);
+    return this.http.put<void>(apiUrl(`/models/composite_fields/${id}`), schema);
   }
 
   deleteCompositeField(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/models/composite_fields/${id}`);
+    return this.http.delete<void>(apiUrl(`/models/composite_fields/${id}`));
   }
 }

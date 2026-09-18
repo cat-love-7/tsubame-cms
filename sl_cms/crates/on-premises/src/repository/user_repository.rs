@@ -51,7 +51,7 @@ impl UserRepository for Repository {
         // record that would have to be kept in sync with the primary one.
         let wanted = normalize_username(username);
         Ok(self
-            .get_all_users()
+            .list_users()
             .await?
             .into_iter()
             .map(|(_, user)| user)
@@ -132,7 +132,7 @@ impl UserRepository for Repository {
         Ok(())
     }
 
-    async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
+    async fn list_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("user", StoreOptions::create())?;

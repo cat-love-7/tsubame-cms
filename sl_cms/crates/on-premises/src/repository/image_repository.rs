@@ -88,7 +88,7 @@ impl ImageRepository for Repository {
         }
     }
 
-    async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
+    async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single("image", StoreOptions::create())?;

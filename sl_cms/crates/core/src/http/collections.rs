@@ -336,7 +336,7 @@ async fn get_collections<R: Storage>(
     // answers 403 when it is opened. An administrator sees them all.
     let readable: Vec<CollectionName> = module
         .collection_service
-        .get_all_collections().await?
+        .list_collections().await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_collection(name.as_str())))
         .collect();

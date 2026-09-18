@@ -74,7 +74,7 @@ async fn list_single_page_metadata<R: Storage>(
     // Only what this account may read, judged per page (a grant can name one).
     let readable: Vec<SinglePageName> = module
         .single_page_service
-        .get_all_page_names()
+        .list_page_names()
         .await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
@@ -224,7 +224,7 @@ async fn get_single_pages<R: Storage>(
     // Only the pages this account may read (see `get_collections`).
     let readable: Vec<SinglePageName> = module
         .single_page_service
-        .get_all_page_names().await?
+        .list_page_names().await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
         .collect();

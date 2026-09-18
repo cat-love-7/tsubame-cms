@@ -249,7 +249,7 @@ impl UserRepository for AwsRepository {
         }
     }
 
-    async fn get_all_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
+    async fn list_users(&self) -> Result<Vec<(UserId, User)>, BoxError> {
         let inner = self.inner.clone();
         // Accounts are few and listed rarely, and the reservation list holds every one of
         // them (it is written in the same breath as the record), so a point read each is

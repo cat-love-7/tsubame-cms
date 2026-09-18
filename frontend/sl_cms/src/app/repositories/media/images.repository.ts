@@ -54,7 +54,7 @@ export class ImageRepository {
 
   /** Ask the server where to upload an image, and under which id it will be recorded. */
   requestUploadUrl(request: NewImageRequest): Observable<NewImageInfo> {
-    return this.http.post<NewImageInfo>('/api/models/images/get_upload_url', request);
+    return this.http.post<NewImageInfo>(apiUrl('/models/images/get_upload_url'), request);
   }
 
   /** Upload the bytes to the URL the server handed out. */
@@ -64,7 +64,7 @@ export class ImageRepository {
 
   /** Everything that has been uploaded, newest first. */
   listImages(): Observable<ImageEntry[]> {
-    return this.http.get<ImageEntry[]>('/api/models/images');
+    return this.http.get<ImageEntry[]>(apiUrl('/models/images'));
   }
 
   /**
@@ -74,7 +74,7 @@ export class ImageRepository {
    * content that references the image keeps working and a rename can be undone.
    */
   renameImage(id: number, originalFilename: string): Observable<void> {
-    return this.http.put<void>(`/api/models/images/${id}`, {
+    return this.http.put<void>(apiUrl(`/models/images/${id}`), {
       original_filename: originalFilename,
     });
   }
@@ -86,12 +86,12 @@ export class ImageRepository {
    * so an upload that fails changes nothing (see {@link applyReplacement}).
    */
   requestReplacement(id: number, ext: string): Observable<ReplacementInfo> {
-    return this.http.post<ReplacementInfo>(`/api/models/images/${id}/replace`, { ext });
+    return this.http.post<ReplacementInfo>(apiUrl(`/models/images/${id}/replace`), { ext });
   }
 
   /** Finish a replacement: the record now points at the bytes that were uploaded for it. */
   applyReplacement(id: number, fileName: string): Observable<void> {
-    return this.http.put<void>(`/api/models/images/${id}`, { file_name: fileName });
+    return this.http.put<void>(apiUrl(`/models/images/${id}`), { file_name: fileName });
   }
 
   /**
@@ -112,17 +112,17 @@ export class ImageRepository {
    * keeps the id it stored and this is what makes it stop resolving.
    */
   deleteImage(id: number): Observable<void> {
-    return this.http.delete<void>(`/api/models/images/${id}`);
+    return this.http.delete<void>(apiUrl(`/models/images/${id}`));
   }
 
   /** The content that uses an image, so a delete can say what it would break. */
   references(id: number): Observable<ImageOwner[]> {
-    return this.http.get<ImageOwner[]>(`/api/models/images/${id}/references`);
+    return this.http.get<ImageOwner[]>(apiUrl(`/models/images/${id}/references`));
   }
 
   /** The trash: images taken out of the library, most recently trashed first. */
   listTrash(): Observable<ImageEntry[]> {
-    return this.http.get<ImageEntry[]>('/api/models/images/trash');
+    return this.http.get<ImageEntry[]>(apiUrl('/models/images/trash'));
   }
 
   /**
@@ -132,11 +132,11 @@ export class ImageRepository {
    * other half is {@link deleteImage}.
    */
   trashImage(id: number): Observable<void> {
-    return this.http.post<void>(`/api/models/images/${id}/trash`, {});
+    return this.http.post<void>(apiUrl(`/models/images/${id}/trash`), {});
   }
 
   /** Put a trashed image back in the library. */
   restoreImage(id: number): Observable<void> {
-    return this.http.post<void>(`/api/models/images/${id}/restore`, {});
+    return this.http.post<void>(apiUrl(`/models/images/${id}/restore`), {});
   }
 }

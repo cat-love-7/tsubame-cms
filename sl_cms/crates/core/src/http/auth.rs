@@ -57,7 +57,7 @@ async fn update_user<R: Storage>(
     // A grant for a collection that does not exist would be invisible in every screen and
     // silently inert, so it is refused rather than stored.
     if let Some(overrides) = request.collection_permissions.as_ref() {
-        let known = module.collection_service.get_all_collections().await?;
+        let known = module.collection_service.list_collections().await?;
         for name in overrides.keys() {
             if !known.iter().any(|collection| collection.as_str() == name) {
                 return Err(HttpError::BadRequest(&format!(
@@ -67,7 +67,7 @@ async fn update_user<R: Storage>(
         }
     }
     if let Some(overrides) = request.single_page_permissions.as_ref() {
-        let known = module.single_page_service.get_all_page_names().await?;
+        let known = module.single_page_service.list_page_names().await?;
         for name in overrides.keys() {
             if !known.iter().any(|page| page.as_str() == name) {
                 return Err(HttpError::BadRequest(&format!("unknown single page '{name}'")));

@@ -128,7 +128,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
     }
 
-    pub async fn get_all_collections(&self) -> Result<Vec<CollectionName>, HttpError> {
+    pub async fn list_collections(&self) -> Result<Vec<CollectionName>, HttpError> {
         self.collection_repository
             .list_collection_names()
             .await.map_err(map_internal_error)
@@ -996,7 +996,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // cheap way to answer that is one query rather than one per value.
         let images: HashMap<ImageId, Image> = self
             .image_repository
-            .get_all_images()
+            .list_images()
             .await
             .map_err(map_internal_error)?
             .into_iter()
@@ -1026,7 +1026,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // cheap way to answer that is one query rather than one per value.
         let images: HashMap<ImageId, Image> = self
             .image_repository
-            .get_all_images()
+            .list_images()
             .await
             .map_err(map_internal_error)?
             .into_iter()
@@ -1458,7 +1458,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         &self,
     ) -> Result<Vec<CollectionName>, HttpError> {
         let mut names = Vec::new();
-        for name in self.get_all_collections().await? {
+        for name in self.list_collections().await? {
             if !self.published_item_ids(&name).await?.is_empty() {
                 names.push(name);
             }
@@ -1898,7 +1898,7 @@ mod tests {
                 deleted_at: None,
             }))
         }
-        async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(vec![])
         }
         async fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -2106,12 +2106,12 @@ mod tests {
     #[tokio::test]
     async fn test_create_collection_service() {
         let service = create_test_service();
-        assert!(service.get_all_collections().await.is_ok());
+        assert!(service.list_collections().await.is_ok());
     }
     #[tokio::test]
     async fn test_get_all_collections_empty() {
         let service = create_test_service();
-        let collection_names = service.get_all_collections().await.unwrap();
+        let collection_names = service.list_collections().await.unwrap();
         assert_eq!(collection_names.len(), 0);
     }
 
@@ -2139,7 +2139,7 @@ mod tests {
         let result = service.add_collection_schema(&"test_collection".into(), &schema).await;
         assert!(result.is_ok());
 
-        let collection_names = service.get_all_collections().await.unwrap();
+        let collection_names = service.list_collections().await.unwrap();
         assert_eq!(collection_names, vec!["test_collection".into()]);
 
         let retrieved_schema = service.get_collection_schema(&"test_collection".into()).await.unwrap();
@@ -2498,7 +2498,7 @@ mod tests {
         let result = service.delete_collection(&"test_collection".into()).await;
         assert!(result.is_ok());
 
-        let collection_names = service.get_all_collections().await.unwrap();
+        let collection_names = service.list_collections().await.unwrap();
         assert_eq!(collection_names.len(), 0);
     }
 

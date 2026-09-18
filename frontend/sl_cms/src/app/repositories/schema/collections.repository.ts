@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { apiUrl } from 'app/core/api-url';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
@@ -17,19 +18,19 @@ import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/mo
 export class CollectionRepository {
   constructor(private http: HttpClient) {}
   getAllCollectionNames(): Observable<string[]> {
-    return this.http.get<string[]>('/api/models/collections');
+    return this.http.get<string[]>(apiUrl('/models/collections'));
   }
   getCollectionSchema(name: string): Observable<CollectionSchema> {
-    return this.http.get<CollectionSchema>(`/api/models/collections/${name}/schema`);
+    return this.http.get<CollectionSchema>(apiUrl(`/models/collections/${name}/schema`));
   }
   updateCollectionSchema(name: string, schema: CollectionSchema): Observable<void> {
-    return this.http.put<void>(`/api/models/collections/${name}/schema`, schema);
+    return this.http.put<void>(apiUrl(`/models/collections/${name}/schema`), schema);
   }
   createCollection(name: string, schema: CollectionSchema): Observable<void> {
-    return this.http.post<void>(`/api/models/collections/${name}/schema`, schema);
+    return this.http.post<void>(apiUrl(`/models/collections/${name}/schema`), schema);
   }
   deleteCollection(name: string): Observable<void> {
-    return this.http.delete<void>(`/api/models/collections/${name}`);
+    return this.http.delete<void>(apiUrl(`/models/collections/${name}`));
   }
 
   // ---- items ---------------------------------------------------------------
@@ -43,7 +44,7 @@ export class CollectionRepository {
    */
   listCollectionItemsPage(name: string, limit: number, offset: number): Observable<CollectionItemPage> {
     return this.http
-      .get<CollectionItemEntry[]>(`/api/models/collections/${name}/items`, {
+      .get<CollectionItemEntry[]>(apiUrl(`/models/collections/${name}/items`), {
         params: { limit, offset },
         observe: 'response',
       })
@@ -56,20 +57,20 @@ export class CollectionRepository {
   }
 
   getCollectionItem(name: string, id: number): Observable<CollectionValue> {
-    return this.http.get<CollectionValue>(`/api/models/collections/${name}/items/${id}`);
+    return this.http.get<CollectionValue>(apiUrl(`/models/collections/${name}/items/${id}`));
   }
 
   /** Returns the id the server assigned to the new item. */
   createCollectionItem(name: string, values: CollectionValue): Observable<number> {
-    return this.http.post<number>(`/api/models/collections/${name}/item`, values);
+    return this.http.post<number>(apiUrl(`/models/collections/${name}/item`), values);
   }
 
   updateCollectionItem(name: string, id: number, values: CollectionValue): Observable<void> {
-    return this.http.put<void>(`/api/models/collections/${name}/items/${id}`, values);
+    return this.http.put<void>(apiUrl(`/models/collections/${name}/items/${id}`), values);
   }
 
   deleteCollectionItem(name: string, id: number): Observable<void> {
-    return this.http.delete<void>(`/api/models/collections/${name}/items/${id}`);
+    return this.http.delete<void>(apiUrl(`/models/collections/${name}/items/${id}`));
   }
 
   // ---- draft / published ---------------------------------------------------
@@ -77,17 +78,17 @@ export class CollectionRepository {
 
   /** Status of every item, keyed by id. Items that were never published are drafts. */
   listItemMetadata(name: string): Observable<ItemMetadataMap> {
-    return this.http.get<ItemMetadataMap>(`/api/models/collections/${name}/items/metadata`);
+    return this.http.get<ItemMetadataMap>(apiUrl(`/models/collections/${name}/items/metadata`));
   }
 
   getItemMetadata(name: string, id: number): Observable<ItemMetadata> {
-    return this.http.get<ItemMetadata>(`/api/models/collections/${name}/items/${id}/metadata`);
+    return this.http.get<ItemMetadata>(apiUrl(`/models/collections/${name}/items/${id}/metadata`));
   }
 
   /** Makes the item visible in the public content API. */
   /** Publish or unpublish a batch, answering per item (see `ItemStatusOutcome` on the server). */
   setItemsStatus(name: string, ids: number[], status: ItemStatus): Observable<ItemStatusOutcome[]> {
-    return this.http.post<ItemStatusOutcome[]>(`/api/models/collections/${name}/items/status`, {
+    return this.http.post<ItemStatusOutcome[]>(apiUrl(`/models/collections/${name}/items/status`), {
       ids,
       status,
     });
@@ -95,16 +96,16 @@ export class CollectionRepository {
 
   /** Copy an item: the server answers with the new item's id. */
   duplicateItem(name: string, id: number): Observable<number> {
-    return this.http.post<number>(`/api/models/collections/${name}/items/${id}/duplicate`, null);
+    return this.http.post<number>(apiUrl(`/models/collections/${name}/items/${id}/duplicate`), null);
   }
 
   publishItem(name: string, id: number): Observable<ItemMetadata> {
-    return this.http.post<ItemMetadata>(`/api/models/collections/${name}/items/${id}/publish`, null);
+    return this.http.post<ItemMetadata>(apiUrl(`/models/collections/${name}/items/${id}/publish`), null);
   }
 
   unpublishItem(name: string, id: number): Observable<ItemMetadata> {
     return this.http.post<ItemMetadata>(
-      `/api/models/collections/${name}/items/${id}/unpublish`,
+      apiUrl(`/models/collections/${name}/items/${id}/unpublish`),
       null,
     );
   }
@@ -112,7 +113,7 @@ export class CollectionRepository {
   /** Mints a link that shows this working copy to someone without an account. */
   createPreviewLink(name: string, id: number): Observable<PreviewLink> {
     return this.http.post<PreviewLink>(
-      `/api/models/collections/${name}/items/${id}/preview-link`,
+      apiUrl(`/models/collections/${name}/items/${id}/preview-link`),
       null,
     );
   }

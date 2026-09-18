@@ -104,7 +104,7 @@ impl ImageRepository for AwsRepository {
         }
     }
 
-    async fn get_all_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
+    async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, BoxError> {
         let inner = self.inner.clone();
         let mut images = Vec::new();
         for (sk, data) in list(&inner, key::IMAGE_INDEX, "image#").await? {
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(served.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
 
         // Listing, then deleting: both the record and the bytes go.
-        let all = repository.get_all_images().await.unwrap();
+        let all = repository.list_images().await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].0, info.id);
         assert_eq!(all[0].1.url, image.url);
