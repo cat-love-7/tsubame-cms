@@ -21,21 +21,13 @@
       }
     },
     {
+      // Not a background task: the suite runs and exits, and its output is Vitest's, not the
+      // bundle watcher's - so the matcher must not wait for a "bundle generation" line.
       "type": "npm",
       "script": "test",
-      "isBackground": true,
       "problemMatcher": {
         "owner": "typescript",
-        "pattern": "$tsc",
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": {
-            "regexp": "Changes detected"
-          },
-          "endsPattern": {
-            "regexp": "bundle generation (complete|failed)"
-          }
-        }
+        "pattern": "$tsc"
       }
     }
   ]

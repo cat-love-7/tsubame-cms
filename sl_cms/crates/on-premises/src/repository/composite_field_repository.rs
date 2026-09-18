@@ -158,7 +158,7 @@ mod tests {
         teardown_repository();
     }
     #[tokio::test]
-    async fn test_get_anomaly() {
+    async fn test_get_an_unknown_schema_is_none() {
         let repository = setup_repository();
         let id = "test_schema".into();
         let schema = vec![];

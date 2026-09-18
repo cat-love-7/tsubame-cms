@@ -10,11 +10,15 @@
       "url": "http://localhost:4200/"
     },
     {
+      // The test runner is Vitest (`ng test`), which has no debug page to open: this runs the
+      // suite once and stops, with the output in the terminal.
       "name": "ng test",
-      "type": "chrome",
+      "type": "node",
       "request": "launch",
-      "preLaunchTask": "npm: test",
-      "url": "http://localhost:9876/debug.html"
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["test", "--", "--watch=false"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

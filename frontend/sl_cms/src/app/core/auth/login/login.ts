@@ -49,6 +49,12 @@ export class Login {
 
   constructor() {
     this.capabilities.load();
+    // Someone who is already signed in has no business on this screen: a bookmark, a back button
+    // or a typed address would otherwise show a sign-in form that cannot improve on the session
+    // they have. The token is read synchronously from storage, so this is not a race with a load.
+    if (this.auth.user() !== null) {
+      void this.router.navigate(['/']);
+    }
   }
 
   /**

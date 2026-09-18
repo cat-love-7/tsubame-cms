@@ -1,1 +1,13 @@
+# What a checkout of this crate alone produces. The repository's own .gitignore covers the same
+# paths for the whole tree; this one is for a checkout that starts here.
 /target
+
+# Coverage output (scripts/test-rust.sh writes it)
+lcov.info
+**/lcov.info
+
+# A local run's data: the rkv environments and the uploaded image bytes.
+/data/
+
+# Local overrides
+.env

@@ -2,13 +2,9 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
-import {
-  ItemMetadata,
-  ItemMetadataMap,
-  ItemStatus,
-  ItemStatusOutcome,
-  PreviewLink,
-} from 'app/models/item-status';
+import { ItemMetadata, ItemMetadataMap, ItemStatus, ItemStatusOutcome } from 'app/models/item-status';
+import { PreviewLink } from 'app/models/links';
+
 import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 
 /**

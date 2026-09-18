@@ -1,11 +1,7 @@
 import { Injectable } from '@angular/core';
-import {
-  ItemMetadata,
-  ItemMetadataMap,
-  ItemStatus,
-  ItemStatusOutcome,
-  PreviewLink,
-} from 'app/models/item-status';
+import { ItemMetadata, ItemMetadataMap, ItemStatus, ItemStatusOutcome } from 'app/models/item-status';
+import { PreviewLink } from 'app/models/links';
+
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';

@@ -2,7 +2,9 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { ItemMetadata, PreviewLink } from 'app/models/item-status';
+import { ItemMetadata } from 'app/models/item-status';
+import { PreviewLink } from 'app/models/links';
+
 import { CollectionSchema } from 'app/models/schema/collection';
 import { ContentValue } from 'app/models/values/collection';
 
