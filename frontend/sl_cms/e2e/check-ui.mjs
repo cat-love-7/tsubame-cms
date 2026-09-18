@@ -268,7 +268,12 @@ async function createAccount(username, password, extra = {}, token) {
   const created = await api(
     'POST',
     '/auth/users',
-    { username, is_admin: false, permission: { can_view: true, can_edit: false, can_publish: false }, ...extra },
+    {
+      username,
+      is_admin: false,
+      permission: { can_view: true, can_edit: false, can_publish: false },
+      ...extra,
+    },
     token,
   );
   const link = await api('POST', `/auth/users/${created.id}/password-reset-link`, undefined, token);
@@ -388,12 +393,18 @@ try {
   // Put it back so the rest of the run sees a valid item.
   await scores.fill('[1, 2]');
   await save().click();
-  await page
-    .waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 })
-    .catch(() => {});
-  const savedScores = await api('GET', `/models/collections/${COLLECTION}/items/1`, undefined, token);
-  check('配列の値がそのまま保存される', JSON.stringify(savedScores?.scores) === '[1,2]', JSON.stringify(savedScores?.scores));
-
+  await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  const savedScores = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  check(
+    '配列の値がそのまま保存される',
+    JSON.stringify(savedScores?.scores) === '[1,2]',
+    JSON.stringify(savedScores?.scores),
+  );
 
   // -------------------------------------------------------------- first page
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
@@ -409,8 +420,14 @@ try {
   const paginator = page.locator('mat-paginator');
   check('ページャが表示される', await paginator.isVisible());
 
-  const rangeLabel = (await paginator.locator('.mat-mdc-paginator-range-label').textContent())?.trim();
-  check(`ページャに総件数 ${TOTAL} が出る`, new RegExp(String(TOTAL)).test(rangeLabel ?? ''), rangeLabel);
+  const rangeLabel = (
+    await paginator.locator('.mat-mdc-paginator-range-label').textContent()
+  )?.trim();
+  check(
+    `ページャに総件数 ${TOTAL} が出る`,
+    new RegExp(String(TOTAL)).test(rangeLabel ?? ''),
+    rangeLabel,
+  );
 
   // -------------------------------------------------------------- status and updated columns
   const badge = (await badgeOf(firstRow()).textContent())?.trim();
@@ -462,7 +479,11 @@ try {
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   const badgeAfterPublish = (await badgeOf(rowById(draftId)).textContent())?.trim();
-  check('一覧から公開できる', badgeAfterPublish === 'Published', `id=${draftId} → ${badgeAfterPublish}`);
+  check(
+    '一覧から公開できる',
+    badgeAfterPublish === 'Published',
+    `id=${draftId} → ${badgeAfterPublish}`,
+  );
 
   // The audit trail: the row now names the account that published it.
   const publisherNote = (await rowById(draftId).locator('.publisher').textContent())?.trim();
@@ -605,8 +626,10 @@ try {
   );
   check(
     '差し替え後の id リンクは新しい実体を指す',
-    (await page.evaluate(async (src) => (await fetch(src, { redirect: 'follow' })).status, durableLink)) ===
-      200,
+    (await page.evaluate(
+      async (src) => (await fetch(src, { redirect: 'follow' })).status,
+      durableLink,
+    )) === 200,
   );
 
   // The record of what happened arrives where the link is handed out.
@@ -651,10 +674,16 @@ try {
     })
     .catch(() => {});
   const arrayAfterUpload = await page.locator('.array-item').count();
-  check('画像配列にその場でアップロードできる', arrayAfterUpload === 3, `${arrayItems} → ${arrayAfterUpload}`);
+  check(
+    '画像配列にその場でアップロードできる',
+    arrayAfterUpload === 3,
+    `${arrayItems} → ${arrayAfterUpload}`,
+  );
 
   await save().click();
-  await page.waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  await page
+    .waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
 
   const saved = await api(
     'GET',
@@ -666,7 +695,9 @@ try {
   const expectedPhotoUrl = libraryNow.find((image) => image.id === replacedImageId)?.url;
   check(
     '選んだ画像がアイテムに保存される',
-    typeof saved?.photo === 'object' && saved.photo !== null && saved.photo.url === expectedPhotoUrl,
+    typeof saved?.photo === 'object' &&
+      saved.photo !== null &&
+      saved.photo.url === expectedPhotoUrl,
     `${JSON.stringify(saved?.photo)} (expected ${expectedPhotoUrl})`,
   );
   check(
@@ -699,7 +730,12 @@ try {
       { timeout: 10000 },
     )
     .catch(() => {});
-  const publishedItems = await api('GET', `/content/collections/${IMAGE_COLLECTION}`, undefined, token);
+  const publishedItems = await api(
+    'GET',
+    `/content/collections/${IMAGE_COLLECTION}`,
+    undefined,
+    token,
+  );
   check(
     '公開すると配信 API に反映される',
     publishedItems.items.length === 1,
@@ -707,7 +743,9 @@ try {
   );
 
   // -------------------------------------------------------------- an image array inside a composite
-  await page.goto(`${BASE}/collections/${COMPOSITE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/collections/${COMPOSITE_COLLECTION}/edit/1`, {
+    waitUntil: 'networkidle',
+  });
   const composite = page.locator('fieldset.composite');
   await composite.locator('button.array-add').click();
   await thumbs.first().waitFor({ timeout: 15000 });
@@ -725,7 +763,9 @@ try {
   check('複合フィールド内の画像配列にも追加できる', compositeItems === 2, `${compositeItems} 件`);
 
   await save().click();
-  await page.waitForURL(`${BASE}/collections/${COMPOSITE_COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  await page
+    .waitForURL(`${BASE}/collections/${COMPOSITE_COLLECTION}`, { timeout: 15000 })
+    .catch(() => {});
   const compositeSaved = await api(
     'GET',
     `/models/collections/${COMPOSITE_COLLECTION}/items/1`,
@@ -759,7 +799,11 @@ try {
       .catch(() => {});
   }
   const imagesAfterDelete = await page.locator('.library .image').count();
-  check('画像をゴミ箱へ移動できる', imagesAfterDelete === imagesBefore, `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`);
+  check(
+    '画像をゴミ箱へ移動できる',
+    imagesAfterDelete === imagesBefore,
+    `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`,
+  );
 
   // An image the content still shows is named in the question before it leaves the library.
   // The item saved earlier references the images in its array, so one of them has references.
@@ -774,7 +818,11 @@ try {
   // Trash is the undoable half: the images are out of the library, and can be put back.
   await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Trash")').first().click();
-  await page.locator('.library .image').first().waitFor({ timeout: 10000 }).catch(() => {});
+  await page
+    .locator('.library .image')
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
   const trashedBefore = await page.locator('.library .image').count();
   check('ゴミ箱に入れた画像が並ぶ', trashedBefore > 0, `${trashedBefore} 件`);
   check(
@@ -855,7 +903,11 @@ try {
   );
 
   const previewResponse = await request.fetch(previewUrl);
-  check('プレビュー URL はトークン無しで開ける', previewResponse.status() === 200, `status=${previewResponse.status()}`);
+  check(
+    'プレビュー URL はトークン無しで開ける',
+    previewResponse.status() === 200,
+    `status=${previewResponse.status()}`,
+  );
   const previewBody = await previewResponse.json();
   check(
     'プレビューは作業コピーを見せる',
@@ -885,9 +937,7 @@ try {
   // The list offers the same release beside the row's state.
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });
-  const releaseInList = page.locator(
-    `button[aria-label="publish the changes of item ${'1'}"]`,
-  );
+  const releaseInList = page.locator(`button[aria-label="publish the changes of item ${'1'}"]`);
   check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
 
   const beforeRelease = await api('GET', `/content/collections/${COLLECTION}/items/1`);
@@ -918,7 +968,9 @@ try {
   );
   check(
     '公開したまま変更が反映される（配信は止まらない）',
-    releasedCopy.id === 1 && (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token)).has_draft === false,
+    releasedCopy.id === 1 &&
+      (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token))
+        .has_draft === false,
   );
 
   // Publishing copies what the server holds, so an editor with the form half-changed used to put
@@ -971,7 +1023,6 @@ try {
   await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
   check('確認に同意すると移動する', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
 
-
   // -------------------------------------------------------------- roles decide what is offered
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
   const roleAccounts = [
@@ -1002,7 +1053,10 @@ try {
 
   const editor = await openAs('e2e-editor@example.com', 'role-password');
   await editor.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
-  await editor.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  await editor.page
+    .locator('table.items tbody tr:has(app-item-status)')
+    .first()
+    .waitFor({ timeout: 15000 });
   check(
     '編集ロール: 新規作成はできる',
     (await editor.page.locator('button:has-text("New item")').count()) === 1,
@@ -1035,7 +1089,10 @@ try {
 
   const viewer = await openAs('e2e-viewer@example.com', 'role-password');
   await viewer.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
-  await viewer.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  await viewer.page
+    .locator('table.items tbody tr:has(app-item-status)')
+    .first()
+    .waitFor({ timeout: 15000 });
   check(
     '閲覧ロール: 新規作成も出ない',
     (await viewer.page.locator('button:has-text("New item")').count()) === 0,
@@ -1053,7 +1110,9 @@ try {
   );
   check(
     '閲覧ロール: 自分のパスワードは変更できる',
-    (await viewer.page.locator('a[href="/account"], button[aria-label="Change password"]').count()) === 1,
+    (await viewer.page
+      .locator('a[href="/account"], button[aria-label="Change password"]')
+      .count()) === 1,
   );
 
   // ------------------------------------------- a password change ends the old sessions
@@ -1063,11 +1122,11 @@ try {
   await viewer.page.fill('input[name=next]', 'role-password-2');
   await viewer.page.fill('input[name=repeated]', 'role-password-2');
   await viewer.page.click('button:has-text("Change password")');
-  await viewer.page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
-  check(
-    'パスワード変更が完了と表示される',
-    (await viewer.page.locator('.status').count()) === 1,
-  );
+  await viewer.page
+    .locator('.status')
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
+  check('パスワード変更が完了と表示される', (await viewer.page.locator('.status').count()) === 1);
 
   // The token from before the change is refused by the API. The call is made from here
   // rather than from the page: a refused request is a console error in the browser, and the
@@ -1080,13 +1139,23 @@ try {
   // ...while the session that changed it carries on, because the server handed back a
   // token for the new generation and the screen adopted it.
   await viewer.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
-  await viewer.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
-  check('変更後も自分のセッションは続く', viewer.page.url().includes('/collections/'), viewer.page.url());
+  await viewer.page
+    .locator('table.items tbody tr:has(app-item-status)')
+    .first()
+    .waitFor({ timeout: 15000 });
+  check(
+    '変更後も自分のセッションは続く',
+    viewer.page.url().includes('/collections/'),
+    viewer.page.url(),
+  );
 
   // And the new password is the one that works from a fresh browser.
   const afterChange = await openAs('e2e-viewer@example.com', 'role-password-2');
   await afterChange.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
-  await afterChange.page.locator('table.items tbody tr:has(app-item-status)').first().waitFor({ timeout: 15000 });
+  await afterChange.page
+    .locator('table.items tbody tr:has(app-item-status)')
+    .first()
+    .waitFor({ timeout: 15000 });
   check('新しいパスワードでサインインできる', afterChange.page.url().includes('/collections/'));
   await afterChange.context.close();
 
@@ -1100,12 +1169,7 @@ try {
       await api('DELETE', `/auth/users/${account.id}`, undefined, token);
     }
   }
-  const scoped = await createAccount(
-    scopedEmail,
-    'scoped-password',
-    {},
-    token,
-  );
+  const scoped = await createAccount(scopedEmail, 'scoped-password', {}, token);
   await api(
     'PATCH',
     `/auth/users/${scoped.id}`,
@@ -1132,7 +1196,10 @@ try {
   await grant.click();
   await page.locator('mat-option', { hasText: 'Publisher' }).click();
   await page.click('button:has-text("Save permissions")');
-  await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
+  await page
+    .locator('.status')
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
   const scopedAfterSave = (await api('GET', '/auth/users', undefined, token)).find(
     (account) => account.username === scopedEmail,
   );
@@ -1158,10 +1225,7 @@ try {
 
   const scopedSession = await openAs(scopedEmail, 'scoped-password');
   await scopedSession.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
-  await scopedSession.page
-    .locator('table.items tbody tr')
-    .first()
-    .waitFor({ timeout: 15000 });
+  await scopedSession.page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
   check(
     'grant したコレクションは編集できる',
     (await scopedSession.page.locator('button:has-text("New item")').count()) === 1,
@@ -1172,7 +1236,11 @@ try {
   const denied = await request.fetch(`${API}/models/collections/${LAST_PAGE_COLLECTION}/items/1`, {
     headers: { Authorization: `Bearer ${scopedToken}` },
   });
-  check('拒否したコレクションは API でも 403', denied.status() === 403, `status=${denied.status()}`);
+  check(
+    '拒否したコレクションは API でも 403',
+    denied.status() === 403,
+    `status=${denied.status()}`,
+  );
   await scopedSession.context.close();
 
   // ------------------------------------------- the schema editor, driven from the screen
@@ -1294,8 +1362,16 @@ try {
   await textField.locator('.width-presets button', { hasText: '1/2' }).click();
 
   await page.click('button:has-text("Save schema")');
-  await page.locator('.status').waitFor({ timeout: 10000 }).catch(() => {});
-  const builtSchema = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/schema`, undefined, token);
+  await page
+    .locator('.status')
+    .waitFor({ timeout: 10000 })
+    .catch(() => {});
+  const builtSchema = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/schema`,
+    undefined,
+    token,
+  );
   const builtText = builtSchema.find((field) => field.name === 'title');
   const builtEnum = builtSchema.find((field) => field.name === 'state');
   const builtArray = builtSchema.find((field) => field.name === 'blocks');
@@ -1354,7 +1430,11 @@ try {
   const elements = page.locator('.composite-element');
   await elements.nth(0).locator('input').first().fill('first block');
   await elements.nth(1).locator('input').first().fill('second block');
-  check('複合配列の要素が 2 つ出る', (await elements.count()) === 2, `${await elements.count()} 件`);
+  check(
+    '複合配列の要素が 2 つ出る',
+    (await elements.count()) === 2,
+    `${await elements.count()} 件`,
+  );
   const typedFirst = await elements.nth(0).locator('input').first().inputValue();
   const typedSecond = await elements.nth(1).locator('input').first().inputValue();
   check(
@@ -1494,7 +1574,11 @@ try {
     (await page.locator('app-value-field .unique-mark').count()) === 2,
     `${await page.locator('app-value-field .unique-mark').count()} 件`,
   );
-  check('スキーマの文字数が入力欄に効く', (await summary.getAttribute('maxlength')) === '8', 'maxlength');
+  check(
+    'スキーマの文字数が入力欄に効く',
+    (await summary.getAttribute('maxlength')) === '8',
+    'maxlength',
+  );
   check(
     'スキーマの文字数がヒントに出る',
     ((await summary.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
@@ -1507,7 +1591,11 @@ try {
   await page.waitForTimeout(500);
   const stillCreating = page.url().includes('/create');
   const summaryProblem = await page.locator('.field-cell.problem').count();
-  check('短すぎる値は保存前に止まる', stillCreating && summaryProblem === 1, `${stillCreating} / ${summaryProblem}`);
+  check(
+    '短すぎる値は保存前に止まる',
+    stillCreating && summaryProblem === 1,
+    `${stillCreating} / ${summaryProblem}`,
+  );
 
   // A value inside the limits is accepted again, so only the duplicate is left to refuse.
   await summary.fill('summary1');
@@ -1560,7 +1648,12 @@ try {
     .then(() => true)
     .catch(() => false);
   check('一覧に項目が並ぶ', rowsReady, page.url());
-  const beforeCopy = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/items`, undefined, token);
+  const beforeCopy = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items`,
+    undefined,
+    token,
+  );
   await page.locator('button[aria-label^="copy item"]').first().click();
   await page
     .waitForURL(`**/collections/${SCHEMA_COLLECTION}/edit/**`, { timeout: 15000 })
@@ -1574,7 +1667,11 @@ try {
     token,
   );
   check('複製では一意なフィールドが空になる', copy.title === '', JSON.stringify(copy.title));
-  check('複製では他の値が引き継がれる', typeof copy.summary === 'string', JSON.stringify(copy.summary));
+  check(
+    '複製では他の値が引き継がれる',
+    typeof copy.summary === 'string',
+    JSON.stringify(copy.summary),
+  );
 
   // Saving it with a title of its own is the point of clearing the field.
   await page.locator('app-value-field input').first().fill('a copied item');
@@ -1582,8 +1679,17 @@ try {
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});
-  const afterCopy = await api('GET', `/models/collections/${SCHEMA_COLLECTION}/items`, undefined, token);
-  check('複製が 1 件増える', afterCopy.length === beforeCopy.length + 1, `${beforeCopy.length} → ${afterCopy.length}`);
+  const afterCopy = await api(
+    'GET',
+    `/models/collections/${SCHEMA_COLLECTION}/items`,
+    undefined,
+    token,
+  );
+  check(
+    '複製が 1 件増える',
+    afterCopy.length === beforeCopy.length + 1,
+    `${beforeCopy.length} → ${afterCopy.length}`,
+  );
 
   // A batch publishes what is selected, and says how many it changed.
   const publishedCount = async () =>
@@ -1620,7 +1726,6 @@ try {
     (await publishedCount()) === 0,
     `${await publishedCount()} 件`,
   );
-
 
   // Through the API rather than the screen: this collection exists only for this scenario.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
@@ -1662,8 +1767,7 @@ try {
   // the form still held the previous page's values - which is the bug this check is about.
   const switched = await page
     .waitForFunction(
-      (expected) =>
-        document.querySelector('app-value-field input[name=title]')?.value === expected,
+      (expected) => document.querySelector('app-value-field input[name=title]')?.value === expected,
       `content of ${pageB}`,
       { timeout: 15000 },
     )
@@ -1694,13 +1798,19 @@ try {
   await page.click('button:has-text("Save and publish")');
   const published = await page
     .waitForFunction(
-      () => document.querySelector('app-item-status .badge')?.textContent?.includes('Published') ?? false,
+      () =>
+        document.querySelector('app-item-status .badge')?.textContent?.includes('Published') ??
+        false,
       null,
       { timeout: 10000 },
     )
     .then(() => true)
     .catch(() => false);
-  check('保存して公開が 1 クリックでできる', published, await page.locator('app-item-status .badge').first().textContent());
+  check(
+    '保存して公開が 1 クリックでできる',
+    published,
+    await page.locator('app-item-status .badge').first().textContent(),
+  );
 
   const servedPage = await request.fetch(`${API}/content/single-pages/${pageB}`).catch(() => null);
   const servedBody = servedPage?.ok() ? JSON.stringify(await servedPage.json()) : '';
@@ -1723,12 +1833,7 @@ try {
   );
 
   // A page that has never been published is a draft, and can be released from here.
-  await api(
-    'POST',
-    `/models/single_pages/${pageA}/publish`,
-    undefined,
-    token,
-  ).catch(() => {});
+  await api('POST', `/models/single_pages/${pageA}/publish`, undefined, token).catch(() => {});
   await page.reload({ waitUntil: 'networkidle' });
   await rowForPage(pageA).locator('button[aria-label^="unpublish page"]').click();
   const unpublished = await page
@@ -1792,14 +1897,22 @@ try {
   await resetPage
     .waitForFunction(() => !location.pathname.includes('/reset-password'), null, { timeout: 15000 })
     .catch(() => {});
-  check('リセット後はサインイン状態になる', resetPage.url().startsWith(`${BASE}/`), resetPage.url());
+  check(
+    'リセット後はサインイン状態になる',
+    resetPage.url().startsWith(`${BASE}/`),
+    resetPage.url(),
+  );
 
   // The new password works, the session from before is gone, and the link is spent.
   const afterReset = await request.fetch(`${API}/auth/login`, {
     method: 'POST',
     data: { username: resetUsername, password: 'chosen-by-the-owner' },
   });
-  check('新しいパスワードでサインインできる', afterReset.status() === 200, `status=${afterReset.status()}`);
+  check(
+    '新しいパスワードでサインインできる',
+    afterReset.status() === 200,
+    `status=${afterReset.status()}`,
+  );
   const stale = await request.fetch(`${API}/auth/me`, {
     headers: { Authorization: `Bearer ${sessionBeforeReset}` },
   });
@@ -1859,7 +1972,11 @@ try {
     method: 'POST',
     data: { username: USERNAME, password: PASSWORD },
   });
-  check('他のアカウントは影響を受けない', otherAccount.status() === 200, `status=${otherAccount.status()}`);
+  check(
+    '他のアカウントは影響を受けない',
+    otherAccount.status() === 200,
+    `status=${otherAccount.status()}`,
+  );
 
   const unexpectedErrors = consoleErrors.filter((text) => {
     const claimed = expectedConsoleErrors.findIndex((pattern) => pattern.test(text));
