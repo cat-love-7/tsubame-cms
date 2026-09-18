@@ -2278,19 +2278,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_collection_service() {
+    async fn create_collection_service() {
         let service = create_test_service();
         assert!(service.list_collections().await.is_ok());
     }
     #[tokio::test]
-    async fn test_get_all_collections_empty() {
+    async fn get_all_collections_empty() {
         let service = create_test_service();
         let collection_names = service.list_collections().await.unwrap();
         assert_eq!(collection_names.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_get_collection_schema_not_found() {
+    async fn get_collection_schema_not_found() {
         let service = create_test_service();
         let result = service.get_collection_schema(&"non_existent".into()).await;
         assert_eq!(
@@ -2300,7 +2300,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_collection_schema_success() {
+    async fn add_collection_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -2602,7 +2602,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_collection_schema_success() {
+    async fn update_collection_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -2638,7 +2638,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_collection_schema_already_exists() {
+    async fn add_collection_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -2678,7 +2678,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_collection_success() {
+    async fn delete_collection_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -2701,7 +2701,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_missing_schema() {
+    async fn update_missing_schema() {
         let service = create_test_service();
         let update_result = service
             .update_collection_schema(
@@ -2719,7 +2719,7 @@ mod tests {
         assert!(update_result.is_err());
     }
     #[tokio::test]
-    async fn test_create_collection_item_success() {
+    async fn create_collection_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let collection_repository = MockCollectionRepository {
@@ -2757,7 +2757,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_collection_item_missing_collection() {
+    async fn create_collection_item_missing_collection() {
         let service = create_test_service();
         let result = service
             .create_collection_item(
@@ -2818,7 +2818,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_collection_item_success() {
+    async fn get_collection_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let mut collection_item = HashMap::new();
@@ -2863,7 +2863,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_collection_item_not_found() {
+    async fn get_collection_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let collection_repository = MockCollectionRepository {
@@ -2901,7 +2901,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_collection_item_missing_collection() {
+    async fn get_collection_item_missing_collection() {
         let service = create_test_service();
         let result = service
             .get_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1))
@@ -2914,7 +2914,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_collection_item_success() {
+    async fn update_collection_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let mut collection_item = HashMap::new();
@@ -3046,7 +3046,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_collection_item_not_found() {
+    async fn update_collection_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let collection_repository = MockCollectionRepository {
@@ -3088,7 +3088,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_collection_item_missing_collection() {
+    async fn update_collection_item_missing_collection() {
         let service = create_test_service();
         let result = service
             .update_collection_item(
@@ -3155,7 +3155,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_collection_items_success() {
+    async fn get_collection_items_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let mut collection_item = HashMap::new();
@@ -3208,7 +3208,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_collection_items_missing_collection() {
+    async fn get_collection_items_missing_collection() {
         let service = create_test_service();
         let result = service.get_collection_items(&"non_existent".into()).await;
         assert!(result.is_err());
@@ -3219,7 +3219,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_collection_item_success() {
+    async fn delete_collection_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let mut collection_item = HashMap::new();
@@ -3269,7 +3269,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_collection_item_not_found() {
+    async fn delete_collection_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let collection_repository = MockCollectionRepository {
@@ -3307,7 +3307,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_collection_item_missing_collection() {
+    async fn delete_collection_item_missing_collection() {
         let service = create_test_service();
         let result = service
             .delete_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1))

@@ -206,19 +206,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_composite_field_service() {
+    async fn create_composite_field_service() {
         let service = create_test_service();
         assert!(service.list_composite_field_schemas().await.is_ok());
     }
     #[tokio::test]
-    async fn test_list_composite_field_schemas_empty() {
+    async fn list_composite_field_schemas_empty() {
         let service = create_test_service();
         let composite_field_schemas = service.list_composite_field_schemas().await.unwrap();
         assert_eq!(composite_field_schemas.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_get_composite_field_schema_not_found() {
+    async fn get_composite_field_schema_not_found() {
         let service = create_test_service();
         let result = service
             .get_composite_field_schema(&"non_existent".into())
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_composite_field_schema_success() {
+    async fn add_composite_field_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_composite_field_schema_success() {
+    async fn update_composite_field_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_composite_field_schema_already_exists() {
+    async fn add_composite_field_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_composite_field_success() {
+    async fn delete_composite_field_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_missing_schema() {
+    async fn update_missing_schema() {
         let service = create_test_service();
         let update_result = service
             .update_composite_field_schema(

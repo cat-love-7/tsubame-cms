@@ -981,19 +981,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_single_page_service() {
+    async fn create_single_page_service() {
         let service = create_test_service();
         assert!(service.list_page_names().await.is_ok());
     }
     #[tokio::test]
-    async fn test_get_all_pages_empty() {
+    async fn get_all_pages_empty() {
         let service = create_test_service();
         let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_get_single_page_schema_not_found() {
+    async fn get_single_page_schema_not_found() {
         let service = create_test_service();
         let result = service.get_single_page_schema(&"non_existent".into()).await;
         assert_eq!(
@@ -1003,7 +1003,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_single_page_schema_success() {
+    async fn add_single_page_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -1029,7 +1029,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_single_page_schema_success() {
+    async fn update_single_page_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -1065,7 +1065,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_single_page_schema_already_exists() {
+    async fn add_single_page_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -1105,7 +1105,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_delete_single_page_success() {
+    async fn delete_single_page_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -1127,7 +1127,7 @@ mod tests {
         assert_eq!(page_names.len(), 0);
     }
     #[tokio::test]
-    async fn test_delete_non_exists_single_page() {
+    async fn delete_non_exists_single_page() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
             name: "title".to_string(),
@@ -1154,7 +1154,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_missing_schema() {
+    async fn update_missing_schema() {
         let service = create_test_service();
         let update_result = service
             .update_single_page_schema(
@@ -1172,7 +1172,7 @@ mod tests {
         assert!(update_result.is_err());
     }
     #[tokio::test]
-    async fn test_create_single_page_item_success() {
+    async fn create_single_page_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
         let single_page_repository = MockSinglePageRepository {
@@ -1265,7 +1265,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_single_page_item_missing_page() {
+    async fn create_single_page_item_missing_page() {
         let service = create_test_service();
         let result = service
             .update_single_page_item(
@@ -1317,7 +1317,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_single_page_item_success() {
+    async fn get_single_page_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_schema".into(), create_test_schema());
         let mut items = HashMap::new();
@@ -1349,7 +1349,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_single_page_item_not_found() {
+    async fn get_single_page_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_schema".into(), create_test_schema());
         let single_page_repository = MockSinglePageRepository {
@@ -1383,7 +1383,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_single_page_item_missing_page() {
+    async fn get_single_page_item_missing_page() {
         let service = create_test_service();
         let result = service.get_single_page_item(&"non_existent".into()).await;
         assert!(result.is_err());
@@ -1394,7 +1394,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_single_page_item_success() {
+    async fn update_single_page_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();
@@ -1432,7 +1432,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_single_page_item_not_found() {
+    async fn update_single_page_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_page".into(), create_test_schema());
         let single_page_repository = MockSinglePageRepository {
@@ -1467,7 +1467,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_single_page_item_missing_page() {
+    async fn update_single_page_item_missing_page() {
         let service = create_test_service();
         let result = service
             .update_single_page_item(
@@ -1520,7 +1520,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_single_page_items_success() {
+    async fn get_single_page_items_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();

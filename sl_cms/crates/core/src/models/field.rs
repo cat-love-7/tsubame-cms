@@ -1169,7 +1169,7 @@ mod tests {
     }
 
     #[test]
-    fn test_field_schema_array_validation() {
+    fn field_schema_array_validation() {
         let composite_schemas = HashMap::new();
         let field_schema = FieldSchema {
             name: "test_array".to_string(),
@@ -1303,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_array_type_field() {
+    fn format_array_type_field() {
         let pattern = vec![
             (
                 FieldType::Array(vec![
@@ -1507,7 +1507,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_schema_serialization() {
+    fn schema_serialization() {
         for field_type in FieldType::iter() {
             let (field_schema, json_schema) = match field_type {
                 FieldType::Text(options) => {
@@ -1671,7 +1671,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_field_value_serialization() {
+    fn field_value_serialization() {
         for field_type in FieldType::iter() {
             let (field_value, field_value_json) = match field_type {
                 FieldType::Text(_) => {
@@ -1769,7 +1769,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_default_values() {
+    fn default_values() {
         for field_type in FieldType::iter() {
             let test_schema = FieldSchema {
                 name: "test".to_string(),
@@ -1806,7 +1806,7 @@ mod tests {
         );
     }
     #[test]
-    fn test_schema_validation_valid_values() {
+    fn schema_validation_valid_values() {
         for field_type in FieldType::iter() {
             let (field_schema, composite_schemas, field_value) = match field_type {
                 FieldType::Text(options) => (
@@ -2001,7 +2001,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_field_type_test_required() {
+    fn field_type_test_required() {
         for field_type in FieldType::iter() {
             let value = match field_type {
                 FieldType::Text(_) | FieldType::Slug(_) => FieldValue::Text("Sample".to_string()),
@@ -2035,7 +2035,7 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_validation_required_field_missing_value() {
+    fn schema_validation_required_field_missing_value() {
         for field_type in FieldType::iter() {
             let (field_schema, field_value) = match field_type {
                 FieldType::Text(options) => (
@@ -2129,7 +2129,7 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_validation_non_required_field_missing_value() {
+    fn schema_validation_non_required_field_missing_value() {
         for field_type in FieldType::iter() {
             let (field_schema, field_value) = match field_type {
                 FieldType::Text(options) => (
@@ -2223,7 +2223,7 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_validation_composite_field_edge_cases() {
+    fn schema_validation_composite_field_edge_cases() {
         let pattern = vec![
             (
                 FieldSchema {
@@ -2329,7 +2329,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_validate_field_value() {
+    fn validate_field_value() {
         for field_type in FieldType::iter() {
             let (field_value, should_be_valid) = match field_type {
                 FieldType::Text(_) => (FieldValue::Text("Hello".to_string()), true),
@@ -2885,7 +2885,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_format_field_value() {
+    fn format_field_value() {
         for field_type in FieldType::iter() {
             let (field, composite_schemas, field_value, expected_formatted_value) = match field_type
             {
@@ -3027,7 +3027,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_get_field_type() {
+    fn get_field_type() {
         for value in FieldValue::iter() {
             let field_type = value.get_type();
             match value {
@@ -3056,7 +3056,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_format_to_schema() {
+    fn format_to_schema() {
         let schema = vec![
             FieldSchema {
                 name: "title".to_string(),
@@ -3205,7 +3205,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_to_schema() {
+    fn validate_to_schema() {
         let pattern = vec![
             (
                 vec![
@@ -3298,7 +3298,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_field_type_enum_validation() {
+    fn field_type_enum_validation() {
         let field_type = FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]);
         let schema = FieldSchema {
             name: "status".to_string(),

@@ -59,7 +59,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collection_schema_serialization() {
+    fn collection_schema_serialization() {
         let schema = create_test_schema();
 
         let serialized = serde_json::to_string(&schema).unwrap();
@@ -73,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collection_item_serialization() {
+    fn collection_item_serialization() {
         let item = create_test_item();
 
         let serialized = serde_json::to_string(&item).unwrap();
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collection_item_deserialization_from_json() {
+    fn collection_item_deserialization_from_json() {
         let json = r#"{"tags":{"TextEnum":["news","blog"]},"title":{"Text":"Hello World"}}"#;
         let deserialized: CollectionItem = serde_json::from_str(&json).unwrap();
 

@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_and_get_composite_field_schema() {
+    async fn add_and_get_composite_field_schema() {
         let repository = setup_repository();
         let schema = vec![];
         let id = "test_schema".into();
@@ -139,7 +139,7 @@ mod tests {
         teardown_repository();
     }
     #[tokio::test]
-    async fn test_list_composite_field_schemas() {
+    async fn list_composite_field_schemas() {
         let repository = setup_repository();
         let id1 = "schema1".into();
         let schema1 = vec![FieldSchema {
@@ -176,7 +176,7 @@ mod tests {
         teardown_repository();
     }
     #[tokio::test]
-    async fn test_get_nonexistent_composite_field_schema() {
+    async fn get_nonexistent_composite_field_schema() {
         let repository = setup_repository();
         let retrieved_schema = repository
             .get_composite_field_schema(&"nonexistent".into())
@@ -186,7 +186,7 @@ mod tests {
         teardown_repository();
     }
     #[tokio::test]
-    async fn test_get_an_unknown_schema_is_none() {
+    async fn get_an_unknown_schema_is_none() {
         let repository = setup_repository();
         let id = "test_schema".into();
         let schema = vec![];
@@ -217,7 +217,7 @@ mod tests {
         teardown_repository();
     }
     #[tokio::test]
-    async fn test_delete_composite_field_schema() {
+    async fn delete_composite_field_schema() {
         let repository = setup_repository();
         let id = "to_be_deleted".into();
         let schema = vec![];
