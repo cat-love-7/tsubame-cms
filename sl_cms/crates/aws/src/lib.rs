@@ -29,8 +29,16 @@ pub mod lambda;
 pub mod repository;
 pub mod settings;
 
+mod credentials;
+mod policy;
+mod testing;
+
+use credentials::emulator_credentials;
+
+pub use policy::*;
 pub use repository::AwsRepository;
 pub use settings::{AwsSettings, ImageDelivery};
+pub use testing::*;
 
 /// Where a sign-in that happened at the provider is finished, or `None` when this deployment
 /// signs users in itself (there is nothing to exchange then).
@@ -46,36 +54,6 @@ fn cognito_login(
         settings.client_id.clone(),
         endpoint,
     ))
-}
-
-/// Credentials for a local emulator, or `None` to let the SDK's own chain find them.
-///
-/// A deployment has nothing to put here: on Lambda the chain resolves the execution role. An
-/// emulator, unlike DynamoDB Local, verifies the signature, so the CMS has to be told the same
-/// keys MinIO was started with.
-///
-/// **The endpoint decides, not the variable.** Lambda sets `AWS_ACCESS_KEY_ID`,
-/// `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` to the execution role's temporary credentials,
-/// so treating those names as "an emulator is configured" would replace the role - with the same
-/// key and secret but *without* the session token - and every request would then be signed for an
-/// identity that does not exist. A session token in the environment is carried along for the same
-/// reason: an emulator may be started with one, and dropping it would break that too.
-fn emulator_credentials(settings: &AwsSettings) -> Option<aws_sdk_dynamodb::config::Credentials> {
-    if settings.endpoint_url.is_none() && settings.s3_endpoint_url.is_none() {
-        return None;
-    }
-    match (&settings.access_key_id, &settings.secret_access_key) {
-        (Some(access_key_id), Some(secret_access_key)) => {
-            Some(aws_sdk_dynamodb::config::Credentials::new(
-                access_key_id.clone(),
-                secret_access_key.clone(),
-                settings.session_token.clone(),
-                None,
-                "cms",
-            ))
-        }
-        _ => None,
-    }
 }
 
 /// Build a DynamoDB client pointed at `settings`, which may be a local emulator.
@@ -345,122 +323,6 @@ fn warn_about_the_environment(config: &Config, settings: &AwsSettings) {
     }
 }
 
-/// The endpoints the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT` and
-/// `CMS_TEST_S3_ENDPOINT`, or the emulators from `docker-compose.yml`.
-pub fn test_endpoint() -> String {
-    std::env::var("CMS_TEST_DYNAMODB_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:8000".to_string())
-}
-
-pub fn test_s3_endpoint() -> String {
-    std::env::var("CMS_TEST_S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".to_string())
-}
-
-/// The credentials the emulators were started with (`docker-compose.yml`).
-pub fn test_access_key() -> String {
-    std::env::var("CMS_TEST_ACCESS_KEY_ID").unwrap_or_else(|_| "test".to_string())
-}
-
-pub fn test_secret_key() -> String {
-    std::env::var("CMS_TEST_SECRET_ACCESS_KEY").unwrap_or_else(|_| "test-secret".to_string())
-}
-
-/// The S3 policy a deployment gives its function, as the emulator is told it.
-///
-/// A copy of `infra/lambda.tf`'s two statements. It is here so a test that depends on a permission
-/// can say so out loud, and so that changing the deployment's policy is something the tests are
-/// expected to follow - they are the only place the difference is visible.
-pub fn deployment_s3_policy(bucket: &str, list_bucket: bool) -> String {
-    let mut statements = vec![format!(
-        r#"{{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}"#
-    )];
-    if list_bucket {
-        statements.push(format!(
-            r#"{{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::{bucket}"]}}"#
-        ));
-    }
-    format!(
-        r#"{{"Version":"2012-10-17","Statement":[{}]}}"#,
-        statements.join(",")
-    )
-}
-
-/// A MinIO user with exactly that policy, and the credentials to sign as it.
-///
-/// The emulator's root credentials can do anything, so a code path that needs a permission the
-/// deployment does not grant passed here and failed in the cloud - which is how a missing
-/// `s3:GetObject` stayed invisible. Running the same code as a user with the deployment's policy
-/// puts the same wall in front of it.
-///
-/// The name is letters and digits only, because these are not only MinIO's credentials: a test
-/// hands them to the DynamoDB client too, and **DynamoDB Local refuses an access key id with
-/// anything else in it** (`cms-...` reads as "The Access Key ID or security token is invalid").
-///
-/// `None` when the emulator is not running at all, which is a test that skips rather than a test
-/// that lies. Everything after that check is this test's own setup, and a setup step that fails is
-/// a failure ([`run_in_emulator`] says why).
-#[cfg(test)]
-pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String, String)> {
-    if !crate::repository::emulator_reachable(&test_s3_endpoint()) {
-        return None;
-    }
-    let user = format!("cms{}", uuid::Uuid::new_v4().simple());
-    let secret = uuid::Uuid::new_v4().simple().to_string();
-    let policy = deployment_s3_policy(bucket, list_bucket);
-    // The JSON has no single quotes in it, so the shell can carry it as it is.
-    let script = format!(
-        "set -e;          mc alias set cms http://127.0.0.1:9000 {root} {password} >/dev/null;          printf '%s' '{policy}' > /tmp/{user}.json;          mc admin user add cms {user} {secret} >/dev/null;          mc admin policy create cms {user} /tmp/{user}.json >/dev/null;          mc admin policy attach cms {user} --user {user} >/dev/null",
-        root = test_access_key(),
-        password = test_secret_key(),
-    );
-    run_in_emulator(&script);
-    Some((user, secret))
-}
-
-/// Run a shell line inside the emulator container, and fail loudly when it does not run.
-///
-/// Answering `None` for a failed command, the way an absent emulator is answered, hides the
-/// failures that matter: a policy MinIO will not accept, a user it will not create, a command
-/// whose syntax is wrong. The test then reports success having checked nothing, which is exactly
-/// what happened to this helper (`cargo test` was green; the policy was never applied). The caller
-/// has already established that there is an emulator; from there, a failure is a failure.
-#[cfg(test)]
-fn run_in_emulator(script: &str) {
-    // The compose file is at the root of the crate's workspace (`sl_cms/`), which is two levels up
-    // from this crate. A path that does not resolve is a mistake in this line, not a missing
-    // emulator.
-    let compose = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
-    assert!(
-        compose.is_file(),
-        "the compose file should be at {}",
-        compose.display()
-    );
-    let output = std::process::Command::new("docker")
-        .args([
-            "compose",
-            "-f",
-            compose.to_str().expect("a compose path that is not UTF-8"),
-            "exec",
-            "-T",
-            "s3",
-            "sh",
-            "-c",
-            script,
-        ])
-        .output()
-        .unwrap_or_else(|e| {
-            panic!(
-                "could not run docker against the emulator at {}: {e}",
-                compose.display()
-            )
-        });
-    assert!(
-        output.status.success(),
-        "the emulator refused the setup: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// Where a deployment keeps the signing secret: Secrets Manager, when it says so.
 ///
 /// `JWT_SECRET` still wins - a deployment that sets both asked for the environment variable, and
@@ -523,99 +385,6 @@ pub async fn resolve_jwt_secret(
     Ok(())
 }
 
-/// A repository over a fresh table, serving images the way the given mode says.
-///
-/// What a test needs to see both deployments: the same CMS, one with a readable bucket and one
-/// where every URL is a signature.
-pub async fn open_test_repository_serving(
-    table_hint: &str,
-    image_delivery: ImageDelivery,
-) -> Result<(std::sync::Arc<AwsRepository>, String), Box<dyn std::error::Error + Send + Sync>> {
-    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
-    let settings = AwsSettings {
-        region: "us-east-1".to_string(),
-        table: table.clone(),
-        bucket: format!("cms-test-{}", uuid::Uuid::new_v4().simple()),
-        user_pool_id: "unused_pool".to_string(),
-        client_id: "unused_client".to_string(),
-        login_url: None,
-        endpoint_url: Some(test_endpoint()),
-        s3_endpoint_url: Some(test_s3_endpoint()),
-        image_base_url: None,
-        image_delivery,
-        access_key_id: Some(test_access_key()),
-        secret_access_key: Some(test_secret_key()),
-        session_token: None,
-        bootstrap_admin_usernames: Vec::new(),
-    };
-    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
-    repository.create_table().await?;
-    Ok((repository, table))
-}
-
-/// A repository over a fresh table that talks to `bucket` as the given credentials.
-///
-/// What a test needs to run as a restricted user: the bucket is made by the caller (with the
-/// emulator's root credentials), and everything else is an ordinary local repository.
-pub async fn open_test_repository_as(
-    table_hint: &str,
-    bucket: &str,
-    access_key_id: &str,
-    secret_access_key: &str,
-) -> Result<(std::sync::Arc<AwsRepository>, String), Box<dyn std::error::Error + Send + Sync>> {
-    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
-    let settings = AwsSettings {
-        region: "us-east-1".to_string(),
-        table: table.clone(),
-        bucket: bucket.to_string(),
-        user_pool_id: "unused_pool".to_string(),
-        client_id: "unused_client".to_string(),
-        login_url: None,
-        endpoint_url: Some(test_endpoint()),
-        s3_endpoint_url: Some(test_s3_endpoint()),
-        image_base_url: None,
-        image_delivery: ImageDelivery::stable(),
-        access_key_id: Some(access_key_id.to_string()),
-        secret_access_key: Some(secret_access_key.to_string()),
-        session_token: None,
-        bootstrap_admin_usernames: Vec::new(),
-    };
-    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
-    repository.create_table().await?;
-    Ok((repository, table))
-}
-
-/// A repository over a freshly created table, for tests against a local DynamoDB.
-///
-/// The table name is unique per call so tests do not share state; the caller drops it when it
-/// is done. This is public because the contract suite is a crate of its own — the alternative
-/// is a mock, and then nothing would be testing this adapter.
-pub async fn open_test_repository(
-    table_hint: &str,
-) -> Result<(std::sync::Arc<AwsRepository>, String), Box<dyn std::error::Error + Send + Sync>> {
-    let table = format!("{table_hint}_{}", uuid::Uuid::new_v4().simple());
-    let settings = AwsSettings {
-        region: "us-east-1".to_string(),
-        table: table.clone(),
-        bucket: format!("cms-test-{}", uuid::Uuid::new_v4().simple()),
-        user_pool_id: "unused_pool".to_string(),
-        client_id: "unused_client".to_string(),
-        login_url: None,
-        endpoint_url: Some(test_endpoint()),
-        s3_endpoint_url: Some(test_s3_endpoint()),
-        image_base_url: None,
-        image_delivery: ImageDelivery::stable(),
-        // The emulator from docker-compose.yml checks the signature, so these have to match it.
-        access_key_id: Some(test_access_key()),
-        secret_access_key: Some(test_secret_key()),
-        session_token: None,
-        bootstrap_admin_usernames: Vec::new(),
-    };
-    let repository = std::sync::Arc::new(AwsRepository::connect(&settings).await);
-    repository.create_table().await?;
-    Ok((repository, table))
-}
-
 #[cfg(test)]
 mod secret_tests {
     use super::secret_arn_to_fetch;
@@ -640,78 +409,6 @@ mod secret_tests {
             None,
             "JWT_SECRET was set: that is the one the deployment asked for"
         );
-    }
-}
-
-#[cfg(test)]
-mod policy_tests {
-    use super::*;
-
-    /// The fixture is the deployment's policy: the statements the function is granted, and nothing
-    /// else. A test that depends on a permission reads the deployment, not this file.
-    #[test]
-    fn the_emulator_policy_is_the_deployments() {
-        let allowed = deployment_s3_policy("cms-images", true);
-        assert!(allowed.contains(r#""s3:GetObject","s3:PutObject","s3:DeleteObject""#));
-        assert!(allowed.contains(r#""arn:aws:s3:::cms-images/*""#));
-        assert!(allowed.contains(r#""s3:ListBucket""#));
-        assert!(allowed.contains(r#""arn:aws:s3:::cms-images""#));
-
-        // The other half of the puzzle: what the tests are like without it.
-        let denied = deployment_s3_policy("cms-images", false);
-        assert!(!denied.contains("ListBucket"));
-        assert!(denied.contains("s3:GetObject"));
-    }
-}
-
-#[cfg(test)]
-mod credential_tests {
-    use super::*;
-
-    fn settings(endpoint: Option<&str>) -> AwsSettings {
-        AwsSettings {
-            region: "us-east-1".to_string(),
-            table: "cms".to_string(),
-            bucket: "cms-images".to_string(),
-            user_pool_id: "pool".to_string(),
-            client_id: "client".to_string(),
-            login_url: None,
-            endpoint_url: endpoint.map(str::to_string),
-            s3_endpoint_url: None,
-            image_base_url: None,
-            image_delivery: ImageDelivery::stable(),
-            access_key_id: Some("AKIA-FROM-THE-ENVIRONMENT".to_string()),
-            secret_access_key: Some("secret".to_string()),
-            session_token: Some("session".to_string()),
-            bootstrap_admin_usernames: Vec::new(),
-        }
-    }
-
-    /// The variables exist in a deployment too, holding the execution role's credentials, so the
-    /// endpoint is what says "this is an emulator". Reading them as `Some` was how the role's
-    /// session token came to be dropped, which signs for an identity that does not exist.
-    #[test]
-    fn explicit_credentials_are_only_for_an_endpoint_override() {
-        assert!(emulator_credentials(&settings(None)).is_none());
-
-        let credentials = emulator_credentials(&settings(Some("http://localhost:8000")))
-            .expect("an emulator is configured");
-        assert_eq!(credentials.access_key_id(), "AKIA-FROM-THE-ENVIRONMENT");
-        assert_eq!(
-            credentials.session_token(),
-            Some("session"),
-            "the session token travels with the credentials"
-        );
-    }
-
-    /// An emulator started without a session token still works: the SDK wants `None`, not an
-    /// empty string.
-    #[test]
-    fn credentials_without_a_session_token_are_plain() {
-        let mut settings = settings(Some("http://localhost:8000"));
-        settings.session_token = None;
-        let credentials = emulator_credentials(&settings).expect("an emulator is configured");
-        assert_eq!(credentials.session_token(), None);
     }
 }
 
