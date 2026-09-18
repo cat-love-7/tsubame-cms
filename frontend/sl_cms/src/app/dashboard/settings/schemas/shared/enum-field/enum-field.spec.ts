@@ -19,9 +19,8 @@ describe('EnumField', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [EnumField]
-    })
-    .compileComponents();
+      imports: [EnumField],
+    }).compileComponents();
 
     fixture = TestBed.createComponent(EnumField);
     component = fixture.componentInstance;

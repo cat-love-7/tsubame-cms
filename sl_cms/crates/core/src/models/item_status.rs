@@ -43,7 +43,10 @@ pub enum ItemStatus {
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum ItemStatusOutcome {
     /// The item's status is what was asked for; the metadata is what the screen needs to update.
-    Changed { id: CollectionItemId, metadata: ItemMetadata },
+    Changed {
+        id: CollectionItemId,
+        metadata: ItemMetadata,
+    },
     /// The item was left as it was, and this is why.
     Refused {
         id: CollectionItemId,
@@ -182,11 +185,7 @@ mod tests {
     /// which stays).
     #[test]
     fn publishing_records_who_did_it_and_unpublishing_forgets_that_too() {
-        let admin = User::new(
-            "Admin",
-            true,
-            crate::models::user::Permission::admin(),
-        );
+        let admin = User::new("Admin", true, crate::models::user::Permission::admin());
         let published = ItemMetadata::default()
             .with_status(ItemStatus::Published, Some(PublishedBy::from(&admin)));
 
@@ -217,7 +216,11 @@ mod tests {
 
         assert!(published.is_published());
         assert_eq!(published.created_at, Some(written));
-        assert_eq!(published.updated_at, Some(written), "publishing is not an edit");
+        assert_eq!(
+            published.updated_at,
+            Some(written),
+            "publishing is not an edit"
+        );
 
         let draft = published.with_status(ItemStatus::Draft, None);
         assert_eq!(draft.created_at, Some(written));
@@ -236,10 +239,16 @@ mod tests {
             .released(first);
 
         let later = first + chrono::Duration::days(30);
-        let again = published.released(later).with_status(ItemStatus::Published, None);
+        let again = published
+            .released(later)
+            .with_status(ItemStatus::Published, None);
 
         assert_eq!(again.published_at, published.published_at);
-        assert_eq!(again.updated_at, Some(later), "the release is a content change");
+        assert_eq!(
+            again.updated_at,
+            Some(later),
+            "the release is a content change"
+        );
         assert_eq!(again.created_at, published.created_at);
         assert!(
             again.last_published_at.is_some_and(|at| at > first),
@@ -259,8 +268,14 @@ mod tests {
 
     #[test]
     fn status_serialises_in_lowercase_for_the_api() {
-        assert_eq!(serde_json::to_string(&ItemStatus::Published).unwrap(), "\"published\"");
-        assert_eq!(serde_json::to_string(&ItemStatus::Draft).unwrap(), "\"draft\"");
+        assert_eq!(
+            serde_json::to_string(&ItemStatus::Published).unwrap(),
+            "\"published\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ItemStatus::Draft).unwrap(),
+            "\"draft\""
+        );
     }
 
     #[test]

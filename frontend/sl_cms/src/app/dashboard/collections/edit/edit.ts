@@ -160,71 +160,74 @@ export class CollectionItemEdit implements HasUnsavedChanges {
     this.problemField.set(null);
     this.fieldErrors = {};
 
-    this.collectionsService.getCollectionSchema(name).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (schema) => {
-        if (token !== this.loadToken) {
-          return;
-        }
-        this.schema.set(schema);
-        if (id === null) {
-          // A new item starts from the schema's defaults, and there is nothing else to wait for.
-          const empty = withDefaults(schema, {});
-          this.values.set(empty);
-          this.saved.set(fingerprint(empty));
-          this.loaded.set(true);
-        } else {
-          this.loadItem(schema, id, token);
-          this.loadMetadata(id, token);
-        }
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadSchema', e));
-        }
-      },
-    });
+    this.collectionsService
+      .getCollectionSchema(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema) => {
+          if (token !== this.loadToken) {
+            return;
+          }
+          this.schema.set(schema);
+          if (id === null) {
+            // A new item starts from the schema's defaults, and there is nothing else to wait for.
+            const empty = withDefaults(schema, {});
+            this.values.set(empty);
+            this.saved.set(fingerprint(empty));
+            this.loaded.set(true);
+          } else {
+            this.loadItem(schema, id, token);
+            this.loadMetadata(id, token);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadSchema', e));
+          }
+        },
+      });
   }
 
   private loadItem(schema: CollectionSchema, id: number, token: number) {
-    this.collectionsService.getCollectionItem(this.collectionName(), id).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (values) => {
-        if (token !== this.loadToken) {
-          return;
-        }
-        const filled = withDefaults(schema, values);
-        this.values.set(filled);
-        this.saved.set(fingerprint(filled));
-        // Only now is there a form to edit and save: before this, what the screen holds is not
-        // the item.
-        this.loaded.set(true);
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadItem', e));
-        }
-      },
-    });
+    this.collectionsService
+      .getCollectionItem(this.collectionName(), id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (values) => {
+          if (token !== this.loadToken) {
+            return;
+          }
+          const filled = withDefaults(schema, values);
+          this.values.set(filled);
+          this.saved.set(fingerprint(filled));
+          // Only now is there a form to edit and save: before this, what the screen holds is not
+          // the item.
+          this.loaded.set(true);
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadItem', e));
+          }
+        },
+      });
   }
 
   private loadMetadata(id: number, token: number) {
-    this.collectionsService.getItemMetadata(this.collectionName(), id).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (metadata) => {
-        if (token === this.loadToken) {
-          this.metadata.set(metadata);
-        }
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadPublishedState', e));
-        }
-      },
-    });
+    this.collectionsService
+      .getItemMetadata(this.collectionName(), id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (metadata) => {
+          if (token === this.loadToken) {
+            this.metadata.set(metadata);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadPublishedState', e));
+          }
+        },
+      });
   }
 
   /**
@@ -408,9 +411,7 @@ export class CollectionItemEdit implements HasUnsavedChanges {
    * The follow-up only runs when the server accepted the save: publishing what a refused save
    * left behind would be worse than doing nothing.
    */
-  private saveThen(
-    then: (target: { name: string; id: number; generation: number }) => void,
-  ) {
+  private saveThen(then: (target: { name: string; id: number; generation: number }) => void) {
     const problems = Object.values(this.fieldErrors);
     if (problems.length > 0) {
       this.error.set(problems[0]);
@@ -430,44 +431,46 @@ export class CollectionItemEdit implements HasUnsavedChanges {
     // Subscribe per branch: the create and update calls return different observable
     // types, which cannot be unioned into a single `subscribe` call.
     if (id === null) {
-      this.collectionsService.createCollectionItem(name, values).pipe(
-        takeUntilDestroyed(this.destroyRef),
-      ).subscribe({
-        next: (created) => {
-          // The form, its saved baseline and the address all describe the create screen this was
-          // pressed on: writing any of them once the reader has gone elsewhere would attribute a
-          // save to whatever they are looking at now.
-          if (!this.stillOn(started)) {
-            return;
-          }
-          this.editsSaved(values);
-          // A new item is saved as a working copy; publishing it needs its id.
-          this.itemId.set(created);
-          then({ name, id: created, generation: started.generation });
-        },
-        error: (e) => {
-          if (this.stillOn(started)) {
-            this.refuse(e);
-          }
-        },
-      });
+      this.collectionsService
+        .createCollectionItem(name, values)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (created) => {
+            // The form, its saved baseline and the address all describe the create screen this was
+            // pressed on: writing any of them once the reader has gone elsewhere would attribute a
+            // save to whatever they are looking at now.
+            if (!this.stillOn(started)) {
+              return;
+            }
+            this.editsSaved(values);
+            // A new item is saved as a working copy; publishing it needs its id.
+            this.itemId.set(created);
+            then({ name, id: created, generation: started.generation });
+          },
+          error: (e) => {
+            if (this.stillOn(started)) {
+              this.refuse(e);
+            }
+          },
+        });
     } else {
-      this.collectionsService.updateCollectionItem(name, id, values).pipe(
-        takeUntilDestroyed(this.destroyRef),
-      ).subscribe({
-        next: () => {
-          if (!this.stillOn(started)) {
-            return;
-          }
-          this.editsSaved(values);
-          then({ name, id, generation: started.generation });
-        },
-        error: (e) => {
-          if (this.stillOn(started)) {
-            this.refuse(e);
-          }
-        },
-      });
+      this.collectionsService
+        .updateCollectionItem(name, id, values)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            if (!this.stillOn(started)) {
+              return;
+            }
+            this.editsSaved(values);
+            then({ name, id, generation: started.generation });
+          },
+          error: (e) => {
+            if (this.stillOn(started)) {
+              this.refuse(e);
+            }
+          },
+        });
     }
   }
 

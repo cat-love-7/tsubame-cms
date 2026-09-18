@@ -43,5 +43,8 @@ pub trait LocalCredentials: Send + Sync + 'static {
     /// Forget the password for `user_id`.
     ///
     /// Called when the account goes away, so a credential cannot outlive it.
-    fn delete_password(&self, user_id: &UserId) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_password(
+        &self,
+        user_id: &UserId,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }

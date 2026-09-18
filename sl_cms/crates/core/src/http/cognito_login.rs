@@ -185,12 +185,9 @@ impl TokenEndpoint {
         }
         // Read as text and parse here, for the same reason the form is written by hand: this build
         // of reqwest carries no serde integration.
-        let body = response
-            .text()
-            .await
-            .map_err(|e| {
-                ExchangeFailure::Unavailable(format!("answered something unreadable: {e}"))
-            })?;
+        let body = response.text().await.map_err(|e| {
+            ExchangeFailure::Unavailable(format!("answered something unreadable: {e}"))
+        })?;
         let tokens: ProviderTokens = serde_json::from_str(&body).map_err(|e| {
             ExchangeFailure::Unavailable(format!("answered something unexpected: {e}"))
         })?;
@@ -313,7 +310,10 @@ mod tests {
     #[test]
     fn the_form_is_percent_encoded_the_way_a_form_post_is() {
         let body = form_body(&[
-            ("redirect_uri".to_string(), "https://cms.example.com/auth/callback".to_string()),
+            (
+                "redirect_uri".to_string(),
+                "https://cms.example.com/auth/callback".to_string(),
+            ),
             ("code_verifier".to_string(), "abc-123_XYZ.~".to_string()),
             ("code".to_string(), "a b+c".to_string()),
         ]);

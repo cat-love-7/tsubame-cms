@@ -23,7 +23,14 @@ import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
  */
 @Component({
   selector: 'app-image-library',
-  imports: [ MatTooltipModule,FormsModule, MatButtonModule, MatIconModule, MessagePipe, TranslocoPipe],
+  imports: [
+    MatTooltipModule,
+    FormsModule,
+    MatButtonModule,
+    MatIconModule,
+    MessagePipe,
+    TranslocoPipe,
+  ],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
@@ -163,9 +170,7 @@ export class ImageLibrary {
     const url = absoluteApiUrl(this.images.imageLink(image.id));
     const copied = await copyToClipboard(url);
     this.notice.set(
-      copied
-        ? t('content.imageLinkCopied', { url })
-        : t('content.imageLinkNotCopied', { url }),
+      copied ? t('content.imageLinkCopied', { url }) : t('content.imageLinkNotCopied', { url }),
     );
   }
 

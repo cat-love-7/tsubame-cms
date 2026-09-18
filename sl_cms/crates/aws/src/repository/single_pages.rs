@@ -128,7 +128,6 @@ impl SinglePageRepository for AwsRepository {
         }
     }
 
-
     async fn set_page_metadata(
         &self,
         page_name: &SinglePageName,
@@ -193,9 +192,7 @@ impl SinglePageRepository for AwsRepository {
         match outcome {
             TransactOutcome::Applied => Ok(()),
             // Position 1 is the draft delete above.
-            TransactOutcome::Refused { write: 1 } => {
-                Err(Box::new(ApplyStatusError::DraftChanged))
-            }
+            TransactOutcome::Refused { write: 1 } => Err(Box::new(ApplyStatusError::DraftChanged)),
             TransactOutcome::Refused { write } => Err(format!(
                 "publishing page {name} was refused by write {write}, which has no condition"
             )

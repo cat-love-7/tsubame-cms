@@ -90,7 +90,9 @@ describe('newFieldType', () => {
 
     first.Text.max_length = 20;
     expect(second.Text.max_length).toBeUndefined();
-    expect((FieldDefaults.Text as { Text: { max_length?: number } }).Text.max_length).toBeUndefined();
+    expect(
+      (FieldDefaults.Text as { Text: { max_length?: number } }).Text.max_length,
+    ).toBeUndefined();
   });
 
   it('copies the kinds that hold arrays and objects', () => {

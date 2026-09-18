@@ -22,8 +22,7 @@ describe('CompositeFieldSchema', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: route },
       ],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(CompositeFieldSchema);
     component = fixture.componentInstance;

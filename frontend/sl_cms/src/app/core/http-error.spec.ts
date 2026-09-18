@@ -21,9 +21,9 @@ describe('errorMessage', () => {
   });
 
   it('falls back to the status line when there is no body at all', () => {
-    expect(errorMessage(new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' }))).toContain(
-      '502',
-    );
+    expect(
+      errorMessage(new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' })),
+    ).toContain('502');
   });
 });
 

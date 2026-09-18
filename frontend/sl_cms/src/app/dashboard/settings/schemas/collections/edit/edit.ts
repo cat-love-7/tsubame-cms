@@ -1,5 +1,5 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { EditSchema } from "../../shared/edit-schema/edit-schema";
+import { EditSchema } from '../../shared/edit-schema/edit-schema';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';

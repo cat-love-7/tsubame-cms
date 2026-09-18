@@ -1,13 +1,13 @@
-import { Pipe, PipeTransform } from "@angular/core";
+import { Pipe, PipeTransform } from '@angular/core';
 
 export type TextFieldOptions = {
   max_length?: number;
   min_length?: number;
-}
+};
 
 export type TextFieldSchema = {
   Text: TextFieldOptions;
-}
+};
 
 /**
  * What a slug field can be told.
@@ -21,10 +21,10 @@ export type SlugOptions = {
 
 export type SlugFieldSchema = {
   Slug: SlugOptions;
-}
+};
 export type MarkdownFieldSchema = {
   Markdown: TextFieldOptions;
-}
+};
 
 /**
  * The field *type* descriptor for a composite field: just the id of the composite it
@@ -37,7 +37,7 @@ export type CompositeFieldType = {
   CompositeField: {
     id: string;
   };
-}
+};
 
 /**
  * An array element is a bare field *type*, matching the Rust
@@ -46,7 +46,7 @@ export type CompositeFieldType = {
  */
 export type ArrayFieldSchema = {
   Array: FieldType[];
-}
+};
 
 /**
  * Enum options travel as a JSON array on the wire (`{"TextEnum":["a","b"]}`). A `Set`
@@ -54,20 +54,20 @@ export type ArrayFieldSchema = {
  */
 export type EnumFieldSchema = {
   TextEnum: string[];
-}
+};
 
 export type FieldTypeMap = {
-  Text: TextFieldSchema,
-  Slug: SlugFieldSchema,
-  Markdown: MarkdownFieldSchema,
-  Number: 'Number',
-  Boolean: 'Boolean',
-  Date: 'Date',
-  DateTime: 'DateTime',
-  Image: 'Image',
-  CompositeField: CompositeFieldType,
-  Array: ArrayFieldSchema,
-  TextEnum: EnumFieldSchema,
+  Text: TextFieldSchema;
+  Slug: SlugFieldSchema;
+  Markdown: MarkdownFieldSchema;
+  Number: 'Number';
+  Boolean: 'Boolean';
+  Date: 'Date';
+  DateTime: 'DateTime';
+  Image: 'Image';
+  CompositeField: CompositeFieldType;
+  Array: ArrayFieldSchema;
+  TextEnum: EnumFieldSchema;
 };
 
 export const FieldDefaults: FieldTypeMap = {
@@ -83,7 +83,7 @@ export const FieldDefaults: FieldTypeMap = {
   Array: { Array: [] },
   TextEnum: { TextEnum: [] },
 };
-export type FieldType = typeof FieldDefaults[keyof typeof FieldDefaults];
+export type FieldType = (typeof FieldDefaults)[keyof typeof FieldDefaults];
 
 /**
  * `width` and `height` are required by the backend (`FieldSchema` in
@@ -103,7 +103,7 @@ export type FieldSchema = {
   unique?: boolean;
   width: number;
   height: number;
-}
+};
 
 /** The layout a newly added field starts with: full width, single row. */
 export const DefaultFieldLayout = { width: 12, height: 1, unique: false } as const;
@@ -226,10 +226,7 @@ export const ArrayItemTypeOptions: { label: string; value: FieldType }[] = [
  * just added wins and the other is dropped (adding `Image` to a `Number` array replaces
  * `Number`, and vice versa).
  */
-export function reconcileArrayItemTypes(
-  previous: FieldType[],
-  selected: FieldType[],
-): FieldType[] {
+export function reconcileArrayItemTypes(previous: FieldType[], selected: FieldType[]): FieldType[] {
   if (!(selected.includes('Number') && selected.includes('Image'))) {
     return selected;
   }

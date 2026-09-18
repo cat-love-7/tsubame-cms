@@ -4,18 +4,25 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::models::error::{HttpError, map_internal_error};
-use crate::repositories::collection_repository::ApplyStatusError;
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{
-    SchemaScope,validate_composite_references, validate_schema, CompositeFieldId};
-use crate::models::single_page::{SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema};
+    CompositeFieldId, SchemaScope, validate_composite_references, validate_schema,
+};
+use crate::models::single_page::{
+    SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema,
+};
+use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::webhook::{ContentEvent, Notifier};
 
-pub struct SinglePageService<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepository> {
+pub struct SinglePageService<
+    SR: SinglePageRepository,
+    CFR: CompositeFieldRepository,
+    IR: ImageRepository,
+> {
     single_page_repository: Arc<SR>,
     composite_field_repository: Arc<CFR>,
     image_repository: Arc<IR>,
@@ -23,9 +30,15 @@ pub struct SinglePageService<SR: SinglePageRepository, CFR: CompositeFieldReposi
     notifier: Arc<dyn Notifier>,
 }
 
-
-impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepository> SinglePageService<SR, CFR, IR> {
-    pub fn new(single_page_repository: Arc<SR>, composite_field_repository: Arc<CFR>, image_repository: Arc<IR>, notifier: Arc<dyn Notifier>) -> Self {
+impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepository>
+    SinglePageService<SR, CFR, IR>
+{
+    pub fn new(
+        single_page_repository: Arc<SR>,
+        composite_field_repository: Arc<CFR>,
+        image_repository: Arc<IR>,
+        notifier: Arc<dyn Notifier>,
+    ) -> Self {
         SinglePageService {
             single_page_repository,
             composite_field_repository,
@@ -37,9 +50,11 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         &self,
         name: &SinglePageName,
     ) -> Result<SinglePageSchema, HttpError> {
-        let single_page = self.single_page_repository
+        let single_page = self
+            .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         match single_page {
             Some(schema) => Ok(schema),
             None => Err(HttpError::NotFound("Single page not found")),
@@ -55,7 +70,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_none()
         {
             return Err(HttpError::NotFound(&format!(
@@ -65,12 +81,14 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
         self.single_page_repository
             .add_single_page_schema(name, schema)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
     pub async fn list_page_names(&self) -> Result<Vec<SinglePageName>, HttpError> {
         self.single_page_repository
             .list_all_page_names()
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// Every composite a schema references must exist, otherwise the schema can be stored
@@ -79,7 +97,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let available: HashSet<CompositeFieldId> = self
             .composite_field_repository
             .list_composite_field_schemas()
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .into_keys()
             .collect();
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
@@ -94,7 +113,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_some()
         {
             return Err(HttpError::Conflict(&format!(
@@ -104,7 +124,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
         self.single_page_repository
             .add_single_page_schema(name, schema)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
     /// Record which images this page uses, so a delete can say what it would break.
     ///
@@ -169,7 +190,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_none()
         {
             return Err(HttpError::NotFound(&format!(
@@ -179,7 +201,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
         self.single_page_repository
             .delete_single_page(name)
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         // Nothing uses this page's images any more.
         self.set_image_references(
             &crate::models::image::ImageOwner::single_page(name.as_str()),
@@ -189,17 +212,22 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         Ok(())
     }
     /// The page's working copy, falling back to the published one.
-    async fn working_page_item(&self, name: &SinglePageName) -> Result<Option<SinglePageItem>, HttpError> {
+    async fn working_page_item(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<Option<SinglePageItem>, HttpError> {
         match self
             .single_page_repository
             .get_single_page_item_draft(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
         {
             Some(draft) => Ok(Some(draft)),
             None => self
                 .single_page_repository
                 .get_single_page_item(name)
-                .await.map_err(map_internal_error),
+                .await
+                .map_err(map_internal_error),
         }
     }
 
@@ -237,19 +265,18 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let schema = self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         match schema {
-            None => {
-                Err(HttpError::NotFound(&format!(
-                    "Single page with id '{}' does not exist",
-                    name
-                )))
-            }
+            None => Err(HttpError::NotFound(&format!(
+                "Single page with id '{}' does not exist",
+                name
+            ))),
             Some(_) => {
                 // The working copy: this is the screen an editor saves from.
                 let item = self.working_page_item(name).await?;
                 self.format_page_item(name, item).await
-            },
+            }
         }
     }
     pub async fn update_single_page_item(
@@ -260,7 +287,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let schema = self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         match schema {
             None => {
                 return Err(HttpError::NotFound(&format!(
@@ -271,19 +299,23 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             Some(schema) => {
                 // A working copy may be incomplete; publishing is what asks for the required
                 // fields (see `FieldValueMap::validate_draft`).
-                item_data.validate_draft(
-                    &self
-                        .composite_field_repository
-                        .list_composite_field_schemas()
-                        .await.map_err(map_internal_error)?,
-                    &schema,
-                ).map_err(|e| e.into_http_error())?;
+                item_data
+                    .validate_draft(
+                        &self
+                            .composite_field_repository
+                            .list_composite_field_schemas()
+                            .await
+                            .map_err(map_internal_error)?,
+                        &schema,
+                    )
+                    .map_err(|e| e.into_http_error())?;
 
                 // Saved into the working copy: the published page keeps serving the live
                 // site until this version is published.
                 self.single_page_repository
                     .set_single_page_item_draft(name, item_data)
-                    .await.map_err(map_internal_error)?;
+                    .await
+                    .map_err(map_internal_error)?;
                 // Both copies: the published one may still be serving.
                 self.record_image_references(name).await;
                 self.stamp_page(name).await?;
@@ -302,7 +334,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // `CollectionRepository::touch_item_metadata`).
         self.single_page_repository
             .touch_page_metadata(name, Utc::now())
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// Update a single page's item from an **untagged** JSON body.
@@ -326,17 +359,16 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let schema = self
             .single_page_repository
             .get_single_page_schema(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .ok_or_else(|| {
-                HttpError::NotFound(&format!(
-                    "Single page with id '{}' does not exist",
-                    name
-                ))
+                HttpError::NotFound(&format!("Single page with id '{}' does not exist", name))
             })?;
         let composite_schemas = self
             .composite_field_repository
             .list_composite_field_schemas()
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         SinglePageItem::from_untyped(body, &composite_schemas, &schema)
             .map_err(|e| HttpError::BadRequest(&e))
     }
@@ -361,13 +393,17 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     }
 
     /// Draft/published state of one page. Absent metadata means "draft".
-    pub async fn get_page_metadata(&self, name: &SinglePageName) -> Result<ItemMetadata, HttpError> {
+    pub async fn get_page_metadata(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<ItemMetadata, HttpError> {
         // Reuses the schema lookup so a missing page is a 404 rather than a default.
         self.get_single_page_schema(name).await?;
         Ok(self
             .single_page_repository
             .get_page_metadata(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .unwrap_or_default())
     }
 
@@ -377,7 +413,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         Ok(self
             .single_page_repository
             .get_single_page_item_draft(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_some())
     }
 
@@ -395,7 +432,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let mut metadata = self
             .single_page_repository
             .get_page_metadata(name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .unwrap_or_default()
             .with_status(status, Some(actor));
 
@@ -404,7 +442,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let pending = if metadata.is_published() {
             self.single_page_repository
                 .get_single_page_item_draft(name)
-                .await.map_err(map_internal_error)?
+                .await
+                .map_err(map_internal_error)?
         } else {
             None
         };
@@ -420,7 +459,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 &self
                     .composite_field_repository
                     .list_composite_field_schemas()
-                    .await.map_err(map_internal_error)?,
+                    .await
+                    .map_err(map_internal_error)?,
                 &schema,
             )
             .map_err(|e| e.into_http_error())?;
@@ -467,7 +507,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let published = self
             .single_page_repository
             .get_single_page_item(name)
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         Ok((metadata, self.format_page_item(name, published).await?))
     }
 
@@ -478,7 +519,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             let metadata = self
                 .single_page_repository
                 .get_page_metadata(&name)
-                .await.map_err(map_internal_error)?;
+                .await
+                .map_err(map_internal_error)?;
             if metadata.map(|m| m.is_published()).unwrap_or(false) {
                 names.push(name);
             }
@@ -494,16 +536,16 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::field::{CompositeFieldSchema, TextFieldOptions};
-    use crate::models::field::{FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse};
-    use crate::models::image::{
-        Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo,
+    use crate::models::field::{
+        FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
     };
+    use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
     use crate::models::schema::CompositeFieldId;
     use crate::repositories::image_repository::Replacement;
 
     use super::*;
-    use crate::webhook::NotifyFuture;
     use crate::webhook::NoopNotifier;
+    use crate::webhook::NotifyFuture;
 
     struct MockSinglePageRepository {
         schemas: Arc<RwLock<HashMap<SinglePageName, SinglePageSchema>>>,
@@ -522,7 +564,10 @@ mod tests {
         {
             Ok(self.schemas.read().unwrap().get(name).cloned())
         }
-        async fn list_all_page_names(&self) -> Result<Vec<SinglePageName>,Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn list_all_page_names(
+            &self,
+        ) -> Result<Vec<SinglePageName>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
             Ok(self.schemas.read().unwrap().keys().cloned().collect())
         }
         async fn add_single_page_schema(
@@ -530,7 +575,10 @@ mod tests {
             _single_page_name: &SinglePageName,
             _schema: &SinglePageSchema,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas.write().unwrap().insert(_single_page_name.clone(), _schema.clone());
+            self.schemas
+                .write()
+                .unwrap()
+                .insert(_single_page_name.clone(), _schema.clone());
             Ok(())
         }
         async fn delete_single_page(
@@ -538,12 +586,15 @@ mod tests {
             _single_page_name: &SinglePageName,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             self.schemas.write().unwrap().remove(_single_page_name);
-            self.page_metadata.write().unwrap().remove(_single_page_name);
+            self.page_metadata
+                .write()
+                .unwrap()
+                .remove(_single_page_name);
             Ok(())
         }
         async fn get_single_page_item(
             &self,
-            single_page_name: &SinglePageName
+            single_page_name: &SinglePageName,
         ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             if let Some(item) = self.items.read().unwrap().get(single_page_name) {
@@ -557,13 +608,17 @@ mod tests {
             single_page_name: &SinglePageName,
             item_data: &SinglePageItem,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.items.write().unwrap().insert(single_page_name.clone(), item_data.clone());
+            self.items
+                .write()
+                .unwrap()
+                .insert(single_page_name.clone(), item_data.clone());
             Ok(())
         }
         async fn get_single_page_item_draft(
             &self,
             page_name: &SinglePageName,
-        ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
             Ok(self.drafts.read().unwrap().get(page_name).cloned())
         }
         async fn set_single_page_item_draft(
@@ -571,7 +626,10 @@ mod tests {
             page_name: &SinglePageName,
             item_data: &SinglePageItem,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.drafts.write().unwrap().insert(page_name.clone(), item_data.clone());
+            self.drafts
+                .write()
+                .unwrap()
+                .insert(page_name.clone(), item_data.clone());
             Ok(())
         }
         async fn delete_single_page_item_draft(
@@ -584,7 +642,8 @@ mod tests {
         async fn get_page_metadata(
             &self,
             page_name: &SinglePageName,
-        ) -> Result<Option<ItemMetadata>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        ) -> Result<Option<ItemMetadata>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
             Ok(self.page_metadata.read().unwrap().get(page_name).cloned())
         }
         async fn touch_page_metadata(
@@ -595,11 +654,7 @@ mod tests {
             // One lock for the read and the write, as the adapters promise (see
             // `CollectionRepository::touch_item_metadata`).
             let mut all = self.page_metadata.write().unwrap();
-            let metadata = all
-                .get(page_name)
-                .cloned()
-                .unwrap_or_default()
-                .touched(now);
+            let metadata = all.get(page_name).cloned().unwrap_or_default().touched(now);
             all.insert(page_name.clone(), metadata);
             Ok(())
         }
@@ -610,7 +665,10 @@ mod tests {
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             self.metadata_writes
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            self.page_metadata.write().unwrap().insert(page_name.clone(), metadata.clone());
+            self.page_metadata
+                .write()
+                .unwrap()
+                .insert(page_name.clone(), metadata.clone());
             Ok(())
         }
         async fn apply_page_status(
@@ -622,7 +680,10 @@ mod tests {
             // Nothing here can fail half-way, so the steps the real adapters combine are done
             // in a row (see `CollectionRepository::apply_item_status`).
             if let Some(draft) = draft {
-                self.items.write().unwrap().insert(page_name.clone(), draft.clone());
+                self.items
+                    .write()
+                    .unwrap()
+                    .insert(page_name.clone(), draft.clone());
                 self.drafts.write().unwrap().remove(page_name);
             }
             self.page_metadata
@@ -648,10 +709,8 @@ mod tests {
         async fn get_composite_field_schema(
             &self,
             id: &CompositeFieldId,
-        ) -> Result<
-            Option<CompositeFieldSchema>,
-            Box<dyn std::error::Error + Send + Sync + 'static>,
-        > {
+        ) -> Result<Option<CompositeFieldSchema>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
             Ok(self.schemas.read().unwrap().get(id).cloned())
         }
         async fn add_composite_field_schema(
@@ -659,7 +718,10 @@ mod tests {
             id: &CompositeFieldId,
             schema: &CompositeFieldSchema,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas.write().unwrap().insert(id.clone(), schema.clone());
+            self.schemas
+                .write()
+                .unwrap()
+                .insert(id.clone(), schema.clone());
             Ok(())
         }
         async fn delete_composite_field_schema(
@@ -681,7 +743,10 @@ mod tests {
         file_names: std::sync::RwLock<std::collections::HashMap<ImageId, String>>,
     }
     impl ImageRepository for MockImageRepository {
-        async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn get_image(
+            &self,
+            id: &ImageId,
+        ) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(Some(Image {
                 original_filename: format!("image_{}.jpg", id),
                 url: format!("/images/{}", id),
@@ -689,37 +754,64 @@ mod tests {
                 deleted_at: None,
             }))
         }
-        async fn list_images(&self) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn list_images(
+            &self,
+        ) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>>
+        {
             Ok(vec![])
         }
-        async fn generate_image_upload_url(&self, _upload_info: &NewImageRequest) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn generate_image_upload_url(
+            &self,
+            _upload_info: &NewImageRequest,
+        ) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(NewImageInfo {
                 id: ImageId::from_u64(1),
                 upload_url: "/upload/1".to_string(),
                 url: "/images/1".to_string(),
             })
         }
-        async fn generate_replacement_upload_url(&self, _id: &ImageId, ext: &str) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn generate_replacement_upload_url(
+            &self,
+            _id: &ImageId,
+            ext: &str,
+        ) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(ReplacementInfo {
                 file_name: format!("replacement.{ext}"),
                 upload_url: "/upload/replacement".to_string(),
             })
         }
-        async fn image_bytes_exist(&self, _file_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn image_bytes_exist(
+            &self,
+            _file_name: &str,
+        ) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(true)
         }
-        async fn replace_image(&self, _id: &ImageId, _file_name: &str) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn replace_image(
+            &self,
+            _id: &ImageId,
+            _file_name: &str,
+        ) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
             // These tests never go through a replacement; answering `Applied` keeps the double
             // out of the way of the content they are about.
             Ok(Replacement::Applied)
         }
-        async fn rename_image(&self, _id: &ImageId, _original_filename: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn rename_image(
+            &self,
+            _id: &ImageId,
+            _original_filename: &str,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        async fn delete_image(&self, _id: &ImageId) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn delete_image(
+            &self,
+            _id: &ImageId,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
-        async fn image_file_name(&self, id: &ImageId) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        async fn image_file_name(
+            &self,
+            id: &ImageId,
+        ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(self.file_names.read().unwrap().get(id).cloned())
         }
 
@@ -733,7 +825,10 @@ mod tests {
         async fn get_image_references(
             &self,
             _id: &ImageId,
-        ) -> Result<Vec<crate::models::image::ImageOwner>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        ) -> Result<
+            Vec<crate::models::image::ImageOwner>,
+            Box<dyn std::error::Error + Send + Sync + 'static>,
+        > {
             Ok(Vec::new())
         }
         async fn set_image_deleted_at(
@@ -746,7 +841,11 @@ mod tests {
     }
 
     // Test helper functions
-    fn create_test_service() -> SinglePageService<MockSinglePageRepository, MockCompositeFieldRepository, MockImageRepository> {
+    fn create_test_service() -> SinglePageService<
+        MockSinglePageRepository,
+        MockCompositeFieldRepository,
+        MockImageRepository,
+    > {
         let single_page_repository = MockSinglePageRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
@@ -758,7 +857,12 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository::default();
-        SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier))
+        SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            Arc::new(NoopNotifier),
+        )
     }
 
     /// Records the events a service emits (see the collection service tests).
@@ -802,7 +906,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            metadata.published_by.as_ref().map(|by| by.username.as_str()),
+            metadata
+                .published_by
+                .as_ref()
+                .map(|by| by.username.as_str()),
             Some("admin@example.com")
         );
         {
@@ -813,10 +920,12 @@ mod tests {
         }
 
         // An unknown page is a 404 and must not look like a change.
-        assert!(service
-            .set_page_status(&"missing".into(), ItemStatus::Published, publisher())
-            .await
-            .is_err());
+        assert!(
+            service
+                .set_page_status(&"missing".into(), ItemStatus::Published, publisher())
+                .await
+                .is_err()
+        );
         assert_eq!(notifier.events.lock().unwrap().len(), 1);
     }
 
@@ -851,16 +960,22 @@ mod tests {
     }
 
     fn create_test_item(title: &str, count: f64) -> SinglePageItem {
-        FieldValueMap(HashMap::from([
-            ("title".to_string(), FieldValue::Text(title.to_string())),
-            ("count".to_string(), FieldValue::Number(Some(count))),
-        ]), PhantomData)
+        FieldValueMap(
+            HashMap::from([
+                ("title".to_string(), FieldValue::Text(title.to_string())),
+                ("count".to_string(), FieldValue::Number(Some(count))),
+            ]),
+            PhantomData,
+        )
     }
 
     /// `get_single_page_item` returns the API response form, not the stored item form.
     fn create_test_item_response(title: &str, count: f64) -> SinglePageItemResponse {
         HashMap::from([
-            ("title".to_string(), FieldValueResponse::Text(title.to_string())),
+            (
+                "title".to_string(),
+                FieldValueResponse::Text(title.to_string()),
+            ),
             ("count".to_string(), FieldValueResponse::Number(Some(count))),
         ])
     }
@@ -881,111 +996,129 @@ mod tests {
     async fn test_get_single_page_schema_not_found() {
         let service = create_test_service();
         let result = service.get_single_page_schema(&"non_existent".into()).await;
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page not found"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::NotFound("Single page not found")
+        );
     }
 
     #[tokio::test]
     async fn test_add_single_page_schema_success() {
         let service = create_test_service();
-        let schema = vec![
-            FieldSchema {
-                name: "title".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
+        let schema = vec![FieldSchema {
+            name: "title".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
 
-        let result = service.add_single_page_schema(&"test_page".into(), &schema).await;
+        let result = service
+            .add_single_page_schema(&"test_page".into(), &schema)
+            .await;
         assert!(result.is_ok());
 
         let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names, vec!["test_page".into()]);
-        let retrieved_schema = service.get_single_page_schema(&"test_page".into()).await.unwrap();
+        let retrieved_schema = service
+            .get_single_page_schema(&"test_page".into())
+            .await
+            .unwrap();
         assert_eq!(retrieved_schema, schema);
     }
 
     #[tokio::test]
     async fn test_update_single_page_schema_success() {
         let service = create_test_service();
-        let initial_schema = vec![
-            FieldSchema {
-                name: "title".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        service.add_single_page_schema(&"test_page".into(), &initial_schema).await.unwrap();
+        let initial_schema = vec![FieldSchema {
+            name: "title".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        service
+            .add_single_page_schema(&"test_page".into(), &initial_schema)
+            .await
+            .unwrap();
 
-        let updated_schema = vec![
-            FieldSchema {
-                name: "title2".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        let result = service.update_single_page_schema(&"test_page".into(), &updated_schema).await;
+        let updated_schema = vec![FieldSchema {
+            name: "title2".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        let result = service
+            .update_single_page_schema(&"test_page".into(), &updated_schema)
+            .await;
         assert!(result.is_ok());
 
-        let retrieved_schema = service.get_single_page_schema(&"test_page".into()).await.unwrap();
+        let retrieved_schema = service
+            .get_single_page_schema(&"test_page".into())
+            .await
+            .unwrap();
         assert_eq!(retrieved_schema, updated_schema);
     }
 
     #[tokio::test]
     async fn test_add_single_page_schema_already_exists() {
         let service = create_test_service();
-        let schema = vec![
-            FieldSchema {
-                name: "title".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
+        let schema = vec![FieldSchema {
+            name: "title".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        service
+            .add_single_page_schema(&"test_page".into(), &schema)
+            .await
+            .unwrap();
 
-        let duplicate_schema = vec![
-            FieldSchema {
-                name: "other".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        let result = service.add_single_page_schema(&"test_page".into(), &duplicate_schema).await;
+        let duplicate_schema = vec![FieldSchema {
+            name: "other".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        let result = service
+            .add_single_page_schema(&"test_page".into(), &duplicate_schema)
+            .await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::Conflict("Single page with id 'test_page' already exists"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::Conflict("Single page with id 'test_page' already exists")
+        );
 
-        let retrieved_schema = service.get_single_page_schema(&"test_page".into()).await.unwrap();
+        let retrieved_schema = service
+            .get_single_page_schema(&"test_page".into())
+            .await
+            .unwrap();
         assert_eq!(retrieved_schema, schema);
     }
 
     #[tokio::test]
     async fn test_delete_single_page_success() {
         let service = create_test_service();
-        let schema = vec![
-            FieldSchema {
-                name: "title".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
+        let schema = vec![FieldSchema {
+            name: "title".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        service
+            .add_single_page_schema(&"test_page".into(), &schema)
+            .await
+            .unwrap();
 
         let result = service.delete_single_page(&"test_page".into()).await;
         assert!(result.is_ok());
@@ -996,22 +1129,26 @@ mod tests {
     #[tokio::test]
     async fn test_delete_non_exists_single_page() {
         let service = create_test_service();
-        let schema = vec![
-            FieldSchema {
-                name: "title".to_string(),
-                field_type: FieldType::Text(TextFieldOptions::default()),
-                required: true,
-                width: 12,
-                height: 1,
-                unique: false,
-            }
-        ];
-        service.add_single_page_schema(&"test_page".into(), &schema).await.unwrap();
+        let schema = vec![FieldSchema {
+            name: "title".to_string(),
+            field_type: FieldType::Text(TextFieldOptions::default()),
+            required: true,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+        service
+            .add_single_page_schema(&"test_page".into(), &schema)
+            .await
+            .unwrap();
 
         let result = service.delete_single_page(&"non_existent".into()).await;
         assert!(result.is_err());
 
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::NotFound("Single page with id 'non_existent' does not exist")
+        );
         let page_names = service.list_page_names().await.unwrap();
         assert_eq!(page_names, vec!["test_page".into()]);
     }
@@ -1019,19 +1156,19 @@ mod tests {
     #[tokio::test]
     async fn test_update_missing_schema() {
         let service = create_test_service();
-        let update_result = service.update_single_page_schema(
-            &"non_existent".into(),
-            &vec![
-                FieldSchema {
+        let update_result = service
+            .update_single_page_schema(
+                &"non_existent".into(),
+                &vec![FieldSchema {
                     name: "title".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),
                     required: true,
                     width: 12,
                     height: 1,
                     unique: false,
-                }
-            ],
-        ).await;
+                }],
+            )
+            .await;
         assert!(update_result.is_err());
     }
     #[tokio::test]
@@ -1049,12 +1186,19 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository::default();
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            Arc::new(NoopNotifier),
+        );
 
-        let result = service.update_single_page_item(
-            &"test_composite".into(),
-            &create_test_item("Test Title", 42.0),
-        ).await;
+        let result = service
+            .update_single_page_item(
+                &"test_composite".into(),
+                &create_test_item("Test Title", 42.0),
+            )
+            .await;
         assert!(result.is_ok());
     }
 
@@ -1065,7 +1209,10 @@ mod tests {
         use crate::models::item_status::ItemStatus;
 
         let repository = Arc::new(MockSinglePageRepository {
-            schemas: Arc::new(RwLock::new(HashMap::from([("home".into(), create_test_schema())]))),
+            schemas: Arc::new(RwLock::new(HashMap::from([(
+                "home".into(),
+                create_test_schema(),
+            )]))),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::from([(
                 SinglePageName::from("home"),
@@ -1080,7 +1227,9 @@ mod tests {
         });
         let service = SinglePageService::new(
             repository.clone(),
-            Arc::new(MockCompositeFieldRepository { schemas: Arc::new(RwLock::new(HashMap::new())) }),
+            Arc::new(MockCompositeFieldRepository {
+                schemas: Arc::new(RwLock::new(HashMap::new())),
+            }),
             Arc::new(MockImageRepository::default()),
             Arc::new(NoopNotifier),
         );
@@ -1091,7 +1240,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            repository.metadata_writes.load(std::sync::atomic::Ordering::Relaxed),
+            repository
+                .metadata_writes
+                .load(std::sync::atomic::Ordering::Relaxed),
             0,
             "a save must not write the whole metadata record"
         );
@@ -1102,16 +1253,31 @@ mod tests {
             .get(&SinglePageName::from("home"))
             .cloned()
             .expect("the record the save stamped");
-        assert_eq!(stored.status, ItemStatus::Published, "a save is not a publish");
-        assert!(stored.updated_at.is_some(), "and the save is still recorded");
+        assert_eq!(
+            stored.status,
+            ItemStatus::Published,
+            "a save is not a publish"
+        );
+        assert!(
+            stored.updated_at.is_some(),
+            "and the save is still recorded"
+        );
     }
 
     #[tokio::test]
     async fn test_create_single_page_item_missing_page() {
         let service = create_test_service();
-        let result = service.update_single_page_item(&"non_existent".into(), &FieldValueMap(HashMap::new(), PhantomData)).await;
+        let result = service
+            .update_single_page_item(
+                &"non_existent".into(),
+                &FieldValueMap(HashMap::new(), PhantomData),
+            )
+            .await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::NotFound("Single page with id 'non_existent' does not exist")
+        );
     }
 
     #[tokio::test]
@@ -1129,12 +1295,22 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository::default();
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            Arc::new(NoopNotifier),
+        );
 
-        let result = service.update_single_page_item(
-            &"test_composite".into(),
-            &FieldValueMap(HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]), PhantomData),
-        ).await;
+        let result = service
+            .update_single_page_item(
+                &"test_composite".into(),
+                &FieldValueMap(
+                    HashMap::from([("count".to_string(), FieldValue::Number(Some(42.0)))]),
+                    PhantomData,
+                ),
+            )
+            .await;
         // A working copy may be incomplete; publishing is what asks for the required fields
         // (see the collection item editor's tests and the contract suite).
         assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
@@ -1157,11 +1333,19 @@ mod tests {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let image_repository = MockImageRepository::default();
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(image_repository), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(image_repository),
+            Arc::new(NoopNotifier),
+        );
 
         let result = service.get_single_page_item(&"test_schema".into()).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), create_test_item_response("Sample Title", 10.0));
+        assert_eq!(
+            result.unwrap(),
+            create_test_item_response("Sample Title", 10.0)
+        );
     }
 
     #[tokio::test]
@@ -1178,13 +1362,24 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository::default()), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
         let result = service.get_single_page_item(&"test_schema".into()).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), HashMap::from([
-            ("title".to_string(), FieldValueResponse::Text("".to_string())),
-            ("count".to_string(), FieldValueResponse::Number(None)),
-        ]));
+        assert_eq!(
+            result.unwrap(),
+            HashMap::from([
+                (
+                    "title".to_string(),
+                    FieldValueResponse::Text("".to_string())
+                ),
+                ("count".to_string(), FieldValueResponse::Number(None)),
+            ])
+        );
     }
 
     #[tokio::test]
@@ -1192,7 +1387,10 @@ mod tests {
         let service = create_test_service();
         let result = service.get_single_page_item(&"non_existent".into()).await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::NotFound("Single page with id 'non_existent' does not exist")
+        );
     }
 
     #[tokio::test]
@@ -1211,15 +1409,25 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository::default()), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
 
-        let result = service.update_single_page_item(
-            &"test_page".into(),
-            &create_test_item("Updated Title", 100.0),
-        ).await;
+        let result = service
+            .update_single_page_item(
+                &"test_page".into(),
+                &create_test_item("Updated Title", 100.0),
+            )
+            .await;
         assert!(result.is_ok());
 
-        let item = service.get_single_page_item(&"test_page".into()).await.unwrap();
+        let item = service
+            .get_single_page_item(&"test_page".into())
+            .await
+            .unwrap();
         assert_eq!(item, create_test_item_response("Updated Title", 100.0));
     }
 
@@ -1237,26 +1445,41 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository::default()), Arc::new(NoopNotifier));
-        let result = service.update_single_page_item(
-            &"test_page".into(),
-            &create_test_item("Updated Title", 100.0),
-        ).await;
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
+        let result = service
+            .update_single_page_item(
+                &"test_page".into(),
+                &create_test_item("Updated Title", 100.0),
+            )
+            .await;
         assert!(result.is_ok());
 
-        let item = service.get_single_page_item(&"test_page".into()).await.unwrap();
+        let item = service
+            .get_single_page_item(&"test_page".into())
+            .await
+            .unwrap();
         assert_eq!(item, create_test_item_response("Updated Title", 100.0));
     }
 
     #[tokio::test]
     async fn test_update_single_page_item_missing_page() {
         let service = create_test_service();
-        let result = service.update_single_page_item(
-            &"non_existent".into(),
-            &create_test_item("Updated Title", 100.0),
-        ).await;
+        let result = service
+            .update_single_page_item(
+                &"non_existent".into(),
+                &create_test_item("Updated Title", 100.0),
+            )
+            .await;
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), HttpError::NotFound("Single page with id 'non_existent' does not exist"));
+        assert_eq!(
+            result.err().unwrap(),
+            HttpError::NotFound("Single page with id 'non_existent' does not exist")
+        );
     }
 
     #[tokio::test]
@@ -1275,14 +1498,22 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository::default()), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
 
-        let result = service.update_single_page_item(
-            &"test_page".into(),
-            &FieldValueMap(HashMap::from([
-            ("count".to_string(), FieldValue::Number(Some(1.0))),
-        ]), PhantomData),
-        ).await;
+        let result = service
+            .update_single_page_item(
+                &"test_page".into(),
+                &FieldValueMap(
+                    HashMap::from([("count".to_string(), FieldValue::Number(Some(1.0)))]),
+                    PhantomData,
+                ),
+            )
+            .await;
         // A working copy may be incomplete; publishing is what asks for the required fields
         // (see the collection item editor's tests and the contract suite).
         assert!(result.is_ok(), "an incomplete draft is a draft: {result:?}");
@@ -1304,7 +1535,12 @@ mod tests {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let service = SinglePageService::new(Arc::new(single_page_repository), Arc::new(composite_field_repository), Arc::new(MockImageRepository::default()), Arc::new(NoopNotifier));
+        let service = SinglePageService::new(
+            Arc::new(single_page_repository),
+            Arc::new(composite_field_repository),
+            Arc::new(MockImageRepository::default()),
+            Arc::new(NoopNotifier),
+        );
 
         let result = service.get_single_page_item(&"test_page".into()).await;
         assert!(result.is_ok());

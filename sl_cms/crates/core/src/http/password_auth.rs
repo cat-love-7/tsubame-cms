@@ -8,18 +8,17 @@
 //! What is left in [`crate::http::auth`] — who am I, list accounts, change a role — is shared,
 //! because an administrator manages accounts in both deployments; only the credential differs.
 
+use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{post, Router};
-use axum::Json;
+use axum::routing::{Router, post};
 
 use crate::app_module::Storage;
-use crate::http::{require_admin, AppState, AuthenticatedUser};
+use crate::http::{AppState, AuthenticatedUser, require_admin};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewAccountRequest,
-    UserId,
+    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewAccountRequest, UserId,
 };
 use crate::repositories::local_credentials::LocalCredentials;
 
@@ -131,6 +130,7 @@ pub fn unavailable_protected<R: Storage>(message: &'static str) -> Router<AppSta
 
 fn unavailable<R: Storage>(
     message: &'static str,
-) -> impl Fn() -> std::future::Ready<Result<StatusCode, HttpError>> + Clone + Send + Sync + 'static {
+) -> impl Fn() -> std::future::Ready<Result<StatusCode, HttpError>> + Clone + Send + Sync + 'static
+{
     move || std::future::ready(Err(HttpError::new(501, message)))
 }

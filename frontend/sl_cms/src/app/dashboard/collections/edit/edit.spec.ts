@@ -81,24 +81,41 @@ class StubCollectionsService {
   publishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.published.push(id);
     this.publishedTargets.push({ name: _name, id });
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z',
-      last_published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z',
+      published_by: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      has_draft: false,
+    });
   }
 
   /** When set, the minted link waits for the test to complete it. */
   public heldPreviews?: Subject<{ path: string; expires_at: string }>;
 
   createPreviewLink(_name: string, _id: number): Observable<{ path: string; expires_at: string }> {
-    return this.heldPreviews ?? of({
-      path: '/preview/collections/blog/items/7?token=1758000000.abc123',
-      expires_at: '2026-09-13T12:00:00Z',
-    });
+    return (
+      this.heldPreviews ??
+      of({
+        path: '/preview/collections/blog/items/7?token=1758000000.abc123',
+        expires_at: '2026-09-13T12:00:00Z',
+      })
+    );
   }
 
   unpublishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.unpublished.push(id);
-    return of({ status: 'draft', published_at: null,
-    last_published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({
+      status: 'draft',
+      published_at: null,
+      last_published_at: null,
+      published_by: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      has_draft: false,
+    });
   }
 }
 
@@ -540,7 +557,13 @@ describe('CollectionItemEdit', () => {
   // rather than letting the save fail.
   it('marks a stored value that is longer than the schema now allows', () => {
     stub.schema = [
-      { name: 'title', field_type: { Text: { max_length: 3 } }, required: false, width: 12, height: 1 },
+      {
+        name: 'title',
+        field_type: { Text: { max_length: 3 } },
+        required: false,
+        width: 12,
+        height: 1,
+      },
     ];
     stub.item = { title: 'toolong' };
     const fresh = TestBed.createComponent(CollectionItemEdit);
@@ -630,12 +653,10 @@ describe('CollectionItemEdit', () => {
     await fixture.whenStable();
     // The route change that follows the save destroys this screen, which is what the ordering is
     // about: a navigation is free to do that, and this is the earliest it can happen.
-    const navigate = vi
-      .spyOn(TestBed.inject(Router), 'navigate')
-      .mockImplementation(() => {
-        fixture.destroy();
-        return Promise.resolve(true);
-      });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(() => {
+      fixture.destroy();
+      return Promise.resolve(true);
+    });
     component.setValue(
       { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
       'New one',
@@ -675,7 +696,7 @@ describe('CollectionItemEdit', () => {
       published_by: { id: 'u1', username: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
-    has_draft: false,
+      has_draft: false,
     };
     const fresh = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();

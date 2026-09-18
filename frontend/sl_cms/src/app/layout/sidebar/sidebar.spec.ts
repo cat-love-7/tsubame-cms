@@ -50,8 +50,7 @@ describe('Sidebar', () => {
       // Sidebar loads the collection list on init; without the testing backend this
       // would issue a real XHR that fails as an unhandled error.
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(Sidebar);
     component = fixture.componentInstance;

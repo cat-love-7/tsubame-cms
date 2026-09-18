@@ -84,7 +84,10 @@ class StubCollectionsService {
           : {
               outcome: 'changed',
               id,
-              metadata: metadata({ status, published_at: status === 'published' ? '2024-01-01T00:00:00Z' : null }),
+              metadata: metadata({
+                status,
+                published_at: status === 'published' ? '2024-01-01T00:00:00Z' : null,
+              }),
             },
       ),
     );
@@ -334,9 +337,7 @@ describe('CollectionItemList', () => {
     expect(stub.published).toEqual([1]);
     expect(stub.unpublished).toEqual([]);
     // The row still offers to take the item down.
-    expect(
-      fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]'),
-    ).toBeTruthy();
+    expect(fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]')).toBeTruthy();
   });
 
   it('offers no release button when a published row has nothing waiting', () => {
@@ -347,9 +348,7 @@ describe('CollectionItemList', () => {
     expect(
       fresh.nativeElement.querySelector('button[aria-label="publish the changes of item 1"]'),
     ).toBeNull();
-    expect(
-      fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]'),
-    ).toBeTruthy();
+    expect(fresh.nativeElement.querySelector('button[aria-label="unpublish item 1"]')).toBeTruthy();
   });
 
   /** Content saved before the CMS recorded timestamps has nothing to show. */
@@ -498,4 +497,3 @@ describe('CollectionItemList (read-only account)', () => {
     expect(fresh.nativeElement.querySelectorAll('tbody tr').length).toBe(1);
   });
 });
-

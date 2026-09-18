@@ -3,10 +3,19 @@ import { apiUrl } from 'app/core/api-url';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { ItemMetadata, ItemMetadataMap, ItemStatus, ItemStatusOutcome } from 'app/models/item-status';
+import {
+  ItemMetadata,
+  ItemMetadataMap,
+  ItemStatus,
+  ItemStatusOutcome,
+} from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
 
-import { CollectionItemEntry, CollectionItemPage, CollectionValue } from 'app/models/values/collection';
+import {
+  CollectionItemEntry,
+  CollectionItemPage,
+  CollectionValue,
+} from 'app/models/values/collection';
 
 /**
  * `providedIn: 'root'` so every consumer (and every TestBed) gets the same instance
@@ -42,7 +51,11 @@ export class CollectionRepository {
    * The total is not part of the body — it comes back in `X-Total-Count` — so the whole
    * response is read here and reduced to a page the caller can use directly.
    */
-  listCollectionItemsPage(name: string, limit: number, offset: number): Observable<CollectionItemPage> {
+  listCollectionItemsPage(
+    name: string,
+    limit: number,
+    offset: number,
+  ): Observable<CollectionItemPage> {
     return this.http
       .get<CollectionItemEntry[]>(apiUrl(`/models/collections/${name}/items`), {
         params: { limit, offset },
@@ -96,11 +109,17 @@ export class CollectionRepository {
 
   /** Copy an item: the server answers with the new item's id. */
   duplicateItem(name: string, id: number): Observable<number> {
-    return this.http.post<number>(apiUrl(`/models/collections/${name}/items/${id}/duplicate`), null);
+    return this.http.post<number>(
+      apiUrl(`/models/collections/${name}/items/${id}/duplicate`),
+      null,
+    );
   }
 
   publishItem(name: string, id: number): Observable<ItemMetadata> {
-    return this.http.post<ItemMetadata>(apiUrl(`/models/collections/${name}/items/${id}/publish`), null);
+    return this.http.post<ItemMetadata>(
+      apiUrl(`/models/collections/${name}/items/${id}/publish`),
+      null,
+    );
   }
 
   unpublishItem(name: string, id: number): Observable<ItemMetadata> {

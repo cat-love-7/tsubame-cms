@@ -85,9 +85,7 @@ describe('PasswordReset', () => {
       .expectOne('/api/auth/password-reset')
       .flush({ token: 'fresh-token', expires_at: '2026-09-13T12:00:00Z' });
     // The account read is refused for whatever reason.
-    httpMock
-      .expectOne('/api/auth/me')
-      .flush('nope', { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne('/api/auth/me').flush('nope', { status: 500, statusText: 'Server Error' });
 
     expect(auth.token()).toBe('fresh-token');
     expect(component.error()).toBeNull();

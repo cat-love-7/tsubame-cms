@@ -13,8 +13,7 @@ describe('CollectionSchemaList', () => {
     await TestBed.configureTestingModule({
       imports: [CollectionSchemaList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(CollectionSchemaList);
     component = fixture.componentInstance;

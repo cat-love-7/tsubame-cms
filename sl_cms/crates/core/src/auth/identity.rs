@@ -20,10 +20,7 @@ pub enum Identity {
     ///
     /// The subject is the account id, and the generation it carries is checked against the
     /// stored record: that is how changing a password ends every session issued before it.
-    Local {
-        user_id: UserId,
-        token_version: u64,
-    },
+    Local { user_id: UserId, token_version: u64 },
     /// A token an identity provider issued and signed.
     ///
     /// The subject is *its* identifier for the account (Cognito's `sub`); the local record is
@@ -44,8 +41,7 @@ pub enum Identity {
 /// Boxed rather than `impl Future` because the service holds one of these behind a `dyn` — a
 /// deployment picks its verifier at composition time, not at compile time. Same shape as
 /// [`Notifier`](crate::webhook::Notifier), for the same reason.
-pub type VerifyFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Identity, HttpError>> + Send + 'a>>;
+pub type VerifyFuture<'a> = Pin<Box<dyn Future<Output = Result<Identity, HttpError>> + Send + 'a>>;
 
 pub trait TokenVerifier: Send + Sync + 'static {
     fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a>;

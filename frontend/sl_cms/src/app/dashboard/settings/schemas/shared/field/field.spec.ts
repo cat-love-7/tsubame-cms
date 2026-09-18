@@ -27,8 +27,7 @@ describe('Field', () => {
       imports: [Field],
       // An array field asks for the composite definitions the item types may name.
       providers: [provideHttpClient(), provideHttpClientTesting()],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(Field);
     component = fixture.componentInstance;

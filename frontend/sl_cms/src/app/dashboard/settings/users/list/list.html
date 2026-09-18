@@ -48,7 +48,8 @@
 <p class="hint">
   @for (role of roles; track role.value) {
     <span class="role-hint">
-      <strong>{{ role.labelKey | transloco }}</strong>: {{ role.hintKey | transloco }}
+      <strong>{{ role.labelKey | transloco }}</strong
+      >: {{ role.hintKey | transloco }}
     </span>
   }
 </p>
@@ -73,7 +74,9 @@
             <span class="you">{{ 'accounts.you' | transloco }}</span>
           }
           @if (user.email) {
-            <span class="contact" [title]="'accounts.contactHint' | transloco">{{ user.email }}</span>
+            <span class="contact" [title]="'accounts.contactHint' | transloco">{{
+              user.email
+            }}</span>
           }
         </td>
         <td>
@@ -112,12 +115,8 @@
             <button
               matIconButton
               (click)="issuePasswordResetLink(user)"
-              [attr.aria-label]="
-                'labels.issueResetLinkOf' | transloco: { username: user.username }
-              "
-              [matTooltip]="
-                'labels.issueResetLinkOf' | transloco: { username: user.username }
-              "
+              [attr.aria-label]="'labels.issueResetLinkOf' | transloco: { username: user.username }"
+              [matTooltip]="'labels.issueResetLinkOf' | transloco: { username: user.username }"
             >
               <mat-icon>link</mat-icon>
             </button>
@@ -152,12 +151,12 @@
                     <mat-select
                       [ngModel]="draftCollections[name]"
                       (ngModelChange)="draftCollections[name] = $event"
-                      [attr.aria-label]="
-                        'labels.permissionForCollection' | transloco: { name }
-                      "
+                      [attr.aria-label]="'labels.permissionForCollection' | transloco: { name }"
                     >
                       @for (role of resourceRoles; track role.value) {
-                        <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
+                        <mat-option [value]="role.value">{{
+                          role.labelKey | transloco
+                        }}</mat-option>
                       }
                     </mat-select>
                   </label>
@@ -173,7 +172,9 @@
                       [attr.aria-label]="'labels.permissionForPage' | transloco: { name }"
                     >
                       @for (role of resourceRoles; track role.value) {
-                        <mat-option [value]="role.value">{{ role.labelKey | transloco }}</mat-option>
+                        <mat-option [value]="role.value">{{
+                          role.labelKey | transloco
+                        }}</mat-option>
                       }
                     </mat-select>
                   </label>

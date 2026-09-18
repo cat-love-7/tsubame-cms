@@ -14,8 +14,7 @@ describe('MainLayout', () => {
       imports: [MainLayout],
       // MainLayout renders Sidebar, which loads the collection list on init.
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(MainLayout);
     component = fixture.componentInstance;

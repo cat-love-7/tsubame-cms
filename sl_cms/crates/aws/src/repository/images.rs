@@ -12,8 +12,7 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use super::*;
 use crate::ImageDelivery;
 use sl_cms_core::models::image::{
-    sanitize_ext, Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo,
-    ImageOwner,
+    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo, sanitize_ext,
 };
 use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
 
@@ -122,7 +121,10 @@ impl ImageRepository for AwsRepository {
         Ok(images)
     }
 
-    async fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
+    async fn generate_image_upload_url(
+        &self,
+        upload_info: &NewImageRequest,
+    ) -> Result<NewImageInfo, BoxError> {
         let inner = self.inner.clone();
         let upload_info = NewImageRequest {
             original_filename: upload_info.original_filename.clone(),
@@ -231,7 +233,9 @@ impl ImageRepository for AwsRepository {
             Ok(_) => Ok(true),
             // The object is not there: that is the answer, not a failure.
             Err(e) if e.as_service_error().is_some_and(|e| e.is_not_found()) => Ok(false),
-            Err(e) => Err(format!("could not look for the uploaded image: {}", describe(&e)).into()),
+            Err(e) => {
+                Err(format!("could not look for the uploaded image: {}", describe(&e)).into())
+            }
         }
     }
 
@@ -340,9 +344,20 @@ impl ImageRepository for AwsRepository {
         }
         for id in after.difference(&before) {
             let image_pk = format!("image#{}", id);
-            write(&inner, &owner_pk, &format!("image#{}", id), &owner.storage_key()).await?;
-            write(&inner, &image_pk, &format!("ref#{}", owner.storage_key()), &owner.storage_key())
-                .await?;
+            write(
+                &inner,
+                &owner_pk,
+                &format!("image#{}", id),
+                &owner.storage_key(),
+            )
+            .await?;
+            write(
+                &inner,
+                &image_pk,
+                &format!("ref#{}", owner.storage_key()),
+                &owner.storage_key(),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -412,7 +427,9 @@ mod tests {
         let s3 = crate::test_s3_endpoint();
         for (what, endpoint) in [("DynamoDB", &dynamo), ("S3", &s3)] {
             if !emulator_reachable(endpoint) {
-                eprintln!("skipped: no {what} at {endpoint} (start it with `docker compose up -d`)");
+                eprintln!(
+                    "skipped: no {what} at {endpoint} (start it with `docker compose up -d`)"
+                );
                 return;
             }
         }
@@ -439,7 +456,10 @@ mod tests {
             original_filename: "cat.png".to_string(),
             ext: "png".to_string(),
         };
-        let info = repository.generate_image_upload_url(&request).await.unwrap();
+        let info = repository
+            .generate_image_upload_url(&request)
+            .await
+            .unwrap();
         sl_cms_core::webhook::install_crypto_provider();
         let client = reqwest::Client::new();
         assert_eq!(
@@ -453,7 +473,11 @@ mod tests {
             200
         );
 
-        let image = repository.get_image(&info.id).await.unwrap().expect("the record");
+        let image = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
         assert!(
             image.url.contains("X-Amz-Signature"),
             "the URL should be a signature: {}",
@@ -508,7 +532,11 @@ mod tests {
         // and a search for whichever record names a file says nothing about an upload no record
         // names yet.
         assert_eq!(
-            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            repository
+                .image_file_name(&info.id)
+                .await
+                .unwrap()
+                .as_deref(),
             Some(key),
         );
         // Nothing has been signed yet, so the file it serves is not an upload it is waiting for -
@@ -519,7 +547,11 @@ mod tests {
             "the file the image already serves is not a change",
         );
         assert_eq!(
-            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            repository
+                .image_file_name(&info.id)
+                .await
+                .unwrap()
+                .as_deref(),
             Some(key),
         );
 
@@ -535,7 +567,10 @@ mod tests {
             .expect("a second signed replacement");
         assert_ne!(first.file_name, second.file_name, "two uploads share a key");
         assert_eq!(
-            repository.replace_image(&info.id, &first.file_name).await.unwrap(),
+            repository
+                .replace_image(&info.id, &first.file_name)
+                .await
+                .unwrap(),
             Replacement::NotWaiting,
             "an upload a newer request has replaced is not this image's to take",
         );
@@ -559,7 +594,11 @@ mod tests {
             Replacement::Applied
         );
         assert_eq!(
-            repository.image_file_name(&info.id).await.unwrap().as_deref(),
+            repository
+                .image_file_name(&info.id)
+                .await
+                .unwrap()
+                .as_deref(),
             Some(second.file_name.as_str())
         );
         let old = client
@@ -577,7 +616,10 @@ mod tests {
             .await
             .expect("a third signed replacement");
         assert_eq!(
-            repository.replace_image(&info.id, &second.file_name).await.unwrap(),
+            repository
+                .replace_image(&info.id, &second.file_name)
+                .await
+                .unwrap(),
             Replacement::Applied,
             "what it already serves is still not a change",
         );
@@ -592,7 +634,10 @@ mod tests {
             200
         );
         assert_eq!(
-            repository.replace_image(&info.id, &third.file_name).await.unwrap(),
+            repository
+                .replace_image(&info.id, &third.file_name)
+                .await
+                .unwrap(),
             Replacement::Applied,
             "the upload it was waiting for was still waiting",
         );
@@ -644,14 +689,10 @@ mod tests {
             eprintln!("skipped: no emulator container to make a restricted user in");
             return;
         };
-        let (repository, _table) = crate::open_test_repository_as(
-            "cms_permissions_allowed",
-            &bucket,
-            &user,
-            &secret,
-        )
-        .await
-        .expect("a repository as the restricted user");
+        let (repository, _table) =
+            crate::open_test_repository_as("cms_permissions_allowed", &bucket, &user, &secret)
+                .await
+                .expect("a repository as the restricted user");
 
         // An upload arrives the way the browser sends it: through the presigned PUT, which is
         // signed with these very credentials.
@@ -691,7 +732,10 @@ mod tests {
             "an upload that is there has to be found"
         );
         assert!(
-            !repository.image_bytes_exist("nothing-here.png").await.unwrap(),
+            !repository
+                .image_bytes_exist("nothing-here.png")
+                .await
+                .unwrap(),
             "a key that is not there is answered *as absent*, which is what the code reads"
         );
 
@@ -724,7 +768,9 @@ mod tests {
             eprintln!("skipped: no S3 at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_images").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_images")
+            .await
+            .expect("a table for this test");
         let bucket = repository.inner.settings.bucket.clone();
         let s3 = repository.inner.s3.clone();
         // The deployment makes the image bucket readable — the URL written into content is
@@ -756,8 +802,15 @@ mod tests {
             original_filename: "cat.png".to_string(),
             ext: "PNG".to_string(),
         };
-        let info = repository.generate_image_upload_url(&request).await.unwrap();
-        assert!(info.upload_url.starts_with("http"), "not a URL: {}", info.upload_url);
+        let info = repository
+            .generate_image_upload_url(&request)
+            .await
+            .unwrap();
+        assert!(
+            info.upload_url.starts_with("http"),
+            "not a URL: {}",
+            info.upload_url
+        );
 
         // The browser PUTs the bytes straight to S3: image bytes never travel through the API.
         // The presigned URL is exercised the way a browser would, over plain HTTP(S), so the
@@ -778,17 +831,32 @@ mod tests {
 
         // What is stored in content is the stable URL, not the signature: a presigned URL in a
         // page would expire with the link.
-        let image = repository.get_image(&info.id).await.unwrap().expect("the record");
+        let image = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
         assert_eq!(image.original_filename, "cat.png");
         assert!(
             image.url.starts_with(&format!("{endpoint}/{bucket}/")),
             "unexpected url: {}",
             image.url
         );
-        assert!(image.url.ends_with(".png"), "the extension is kept: {}", image.url);
-        assert!(!image.url.contains("X-Amz-Signature"), "a signature leaked into content");
+        assert!(
+            image.url.ends_with(".png"),
+            "the extension is kept: {}",
+            image.url
+        );
+        assert!(
+            !image.url.contains("X-Amz-Signature"),
+            "a signature leaked into content"
+        );
 
-        let served = client.get(&image.url).send().await.expect("the object should be readable");
+        let served = client
+            .get(&image.url)
+            .send()
+            .await
+            .expect("the object should be readable");
         assert_eq!(served.status(), 200);
         assert_eq!(served.bytes().await.unwrap().as_ref(), &[1u8, 2, 3]);
 
@@ -818,12 +886,16 @@ mod tests {
             eprintln!("skipped: no S3 at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_replace").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_replace")
+            .await
+            .expect("a table for this test");
         let bucket = repository.inner.settings.bucket.clone();
         let s3 = repository.inner.s3.clone();
-        s3.create_bucket().bucket(&bucket).send().await.unwrap_or_else(|e| {
-            panic!("could not create {bucket}: {}", describe(&e))
-        });
+        s3.create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
         s3.put_bucket_policy()
             .bucket(&bucket)
             .policy(
@@ -858,14 +930,22 @@ mod tests {
             .send()
             .await
             .expect("the presigned PUT should be reachable");
-        let before = repository.get_image(&info.id).await.unwrap().expect("the record");
+        let before = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
 
         // Where to put the replacement, and what it will be called.
         let replacement = repository
             .generate_replacement_upload_url(&info.id, "PNG")
             .await
             .unwrap();
-        assert!(replacement.file_name.ends_with(".png"), "{}", replacement.file_name);
+        assert!(
+            replacement.file_name.ends_with(".png"),
+            "{}",
+            replacement.file_name
+        );
         assert_ne!(replacement.file_name, "");
         // The record is untouched until the bytes are there.
         assert_eq!(
@@ -880,7 +960,10 @@ mod tests {
             .await
             .expect("the presigned PUT should be reachable");
         assert!(
-            repository.image_bytes_exist(&replacement.file_name).await.unwrap(),
+            repository
+                .image_bytes_exist(&replacement.file_name)
+                .await
+                .unwrap(),
             "the uploaded bytes should be found before the swap"
         );
 
@@ -889,12 +972,30 @@ mod tests {
             .await
             .unwrap();
 
-        let after = repository.get_image(&info.id).await.unwrap().expect("the record");
-        assert_eq!(after.original_filename, "logo.png", "the name is not part of the bytes");
-        assert_eq!(after.uploaded_at, before.uploaded_at, "neither is when it arrived");
+        let after = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
+        assert_eq!(
+            after.original_filename, "logo.png",
+            "the name is not part of the bytes"
+        );
+        assert_eq!(
+            after.uploaded_at, before.uploaded_at,
+            "neither is when it arrived"
+        );
         assert_ne!(after.url, before.url, "new bytes, new URL");
         assert_eq!(
-            client.get(&after.url).send().await.unwrap().bytes().await.unwrap().as_ref(),
+            client
+                .get(&after.url)
+                .send()
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap()
+                .as_ref(),
             &[4u8, 5, 6]
         );
         assert_eq!(
@@ -904,7 +1005,12 @@ mod tests {
         );
 
         // Asking about bytes that were never uploaded answers honestly.
-        assert!(!repository.image_bytes_exist("nothing-here.png").await.unwrap());
+        assert!(
+            !repository
+                .image_bytes_exist("nothing-here.png")
+                .await
+                .unwrap()
+        );
 
         repository.delete_table().await.unwrap();
     }

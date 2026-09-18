@@ -9,7 +9,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { AuthService } from 'app/core/auth/auth.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
-import { map, Observable, combineLatest} from 'rxjs';
+import { map, Observable, combineLatest } from 'rxjs';
 
 interface SidebarItem {
   /** Data: a collection or page name comes from the API and is shown as it is. */
@@ -17,13 +17,14 @@ interface SidebarItem {
   /** Our own navigation label, which lives in the catalogs instead of here. */
   nameKey?: string;
   children?: SidebarItem[];
-  link? : string;
+  link?: string;
 }
 @Component({
   selector: 'app-sidebar',
   templateUrl: './sidebar.html',
   styleUrl: './sidebar.scss',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     MatTreeModule,
     MatButtonModule,
     MatIconModule,
@@ -124,6 +125,6 @@ export class Sidebar {
           },
         ],
       },
-    ]
+    ];
   }
 }

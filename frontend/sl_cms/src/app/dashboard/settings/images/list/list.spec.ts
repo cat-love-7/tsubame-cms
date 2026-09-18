@@ -26,7 +26,10 @@ class StubImagesService {
   public renamed: { id: number; name: string }[] = [];
 
   /** What the server's reference index says uses each image. */
-  public referencesById = new Map<number, { kind: 'collection_item' | 'single_page'; name: string; item?: number }[]>();
+  public referencesById = new Map<
+    number,
+    { kind: 'collection_item' | 'single_page'; name: string; item?: number }[]
+  >();
 
   references = (id: number) => of(this.referencesById.get(id) ?? []);
 
@@ -53,10 +56,7 @@ class StubImagesService {
     this.restored.push(id);
     const moving = this.trashed.filter((image) => image.id === id);
     this.trashed = this.trashed.filter((image) => image.id !== id);
-    this.library = [
-      ...this.library,
-      ...moving.map((image) => ({ ...image, deleted_at: null })),
-    ];
+    this.library = [...this.library, ...moving.map((image) => ({ ...image, deleted_at: null }))];
     return of(void 0);
   };
 
@@ -292,7 +292,11 @@ describe('Image library', () => {
         },
         ...stub.library,
       ];
-      return of<NewImageInfo>({ id: 2, upload_url: '/images/second.png', url: '/images/second.png' });
+      return of<NewImageInfo>({
+        id: 2,
+        upload_url: '/images/second.png',
+        url: '/images/second.png',
+      });
     };
     fixture.detectChanges();
 

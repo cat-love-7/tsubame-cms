@@ -14,11 +14,7 @@ describe('Login', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [Login],
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideRouter([]),
-      ],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }).compileComponents();
 
     httpMock = TestBed.inject(HttpTestingController);
@@ -102,7 +98,8 @@ describe('Login', () => {
 
     // A button, not a link: the address needs a fresh challenge and state, which an `href` cannot
     // carry. What it produces is checked in the test above.
-    const button: HTMLButtonElement | null = fixture.nativeElement.querySelector('button.full-width');
+    const button: HTMLButtonElement | null =
+      fixture.nativeElement.querySelector('button.full-width');
     expect(button?.textContent).toContain('Go to sign in');
   });
 

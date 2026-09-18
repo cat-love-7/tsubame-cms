@@ -35,7 +35,10 @@ impl PreviewTarget {
     /// The public route that serves this target, without the token.
     pub fn path(&self) -> String {
         match self {
-            PreviewTarget::CollectionItem { collection, item_id } => {
+            PreviewTarget::CollectionItem {
+                collection,
+                item_id,
+            } => {
                 format!("/preview/collections/{collection}/items/{item_id}")
             }
             PreviewTarget::SinglePage { page } => format!("/preview/single_pages/{page}"),
@@ -45,7 +48,10 @@ impl PreviewTarget {
     /// The message the signature covers: what, and until when.
     fn signed_message(&self, expires: i64) -> String {
         match self {
-            PreviewTarget::CollectionItem { collection, item_id } => {
+            PreviewTarget::CollectionItem {
+                collection,
+                item_id,
+            } => {
                 format!("{PREFIX}:collection:{collection}:{item_id}:{expires}")
             }
             PreviewTarget::SinglePage { page } => format!("{PREFIX}:page:{page}:{expires}"),
@@ -124,7 +130,11 @@ impl PreviewLinkIssuer {
         let (expires, signature) = token.split_once('.').ok_or(PreviewLinkError::Malformed)?;
         let expires: i64 = expires.parse().map_err(|_| PreviewLinkError::Malformed)?;
 
-        if !signing::verify(&self.key, target.signed_message(expires).as_bytes(), signature) {
+        if !signing::verify(
+            &self.key,
+            target.signed_message(expires).as_bytes(),
+            signature,
+        ) {
             return Err(PreviewLinkError::Invalid);
         }
 
@@ -165,7 +175,11 @@ mod tests {
     /// The token comes back out of the query string as written, so the link needs no
     /// escaping and the docs can show it verbatim.
     fn token_of(link: &PreviewLink) -> String {
-        link.path.split_once("?token=").expect("token in the path").1.to_string()
+        link.path
+            .split_once("?token=")
+            .expect("token in the path")
+            .1
+            .to_string()
     }
 
     #[test]
@@ -178,14 +192,19 @@ mod tests {
         assert_eq!(link.expires_at, now + Duration::minutes(TTL_MINUTES));
         assert_eq!(
             link.path,
-            format!("/preview/collections/blog/items/7?token={}", token_of(&link))
+            format!(
+                "/preview/collections/blog/items/7?token={}",
+                token_of(&link)
+            )
         );
         assert!(issuer.verify(&item_link(), &token_of(&link), now).is_ok());
 
         // The token is URL-safe: nothing in it needs escaping.
-        assert!(token_of(&link)
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+        assert!(
+            token_of(&link)
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        );
     }
 
     #[test]
@@ -197,8 +216,14 @@ mod tests {
         // Another item, another collection, another kind of target: all refused, because the
         // target is part of what was signed.
         let others = [
-            PreviewTarget::CollectionItem { collection: "blog".to_string(), item_id: 8 },
-            PreviewTarget::CollectionItem { collection: "news".to_string(), item_id: 7 },
+            PreviewTarget::CollectionItem {
+                collection: "blog".to_string(),
+                item_id: 8,
+            },
+            PreviewTarget::CollectionItem {
+                collection: "news".to_string(),
+                item_id: 7,
+            },
             page_link(),
         ];
         for other in others {
@@ -226,9 +251,11 @@ mod tests {
 
         assert!(issuer.verify(&item_link(), &token, now).is_ok());
         // One second before the end it is still good; at the end it is not.
-        assert!(issuer
-            .verify(&item_link(), &token, link.expires_at - Duration::seconds(1))
-            .is_ok());
+        assert!(
+            issuer
+                .verify(&item_link(), &token, link.expires_at - Duration::seconds(1))
+                .is_ok()
+        );
         assert_eq!(
             issuer.verify(&item_link(), &token, link.expires_at),
             Err(PreviewLinkError::Expired)
@@ -248,10 +275,7 @@ mod tests {
         let short = issuer.issue(&item_link(), now - Duration::hours(2));
         let (_, signature) = short.path.split_once('.').expect("token has a separator");
 
-        let forged = format!(
-            "{}.{signature}",
-            (now + Duration::days(365)).timestamp()
-        );
+        let forged = format!("{}.{signature}", (now + Duration::days(365)).timestamp());
         assert_eq!(
             issuer.verify(&item_link(), &forged, now),
             Err(PreviewLinkError::Invalid)
@@ -268,7 +292,15 @@ mod tests {
     fn refuses_things_that_are_not_links() {
         let issuer = issuer();
         let now = Utc::now();
-        for token in ["", "123", "abc.def", "1.", ".abc", "99999999999999999999.00", "1.2.3"] {
+        for token in [
+            "",
+            "123",
+            "abc.def",
+            "1.",
+            ".abc",
+            "99999999999999999999.00",
+            "1.2.3",
+        ] {
             let result = issuer.verify(&item_link(), token, now);
             assert!(
                 matches!(
@@ -283,7 +315,11 @@ mod tests {
     #[test]
     fn a_single_page_link_has_its_own_path() {
         let link = issuer().issue(&page_link(), Utc::now());
-        assert!(link.path.starts_with("/preview/single_pages/home?token="), "{}", link.path);
+        assert!(
+            link.path.starts_with("/preview/single_pages/home?token="),
+            "{}",
+            link.path
+        );
     }
 
     /// A misconfigured lifetime must not mint links that are dead on arrival.

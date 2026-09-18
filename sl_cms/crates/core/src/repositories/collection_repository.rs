@@ -2,7 +2,9 @@ use std::error::Error;
 
 use std::future::Future;
 
-use crate::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
+use crate::models::collection::{
+    CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
+};
 use crate::models::item_status::ItemMetadata;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -31,10 +33,9 @@ pub enum ApplyStatusError {
 impl std::fmt::Display for ApplyStatusError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ApplyStatusError::DraftChanged => write!(
-                formatter,
-                "the working copy changed after it was read"
-            ),
+            ApplyStatusError::DraftChanged => {
+                write!(formatter, "the working copy changed after it was read")
+            }
         }
     }
 }
@@ -64,7 +65,10 @@ fn sorted(value: serde_json::Value) -> serde_json::Value {
             keys.sort();
             let mut ordered = serde_json::Map::new();
             for key in keys {
-                let entry = entries.get(&key).cloned().unwrap_or(serde_json::Value::Null);
+                let entry = entries
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 ordered.insert(key, sorted(entry));
             }
             serde_json::Value::Object(ordered)
@@ -105,10 +109,19 @@ mod tests {
     #[test]
     fn a_changed_working_copy_renders_differently() {
         let before = item(&[("title", "before"), ("count", "1")]);
-        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "after"), ("count", "1")])));
-        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "before"), ("count", "2")])));
+        assert_ne!(
+            canonical_draft(&before),
+            canonical_draft(&item(&[("title", "after"), ("count", "1")]))
+        );
+        assert_ne!(
+            canonical_draft(&before),
+            canonical_draft(&item(&[("title", "before"), ("count", "2")]))
+        );
         // A field that disappeared is a change as much as one whose value did.
-        assert_ne!(canonical_draft(&before), canonical_draft(&item(&[("title", "before")])));
+        assert_ne!(
+            canonical_draft(&before),
+            canonical_draft(&item(&[("title", "before")]))
+        );
     }
 
     #[test]
@@ -139,8 +152,14 @@ mod tests {
             );
             item
         };
-        assert_eq!(canonical_draft(&nested("one", true)), canonical_draft(&nested("one", false)));
-        assert_ne!(canonical_draft(&nested("one", true)), canonical_draft(&nested("two", true)));
+        assert_eq!(
+            canonical_draft(&nested("one", true)),
+            canonical_draft(&nested("one", false))
+        );
+        assert_ne!(
+            canonical_draft(&nested("one", true)),
+            canonical_draft(&nested("two", true))
+        );
     }
 }
 
@@ -168,38 +187,103 @@ pub(crate) fn cut<T>(items: Vec<T>, offset: usize, limit: Option<usize>) -> Vec<
     }
 }
 
-pub trait CollectionRepository:Send + Sync + 'static {
-    fn get_collection_schema(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Option<CollectionSchema>, BoxError>> + Send;
-    fn list_collection_names(&self) -> impl Future<Output = Result<Vec<CollectionName>, BoxError>> + Send;
-    fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> impl Future<Output = Result<(), BoxError>> + Send;
-    fn delete_collection(&self, collection_name: &CollectionName) -> impl Future<Output = Result<(), BoxError>> + Send;
-    fn list_collection_items(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
-    fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
-    fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> impl Future<Output = Result<u64, BoxError>> + Send;
-    fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> impl Future<Output = Result<(), BoxError>> + Send;
-    fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<(), BoxError>> + Send;
+pub trait CollectionRepository: Send + Sync + 'static {
+    fn get_collection_schema(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<Option<CollectionSchema>, BoxError>> + Send;
+    fn list_collection_names(
+        &self,
+    ) -> impl Future<Output = Result<Vec<CollectionName>, BoxError>> + Send;
+    fn add_collection_schema(
+        &self,
+        collection_name: &CollectionName,
+        schema: &CollectionSchema,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn list_collection_items(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
+    fn get_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
+    fn add_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_data: &CollectionItem,
+    ) -> impl Future<Output = Result<u64, BoxError>> + Send;
+    fn update_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        item_data: &CollectionItem,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     // The working copy an editor saves into. The item store is what the delivery API
     // serves, so as long as a save lands here the live site cannot change by accident.
     // Absent means "no unpublished changes".
-    fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
-    fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> impl Future<Output = Result<(), BoxError>> + Send;
-    fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn get_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> impl Future<Output = Result<Option<CollectionItem>, BoxError>> + Send;
+    fn set_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        item_data: &CollectionItem,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn delete_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Every working copy of a collection, so a list can show them without a read each.
-    fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
+    fn list_collection_item_drafts(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<Vec<(CollectionItemId, CollectionItem)>, BoxError>> + Send;
 
     // Draft/published metadata, kept out of the item's values so a schema field may be
     // named `status` without colliding. Absent metadata means "draft".
-    fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> impl Future<Output = Result<Option<ItemMetadata>, BoxError>> + Send;
-    fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn get_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> impl Future<Output = Result<Option<ItemMetadata>, BoxError>> + Send;
+    fn set_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        metadata: &ItemMetadata,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Record that the item changed, **without touching anything else on its record**.
     ///
     /// A save and a publish write the same record, and the save reads it before it writes. Writing
     /// back the whole record from that read undoes a publish that happened in between - the site
     /// goes back to the state before it, publication time and all. This is the write a save makes:
     /// the read and the write are one step, so nothing between them can be lost.
-    fn touch_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, now: chrono::DateTime<chrono::Utc>) -> impl Future<Output = Result<(), BoxError>> + Send;
-    fn list_item_metadata(&self, collection_name: &CollectionName) -> impl Future<Output = Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>> + Send;
+    fn touch_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn list_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<Vec<(CollectionItemId, ItemMetadata)>, BoxError>> + Send;
 
     /// One page of a collection's items, in id order, plus how many items there are.
     ///

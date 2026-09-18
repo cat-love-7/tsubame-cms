@@ -90,9 +90,7 @@ export class MessagePipe implements PipeTransform, OnDestroy {
     if (!message) {
       return '';
     }
-    return 'text' in message
-      ? message.text
-      : this.transloco.translate(message.key, message.params);
+    return 'text' in message ? message.text : this.transloco.translate(message.key, message.params);
   }
 
   ngOnDestroy(): void {

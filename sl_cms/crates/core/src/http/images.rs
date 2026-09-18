@@ -8,7 +8,7 @@ use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::error::HttpError;
 use crate::models::image::{
-    is_safe_image_ext, ImageId, NewImageRequest, ReplaceImageRequest, UpdateImageRequest,
+    ImageId, NewImageRequest, ReplaceImageRequest, UpdateImageRequest, is_safe_image_ext,
 };
 
 /// Uploading requires authentication (enforced by the auth middleware).
@@ -110,7 +110,10 @@ async fn trash_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.image_service.trash_image(ImageId::from_u64(id)).await?;
+    module
+        .image_service
+        .trash_image(ImageId::from_u64(id))
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -119,7 +122,10 @@ async fn restore_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.image_service.restore_image(ImageId::from_u64(id)).await?;
+    module
+        .image_service
+        .restore_image(ImageId::from_u64(id))
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -128,7 +134,10 @@ async fn delete_image<R: Storage>(
     State(module): State<AppState<R>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, HttpError> {
-    module.image_service.purge_image(ImageId::from_u64(id)).await?;
+    module
+        .image_service
+        .purge_image(ImageId::from_u64(id))
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -144,6 +153,9 @@ async fn generate_image_upload_url<R: Storage>(
         return Err(HttpError::BadRequest("Invalid image extension"));
     }
     Ok(Json(
-        module.image_service.generate_image_upload_url(request).await?,
+        module
+            .image_service
+            .generate_image_upload_url(request)
+            .await?,
     ))
 }

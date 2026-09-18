@@ -8,15 +8,13 @@ use axum::{Json, Router};
 
 use crate::app_module::Storage;
 use crate::http::{
-    preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
-    PreviewTokenQuery, Resource,
+    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, preview_link_error, require_admin,
+    require_publish,
 };
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::single_page::{SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::preview_link::PreviewTarget;
-use crate::models::single_page::{
-    SinglePageItemResponse, SinglePageName, SinglePageSchema,
-};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -88,7 +86,10 @@ async fn list_single_page_metadata<R: Storage>(
     {
         statuses.insert(
             name.to_string(),
-            PageStatusResponse { metadata, has_draft },
+            PageStatusResponse {
+                metadata,
+                has_draft,
+            },
         );
     }
     Ok(Json(statuses))
@@ -122,8 +123,14 @@ async fn preview_single_page<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(SinglePagePreview {
-        schema: module.single_page_service.get_single_page_schema(&name).await?,
-        values: module.single_page_service.get_single_page_item(&name).await?,
+        schema: module
+            .single_page_service
+            .get_single_page_schema(&name)
+            .await?,
+        values: module
+            .single_page_service
+            .get_single_page_item(&name)
+            .await?,
     }))
 }
 
@@ -141,7 +148,10 @@ async fn create_single_page_preview_link<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     // A page that does not exist is a 404, not a link to nothing.
-    module.single_page_service.get_single_page_schema(&name).await?;
+    module
+        .single_page_service
+        .get_single_page_schema(&name)
+        .await?;
 
     Ok(Json(module.preview_links.issue(
         &PreviewTarget::SinglePage {
@@ -174,8 +184,14 @@ async fn open_single_page_preview<R: Storage>(
         .map_err(preview_link_error)?;
 
     Ok(Json(SinglePagePreview {
-        schema: module.single_page_service.get_single_page_schema(&name).await?,
-        values: module.single_page_service.get_single_page_item(&name).await?,
+        schema: module
+            .single_page_service
+            .get_single_page_schema(&name)
+            .await?,
+        values: module
+            .single_page_service
+            .get_single_page_item(&name)
+            .await?,
     }))
 }
 
@@ -224,7 +240,8 @@ async fn get_single_pages<R: Storage>(
     // Only the pages this account may read (see `get_collections`).
     let readable: Vec<SinglePageName> = module
         .single_page_service
-        .list_page_names().await?
+        .list_page_names()
+        .await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_single_page(name.as_str())))
         .collect();
@@ -237,7 +254,10 @@ async fn get_single_page_schema<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(
-        module.single_page_service.get_single_page_schema(&name).await?,
+        module
+            .single_page_service
+            .get_single_page_schema(&name)
+            .await?,
     ))
 }
 
@@ -251,7 +271,8 @@ async fn add_single_page_schema<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .add_single_page_schema(&name, &schema).await?;
+        .add_single_page_schema(&name, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -265,7 +286,8 @@ async fn update_single_page_schema<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .update_single_page_schema(&name, &schema).await?;
+        .update_single_page_schema(&name, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -287,7 +309,10 @@ async fn get_single_page_item<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
     Ok(Json(
-        module.single_page_service.get_single_page_item(&name).await?,
+        module
+            .single_page_service
+            .get_single_page_item(&name)
+            .await?,
     ))
 }
 
@@ -299,6 +324,7 @@ async fn update_single_page_item<R: Storage>(
     let name = SinglePageName::from(page_name.as_str());
     module
         .single_page_service
-        .update_single_page_item_from_json(&name, &body).await?;
+        .update_single_page_item_from_json(&name, &body)
+        .await?;
     Ok(StatusCode::OK)
 }

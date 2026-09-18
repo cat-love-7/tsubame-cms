@@ -225,7 +225,12 @@ export class AuthService {
         // changed, and reporting a failure here would tell the reader their reset did not work
         // when it did. The shell asks again on its next load (`loadUserIfMissing`), which is the
         // only place that failure belongs.
-        switchMap((changed) => this.loadUser().pipe(map(() => changed), catchError(() => of(changed)))),
+        switchMap((changed) =>
+          this.loadUser().pipe(
+            map(() => changed),
+            catchError(() => of(changed)),
+          ),
+        ),
       );
   }
 

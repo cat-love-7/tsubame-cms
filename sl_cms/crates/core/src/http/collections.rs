@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use crate::app_module::Storage;
 use crate::http::{
-    preview_link_error, require_admin, require_publish, AppState, AuthenticatedUser,
-    PreviewTokenQuery, Resource,
+    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, preview_link_error, require_admin,
+    require_publish,
 };
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
@@ -92,7 +92,8 @@ async fn get_collection_items_metadata<R: Storage>(
     let with_draft = module.collection_service.draft_item_ids(&name).await?;
     let metadata: HashMap<String, ItemStatusResponse> = module
         .collection_service
-        .list_item_metadata(&name).await?
+        .list_item_metadata(&name)
+        .await?
         .into_iter()
         .map(|(id, metadata)| {
             let status = ItemStatusResponse {
@@ -112,7 +113,10 @@ async fn get_collection_item_metadata<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let item_id = CollectionItemId::from_u64(id);
     Ok(Json(ItemStatusResponse {
-        metadata: module.collection_service.get_item_metadata(&name, item_id).await?,
+        metadata: module
+            .collection_service
+            .get_item_metadata(&name, item_id)
+            .await?,
         has_draft: module.collection_service.has_draft(&name, item_id).await?,
     }))
 }
@@ -141,10 +145,7 @@ async fn get_collection_item_by_unique_value<R: Storage>(
         .collection_service
         .get_item_by_unique_value(&name, &field, &value)
         .await?;
-    Ok(Json(ItemLookup {
-        id: *id,
-        values,
-    }))
+    Ok(Json(ItemLookup { id: *id, values }))
 }
 
 #[derive(serde::Serialize)]
@@ -160,9 +161,15 @@ async fn preview_collection_item<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let item_id = CollectionItemId::from_u64(id);
     Ok(Json(ItemPreview {
-        schema: module.collection_service.get_collection_schema(&name).await?,
+        schema: module
+            .collection_service
+            .get_collection_schema(&name)
+            .await?,
         id,
-        values: module.collection_service.get_collection_item(&name, item_id).await?,
+        values: module
+            .collection_service
+            .get_collection_item(&name, item_id)
+            .await?,
     }))
 }
 
@@ -184,7 +191,10 @@ async fn create_collection_item_preview_link<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let item_id = CollectionItemId::from_u64(id);
     // 404 for an item that is not there, rather than a link that opens nothing.
-    module.collection_service.get_collection_item(&name, item_id).await?;
+    module
+        .collection_service
+        .get_collection_item(&name, item_id)
+        .await?;
 
     Ok(Json(module.preview_links.issue(
         &PreviewTarget::CollectionItem {
@@ -223,12 +233,17 @@ async fn open_collection_item_preview<R: Storage>(
     // parser for both.
     let item_id = CollectionItemId::from_u64(id);
     Ok(Json(ItemPreview {
-        schema: module.collection_service.get_collection_schema(&name).await?,
+        schema: module
+            .collection_service
+            .get_collection_schema(&name)
+            .await?,
         id,
-        values: module.collection_service.get_collection_item(&name, item_id).await?,
+        values: module
+            .collection_service
+            .get_collection_item(&name, item_id)
+            .await?,
     }))
 }
-
 
 /// The most items one batch may carry.
 ///
@@ -336,7 +351,8 @@ async fn get_collections<R: Storage>(
     // answers 403 when it is opened. An administrator sees them all.
     let readable: Vec<CollectionName> = module
         .collection_service
-        .list_collections().await?
+        .list_collections()
+        .await?
         .into_iter()
         .filter(|name| user.can_read(user.permission_for_collection(name.as_str())))
         .collect();
@@ -349,7 +365,10 @@ async fn get_collection_schema<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
     Ok(Json(
-        module.collection_service.get_collection_schema(&name).await?,
+        module
+            .collection_service
+            .get_collection_schema(&name)
+            .await?,
     ))
 }
 
@@ -364,7 +383,8 @@ async fn add_collection_schema<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
-        .add_collection_schema(&name, &schema).await?;
+        .add_collection_schema(&name, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -378,7 +398,8 @@ async fn update_collection_schema<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
-        .update_collection_schema(&name, &schema).await?;
+        .update_collection_schema(&name, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -404,7 +425,8 @@ async fn get_collection_items<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let page = module
         .collection_service
-        .get_collection_items_page(&name, &pagination).await?;
+        .get_collection_items_page(&name, &pagination)
+        .await?;
 
     // The body keeps the `[id, values]` array the UI already reads; the total travels in a
     // header so a paging caller knows how much is left.
@@ -422,7 +444,8 @@ async fn add_collection_item<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     let item_id = module
         .collection_service
-        .create_collection_item_from_json(&name, &body).await?;
+        .create_collection_item_from_json(&name, &body)
+        .await?;
     Ok(Json(item_id))
 }
 
@@ -431,10 +454,12 @@ async fn get_collection_item<R: Storage>(
     Path((collection_name, id)): Path<(String, u64)>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    Ok(Json(module.collection_service.get_collection_item(
-        &name,
-        CollectionItemId::from_u64(id),
-    ).await?))
+    Ok(Json(
+        module
+            .collection_service
+            .get_collection_item(&name, CollectionItemId::from_u64(id))
+            .await?,
+    ))
 }
 
 async fn update_collection_item<R: Storage>(
@@ -443,11 +468,10 @@ async fn update_collection_item<R: Storage>(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    module.collection_service.update_collection_item_from_json(
-        &name,
-        CollectionItemId::from_u64(id),
-        &body,
-    ).await?;
+    module
+        .collection_service
+        .update_collection_item_from_json(&name, CollectionItemId::from_u64(id), &body)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -461,6 +485,7 @@ async fn delete_collection_item<R: Storage>(
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
-        .delete_collection_item(&name, CollectionItemId::from_u64(id)).await?;
+        .delete_collection_item(&name, CollectionItemId::from_u64(id))
+        .await?;
     Ok(StatusCode::OK)
 }

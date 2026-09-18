@@ -44,7 +44,8 @@ interface RoleOption {
  */
 @Component({
   selector: 'app-users-list',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatCheckboxModule,
@@ -59,7 +60,6 @@ interface RoleOption {
   styleUrl: './list.scss',
 })
 export class UsersList {
-
   private users = inject(UsersService);
   private auth = inject(AuthService);
   private collectionsService = inject(CollectionsService);
@@ -280,11 +280,7 @@ export class UsersList {
   }
 
   setAdmin(user: CurrentUser, isAdmin: boolean) {
-    this.change(
-      user,
-      { is_admin: isAdmin },
-      t('accounts.adminChanged', { user: user.username }),
-    );
+    this.change(user, { is_admin: isAdmin }, t('accounts.adminChanged', { user: user.username }));
   }
 
   setActive(user: CurrentUser, isActive: boolean) {

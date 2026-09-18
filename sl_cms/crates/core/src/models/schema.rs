@@ -211,9 +211,7 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
                 ));
             }
             if !matches!(field.field_type, FieldType::Text(_)) {
-                return Err(format!(
-                    "field '{name}': only a text field can be unique"
-                ));
+                return Err(format!("field '{name}': only a text field can be unique"));
             }
         }
         if field.is_slug() {
@@ -471,9 +469,21 @@ mod tests {
 
         // Twenty Japanese characters are twenty characters, however many bytes they take.
         assert_eq!("あ".repeat(20).chars().count(), 20);
-        assert!(field.validate_text_length(&"あ".repeat(20), &options, "title").is_ok());
-        assert!(field.validate_text_length(&"あ".repeat(21), &options, "title").is_err());
-        assert!(field.validate_text_length("短い", &options, "title").is_err());
+        assert!(
+            field
+                .validate_text_length(&"あ".repeat(20), &options, "title")
+                .is_ok()
+        );
+        assert!(
+            field
+                .validate_text_length(&"あ".repeat(21), &options, "title")
+                .is_err()
+        );
+        assert!(
+            field
+                .validate_text_length("短い", &options, "title")
+                .is_err()
+        );
 
         let refusal = field
             .validate_text_length(&"あ".repeat(21), &options, "title")
@@ -541,10 +551,7 @@ mod tests {
                 .unwrap_err()
                 .contains("cannot be generated from itself")
         );
-        let number = vec![
-            field("count", FieldType::Number),
-            slug(Some("count")),
-        ];
+        let number = vec![field("count", FieldType::Number), slug(Some("count"))];
         assert!(
             validate_schema(&number, SchemaScope::Collection)
                 .unwrap_err()
@@ -588,27 +595,48 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_duplicate_names() {
-        assert!(validate_schema(&[field("  ", FieldType::Number)], SchemaScope::Collection)
-            .unwrap_err()
-            .contains("must not be empty"));
+        assert!(
+            validate_schema(&[field("  ", FieldType::Number)], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("must not be empty")
+        );
 
-        let duplicate = vec![field("title", FieldType::Number), field("title", FieldType::Boolean)];
-        assert!(validate_schema(&duplicate, SchemaScope::Collection).unwrap_err().contains("duplicate field name"));
+        let duplicate = vec![
+            field("title", FieldType::Number),
+            field("title", FieldType::Boolean),
+        ];
+        assert!(
+            validate_schema(&duplicate, SchemaScope::Collection)
+                .unwrap_err()
+                .contains("duplicate field name")
+        );
     }
 
     #[test]
     fn rejects_out_of_range_layout() {
         let mut too_wide = field("a", FieldType::Number);
         too_wide.width = 13;
-        assert!(validate_schema(&[too_wide], SchemaScope::Collection).unwrap_err().contains("width"));
+        assert!(
+            validate_schema(&[too_wide], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("width")
+        );
 
         let mut too_narrow = field("a", FieldType::Number);
         too_narrow.width = 0;
-        assert!(validate_schema(&[too_narrow], SchemaScope::Collection).unwrap_err().contains("width"));
+        assert!(
+            validate_schema(&[too_narrow], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("width")
+        );
 
         let mut no_height = field("a", FieldType::Number);
         no_height.height = 0;
-        assert!(validate_schema(&[no_height], SchemaScope::Collection).unwrap_err().contains("height"));
+        assert!(
+            validate_schema(&[no_height], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("height")
+        );
     }
 
     #[test]
@@ -624,24 +652,34 @@ mod tests {
             FieldType::Array(vec![FieldType::Number, FieldType::Image]),
         )];
         let error = validate_schema(&schema, SchemaScope::Collection).unwrap_err();
-        assert!(error.contains("both Number and Image"), "unexpected error: {error}");
+        assert!(
+            error.contains("both Number and Image"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
     fn rejects_empty_nested_and_composite_array_items() {
-        assert!(validate_schema(&[field("a", FieldType::Array(vec![]))], SchemaScope::Collection)
+        assert!(
+            validate_schema(
+                &[field("a", FieldType::Array(vec![]))],
+                SchemaScope::Collection
+            )
             .unwrap_err()
-            .contains("at least one item type"));
+            .contains("at least one item type")
+        );
 
-        assert!(validate_schema(
-            &[field(
-                "a",
-                FieldType::Array(vec![FieldType::Array(vec![FieldType::Number])])
-            )],
-            SchemaScope::Collection
-        )
-        .unwrap_err()
-        .contains("nested arrays"));
+        assert!(
+            validate_schema(
+                &[field(
+                    "a",
+                    FieldType::Array(vec![FieldType::Array(vec![FieldType::Number])])
+                )],
+                SchemaScope::Collection
+            )
+            .unwrap_err()
+            .contains("nested arrays")
+        );
 
         // A composite as an array item is allowed: it is an object on the wire, so it cannot be
         // confused with a scalar, and the reference is checked like any other.
@@ -650,7 +688,7 @@ mod tests {
                 "a",
                 FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
                     id: CompositeFieldId::from("seo"),
-                })])
+                })]),
             )],
             SchemaScope::Collection,
         )
@@ -685,10 +723,15 @@ mod tests {
         let available: HashSet<CompositeFieldId> =
             [CompositeFieldId::from("seo")].into_iter().collect();
 
-        assert!(validate_composite_references(&[field("seo", composite_ref("seo"))], &available).is_ok());
-        assert!(validate_composite_references(&[field("nope", composite_ref("nope"))], &available)
-            .unwrap_err()
-            .contains("composite field 'nope' does not exist"));
+        assert!(
+            validate_composite_references(&[field("seo", composite_ref("seo"))], &available)
+                .is_ok()
+        );
+        assert!(
+            validate_composite_references(&[field("nope", composite_ref("nope"))], &available)
+                .unwrap_err()
+                .contains("composite field 'nope' does not exist")
+        );
     }
 
     #[test]
@@ -697,9 +740,11 @@ mod tests {
 
         // Directly.
         let direct = vec![field("self", composite_ref("seo"))];
-        assert!(validate_no_composite_cycles(&id, &direct, &HashMap::new())
-            .unwrap_err()
-            .contains("cannot reference itself"));
+        assert!(
+            validate_no_composite_cycles(&id, &direct, &HashMap::new())
+                .unwrap_err()
+                .contains("cannot reference itself")
+        );
 
         // Through another composite: seo -> other -> seo.
         let indirect = vec![field("other", composite_ref("other"))];
@@ -708,17 +753,28 @@ mod tests {
             CompositeFieldId::from("other"),
             vec![field("back", composite_ref("seo"))],
         );
-        assert!(validate_no_composite_cycles(&id, &indirect, &all)
-            .unwrap_err()
-            .contains("cannot reference itself"));
+        assert!(
+            validate_no_composite_cycles(&id, &indirect, &all)
+                .unwrap_err()
+                .contains("cannot reference itself")
+        );
 
         // A plain chain is fine, and a missing target must not loop forever.
-        let chain = vec![field("a", composite_ref("a")), field("b", composite_ref("b"))];
+        let chain = vec![
+            field("a", composite_ref("a")),
+            field("b", composite_ref("b")),
+        ];
         let mut all: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
-        all.insert(CompositeFieldId::from("a"), vec![field("b", composite_ref("b"))]);
+        all.insert(
+            CompositeFieldId::from("a"),
+            vec![field("b", composite_ref("b"))],
+        );
         all.insert(CompositeFieldId::from("b"), vec![]);
         assert!(validate_no_composite_cycles(&id, &chain, &all).is_ok());
-        assert!(validate_no_composite_cycles(&id, &vec![field("gone", composite_ref("gone"))], &all).is_ok());
+        assert!(
+            validate_no_composite_cycles(&id, &vec![field("gone", composite_ref("gone"))], &all)
+                .is_ok()
+        );
     }
 
     /// A block that holds a list of blocks is the point of an array of composites, and it is a
@@ -729,10 +785,7 @@ mod tests {
         let id = CompositeFieldId::from("tree");
         let tree = vec![
             field("line", FieldType::Text(TextFieldOptions::default())),
-            field(
-                "children",
-                FieldType::Array(vec![composite_ref("tree")]),
-            ),
+            field("children", FieldType::Array(vec![composite_ref("tree")])),
         ];
         assert!(validate_no_composite_cycles(&id, &tree, &HashMap::new()).is_ok());
 
@@ -740,7 +793,10 @@ mod tests {
         let mut all: HashMap<CompositeFieldId, CompositeFieldSchema> = HashMap::new();
         all.insert(
             CompositeFieldId::from("other"),
-            vec![field("again", FieldType::Array(vec![composite_ref("tree")]))],
+            vec![field(
+                "again",
+                FieldType::Array(vec![composite_ref("tree")]),
+            )],
         );
         let detour = vec![field("other", composite_ref("other"))];
         assert!(validate_no_composite_cycles(&id, &detour, &all).is_ok());
@@ -751,9 +807,11 @@ mod tests {
             CompositeFieldId::from("other"),
             vec![field("back", composite_ref("tree"))],
         );
-        assert!(validate_no_composite_cycles(&id, &detour, &back)
-            .unwrap_err()
-            .contains("cannot reference itself"));
+        assert!(
+            validate_no_composite_cycles(&id, &detour, &back)
+                .unwrap_err()
+                .contains("cannot reference itself")
+        );
     }
 
     #[test]

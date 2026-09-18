@@ -22,8 +22,7 @@ describe('SinglePageSchema', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: route },
       ],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(SinglePageSchema);
     component = fixture.componentInstance;

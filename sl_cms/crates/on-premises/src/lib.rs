@@ -77,8 +77,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository>
     // Preview links are signed with the same secret as the tokens: it is the one secret the
     // deployment already has to set, and the message carries its own prefix so a signature
     // can never be replayed as the other kind.
-    let preview_links =
-        PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes);
+    let preview_links = PreviewLinkIssuer::new(&config.jwt_secret, config.preview_link_ttl_minutes);
     // Same secret, different prefix: a reset signature can never be replayed as a preview
     // link, a webhook body or a token.
     let password_resets =
@@ -147,7 +146,13 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(storage_dir(&config), PathBuf::from("/tmp/cms/on_premises"));
-        assert_eq!(rkv_dir(&config), PathBuf::from("/tmp/cms/on_premises/rkv_data"));
-        assert_eq!(images_dir(&config), PathBuf::from("/tmp/cms/on_premises/images"));
+        assert_eq!(
+            rkv_dir(&config),
+            PathBuf::from("/tmp/cms/on_premises/rkv_data")
+        );
+        assert_eq!(
+            images_dir(&config),
+            PathBuf::from("/tmp/cms/on_premises/images")
+        );
     }
 }

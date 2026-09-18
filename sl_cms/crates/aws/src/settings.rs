@@ -84,7 +84,9 @@ impl AwsSettings {
 
     /// The endpoint the S3 client should talk to: a local emulator when set, AWS otherwise.
     pub fn s3_endpoint_url(&self) -> Option<String> {
-        self.s3_endpoint_url.clone().or_else(|| self.endpoint_url.clone())
+        self.s3_endpoint_url
+            .clone()
+            .or_else(|| self.endpoint_url.clone())
     }
 
     /// The URL an uploaded image is served from.
@@ -133,7 +135,10 @@ impl AwsSettings {
             bucket: required(non_empty_env("S3_BUCKET"), "S3_BUCKET")?,
             // Cognito is not wired up yet (doc/aws-plan.md P4), but a deployment that names its
             // pool now does not have to change its environment later.
-            user_pool_id: required(non_empty_env("COGNITO_USER_POOL_ID"), "COGNITO_USER_POOL_ID")?,
+            user_pool_id: required(
+                non_empty_env("COGNITO_USER_POOL_ID"),
+                "COGNITO_USER_POOL_ID",
+            )?,
             client_id: required(non_empty_env("COGNITO_CLIENT_ID"), "COGNITO_CLIENT_ID")?,
             login_url: non_empty_env("COGNITO_LOGIN_URL"),
             endpoint_url: non_empty_env("AWS_ENDPOINT_URL"),
@@ -176,7 +181,9 @@ fn image_delivery_from(
                     // a fraction at plan time (`infra/variables.tf`), so one reaching here is
                     // something to say clearly rather than to round behind the operator's back.
                     raw.parse::<u64>().map_err(|_| {
-                        format!("AWS_IMAGE_URL_TTL_SECONDS must be a whole number of seconds, got {raw}")
+                        format!(
+                            "AWS_IMAGE_URL_TTL_SECONDS must be a whole number of seconds, got {raw}"
+                        )
                     })
                 })
                 .transpose()?
@@ -271,7 +278,10 @@ mod tests {
             image_delivery_from(Some("presigned"), Some("60.5")).is_err(),
             "a fraction is not a number of seconds Terraform lets through"
         );
-        assert!(image_delivery_from(Some("presigned"), Some("30")).is_err(), "too short");
+        assert!(
+            image_delivery_from(Some("presigned"), Some("30")).is_err(),
+            "too short"
+        );
         assert!(
             image_delivery_from(Some("presigned"), Some("604801")).is_err(),
             "longer than SigV4 allows"
@@ -301,7 +311,10 @@ mod tests {
         // A CDN in front of the bucket wins when one is configured.
         let mut with_cdn = settings();
         with_cdn.image_base_url = Some("https://images.example.com/".to_string());
-        assert_eq!(with_cdn.image_url("a.png"), "https://images.example.com/a.png");
+        assert_eq!(
+            with_cdn.image_url("a.png"),
+            "https://images.example.com/a.png"
+        );
 
         // An emulator serves path-style URLs.
         let mut with_endpoint = settings();

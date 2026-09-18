@@ -14,7 +14,8 @@ import { LanguageSwitcher } from '../../shared/language-switcher/language-switch
   selector: 'app-header',
   templateUrl: './header.html',
   styleUrl: './header.scss',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     LanguageSwitcher,
     MatButtonModule,
     MatIconModule,

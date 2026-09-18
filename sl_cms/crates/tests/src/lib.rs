@@ -17,20 +17,20 @@
 //! loudly rather than passing quietly when they are missing. `scripts/test-rust.sh` checks for
 //! them first and skips the whole file with a note.
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use axum::body::Body;
-use axum::http::{header, Method, Request, StatusCode};
 use axum::Router;
-use serde_json::{json, Value};
+use axum::body::Body;
+use axum::http::{Method, Request, StatusCode, header};
+use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use sl_cms_core::app_module::{AppModule, Storage};
 use sl_cms_core::auth::token::TokenIssuer;
+use sl_cms_core::models::user::{Permission, User};
 use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
-use sl_cms_core::models::user::{Permission, User};
 use sl_cms_core::webhook::{NoopNotifier, Notifier};
 
 pub mod backends;
@@ -200,7 +200,9 @@ pub async fn send_raw(
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(value.to_string()))
             .expect("failed to build request"),
-        None => builder.body(Body::empty()).expect("failed to build request"),
+        None => builder
+            .body(Body::empty())
+            .expect("failed to build request"),
     };
 
     let response = router
@@ -227,7 +229,9 @@ pub async fn send_with_headers(
     if let Some(token) = token {
         builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
-    let request = builder.body(Body::empty()).expect("failed to build request");
+    let request = builder
+        .body(Body::empty())
+        .expect("failed to build request");
 
     let response = router
         .clone()

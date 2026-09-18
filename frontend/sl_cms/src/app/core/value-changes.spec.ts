@@ -14,9 +14,9 @@ describe('fingerprint', () => {
   it('changes when a value changes, at any depth', () => {
     const before = { title: 'a', parts: [{ id: 'p1', values: { label: 'one' } }] };
     expect(fingerprint({ ...before, title: 'b' })).not.toBe(fingerprint(before));
-    expect(
-      fingerprint({ ...before, parts: [{ id: 'p1', values: { label: 'two' } }] }),
-    ).not.toBe(fingerprint(before));
+    expect(fingerprint({ ...before, parts: [{ id: 'p1', values: { label: 'two' } }] })).not.toBe(
+      fingerprint(before),
+    );
     // An empty form and a form with a field filled in differ.
     expect(fingerprint({ title: '' })).not.toBe(fingerprint({}));
   });

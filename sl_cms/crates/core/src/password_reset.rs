@@ -166,9 +166,7 @@ mod tests {
     const TTL_MINUTES: i64 = 30;
 
     fn account() -> User {
-        User::new(
-            "ops",
-            false, Permission::viewer())
+        User::new("ops", false, Permission::viewer())
     }
 
     fn issuer() -> PasswordResetIssuer {
@@ -193,10 +191,11 @@ mod tests {
         assert_eq!(claims.expires_at, link.expires_at);
 
         // The token is URL-safe: nothing in it needs escaping.
-        assert!(link
-            .token
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+        assert!(
+            link.token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        );
     }
 
     #[test]
@@ -206,9 +205,11 @@ mod tests {
         let now = Utc::now();
         let link = issuer.issue(&user, now);
 
-        assert!(issuer
-            .verify(&link.token, link.expires_at - Duration::seconds(1))
-            .is_ok());
+        assert!(
+            issuer
+                .verify(&link.token, link.expires_at - Duration::seconds(1))
+                .is_ok()
+        );
         assert_eq!(
             issuer.verify(&link.token, link.expires_at),
             Err(PasswordResetError::Expired)
@@ -229,7 +230,13 @@ mod tests {
         let link = issuer.issue(&user, now);
         let signature = link.token.rsplit('.').next().unwrap();
 
-        let forged_version = format!("{}.{}.{}.{}", user.id, 9, link.expires_at.timestamp(), signature);
+        let forged_version = format!(
+            "{}.{}.{}.{}",
+            user.id,
+            9,
+            link.expires_at.timestamp(),
+            signature
+        );
         assert_eq!(
             issuer.verify(&forged_version, now),
             Err(PasswordResetError::Invalid)
@@ -247,9 +254,7 @@ mod tests {
             Err(PasswordResetError::Invalid)
         );
 
-        let someone_else = User::new(
-            "other",
-            false, Permission::viewer());
+        let someone_else = User::new("other", false, Permission::viewer());
         let forged_account = format!(
             "{}.{}.{}.{}",
             someone_else.id,
@@ -308,9 +313,11 @@ mod tests {
             );
             // The same secret, a one-minute lifetime: it verifies, so it is short rather than
             // already dead.
-            assert!(PasswordResetIssuer::new(b"secret", 1)
-                .verify(&link.token, now)
-                .is_ok());
+            assert!(
+                PasswordResetIssuer::new(b"secret", 1)
+                    .verify(&link.token, now)
+                    .is_ok()
+            );
         }
     }
 }

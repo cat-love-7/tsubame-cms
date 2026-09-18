@@ -36,9 +36,9 @@ import {
   newFieldType,
   reconcileArrayItemTypes,
 } from 'app/models/schema/fields';
-import { EnumField } from "../enum-field/enum-field";
+import { EnumField } from '../enum-field/enum-field';
 import { CompositeField } from '../composite-field/composite-field';
-import { TextField } from "../text-field/text-field";
+import { TextField } from '../text-field/text-field';
 import { FieldWidthPresets } from 'app/core/field-layout';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 
@@ -61,8 +61,8 @@ import { CompositeFieldsService } from 'app/services/schema/composite-fields.ser
     FieldTypeStringPipe,
     EnumField,
     CompositeField,
-    TextField
-],
+    TextField,
+  ],
   templateUrl: './field.html',
   styleUrl: './field.scss',
 })
@@ -131,15 +131,14 @@ export class Field implements OnInit, OnChanges {
     return this.siblingFields.filter(
       (candidate) =>
         candidate.name !== this.field.name &&
-        (isTextFieldSchema(candidate.field_type) ||
-          isMarkdownFieldSchema(candidate.field_type)),
+        (isTextFieldSchema(candidate.field_type) || isMarkdownFieldSchema(candidate.field_type)),
     );
   }
 
   /** The source the schema currently names, or `''` for none. */
   currentGenerateFrom(): string {
     const type = this.field.field_type;
-    return isSlugFieldSchema(type) ? type.Slug.generate_from ?? '' : '';
+    return isSlugFieldSchema(type) ? (type.Slug.generate_from ?? '') : '';
   }
 
   setGenerateFrom(name: string) {

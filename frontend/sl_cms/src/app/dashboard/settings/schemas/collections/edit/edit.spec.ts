@@ -22,8 +22,7 @@ describe('CollectionSchemaEdit', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: route },
       ],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(CollectionSchemaEdit);
     component = fixture.componentInstance;

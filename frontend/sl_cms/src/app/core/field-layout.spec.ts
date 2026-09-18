@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { FieldSchema } from 'app/models/schema/fields';
-import {
-  FieldWidthPresets,
-  fieldCellStyle,
-  resizeHeight,
-  resizeWidth,
-} from './field-layout';
+import { FieldWidthPresets, fieldCellStyle, resizeHeight, resizeWidth } from './field-layout';
 
 function field(width: number, height: number): FieldSchema {
   return { name: 'f', field_type: 'Number', required: false, width, height };

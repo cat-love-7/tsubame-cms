@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 
 use crate::auth::identity::{Identity, TokenVerifier, VerifyFuture};
@@ -90,15 +90,11 @@ impl<J: JwksSource> CognitoVerifier<J> {
             }
         }
 
-        let set = self
-            .source
-            .fetch()
-            .await
-            .map_err(|e| {
-                // The caller learns nothing: an unreachable key set is our problem.
-                tracing::warn!("could not fetch the signing keys: {e}");
-                unauthorized()
-            })?;
+        let set = self.source.fetch().await.map_err(|e| {
+            // The caller learns nothing: an unreachable key set is our problem.
+            tracing::warn!("could not fetch the signing keys: {e}");
+            unauthorized()
+        })?;
         let mut keys = HashMap::new();
         for jwk in &set.keys {
             if let (Some(kid), Ok(key)) = (jwk.common.key_id.clone(), DecodingKey::from_jwk(jwk)) {
@@ -169,7 +165,10 @@ impl<J: JwksSource> CognitoVerifier<J> {
         if claims.token_use.as_deref() != Some("id") {
             return Err(unauthorized());
         }
-        let username = claims.username.clone().unwrap_or_else(|| claims.sub.clone());
+        let username = claims
+            .username
+            .clone()
+            .unwrap_or_else(|| claims.sub.clone());
         Ok(Identity::External {
             external_id: claims.sub,
             username,
@@ -225,7 +224,7 @@ impl JwksSource for HttpJwks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{encode, EncodingKey, Header};
+    use jsonwebtoken::{EncodingKey, Header, encode};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -350,7 +349,10 @@ mod tests {
         let mut claims = claims("sub-1", "ops@example.com");
         claims["exp"] = serde_json::json!(chrono::Utc::now().timestamp() - 300);
 
-        assert_eq!(verify(&source, &sign(&claims)).await.unwrap_err(), unauthorized());
+        assert_eq!(
+            verify(&source, &sign(&claims)).await.unwrap_err(),
+            unauthorized()
+        );
     }
 
     #[tokio::test]
@@ -358,7 +360,8 @@ mod tests {
         let source = StaticJwks::new();
 
         let mut other_issuer = claims("sub-1", "ops@example.com");
-        other_issuer["iss"] = serde_json::json!("https://cognito-idp.eu-west-1.amazonaws.com/other");
+        other_issuer["iss"] =
+            serde_json::json!("https://cognito-idp.eu-west-1.amazonaws.com/other");
         assert!(verify(&source, &sign(&other_issuer)).await.is_err());
 
         // A token minted for a different app client of the same pool is not ours either.

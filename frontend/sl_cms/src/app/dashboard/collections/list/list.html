@@ -4,7 +4,9 @@
   <!-- Batch actions appear only with a selection: an editor who has picked rows is asking for
        something to happen to all of them. -->
   @if (canPublish() && selected().size > 0) {
-    <span class="selection">{{ 'content.selectedCount' | transloco: { count: selected().size } }}</span>
+    <span class="selection">{{
+      'content.selectedCount' | transloco: { count: selected().size }
+    }}</span>
     <button matButton (click)="setSelectedPublished('published')">
       <mat-icon>publish</mat-icon>
       {{ 'content.publishSelected' | transloco }}
@@ -33,7 +35,9 @@
 @if (refusals().length > 0) {
   <ul class="refusals">
     @for (refusal of refusals(); track refusal.id) {
-      <li>{{ 'content.batchRefusalLine' | transloco: { id: refusal.id, message: refusal.message } }}</li>
+      <li>
+        {{ 'content.batchRefusalLine' | transloco: { id: refusal.id, message: refusal.message } }}
+      </li>
     }
   </ul>
 }
@@ -96,7 +100,9 @@
             </span>
           }
           @if (publishedBy(item[0]); as publisher) {
-            <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher }}</span>
+            <span class="publisher" [title]="'content.publishedBy' | transloco">{{
+              publisher
+            }}</span>
           }
         </td>
         <td class="updated">{{ updatedAt(item[0]) }}</td>
@@ -126,7 +132,9 @@
                   | transloco: { id: item[0] }
               "
             >
-              <mat-icon>{{ statusOf(item[0]) === 'published' ? 'visibility_off' : 'publish' }}</mat-icon>
+              <mat-icon>{{
+                statusOf(item[0]) === 'published' ? 'visibility_off' : 'publish'
+              }}</mat-icon>
             </button>
           }
           <button
@@ -163,7 +171,9 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema().length + 5" class="empty">{{ 'content.noItems' | transloco }}</td>
+        <td [attr.colspan]="schema().length + 5" class="empty">
+          {{ 'content.noItems' | transloco }}
+        </td>
       </tr>
     }
   </tbody>

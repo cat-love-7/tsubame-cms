@@ -40,7 +40,10 @@ describe('translation catalogs', () => {
       for (const key of keys(catalogs[language])) {
         const value = key
           .split('.')
-          .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], catalogs[language]);
+          .reduce<unknown>(
+            (node, part) => (node as Record<string, unknown>)[part],
+            catalogs[language],
+          );
         expect(typeof value, `${language}:${key}`).toBe('string');
         expect((value as string).trim(), `${language}:${key}`).not.toBe('');
       }
@@ -86,10 +89,16 @@ describe('translation catalogs', () => {
     for (const key of keys(catalogs['en'])) {
       const value = key
         .split('.')
-        .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], catalogs['en']) as string;
+        .reduce<unknown>(
+          (node, part) => (node as Record<string, unknown>)[part],
+          catalogs['en'],
+        ) as string;
       const translation = key
         .split('.')
-        .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], catalogs['ja']) as string;
+        .reduce<unknown>(
+          (node, part) => (node as Record<string, unknown>)[part],
+          catalogs['ja'],
+        ) as string;
       expect(placeholders(translation), `ja:${key}`).toEqual(placeholders(value));
     }
   });

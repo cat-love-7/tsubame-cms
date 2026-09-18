@@ -20,7 +20,9 @@ export function formatDateTime(
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
-  return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(
+    date,
+  );
 }
 
 /**

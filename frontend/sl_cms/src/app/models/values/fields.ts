@@ -27,12 +27,7 @@ import {
  * | CompositeField     | object keyed by the composite's own field names                     |
  */
 export type FieldValue =
-  | string
-  | number
-  | boolean
-  | null
-  | FieldValue[]
-  | { [field: string]: FieldValue };
+  string | number | boolean | null | FieldValue[] | { [field: string]: FieldValue };
 
 /**
  * An image value as returned by the API. Declared as a type alias (not an interface) so

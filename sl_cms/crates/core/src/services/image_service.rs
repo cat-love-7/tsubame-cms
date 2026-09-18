@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::models::error::{map_internal_error, HttpError};
+use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{
-    is_safe_display_name, is_safe_file_name, is_safe_image_ext, Image, ImageEntry, ImageId,
-    NewImageInfo, NewImageRequest, ReplacementInfo, MAX_IMAGE_NAME_LENGTH,
+    Image, ImageEntry, ImageId, MAX_IMAGE_NAME_LENGTH, NewImageInfo, NewImageRequest,
+    ReplacementInfo, is_safe_display_name, is_safe_file_name, is_safe_image_ext,
 };
 use crate::repositories::image_repository::{ImageRepository, Replacement};
 
@@ -37,7 +37,8 @@ impl<R: ImageRepository> ImageService<R> {
         let mut images = self
             .repository
             .list_images()
-            .await.map_err(map_internal_error)?;
+            .await
+            .map_err(map_internal_error)?;
         // Sorted here rather than trusted from the store: the on-premises adapter iterates
         // in key-byte order, which stops being numeric order once ids pass 255.
         images.sort_by_key(|(id, _)| std::cmp::Reverse(**id));
@@ -90,7 +91,8 @@ impl<R: ImageRepository> ImageService<R> {
         }
         self.repository
             .delete_image(&id)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// The content that uses an image.
@@ -98,7 +100,10 @@ impl<R: ImageRepository> ImageService<R> {
     /// What a delete warning is made of: an image already in the trash is only in the library's
     /// way, but deleting it for good takes the picture out of whatever this answers with. The list
     /// is only as complete as the reference index (see [`crate::models::image::referenced_images`]).
-    pub async fn references(&self, id: ImageId) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
+    pub async fn references(
+        &self,
+        id: ImageId,
+    ) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
         self.require_image(&id).await?;
         self.repository
             .get_image_references(&id)
@@ -111,9 +116,7 @@ impl<R: ImageRepository> ImageService<R> {
             .get_image(id)
             .await
             .map_err(map_internal_error)?
-            .ok_or_else(|| {
-                HttpError::NotFound(&format!("Image with id '{}' does not exist", id))
-            })
+            .ok_or_else(|| HttpError::NotFound(&format!("Image with id '{}' does not exist", id)))
     }
 
     /// Give an image another display name.
@@ -143,7 +146,8 @@ impl<R: ImageRepository> ImageService<R> {
         if self
             .repository
             .get_image(&id)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_none()
         {
             return Err(HttpError::NotFound(&format!(
@@ -153,7 +157,8 @@ impl<R: ImageRepository> ImageService<R> {
         }
         self.repository
             .rename_image(&id, name)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// Hand out a place to upload bytes that will replace what an image shows.
@@ -172,7 +177,8 @@ impl<R: ImageRepository> ImageService<R> {
         if self
             .repository
             .get_image(&id)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
             .is_none()
         {
             return Err(HttpError::NotFound(&format!(
@@ -182,7 +188,8 @@ impl<R: ImageRepository> ImageService<R> {
         }
         self.repository
             .generate_replacement_upload_url(&id, ext)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// Point an image at bytes that have been uploaded for it, and let go of the old ones.
@@ -217,11 +224,10 @@ impl<R: ImageRepository> ImageService<R> {
         if !self
             .repository
             .image_bytes_exist(file_name)
-            .await.map_err(map_internal_error)?
+            .await
+            .map_err(map_internal_error)?
         {
-            return Err(HttpError::NotFound(
-                "the uploaded image is not there yet",
-            ));
+            return Err(HttpError::NotFound("the uploaded image is not there yet"));
         }
 
         // Pointing an image at the file it already serves is a no-op rather than a refusal: the
@@ -268,9 +274,9 @@ impl<R: ImageRepository> ImageService<R> {
     ) -> Result<NewImageInfo, HttpError> {
         self.repository
             .generate_image_upload_url(&upload_info)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
-
 }
 
 /// Serving the bytes is a local adapter's business: this block simply does not apply to an
@@ -279,18 +285,23 @@ impl<R: ImageRepository> ImageService<R> {
 impl<R: ImageRepository + crate::repositories::local_image_bytes::LocalImageBytes> ImageService<R> {
     /// Consume a one-shot upload token, yielding the file name it authorises.
     pub async fn take_upload_key(&self, key: &str) -> Result<Option<String>, HttpError> {
-        self.repository.take_upload_key(key).await.map_err(map_internal_error)
+        self.repository
+            .take_upload_key(key)
+            .await
+            .map_err(map_internal_error)
     }
 
     pub async fn read_image_bytes(&self, file_name: &str) -> Result<Option<Vec<u8>>, HttpError> {
         self.repository
             .read_image_bytes(file_name)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 
     pub async fn write_image_bytes(&self, file_name: &str, data: &[u8]) -> Result<(), HttpError> {
         self.repository
             .write_image_bytes(file_name, data)
-            .await.map_err(map_internal_error)
+            .await
+            .map_err(map_internal_error)
     }
 }

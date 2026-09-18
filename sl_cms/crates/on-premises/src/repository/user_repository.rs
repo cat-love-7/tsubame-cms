@@ -1,7 +1,7 @@
 use rkv::{StoreOptions, Value};
 
-use sl_cms_core::models::user::{normalize_username, User, UserId};
-use crate::repository::{RkvRepository, IDENTITY_STORE, USER_STORE};
+use crate::repository::{IDENTITY_STORE, RkvRepository, USER_STORE};
+use sl_cms_core::models::user::{User, UserId, normalize_username};
 use sl_cms_core::repositories::user_repository::{BoxError, UserRepository};
 
 impl RkvRepository {
@@ -31,10 +31,7 @@ impl UserRepository for RkvRepository {
         self.user_from_id(user_id)
     }
 
-    async fn get_user_from_external_id(
-        &self,
-        external_id: &str,
-    ) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_external_id(&self, external_id: &str) -> Result<Option<User>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
@@ -114,7 +111,11 @@ impl UserRepository for RkvRepository {
         Ok(())
     }
 
-    async fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> Result<(), BoxError> {
+    async fn record_login(
+        &self,
+        user_id: &UserId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
         // Read and write under the one lock: a sign-in must not write back an account an
         // administrator has changed in the meantime (see `UserRepository::record_login`).
         let _guard = self.begin();
@@ -127,7 +128,11 @@ impl UserRepository for RkvRepository {
         };
         user.last_login = Some(at);
         let mut writer = env.write()?;
-        store.put(&mut writer, user_id.as_bytes(), &Value::Str(&serde_json::to_string(&user)?))?;
+        store.put(
+            &mut writer,
+            user_id.as_bytes(),
+            &Value::Str(&serde_json::to_string(&user)?),
+        )?;
         writer.commit()?;
         Ok(())
     }
@@ -171,5 +176,4 @@ impl UserRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
-
 }

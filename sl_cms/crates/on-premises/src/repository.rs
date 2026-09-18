@@ -1,13 +1,13 @@
-use rkv::{Rkv, SingleStore, StoreOptions};
 use rkv::backend::{SafeModeDatabase, SafeModeEnvironment};
+use rkv::{Rkv, SingleStore, StoreOptions};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
-pub mod composite_field_repository;
 pub mod collection_repository;
-pub mod single_page_repository;
+pub mod composite_field_repository;
 pub mod image_repository;
+pub mod single_page_repository;
 pub mod user_repository;
 
 /// Store holding the images: what was uploaded, and the file each record names.
@@ -145,7 +145,9 @@ impl RkvRepository {
     pub fn new(rkv: Arc<RwLock<Rkv<SafeModeEnvironment>>>, images_dir: PathBuf) -> Self {
         let binding = Arc::clone(&rkv);
         let env = binding.read().unwrap();
-        let counter_store = env.open_single(COUNTER_STORE, StoreOptions::create()).unwrap();
+        let counter_store = env
+            .open_single(COUNTER_STORE, StoreOptions::create())
+            .unwrap();
         RkvRepository {
             rkv,
             counter_store,
@@ -160,7 +162,9 @@ impl RkvRepository {
     /// A panic while holding it poisons the mutex; recovering instead of propagating keeps
     /// a single bad request from turning every later request into a 500.
     pub(crate) fn begin(&self) -> MutexGuard<'_, ()> {
-        self.ops.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.ops
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub(crate) fn images_dir(&self) -> &Path {

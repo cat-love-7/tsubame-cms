@@ -12,14 +12,14 @@
 //! `password-hash` 0.6 generates the random salt internally, so there is no salt handling here
 //! to get wrong.
 
-use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::Argon2;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use rkv::{StoreOptions, Value};
 use sl_cms_core::models::user::UserId;
 use sl_cms_core::repositories::local_credentials::LocalCredentials;
 use sl_cms_core::repositories::user_repository::BoxError;
 
-use crate::repository::{RkvRepository, CREDENTIAL_STORE};
+use crate::repository::{CREDENTIAL_STORE, RkvRepository};
 
 /// Hash `password` with a fresh random salt.
 pub fn hash_password(password: &str) -> Result<String, String> {
@@ -104,7 +104,10 @@ mod tests {
     #[test]
     fn hashes_and_verifies_a_password() {
         let hash = hash_password("correct horse battery staple").unwrap();
-        assert!(hash.starts_with("$argon2"), "unexpected hash format: {hash}");
+        assert!(
+            hash.starts_with("$argon2"),
+            "unexpected hash format: {hash}"
+        );
         assert!(verify_password("correct horse battery staple", &hash));
         assert!(!verify_password("wrong password", &hash));
     }

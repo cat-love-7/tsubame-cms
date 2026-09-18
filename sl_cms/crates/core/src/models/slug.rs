@@ -82,7 +82,11 @@ mod tests {
     #[test]
     fn normalising_is_idempotent() {
         for (_, expected) in CASES {
-            assert_eq!(normalise(expected), *expected, "re-normalising {expected:?}");
+            assert_eq!(
+                normalise(expected),
+                *expected,
+                "re-normalising {expected:?}"
+            );
         }
     }
 

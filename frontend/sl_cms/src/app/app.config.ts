@@ -43,5 +43,5 @@ export const appConfig: ApplicationConfig = {
       },
       loader: BundledTranslocoLoader,
     }),
-  ]
+  ],
 };

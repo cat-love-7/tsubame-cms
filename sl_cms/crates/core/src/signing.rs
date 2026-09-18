@@ -9,8 +9,7 @@ use sha2::Sha256;
 
 /// Lower-case hex HMAC-SHA256 of `message` under `secret`.
 pub fn sign(secret: &[u8], message: &[u8]) -> String {
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts a key of any length");
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts a key of any length");
     mac.update(message);
     to_hex(&mac.finalize().into_bytes())
 }
@@ -22,8 +21,7 @@ pub fn verify(secret: &[u8], message: &[u8], signature: &str) -> bool {
     let Some(expected) = from_hex(signature) else {
         return false;
     };
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts a key of any length");
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts a key of any length");
     mac.update(message);
     mac.verify_slice(&expected).is_ok()
 }

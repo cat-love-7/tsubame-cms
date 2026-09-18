@@ -5,7 +5,7 @@
 //! over issuing them without changing the verification path).
 
 use chrono::{DateTime, Duration, Utc};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::identity::{Identity, TokenVerifier, VerifyFuture};
@@ -71,7 +71,6 @@ impl TokenIssuer {
             .map(|data| data.claims)
             .map_err(|e| format!("invalid token: {e}"))
     }
-
 }
 
 #[cfg(test)]

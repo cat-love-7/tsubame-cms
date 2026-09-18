@@ -128,12 +128,17 @@ mod tests {
     fn allows_attempts_until_the_limit_then_locks() {
         let throttle = LoginThrottle::new();
         for attempt in 0..MAX_FAILURES {
-            assert_eq!(throttle.retry_after("a@example.com", at(attempt as u64)), None);
+            assert_eq!(
+                throttle.retry_after("a@example.com", at(attempt as u64)),
+                None
+            );
             throttle.record_failure("a@example.com", at(attempt as u64));
         }
 
         // The limit is now reached: further attempts have to wait.
-        let wait = throttle.retry_after("a@example.com", at(10)).expect("locked");
+        let wait = throttle
+            .retry_after("a@example.com", at(10))
+            .expect("locked");
         assert!(wait <= LOCKOUT);
 
         // One account being locked says nothing about another.
@@ -152,7 +157,11 @@ mod tests {
         let ends = (MAX_FAILURES - 1) as u64 + LOCKOUT.as_secs();
         assert!(throttle.retry_after("a@example.com", at(60)).is_some());
         throttle.record_failure("a@example.com", at(60));
-        assert!(throttle.retry_after("a@example.com", at(ends - 1)).is_some());
+        assert!(
+            throttle
+                .retry_after("a@example.com", at(ends - 1))
+                .is_some()
+        );
         assert_eq!(throttle.retry_after("a@example.com", at(ends + 1)), None);
     }
 
@@ -178,7 +187,10 @@ mod tests {
             // One failure per window: never two inside the same one.
             throttle.record_failure("a@example.com", at(u64::from(attempt) * window));
         }
-        assert_eq!(throttle.retry_after("a@example.com", at(MAX_FAILURES as u64 * window)), None);
+        assert_eq!(
+            throttle.retry_after("a@example.com", at(MAX_FAILURES as u64 * window)),
+            None
+        );
     }
 
     /// Made-up names must not grow the map without bound.

@@ -29,7 +29,13 @@ impl CompositeFieldRepository for AwsRepository {
     ) -> Result<Option<CompositeFieldSchema>, BoxError> {
         let inner = self.inner.clone();
         let id = id.clone();
-        match read(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await? {
+        match read(
+            &inner,
+            key::COMPOSITE_FIELD_INDEX,
+            &key::composite_field(&id),
+        )
+        .await?
+        {
             Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
             None => Ok(None),
         }
@@ -43,12 +49,23 @@ impl CompositeFieldRepository for AwsRepository {
         let inner = self.inner.clone();
         let id = id.clone();
         let data = AwsRepository::encode(schema)?;
-        write(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id), &data).await
+        write(
+            &inner,
+            key::COMPOSITE_FIELD_INDEX,
+            &key::composite_field(&id),
+            &data,
+        )
+        .await
     }
 
     async fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let id = id.clone();
-        remove(&inner, key::COMPOSITE_FIELD_INDEX, &key::composite_field(&id)).await
+        remove(
+            &inner,
+            key::COMPOSITE_FIELD_INDEX,
+            &key::composite_field(&id),
+        )
+        .await
     }
 }

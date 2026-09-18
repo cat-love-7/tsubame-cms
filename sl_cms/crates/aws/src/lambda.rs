@@ -6,9 +6,9 @@
 //! an axum router is, so what is left is the conversion in both directions and the one limit
 //! that belongs to Lambda rather than to the CMS.
 
-use axum::body::Body as AxumBody;
 use axum::Router;
-use lambda_http::http::{header, Request, Response, StatusCode};
+use axum::body::Body as AxumBody;
+use lambda_http::http::{Request, Response, StatusCode, header};
 use lambda_http::{Body, Error};
 use tower::ServiceExt;
 
@@ -87,12 +87,10 @@ mod tests {
     /// A router with no storage behind it: these tests are about the two event shapes, the
     /// base64 decoding and the size guard, not about the CMS.
     fn test_router() -> Router {
-        Router::new()
-            .route("/", get(|| async { "ok" }))
-            .route(
-                "/echo",
-                post(|body: String| async move { format!("got:{body}") }),
-            )
+        Router::new().route("/", get(|| async { "ok" })).route(
+            "/echo",
+            post(|body: String| async move { format!("got:{body}") }),
+        )
     }
 
     /// An API Gateway **HTTP API** event (payload 2.0), built the way the runtime builds one:

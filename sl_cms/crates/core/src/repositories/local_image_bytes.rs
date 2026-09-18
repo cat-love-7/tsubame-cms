@@ -24,15 +24,25 @@ pub trait LocalImageBytes: Send + Sync {
     /// Tokens are single-use: a successful call must also invalidate the token, so a leaked
     /// token cannot be replayed. Binding the token to a specific file name means a token for
     /// one upload cannot be used to overwrite a different file.
-    fn take_upload_key(&self, key: &str) -> impl Future<Output = Result<Option<String>, BoxError>> + Send;
+    fn take_upload_key(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<String>, BoxError>> + Send;
 
     /// Read the bytes previously stored under `file_name`.
     ///
     /// Implementations must reject unsafe file names rather than touching storage.
-    fn read_image_bytes(&self, file_name: &str) -> impl Future<Output = Result<Option<Vec<u8>>, BoxError>> + Send;
+    fn read_image_bytes(
+        &self,
+        file_name: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, BoxError>> + Send;
 
     /// Store `data` under `file_name`.
     ///
     /// Implementations must reject unsafe file names rather than touching storage.
-    fn write_image_bytes(&self, file_name: &str, data: &[u8]) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn write_image_bytes(
+        &self,
+        file_name: &str,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 }

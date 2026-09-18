@@ -7,12 +7,7 @@ import { TextFieldOptions } from 'app/models/schema/fields';
 
 @Component({
   selector: 'app-text-field',
-  imports: [
-    MatFormFieldModule,
-    MatInputModule,
-    FormsModule,
-    TranslocoPipe,
-  ],
+  imports: [MatFormFieldModule, MatInputModule, FormsModule, TranslocoPipe],
   templateUrl: './text-field.html',
   styleUrl: './text-field.scss',
 })

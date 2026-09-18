@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::auth::token::TokenIssuer;
 use crate::auth::AuthService;
+use crate::auth::token::TokenIssuer;
 use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;

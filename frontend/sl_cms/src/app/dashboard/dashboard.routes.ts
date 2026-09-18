@@ -59,35 +59,42 @@ export const dashboardRoutes: Routes = [
   // Schema editing.
   {
     path: 'settings/schemas/collections',
-    loadComponent: () => import('./settings/schemas/collections/list/list').then((m) => m.CollectionSchemaList),
+    loadComponent: () =>
+      import('./settings/schemas/collections/list/list').then((m) => m.CollectionSchemaList),
   },
   {
     path: 'settings/schemas/collections/create',
-    loadComponent: () => import('./settings/schemas/collections/create/create').then((m) => m.CollectionSchemaCreate),
+    loadComponent: () =>
+      import('./settings/schemas/collections/create/create').then((m) => m.CollectionSchemaCreate),
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/schemas/collections/edit/:name',
-    loadComponent: () => import('./settings/schemas/collections/edit/edit').then((m) => m.CollectionSchemaEdit),
+    loadComponent: () =>
+      import('./settings/schemas/collections/edit/edit').then((m) => m.CollectionSchemaEdit),
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/single-pages',
-    loadComponent: () => import('./settings/single-pages/list/list').then((m) => m.SinglePageSchemaList),
+    loadComponent: () =>
+      import('./settings/single-pages/list/list').then((m) => m.SinglePageSchemaList),
   },
   {
     path: 'settings/single-pages/:name/schema',
-    loadComponent: () => import('./settings/single-pages/schema/schema').then((m) => m.SinglePageSchema),
+    loadComponent: () =>
+      import('./settings/single-pages/schema/schema').then((m) => m.SinglePageSchema),
     canDeactivate: [unsavedChangesGuard],
   },
   // Composite fields: reusable groups of fields that other schemas reference by id.
   {
     path: 'settings/composite-fields',
-    loadComponent: () => import('./settings/composite-fields/list/list').then((m) => m.CompositeFieldList),
+    loadComponent: () =>
+      import('./settings/composite-fields/list/list').then((m) => m.CompositeFieldList),
   },
   {
     path: 'settings/composite-fields/:id/schema',
-    loadComponent: () => import('./settings/composite-fields/schema/schema').then((m) => m.CompositeFieldSchema),
+    loadComponent: () =>
+      import('./settings/composite-fields/schema/schema').then((m) => m.CompositeFieldSchema),
     canDeactivate: [unsavedChangesGuard],
   },
   // Accounts, for administrators. The server enforces the same rule.

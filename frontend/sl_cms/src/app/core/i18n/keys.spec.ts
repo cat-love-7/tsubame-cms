@@ -56,12 +56,15 @@ function keysInCalls(source: string): string[] {
 }
 
 function keyExists(tree: Record<string, unknown>, key: string): boolean {
-  return key
-    .split('.')
-    .reduce<unknown>(
-      (node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined),
-      tree,
-    ) !== undefined;
+  return (
+    key
+      .split('.')
+      .reduce<unknown>(
+        (node, part) =>
+          node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined,
+        tree,
+      ) !== undefined
+  );
 }
 
 describe('translation keys used by the code', () => {

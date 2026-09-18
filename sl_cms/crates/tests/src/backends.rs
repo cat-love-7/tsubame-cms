@@ -11,13 +11,13 @@ use axum::Router;
 
 use sl_cms_aws::AwsRepository;
 use sl_cms_core::app_module::AppModule;
-use sl_cms_core::http;
 use sl_cms_core::auth::token::TokenIssuer;
+use sl_cms_core::http;
 use sl_cms_core::models::user::{Permission, User};
 use sl_cms_core::repositories::user_repository::UserRepository;
 use sl_cms_on_premises::repository::RkvRepository;
 
-use crate::{ADMIN_EMAIL, ADMIN_PASSWORD, TestBackend, TEST_SECRET, TEST_TOKEN_TTL_HOURS};
+use crate::{ADMIN_EMAIL, ADMIN_PASSWORD, TEST_SECRET, TEST_TOKEN_TTL_HOURS, TestBackend};
 
 /// Mint a token the way the harness's issuer would, so a backend can sign someone in without a
 /// password endpoint.
@@ -125,14 +125,15 @@ impl TestBackend for Aws {
     const PASSWORD_LOGIN: bool = false;
 
     async fn open(hint: &str) -> Self {
-        let (repository, _table) = sl_cms_aws::open_test_repository(hint)
-            .await
-            .unwrap_or_else(|e| {
-                panic!(
-                    "could not open a DynamoDB Local table for {hint}: {e}\n\
+        let (repository, _table) =
+            sl_cms_aws::open_test_repository(hint)
+                .await
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "could not open a DynamoDB Local table for {hint}: {e}\n\
                      start the emulators with `docker compose -f sl_cms/docker-compose.yml up -d`"
-                )
-            });
+                    )
+                });
         Aws { repository }
     }
 

@@ -12,7 +12,7 @@ use axum::routing::{get, patch};
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::{require_admin, AppState, AuthenticatedUser};
+use crate::http::{AppState, AuthenticatedUser, require_admin};
 use crate::models::error::HttpError;
 use crate::models::user::{UpdateUserRequest, UserId};
 
@@ -70,7 +70,9 @@ async fn update_user<R: Storage>(
         let known = module.single_page_service.list_page_names().await?;
         for name in overrides.keys() {
             if !known.iter().any(|page| page.as_str() == name) {
-                return Err(HttpError::BadRequest(&format!("unknown single page '{name}'")));
+                return Err(HttpError::BadRequest(&format!(
+                    "unknown single page '{name}'"
+                )));
             }
         }
     }
@@ -89,8 +91,10 @@ async fn delete_user<R: Storage>(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     require_admin(&user)?;
-    module.auth_service.delete_user(&UserId::from(id.as_str())).await?;
+    module
+        .auth_service
+        .delete_user(&UserId::from(id.as_str()))
+        .await?;
     // Empty body, like the other mutations.
     Ok(StatusCode::OK)
 }
-

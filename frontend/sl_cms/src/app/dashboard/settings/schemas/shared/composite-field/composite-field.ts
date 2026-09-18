@@ -29,8 +29,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 })
 export class CompositeField {
   field = model<string>('');
-    
+
   private compositeFieldsService = inject(CompositeFieldsService);
   public compositeFields = this.compositeFieldsService.getAllCompositeFields();
-  
 }

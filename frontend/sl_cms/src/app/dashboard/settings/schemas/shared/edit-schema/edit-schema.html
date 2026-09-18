@@ -19,10 +19,7 @@
           {{ field.name || ('schema.unnamedField' | transloco) }}
         </span>
         <span class="schema-field-size">
-          {{
-            'schema.fieldSize'
-              | transloco: { width: field.width, height: field.height }
-          }}
+          {{ 'schema.fieldSize' | transloco: { width: field.width, height: field.height } }}
         </span>
         <span class="spacer"></span>
         <button
@@ -101,12 +98,7 @@
     <mat-icon>save</mat-icon>
     {{ 'schema.saveSchema' | transloco }}
   </button>
-  <button
-    matButton
-    type="button"
-    (click)="togglePreview()"
-    [attr.aria-pressed]="preview()"
-  >
+  <button matButton type="button" (click)="togglePreview()" [attr.aria-pressed]="preview()">
     <mat-icon>{{ preview() ? 'edit' : 'preview' }}</mat-icon>
     {{ (preview() ? 'schema.editFields' : 'schema.previewLayout') | transloco }}
   </button>

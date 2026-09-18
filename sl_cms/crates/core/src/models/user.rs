@@ -212,13 +212,25 @@ pub struct Permission {
 
 impl Permission {
     pub fn admin() -> Self {
-        Permission { can_publish: true, can_edit: true, can_view: true }
+        Permission {
+            can_publish: true,
+            can_edit: true,
+            can_view: true,
+        }
     }
     pub fn editor() -> Self {
-        Permission { can_publish: false, can_edit: true, can_view: true }
+        Permission {
+            can_publish: false,
+            can_edit: true,
+            can_view: true,
+        }
     }
     pub fn viewer() -> Self {
-        Permission { can_publish: false, can_edit: false, can_view: true }
+        Permission {
+            can_publish: false,
+            can_edit: false,
+            can_view: true,
+        }
     }
 }
 
@@ -366,7 +378,10 @@ mod tests {
         assert!(user.is_active);
         // The response projection must not leak the hash.
         let json = serde_json::to_string(&user.to_response()).unwrap();
-        assert!(!json.contains("hash"), "response leaked the password hash: {json}");
+        assert!(
+            !json.contains("hash"),
+            "response leaked the password hash: {json}"
+        );
     }
 
     /// A record written when the identifier *was* the email address still signs in: the
@@ -383,7 +398,10 @@ mod tests {
         assert_eq!(legacy.email.as_deref(), Some("ops@example.com"));
 
         legacy.adopt_legacy_identifier();
-        assert_eq!(legacy.username, "ops@example.com", "メールを識別子として引き継ぐ");
+        assert_eq!(
+            legacy.username, "ops@example.com",
+            "メールを識別子として引き継ぐ"
+        );
         // The address stays as the contact address.
         assert_eq!(legacy.email.as_deref(), Some("ops@example.com"));
     }
@@ -443,7 +461,11 @@ mod tests {
         // An override can take access away too.
         user.single_page_permissions.insert(
             "home".to_string(),
-            Permission { can_view: false, can_edit: false, can_publish: false },
+            Permission {
+                can_view: false,
+                can_edit: false,
+                can_publish: false,
+            },
         );
         assert!(!user.can_read(user.permission_for_single_page("home")));
         assert!(user.can_read(user.permission_for_single_page("about")));
@@ -456,7 +478,11 @@ mod tests {
         let mut admin = User::new("a@b.co", true, Permission::admin());
         admin.single_page_permissions.insert(
             "home".to_string(),
-            Permission { can_view: false, can_edit: false, can_publish: false },
+            Permission {
+                can_view: false,
+                can_edit: false,
+                can_publish: false,
+            },
         );
         let denied = admin.permission_for_single_page("home");
         assert!(admin.can_read(denied) && admin.can_write(denied) && admin.can_publish(denied));
@@ -482,13 +508,21 @@ mod tests {
         let publisher = User::new(
             "a@b.co",
             false,
-            Permission { can_view: true, can_edit: true, can_publish: true },
+            Permission {
+                can_view: true,
+                can_edit: true,
+                can_publish: true,
+            },
         );
         assert!(publisher.can_publish(publisher.permission));
 
         // An administrator can do all three whatever the permission record says.
         let admin = User::new("a@b.co", true, Permission::viewer());
-        assert!(admin.can_read(admin.permission) && admin.can_write(admin.permission) && admin.can_publish(admin.permission));
+        assert!(
+            admin.can_read(admin.permission)
+                && admin.can_write(admin.permission)
+                && admin.can_publish(admin.permission)
+        );
     }
 
     #[test]
@@ -496,7 +530,11 @@ mod tests {
         let none = User::new(
             "a@b.co",
             false,
-            Permission { can_view: false, can_edit: false, can_publish: false },
+            Permission {
+                can_view: false,
+                can_edit: false,
+                can_publish: false,
+            },
         );
         assert!(!none.can_read(none.permission));
         assert!(!none.can_write(none.permission));

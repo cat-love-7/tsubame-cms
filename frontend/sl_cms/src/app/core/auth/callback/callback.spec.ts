@@ -78,9 +78,7 @@ describe('AuthCallback', () => {
     fixture.detectChanges();
 
     httpMock.expectNone('/api/auth/cognito/exchange');
-    expect((fixture.componentInstance.error() as { key: string }).key).toBe(
-      'auth.signInCancelled',
-    );
+    expect((fixture.componentInstance.error() as { key: string }).key).toBe('auth.signInCancelled');
   });
 
   it('reports a refused exchange, and forgets the attempt', async () => {

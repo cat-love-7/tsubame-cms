@@ -1,6 +1,12 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
-import { beginHostedLogin, callbackUrl, challengeFor, forgetSignIn, pendingSignIn } from './hosted-login';
+import {
+  beginHostedLogin,
+  callbackUrl,
+  challengeFor,
+  forgetSignIn,
+  pendingSignIn,
+} from './hosted-login';
 
 describe('hosted login', () => {
   beforeEach(() => {
@@ -11,13 +17,15 @@ describe('hosted login', () => {
   // pair from RFC 7636 is used so the implementation is checked against the specification rather
   // than against itself.
   it('challenges with the SHA-256 of the verifier, base64url', async () => {
-    await expect(
-      challengeFor('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
-    ).resolves.toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+    await expect(challengeFor('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).resolves.toBe(
+      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+    );
   });
 
   it('builds a sign-in address with PKCE, a state and where to come back to', async () => {
-    const url = new URL(await beginHostedLogin('https://pool.auth.eu-west-1.amazoncognito.com/login?client_id=abc'));
+    const url = new URL(
+      await beginHostedLogin('https://pool.auth.eu-west-1.amazoncognito.com/login?client_id=abc'),
+    );
 
     expect(url.origin).toBe('https://pool.auth.eu-west-1.amazoncognito.com');
     expect(url.searchParams.get('client_id')).toBe('abc');
@@ -26,7 +34,9 @@ describe('hosted login', () => {
     // The challenge is the verifier's digest, and the verifier never leaves the browser.
     const pending = pendingSignIn();
     expect(pending).not.toBeNull();
-    await expect(challengeFor(pending!.verifier)).resolves.toBe(url.searchParams.get('code_challenge'));
+    await expect(challengeFor(pending!.verifier)).resolves.toBe(
+      url.searchParams.get('code_challenge'),
+    );
     expect(url.toString()).not.toContain(pending!.verifier);
     expect(url.searchParams.get('state')).toBe(pending!.state);
   });

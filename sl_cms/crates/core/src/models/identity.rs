@@ -1,4 +1,8 @@
-use std::{fmt::{Debug, Display}, hash::Hash, ops::Deref};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+    ops::Deref,
+};
 
 use serde::{Deserialize, Serialize};
 

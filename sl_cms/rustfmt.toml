@@ -1,0 +1,4 @@
+# The formatter's own settings: the workspace is formatted with `cargo fmt`, and CI checks it, so
+# a diff is a change in meaning rather than a change in taste. `max_width` is the one thing set
+# here - 100 columns matches the frontend's Prettier and what the comments are written to.
+max_width = 100

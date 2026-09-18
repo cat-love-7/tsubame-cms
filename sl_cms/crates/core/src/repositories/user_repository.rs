@@ -45,7 +45,11 @@ pub trait UserRepository: Send + Sync + 'static {
     /// account back from that read would undo their answer - a disabled account re-enabled, a
     /// permission change or a session invalidation rolled back. This is the write a sign-in makes:
     /// the read of `last_login` and the write of it are one step.
-    fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> impl Future<Output = Result<(), BoxError>> + Send;
+    fn record_login(
+        &self,
+        user_id: &UserId,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     fn list_users(&self) -> impl Future<Output = Result<Vec<(UserId, User)>, BoxError>> + Send;
 

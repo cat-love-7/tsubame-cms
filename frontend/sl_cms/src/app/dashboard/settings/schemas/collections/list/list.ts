@@ -14,7 +14,8 @@ import { CollectionsService } from 'app/services/schema/collections.service';
   // Distinct from the `app-list` used by dashboard/collections/list; two components
   // sharing a selector is ambiguous.
   selector: 'app-collection-schema-list',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     MatTableModule,
     MatIconModule,
     MatButtonModule,

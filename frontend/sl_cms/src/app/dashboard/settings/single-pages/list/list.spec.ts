@@ -13,8 +13,7 @@ describe('SinglePageSchemaList', () => {
     await TestBed.configureTestingModule({
       imports: [SinglePageSchemaList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(SinglePageSchemaList);
     component = fixture.componentInstance;

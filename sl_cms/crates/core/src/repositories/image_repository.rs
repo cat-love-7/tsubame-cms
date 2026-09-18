@@ -1,6 +1,8 @@
 use std::future::Future;
 
-use crate::models::image::{Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo};
+use crate::models::image::{
+    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo,
+};
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -24,9 +26,15 @@ pub enum Replacement {
 /// answer. Serving and accepting those bytes is *not* here: that belongs to the adapter that
 /// stores them itself (see [`crate::repositories::local_image_bytes::LocalImageBytes`]).
 pub trait ImageRepository: Send + Sync {
-    fn get_image(&self, id: &ImageId) -> impl Future<Output = Result<Option<Image>, BoxError>> + Send;
+    fn get_image(
+        &self,
+        id: &ImageId,
+    ) -> impl Future<Output = Result<Option<Image>, BoxError>> + Send;
     fn list_images(&self) -> impl Future<Output = Result<Vec<(ImageId, Image)>, BoxError>> + Send;
-    fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
+    fn generate_image_upload_url(
+        &self,
+        upload_info: &NewImageRequest,
+    ) -> impl Future<Output = Result<NewImageInfo, BoxError>> + Send;
     fn delete_image(&self, id: &ImageId) -> impl Future<Output = Result<(), BoxError>> + Send;
 
     /// The file an image's record currently names, or `None` when there is no such image.
@@ -109,4 +117,3 @@ pub trait ImageRepository: Send + Sync {
         file_name: &str,
     ) -> impl Future<Output = Result<Replacement, BoxError>> + Send;
 }
-

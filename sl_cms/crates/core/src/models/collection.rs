@@ -1,6 +1,5 @@
-
-use crate::models::identity::{UintId, StringId};
 use crate::models::field::{FieldSchema, FieldValueMap, FieldValueResponse};
+use crate::models::identity::{StringId, UintId};
 use std::collections::HashMap;
 
 pub type CollectionSchema = Vec<FieldSchema>;
@@ -14,7 +13,7 @@ pub type CollectionItemId = UintId<CollectionSchema>;
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, marker::PhantomData};
-    
+
     use super::*;
     use crate::models::field::{FieldType, FieldValue, TextFieldOptions};
 
@@ -44,10 +43,19 @@ mod tests {
     }
 
     fn create_test_item() -> CollectionItem {
-        FieldValueMap(HashMap::from([
-            ("title".to_string(), FieldValue::Text("Hello World".to_string())),
-            ("tags".to_string(), FieldValue::TextEnum(vec!["news".to_string(), "blog".to_string()])),
-        ]), PhantomData)
+        FieldValueMap(
+            HashMap::from([
+                (
+                    "title".to_string(),
+                    FieldValue::Text("Hello World".to_string()),
+                ),
+                (
+                    "tags".to_string(),
+                    FieldValue::TextEnum(vec!["news".to_string(), "blog".to_string()]),
+                ),
+            ]),
+            PhantomData,
+        )
     }
 
     #[test]
@@ -77,7 +85,7 @@ mod tests {
     fn test_collection_item_deserialization_from_json() {
         let json = r#"{"tags":{"TextEnum":["news","blog"]},"title":{"Text":"Hello World"}}"#;
         let deserialized: CollectionItem = serde_json::from_str(&json).unwrap();
-        
+
         let expected = create_test_item();
         assert_eq!(deserialized, expected);
     }

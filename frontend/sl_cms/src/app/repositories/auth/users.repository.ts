@@ -6,7 +6,6 @@ import { Observable } from 'rxjs';
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
 import { PasswordResetLink } from 'app/models/links';
 
-
 export interface NewUser {
   /** The sign-in identifier; the CMS does not require an email address. */
   username: string;

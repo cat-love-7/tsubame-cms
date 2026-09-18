@@ -1,13 +1,18 @@
+use crate::repository::{COMPOSITE_FIELD_SCHEMA_STORE, RkvRepository};
+use rkv::{StoreOptions, Value};
 use sl_cms_core::models::field::CompositeFieldSchema;
 use sl_cms_core::models::schema::CompositeFieldId;
-use crate::repository::{RkvRepository, COMPOSITE_FIELD_SCHEMA_STORE};
-use sl_cms_core::repositories::composite_field_repository::{CompositeFieldRepository};
-use rkv::{StoreOptions, Value};
+use sl_cms_core::repositories::composite_field_repository::CompositeFieldRepository;
 use std::collections::HashMap;
 use std::error::Error;
 
 impl CompositeFieldRepository for RkvRepository {
-    async fn list_composite_field_schemas(&self) -> Result<HashMap<CompositeFieldId,CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_composite_field_schemas(
+        &self,
+    ) -> Result<
+        HashMap<CompositeFieldId, CompositeFieldSchema>,
+        Box<dyn Error + Send + Sync + 'static>,
+    > {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
@@ -22,7 +27,10 @@ impl CompositeFieldRepository for RkvRepository {
         }
         Ok(schemas)
     }
-    async fn get_composite_field_schema(&self, id: &CompositeFieldId) -> Result<Option<CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_composite_field_schema(
+        &self,
+        id: &CompositeFieldId,
+    ) -> Result<Option<CompositeFieldSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
@@ -31,13 +39,17 @@ impl CompositeFieldRepository for RkvRepository {
             Some(Value::Str(s)) => {
                 let schema: CompositeFieldSchema = serde_json::from_str(&s)?;
                 Ok(Some(schema))
-            },
+            }
             _ => Ok(None),
         }
     }
-    async fn add_composite_field_schema(&self,id: &CompositeFieldId, schema: &CompositeFieldSchema) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn add_composite_field_schema(
+        &self,
+        id: &CompositeFieldId,
+        schema: &CompositeFieldSchema,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
-        let env = self.rkv.read().map_err(|e|e.to_string())?;
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
         let schema_str = serde_json::to_string(schema)?;
         let mut writer = env.write()?;
@@ -45,7 +57,10 @@ impl CompositeFieldRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
-    async fn delete_composite_field_schema(&self, id: &CompositeFieldId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn delete_composite_field_schema(
+        &self,
+        id: &CompositeFieldId,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())?;
@@ -61,13 +76,13 @@ mod tests {
     use sl_cms_core::models::field::{FieldSchema, FieldType, TextFieldOptions};
 
     use super::*;
-    use std::cell::RefCell;
-    use std::{fs, vec};
-    use std::sync::atomic::AtomicU32;
-    use std::sync::{Arc};
-    use rkv::{Manager, Rkv};
     use rkv::backend::{SafeMode, SafeModeEnvironment};
-    
+    use rkv::{Manager, Rkv};
+    use std::cell::RefCell;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU32;
+    use std::{fs, vec};
+
     thread_local! {
         static THREAD_ID: RefCell<u32> = RefCell::new(0);
     }
@@ -92,7 +107,9 @@ mod tests {
 
         fs::create_dir_all(&path).unwrap();
         let mut manager = Manager::<SafeModeEnvironment>::singleton().write().unwrap();
-        let created_arc = manager.get_or_create(path.as_path(), Rkv::new::<SafeMode>).unwrap();
+        let created_arc = manager
+            .get_or_create(path.as_path(), Rkv::new::<SafeMode>)
+            .unwrap();
         RkvRepository::new(Arc::clone(&created_arc), path.join("images"))
     }
     fn teardown_repository() {
@@ -112,7 +129,10 @@ mod tests {
         let repository = setup_repository();
         let schema = vec![];
         let id = "test_schema".into();
-        repository.add_composite_field_schema(&id, &schema).await.unwrap();
+        repository
+            .add_composite_field_schema(&id, &schema)
+            .await
+            .unwrap();
         let retrieved_schema = repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema.is_some());
         assert_eq!(retrieved_schema.unwrap(), schema);
@@ -129,8 +149,7 @@ mod tests {
             width: 12,
             height: 1,
             unique: false,
-            }
-        ];
+        }];
         let id2 = "schema2".into();
         let schema2 = vec![FieldSchema {
             name: "field2".to_string(),
@@ -140,8 +159,14 @@ mod tests {
             height: 1,
             unique: false,
         }];
-        repository.add_composite_field_schema(&id1, &schema1).await.unwrap();
-        repository.add_composite_field_schema(&id2, &schema2).await.unwrap();
+        repository
+            .add_composite_field_schema(&id1, &schema1)
+            .await
+            .unwrap();
+        repository
+            .add_composite_field_schema(&id2, &schema2)
+            .await
+            .unwrap();
         let schemas = repository.list_composite_field_schemas().await.unwrap();
         assert_eq!(schemas.len(), 2);
         assert!(schemas.contains_key(&"schema1".into()));
@@ -153,7 +178,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_nonexistent_composite_field_schema() {
         let repository = setup_repository();
-        let retrieved_schema = repository.get_composite_field_schema(&"nonexistent".into()).await.unwrap();
+        let retrieved_schema = repository
+            .get_composite_field_schema(&"nonexistent".into())
+            .await
+            .unwrap();
         assert!(retrieved_schema.is_none());
         teardown_repository();
     }
@@ -162,17 +190,26 @@ mod tests {
         let repository = setup_repository();
         let id = "test_schema".into();
         let schema = vec![];
-        repository.add_composite_field_schema(&id, &schema).await.unwrap();
+        repository
+            .add_composite_field_schema(&id, &schema)
+            .await
+            .unwrap();
         // Manually corrupt the data
         {
             let env = repository.rkv.read().unwrap();
-            let store = env.open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create()).unwrap();
+            let store = env
+                .open_single(COMPOSITE_FIELD_SCHEMA_STORE, StoreOptions::create())
+                .unwrap();
             let mut writer = env.write().unwrap();
-            store.put(&mut writer, b"test_schema", &Value::Str("invalid_json")).unwrap();
+            store
+                .put(&mut writer, b"test_schema", &Value::Str("invalid_json"))
+                .unwrap();
             writer.commit().unwrap();
         }
 
-        let result = repository.get_composite_field_schema(&"test_schema".into()).await;
+        let result = repository
+            .get_composite_field_schema(&"test_schema".into())
+            .await;
         assert!(result.is_err());
 
         let list_result = repository.list_composite_field_schemas().await;
@@ -184,11 +221,15 @@ mod tests {
         let repository = setup_repository();
         let id = "to_be_deleted".into();
         let schema = vec![];
-        repository.add_composite_field_schema(&id, &schema).await.unwrap();
+        repository
+            .add_composite_field_schema(&id, &schema)
+            .await
+            .unwrap();
         let retrieved_schema = repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema.is_some());
         repository.delete_composite_field_schema(&id).await.unwrap();
-        let retrieved_schema_after_deletion = repository.get_composite_field_schema(&id).await.unwrap();
+        let retrieved_schema_after_deletion =
+            repository.get_composite_field_schema(&id).await.unwrap();
         assert!(retrieved_schema_after_deletion.is_none());
         teardown_repository();
     }

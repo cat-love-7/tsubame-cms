@@ -7,7 +7,9 @@
     }
     <!-- The audit trail: who put this version on the site. -->
     @if (meta.published_by; as publisher) {
-      <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher.username }}</span>
+      <span class="publisher" [title]="'content.publishedBy' | transloco">{{
+        publisher.username
+      }}</span>
     }
     @if (unsavedChanges()) {
       <!-- The form holds edits the server has not seen; the note says so, so the buttons below
@@ -70,7 +72,9 @@
   <p class="notice" role="status">{{ happened | message }}</p>
 }
 @if (previewUrl()) {
-  <p class="preview-link"><a [href]="previewUrl()" target="_blank" rel="noopener">{{ previewUrl() }}</a></p>
+  <p class="preview-link">
+    <a [href]="previewUrl()" target="_blank" rel="noopener">{{ previewUrl() }}</a>
+  </p>
 }
 
 @if (metadata()?.status === 'published' && metadata()?.has_draft) {
@@ -88,25 +92,21 @@
     <p class="note">{{ 'content.noFieldsInPage' | transloco }}</p>
   }
 
-<!-- Same grid as the collection editor, so widths and order read the same. -->
-<div class="field-grid">
-  @for (field of schema(); track field.name) {
-    <div
-      class="field-cell"
-      [class.problem]="isProblem(field)"
-      [style]="cellStyle(field)"
-    >
-      <app-value-field
-        [field]="field"
-        [value]="values()[field.name]"
-        [siblings]="values()"
-        [disabled]="!canEdit()"
-        (valueChange)="setValue(field, $event)"
-        (errorChange)="setFieldError(field, $event)"
-      />
-    </div>
-  }
-</div>
+  <!-- Same grid as the collection editor, so widths and order read the same. -->
+  <div class="field-grid">
+    @for (field of schema(); track field.name) {
+      <div class="field-cell" [class.problem]="isProblem(field)" [style]="cellStyle(field)">
+        <app-value-field
+          [field]="field"
+          [value]="values()[field.name]"
+          [siblings]="values()"
+          [disabled]="!canEdit()"
+          (valueChange)="setValue(field, $event)"
+          (errorChange)="setFieldError(field, $event)"
+        />
+      </div>
+    }
+  </div>
 }
 
 @if (canEdit()) {

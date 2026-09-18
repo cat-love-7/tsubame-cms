@@ -1,16 +1,23 @@
-use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
-use sl_cms_core::models::item_status::ItemMetadata;
-use crate::repository::{collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key, collection_metadata_prefix, unique_key, RkvRepository, DRAFT_STORE, METADATA_STORE, UNIQUE_STORE, COLLECTION_SCHEMA_STORE};
-use sl_cms_core::repositories::collection_repository::{
-    CollectionRepository, Reservation, UniqueValue,
-    ApplyStatusError,
-    canonical_draft,
+use crate::repository::{
+    COLLECTION_SCHEMA_STORE, DRAFT_STORE, METADATA_STORE, RkvRepository, UNIQUE_STORE,
+    collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
+    collection_metadata_prefix, unique_key,
 };
 use rkv::{StoreOptions, Value};
+use sl_cms_core::models::collection::{
+    CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
+};
+use sl_cms_core::models::item_status::ItemMetadata;
+use sl_cms_core::repositories::collection_repository::{
+    ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
+};
 use std::error::Error;
 
 impl CollectionRepository for RkvRepository {
-    async fn get_collection_schema(&self, collection_name: &CollectionName) -> Result<Option<CollectionSchema>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_schema(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Option<CollectionSchema>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
@@ -19,11 +26,13 @@ impl CollectionRepository for RkvRepository {
             Some(Value::Str(s)) => {
                 let schema: CollectionSchema = serde_json::from_str(&s)?;
                 Ok(Some(schema))
-            },
+            }
             _ => Ok(None),
         }
     }
-    async fn list_collection_names(&self) -> Result<Vec<CollectionName>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_names(
+        &self,
+    ) -> Result<Vec<CollectionName>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
@@ -36,21 +45,35 @@ impl CollectionRepository for RkvRepository {
         }
         Ok(collections)
     }
-    async fn add_collection_schema(&self, collection_name: &CollectionName, schema: &CollectionSchema) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
-        let _guard = self.begin();
-        let env = self.rkv.read().map_err(|e|e.to_string())?;
-        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
-        let schema_str = serde_json::to_string(schema)?;
-        let mut writer = env.write()?;
-        store.put(&mut writer, collection_name.as_bytes(), &Value::Str(&schema_str))?;
-        writer.commit()?;
-        Ok(())
-    }
-    async fn delete_collection(&self, collection_name: &CollectionName) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+    async fn add_collection_schema(
+        &self,
+        collection_name: &CollectionName,
+        schema: &CollectionSchema,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
-        let item_store = env.open_single(format!("collection_{}", collection_name).as_str(), StoreOptions::create())?;
+        let schema_str = serde_json::to_string(schema)?;
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            collection_name.as_bytes(),
+            &Value::Str(&schema_str),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+    async fn delete_collection(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(COLLECTION_SCHEMA_STORE, StoreOptions::create())?;
+        let item_store = env.open_single(
+            format!("collection_{}", collection_name).as_str(),
+            StoreOptions::create(),
+        )?;
         // Open (and, on first use, create) the metadata store *before* starting any
         // transaction. LMDB rejects a database handle that was created after the
         // transaction using it began, so opening it later would make DELETE fail.
@@ -67,8 +90,13 @@ impl CollectionRepository for RkvRepository {
         // The per-collection item counter only exists once an item has been added, and
         // rkv reports deleting an absent key as an error ("key/value pair not found"),
         // which would turn DELETE on an empty collection into a 500.
-        if self.counter_store.get(&reader, collection_name.as_bytes())?.is_some() {
-            self.counter_store.delete(&mut writer, collection_name.as_bytes())?;
+        if self
+            .counter_store
+            .get(&reader, collection_name.as_bytes())?
+            .is_some()
+        {
+            self.counter_store
+                .delete(&mut writer, collection_name.as_bytes())?;
         }
         // Drop the items' draft/published metadata too, so a collection recreated under
         // the same name cannot inherit stale statuses.
@@ -102,11 +130,16 @@ impl CollectionRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
-    async fn list_collection_items(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_items(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>>
+    {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         let reader = env.read()?;
         let mut items = Vec::new();
         for result in collection_store.iter_start(&reader)? {
@@ -118,62 +151,87 @@ impl CollectionRepository for RkvRepository {
         }
         Ok(items)
     }
-    async fn get_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>,Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         let reader = env.read()?;
         let key_bytes = item_id.to_le_bytes();
         match collection_store.get(&reader, &key_bytes)? {
             Some(Value::Str(s)) => {
                 let item: CollectionItem = serde_json::from_str(&s)?;
                 Ok(Some(item))
-            },
+            }
             _ => Ok(None),
         }
     }
-    
-    async fn add_collection_item(&self, collection_name: &CollectionName, item_data: &CollectionItem) -> Result<u64,Box<dyn Error + Send + Sync + 'static>> {
+
+    async fn add_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_data: &CollectionItem,
+    ) -> Result<u64, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         // Acquire the write transaction BEFORE the read snapshot used to read the
         // counter. Two concurrent writers would otherwise both read the same counter
         // value and then write the same item id, silently overwriting each other.
         let mut writer = env.write()?;
         let reader = env.read()?;
 
-        let current_id = match self.counter_store.get(&reader, collection_name.as_bytes())? {
+        let current_id = match self
+            .counter_store
+            .get(&reader, collection_name.as_bytes())?
+        {
             Some(Value::U64(id)) => id,
             _ => 0,
         };
         let new_id = current_id + 1;
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, &new_id.to_le_bytes(), &Value::Str(&item_str))?;
-        self.counter_store.put(&mut writer, collection_name.as_bytes(), &Value::U64(new_id))?;
+        self.counter_store
+            .put(&mut writer, collection_name.as_bytes(), &Value::U64(new_id))?;
         writer.commit()?;
         Ok(new_id)
     }
-    
-    async fn update_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+
+    async fn update_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        item_data: &CollectionItem,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         let mut writer = env.write()?;
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, &item_id.to_le_bytes(), &Value::Str(&item_str))?;
         writer.commit()?;
         Ok(())
     }
-    
-    async fn delete_collection_item(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(),Box<dyn Error + Send + Sync + 'static>> {
+
+    async fn delete_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         // Opened before the transactions, for the reason given in `delete_collection`.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -197,7 +255,11 @@ impl CollectionRepository for RkvRepository {
         Ok(())
     }
 
-    async fn get_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<Option<ItemMetadata>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -209,13 +271,22 @@ impl CollectionRepository for RkvRepository {
         }
     }
 
-    async fn set_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, metadata: &ItemMetadata) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn set_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        metadata: &ItemMetadata,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         let mut writer = env.write()?;
-        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(metadata)?))?;
+        store.put(
+            &mut writer,
+            key.as_bytes(),
+            &Value::Str(&serde_json::to_string(metadata)?),
+        )?;
         writer.commit()?;
         Ok(())
     }
@@ -225,12 +296,16 @@ impl CollectionRepository for RkvRepository {
         collection_name: &CollectionName,
         offset: usize,
         limit: Option<usize>,
-    ) -> Result<(Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize), Box<dyn Error + Send + Sync + 'static>> {
+    ) -> Result<
+        (Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize),
+        Box<dyn Error + Send + Sync + 'static>,
+    > {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         let reader = env.read()?;
         let prefix = collection_metadata_prefix(collection_name.as_str());
 
@@ -281,7 +356,8 @@ impl CollectionRepository for RkvRepository {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store_name = format!("collection_{}", collection_name);
-        let collection_store = env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let collection_store =
+            env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
         // Opened before the transaction begins: LMDB rejects a handle created after it.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -316,7 +392,10 @@ impl CollectionRepository for RkvRepository {
                 &item_id.to_le_bytes(),
                 &Value::Str(&serde_json::to_string(draft)?),
             )?;
-            draft_store.delete(&mut writer, collection_item_draft_key(collection_name.as_str(), **item_id).as_bytes())?;
+            draft_store.delete(
+                &mut writer,
+                collection_item_draft_key(collection_name.as_str(), **item_id).as_bytes(),
+            )?;
         }
         metadata_store.put(
             &mut writer,
@@ -327,7 +406,12 @@ impl CollectionRepository for RkvRepository {
         Ok(())
     }
 
-    async fn touch_item_metadata(&self, collection_name: &CollectionName, item_id: &CollectionItemId, now: chrono::DateTime<chrono::Utc>) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn touch_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         // Read and write under the one lock: a save must not write back the publication state it
         // read before a publish that landed in between.
         let _guard = self.begin();
@@ -341,12 +425,19 @@ impl CollectionRepository for RkvRepository {
         }
         .touched(now);
         let mut writer = env.write()?;
-        store.put(&mut writer, key.as_bytes(), &Value::Str(&serde_json::to_string(&metadata)?))?;
+        store.put(
+            &mut writer,
+            key.as_bytes(),
+            &Value::Str(&serde_json::to_string(&metadata)?),
+        )?;
         writer.commit()?;
         Ok(())
     }
 
-    async fn list_item_metadata(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_item_metadata(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, ItemMetadata)>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
@@ -370,7 +461,11 @@ impl CollectionRepository for RkvRepository {
         Ok(items)
     }
 
-    async fn get_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn get_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -382,7 +477,11 @@ impl CollectionRepository for RkvRepository {
         }
     }
 
-    async fn list_collection_item_drafts(&self, collection_name: &CollectionName) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>> {
+    async fn list_collection_item_drafts(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, CollectionItem)>, Box<dyn Error + Send + Sync + 'static>>
+    {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -406,7 +505,12 @@ impl CollectionRepository for RkvRepository {
         Ok(items)
     }
 
-    async fn set_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId, item_data: &CollectionItem) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn set_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        item_data: &CollectionItem,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
@@ -414,7 +518,11 @@ impl CollectionRepository for RkvRepository {
         let mut writer = env.write()?;
         // Stored in the canonical rendering, so a promotion can compare it with what the publisher
         // read without the two renderings differing only in the order a `HashMap` was walked.
-        store.put(&mut writer, key.as_bytes(), &Value::Str(&canonical_draft(item_data)))?;
+        store.put(
+            &mut writer,
+            key.as_bytes(),
+            &Value::Str(&canonical_draft(item_data)),
+        )?;
         writer.commit()?;
         Ok(())
     }
@@ -441,7 +549,11 @@ impl CollectionRepository for RkvRepository {
             }),
             _ => {
                 let mut writer = env.write()?;
-                store.put(&mut writer, key.as_bytes(), &Value::Str(&item_id.to_string()))?;
+                store.put(
+                    &mut writer,
+                    key.as_bytes(),
+                    &Value::Str(&item_id.to_string()),
+                )?;
                 writer.commit()?;
                 Ok(Reservation::Claimed)
             }
@@ -515,7 +627,11 @@ impl CollectionRepository for RkvRepository {
         Ok(())
     }
 
-    async fn delete_collection_item_draft(&self, collection_name: &CollectionName, item_id: &CollectionItemId) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    async fn delete_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;

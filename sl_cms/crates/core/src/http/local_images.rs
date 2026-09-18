@@ -8,12 +8,12 @@
 //! Both are deliberately in one place: whoever serves the bytes is also who authorises the
 //! upload of them.
 
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{get, put};
-use axum::Router;
 
 use crate::app_module::Storage;
 use crate::http::AppState;
@@ -96,7 +96,10 @@ async fn put_image_file<R: Storage + LocalImageBytes>(
         ));
     }
 
-    module.image_service.write_image_bytes(&file_name, &body).await?;
+    module
+        .image_service
+        .write_image_bytes(&file_name, &body)
+        .await?;
     Ok((StatusCode::CREATED, ()))
 }
 async fn get_image_file<R: Storage + LocalImageBytes>(
@@ -108,10 +111,7 @@ async fn get_image_file<R: Storage + LocalImageBytes>(
         return Err(HttpError::BadRequest("Invalid file name"));
     }
     match module.image_service.read_image_bytes(&file_name).await? {
-        Some(data) => Ok((
-            [(header::CONTENT_TYPE, "application/octet-stream")],
-            data,
-        )),
+        Some(data) => Ok(([(header::CONTENT_TYPE, "application/octet-stream")], data)),
         None => Err(HttpError::NotFound("File not found")),
     }
 }

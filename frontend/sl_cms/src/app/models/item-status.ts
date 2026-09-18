@@ -67,5 +67,3 @@ export interface ItemMetadata {
 export interface ItemMetadataMap {
   [id: string]: ItemMetadata;
 }
-
-

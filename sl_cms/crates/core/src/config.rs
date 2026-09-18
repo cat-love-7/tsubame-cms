@@ -131,7 +131,7 @@ impl Config {
                 return Err(format!(
                     "JWT_SECRET must be at least {MIN_JWT_SECRET_LEN} characters (got {})",
                     secret.len()
-                ))
+                ));
             }
             // No secret configured: keep the generated one and warn at startup.
             Err(_) => {}
@@ -252,7 +252,10 @@ mod tests {
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, DEFAULT_PORT);
         assert_eq!(config.data_root, PathBuf::from("./data"));
-        assert_eq!(config.cors_allowed_origins, vec![DEFAULT_CORS_ORIGINS.to_string()]);
+        assert_eq!(
+            config.cors_allowed_origins,
+            vec![DEFAULT_CORS_ORIGINS.to_string()]
+        );
         assert_eq!(config.token_ttl_hours, DEFAULT_TOKEN_TTL_HOURS);
         assert_eq!(
             config.preview_link_ttl_minutes,
@@ -276,7 +279,10 @@ mod tests {
     fn parses_comma_separated_origins_and_trims_whitespace() {
         assert_eq!(
             parse_origins(" http://a.example , http://b.example ,"),
-            vec!["http://a.example".to_string(), "http://b.example".to_string()]
+            vec![
+                "http://a.example".to_string(),
+                "http://b.example".to_string()
+            ]
         );
         assert!(parse_origins(" * ").iter().any(|o| o == "*"));
     }

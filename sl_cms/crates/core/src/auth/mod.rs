@@ -13,8 +13,8 @@ use crate::auth::identity::{Identity, TokenVerifier};
 use crate::auth::provisioner::{AccountProvisioner, NewAccount};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    is_plausible_email, is_plausible_username, normalize_username, LoginResponse, NewAccountRequest,
-    PasswordChangedResponse, Permission, UpdateUserRequest, User, UserId, UserResponse,
+    LoginResponse, NewAccountRequest, PasswordChangedResponse, Permission, UpdateUserRequest, User,
+    UserId, UserResponse, is_plausible_email, is_plausible_username, normalize_username,
 };
 use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
 use crate::repositories::local_credentials::LocalCredentials;
@@ -47,7 +47,8 @@ pub struct AuthService<R: UserRepository> {
     throttle: LoginThrottle,
 }
 
-impl<R: UserRepository> AuthService<R> {    pub fn new(
+impl<R: UserRepository> AuthService<R> {
+    pub fn new(
         repository: Arc<R>,
         issuer: TokenIssuer,
         password_resets: PasswordResetIssuer,
@@ -95,10 +96,7 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
     /// password **its owner set** by following a reset link - never with one an administrator
     /// typed. The single exception is [`AuthService::bootstrap_admin`], which exists because a
     /// deployment needs a way in before anyone can hand out links.
-    pub async fn create_user(
-        &self,
-        request: NewAccountRequest,
-    ) -> Result<UserResponse, HttpError> {
+    pub async fn create_user(&self, request: NewAccountRequest) -> Result<UserResponse, HttpError> {
         let username = normalize_username(&request.username);
         if !is_plausible_username(&username) {
             return Err(HttpError::BadRequest(
@@ -116,7 +114,9 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
                 if is_plausible_email(email) {
                     Ok(email.to_ascii_lowercase())
                 } else {
-                    Err(HttpError::BadRequest("that is not a plausible email address"))
+                    Err(HttpError::BadRequest(
+                        "that is not a plausible email address",
+                    ))
                 }
             })
             .transpose()?;
@@ -127,7 +127,10 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             .map_err(internal)?
             .is_some()
         {
-            return Err(HttpError::Conflict("a user with that username already exists").with_code("username_taken"));
+            return Err(
+                HttpError::Conflict("a user with that username already exists")
+                    .with_code("username_taken"),
+            );
         }
 
         if let Some(provisioner) = &self.provisioner {
@@ -163,18 +166,23 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
                     .get_user_from_id(&user_id)
                     .await
                     .map_err(internal)?
-                    .ok_or_else(|| HttpError::Unauthorized("invalid or expired token").with_code("invalid_token"))?;
+                    .ok_or_else(|| {
+                        HttpError::Unauthorized("invalid or expired token")
+                            .with_code("invalid_token")
+                    })?;
 
                 // A password change ends every session that was issued before it. The check is
                 // against the stored account, so it holds however long the token has left.
                 if token_version != user.token_version {
-                    return Err(
-                        HttpError::Unauthorized("this session ended when the password changed")
-                            .with_code("session_ended"),
-                    );
+                    return Err(HttpError::Unauthorized(
+                        "this session ended when the password changed",
+                    )
+                    .with_code("session_ended"));
                 }
                 if !user.is_active {
-                    return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
+                    return Err(
+                        HttpError::Forbidden("account is disabled").with_code("account_disabled")
+                    );
                 }
                 Ok(user)
             }
@@ -210,7 +218,9 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             .map_err(internal)?
         {
             if !user.is_active {
-                return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
+                return Err(
+                    HttpError::Forbidden("account is disabled").with_code("account_disabled")
+                );
             }
             return Ok(user);
         }
@@ -272,7 +282,10 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
             self.ensure_another_active_admin(id).await?;
         }
 
-        self.repository.update_user(id, &user).await.map_err(internal)?;
+        self.repository
+            .update_user(id, &user)
+            .await
+            .map_err(internal)?;
         Ok(user.to_response())
     }
     /// Delete an account, refusing to remove the last active administrator.
@@ -285,8 +298,13 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
         // record whose account can still sign in.
         if let Some(provisioner) = &self.provisioner {
             provisioner.delete(&user.username).await.map_err(|e| {
-                tracing::warn!("could not remove {} at the identity provider: {e}", user.username);
-                HttpError::InternalServerError("the identity provider refused to remove the account")
+                tracing::warn!(
+                    "could not remove {} at the identity provider: {e}",
+                    user.username
+                );
+                HttpError::InternalServerError(
+                    "the identity provider refused to remove the account",
+                )
             })?;
         }
         self.repository.delete_user(id).await.map_err(internal)
@@ -336,7 +354,8 @@ impl<R: UserRepository> AuthService<R> {    pub fn new(
 /// Nothing here exists where sign-in belongs to an identity provider: there is no password to
 /// verify and no credential to set, so the endpoints that call these are not part of that
 /// backend's router either (see [`LocalCredentials`](crate::repositories::local_credentials::LocalCredentials)).
-impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify credentials and issue a token.
+impl<R: UserRepository + LocalCredentials> AuthService<R> {
+    /// Verify credentials and issue a token.
     pub async fn login(&self, username: &str, password: &str) -> Result<LoginResponse, HttpError> {
         let username = normalize_username(username);
         // Checked before the password is even looked at, and for unknown identifiers too, so
@@ -430,7 +449,9 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .await
             .map_err(internal)?;
         let Some(mut user) = user else {
-            return Err(HttpError::Unauthorized(PasswordResetError::Invalid.message()));
+            return Err(HttpError::Unauthorized(
+                PasswordResetError::Invalid.message(),
+            ));
         };
         // Guessing a token is no easier than guessing a password, but the attempt is counted
         // the same way so neither can be hammered.
@@ -441,7 +462,9 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         // password since (this link being used once already included) makes it refuse.
         if claims.token_version != user.token_version {
             self.throttle.record_failure(&user.username, Instant::now());
-            return Err(HttpError::Forbidden(PasswordResetError::AlreadyUsed.message()));
+            return Err(HttpError::Forbidden(
+                PasswordResetError::AlreadyUsed.message(),
+            ));
         }
         if !user.is_active {
             return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
@@ -453,7 +476,10 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .await
             .map_err(internal)?;
         user.end_existing_sessions();
-        self.repository.update_user(&user.id, &user).await.map_err(internal)?;
+        self.repository
+            .update_user(&user.id, &user)
+            .await
+            .map_err(internal)?;
         self.throttle.record_success(&user.username);
 
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
@@ -475,7 +501,10 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .await
             .map_err(internal)?;
         user.end_existing_sessions();
-        self.repository.update_user(id, &user).await.map_err(internal)
+        self.repository
+            .update_user(id, &user)
+            .await
+            .map_err(internal)
     }
     /// Change your own password, proving you know the current one so that a stolen session
     /// is not enough to lock the owner out.
@@ -511,7 +540,10 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
             .await
             .map_err(internal)?;
         user.end_existing_sessions();
-        self.repository.update_user(id, &user).await.map_err(internal)?;
+        self.repository
+            .update_user(id, &user)
+            .await
+            .map_err(internal)?;
 
         let (token, expires_at) = self.issuer.issue(&user).map_err(internal)?;
         Ok(PasswordChangedResponse { token, expires_at })
@@ -554,7 +586,6 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {    /// Verify creden
         Ok(Some(created))
     }
 }
-
 
 fn validate_password(password: &str) -> Result<(), HttpError> {
     if password.len() < MIN_PASSWORD_LENGTH {
@@ -609,7 +640,11 @@ mod tests {
                 .insert(user_id.to_string(), password.to_string());
             Ok(())
         }
-        async fn verify_password(&self, user_id: &UserId, password: &str) -> Result<bool, BoxError> {
+        async fn verify_password(
+            &self,
+            user_id: &UserId,
+            password: &str,
+        ) -> Result<bool, BoxError> {
             Ok(self
                 .passwords
                 .read()
@@ -625,7 +660,12 @@ mod tests {
 
     impl UserRepository for InMemoryUsers {
         async fn get_user_from_id(&self, user_id: &UserId) -> Result<Option<User>, BoxError> {
-            Ok(self.users.read().unwrap().get(&user_id.to_string()).cloned())
+            Ok(self
+                .users
+                .read()
+                .unwrap()
+                .get(&user_id.to_string())
+                .cloned())
         }
         async fn get_user_from_external_id(
             &self,
@@ -660,7 +700,11 @@ mod tests {
             }
             Ok(user.id.clone())
         }
-        async fn record_login(&self, user_id: &UserId, at: chrono::DateTime<chrono::Utc>) -> Result<(), BoxError> {
+        async fn record_login(
+            &self,
+            user_id: &UserId,
+            at: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), BoxError> {
             // Only the one field, on the record as it is now: the whole point of the method (see
             // `UserRepository::record_login`).
             let mut users = self.users.write().unwrap();
@@ -698,7 +742,11 @@ mod tests {
         let repo = Arc::new(InMemoryUsers::default());
         let password_resets = PasswordResetIssuer::new(b"test-secret", 30);
         (
-            AuthService::new(repo.clone(), TokenIssuer::new(b"test-secret", 1), password_resets),
+            AuthService::new(
+                repo.clone(),
+                TokenIssuer::new(b"test-secret", 1),
+                password_resets,
+            ),
             repo,
         )
     }
@@ -744,12 +792,16 @@ mod tests {
         );
         let created = account_with_password(&auth, "ops", "supersecret", false).await;
         // Creating the account writes it whole; the sign-in is what must not.
-        let writes_before = repository.whole_writes.load(std::sync::atomic::Ordering::Relaxed);
+        let writes_before = repository
+            .whole_writes
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         auth.login("ops", "supersecret").await.unwrap();
 
         assert_eq!(
-            repository.whole_writes.load(std::sync::atomic::Ordering::Relaxed),
+            repository
+                .whole_writes
+                .load(std::sync::atomic::Ordering::Relaxed),
             writes_before,
             "a sign-in must not write the whole account: that would undo an admin change made \
              while the password was being checked"
@@ -767,7 +819,10 @@ mod tests {
         let (auth, _) = service();
         account_with_password(&auth, "Alice@Example.com", "supersecret", true).await;
 
-        let response = auth.login("alice@example.com", "supersecret").await.unwrap();
+        let response = auth
+            .login("alice@example.com", "supersecret")
+            .await
+            .unwrap();
         assert_eq!(response.user.username, "alice@example.com");
         assert!(response.user.email.is_none(), "メールは必須ではない");
         assert!(response.user.is_admin);
@@ -792,7 +847,10 @@ mod tests {
         assert!(auth.login("a@example.com", "supersecret").await.is_ok());
         for attempt in 1..=4 {
             assert_eq!(
-                auth.login("a@example.com", "wrong").await.unwrap_err().status_code,
+                auth.login("a@example.com", "wrong")
+                    .await
+                    .unwrap_err()
+                    .status_code,
                 401,
                 "{attempt} 回目はまだ普通の拒否"
             );
@@ -800,7 +858,10 @@ mod tests {
 
         // The fifth failure trips the limit, and the right password now waits too.
         assert!(auth.login("a@example.com", "wrong").await.is_err());
-        let locked = auth.login("a@example.com", "supersecret").await.unwrap_err();
+        let locked = auth
+            .login("a@example.com", "supersecret")
+            .await
+            .unwrap_err();
         assert_eq!(locked.status_code, 429);
         assert!(locked.message.contains("try again"), "{}", locked.message);
 
@@ -808,18 +869,27 @@ mod tests {
         // cannot be used to find out which accounts exist.
         for _ in 0..5 {
             assert_eq!(
-                auth.login("ghost@example.com", "wrong").await.unwrap_err().status_code,
+                auth.login("ghost@example.com", "wrong")
+                    .await
+                    .unwrap_err()
+                    .status_code,
                 401
             );
         }
         assert_eq!(
-            auth.login("ghost@example.com", "wrong").await.unwrap_err().status_code,
+            auth.login("ghost@example.com", "wrong")
+                .await
+                .unwrap_err()
+                .status_code,
             429
         );
 
         // And a different address is still just wrong.
         assert_eq!(
-            auth.login("b@example.com", "wrong").await.unwrap_err().status_code,
+            auth.login("b@example.com", "wrong")
+                .await
+                .unwrap_err()
+                .status_code,
             401
         );
     }
@@ -841,18 +911,26 @@ mod tests {
 
         let changed = auth
             .complete_password_reset(&link.token, "chosen-by-the-owner")
-            .await.unwrap();
+            .await
+            .unwrap();
 
         // The password is the owner's, the caller is signed in, old sessions are gone...
         assert!(auth.login("ops", "old-password").await.is_err());
         assert!(auth.login("ops", "chosen-by-the-owner").await.is_ok());
-        assert_eq!(auth.user_from_token(&old_token).await.unwrap_err().status_code, 401);
+        assert_eq!(
+            auth.user_from_token(&old_token)
+                .await
+                .unwrap_err()
+                .status_code,
+            401
+        );
         assert!(auth.user_from_token(&changed.token).await.is_ok());
 
         // ...and the link cannot be used twice.
         let again = auth
             .complete_password_reset(&link.token, "another-password")
-            .await.unwrap_err();
+            .await
+            .unwrap_err();
         assert_eq!(again.status_code, 403, "{}", again.message);
         // The password the owner chose still stands.
         assert!(auth.login("ops", "chosen-by-the-owner").await.is_ok());
@@ -867,12 +945,14 @@ mod tests {
 
         let error = auth
             .complete_password_reset(&link.token, "new-password")
-            .await.unwrap_err();
+            .await
+            .unwrap_err();
         assert_eq!(error.status_code, 401);
         // A garbage token gets the same answer.
         assert_eq!(
             auth.complete_password_reset("not-a-token", "new-password")
-                .await.unwrap_err()
+                .await
+                .unwrap_err()
                 .status_code,
             401
         );
@@ -886,18 +966,25 @@ mod tests {
 
         auth.update_user(
             &UserId::from(account.id.to_string().as_str()),
-            UpdateUserRequest { is_active: Some(false), ..Default::default() },
+            UpdateUserRequest {
+                is_active: Some(false),
+                ..Default::default()
+            },
         )
-        .await.unwrap();
+        .await
+        .unwrap();
 
         let error = auth
             .issue_password_reset(&UserId::from(account.id.to_string().as_str()))
-            .await.unwrap_err();
+            .await
+            .unwrap_err();
         assert_eq!(error.status_code, 403);
         // The administrator's own account still gets one.
-        assert!(auth
-            .issue_password_reset(&UserId::from(admin.id.to_string().as_str()))
-            .await.is_ok());
+        assert!(
+            auth.issue_password_reset(&UserId::from(admin.id.to_string().as_str()))
+                .await
+                .is_ok()
+        );
     }
 
     /// Changing your own password ends every session, including the one that asked for the
@@ -907,15 +994,23 @@ mod tests {
         let (auth, _) = service();
         let created = account_with_password(&auth, "a@example.com", "old-password", false).await;
 
-        let stolen = auth.login("a@example.com", "old-password").await.unwrap().token;
+        let stolen = auth
+            .login("a@example.com", "old-password")
+            .await
+            .unwrap()
+            .token;
         assert!(auth.user_from_token(&stolen).await.is_ok());
 
         let changed = auth
             .change_own_password(&created.id, "old-password", "new-password")
-            .await.unwrap();
+            .await
+            .unwrap();
 
         // The token that existed before the change is dead...
-        assert_eq!(auth.user_from_token(&stolen).await.unwrap_err().status_code, 401);
+        assert_eq!(
+            auth.user_from_token(&stolen).await.unwrap_err().status_code,
+            401
+        );
         // ...the caller's replacement works...
         assert!(auth.user_from_token(&changed.token).await.is_ok());
         assert!(changed.expires_at > chrono::Utc::now());
@@ -930,18 +1025,35 @@ mod tests {
     async fn resetting_another_accounts_password_only_ends_that_accounts_sessions() {
         let (auth, _) = service();
         account_with_password(&auth, "admin@example.com", "admin-password", true).await;
-        let target = account_with_password(&auth, "editor@example.com", "editor-password", false).await;
+        let target =
+            account_with_password(&auth, "editor@example.com", "editor-password", false).await;
 
-        let admin_token = auth.login("admin@example.com", "admin-password").await.unwrap().token;
+        let admin_token = auth
+            .login("admin@example.com", "admin-password")
+            .await
+            .unwrap()
+            .token;
         let editor_token = auth
             .login("editor@example.com", "editor-password")
-            .await.unwrap()
+            .await
+            .unwrap()
             .token;
 
-        auth.set_password(&target.id, "reset-password").await.unwrap();
+        auth.set_password(&target.id, "reset-password")
+            .await
+            .unwrap();
 
-        assert_eq!(auth.user_from_token(&editor_token).await.unwrap_err().status_code, 401);
-        assert!(auth.user_from_token(&admin_token).await.is_ok(), "自分のセッションは残る");
+        assert_eq!(
+            auth.user_from_token(&editor_token)
+                .await
+                .unwrap_err()
+                .status_code,
+            401
+        );
+        assert!(
+            auth.user_from_token(&admin_token).await.is_ok(),
+            "自分のセッションは残る"
+        );
     }
 
     #[tokio::test]
@@ -949,8 +1061,14 @@ mod tests {
         let (auth, _) = service();
         account_with_password(&auth, "a@example.com", "supersecret", false).await;
 
-        let unknown = auth.login("nobody@example.com", "supersecret").await.unwrap_err();
-        let wrong = auth.login("a@example.com", "wrong-password").await.unwrap_err();
+        let unknown = auth
+            .login("nobody@example.com", "supersecret")
+            .await
+            .unwrap_err();
+        let wrong = auth
+            .login("a@example.com", "wrong-password")
+            .await
+            .unwrap_err();
         assert_eq!(unknown.status_code, 401);
         assert_eq!(wrong.status_code, 401);
         assert_eq!(unknown.message, wrong.message);
@@ -984,14 +1102,20 @@ mod tests {
         // An address, when one is given, still has to look like one.
         let mut request = account("ops@example.com");
         request.email = Some("not-an-email".to_string());
-        assert_eq!(auth.create_user(request).await.unwrap_err().status_code, 400);
+        assert_eq!(
+            auth.create_user(request).await.unwrap_err().status_code,
+            400
+        );
     }
 
     #[tokio::test]
     async fn rejects_duplicate_usernames_regardless_of_case() {
         let (auth, _) = service();
         auth.create_user(account("a@example.com")).await.unwrap();
-        let err = auth.create_user(account("A@EXAMPLE.COM")).await.unwrap_err();
+        let err = auth
+            .create_user(account("A@EXAMPLE.COM"))
+            .await
+            .unwrap_err();
         assert_eq!(err.status_code, 409);
     }
 
@@ -999,17 +1123,28 @@ mod tests {
     async fn token_for_a_deleted_user_is_rejected() {
         let (auth, repo) = service();
         let created = account_with_password(&auth, "a@example.com", "supersecret", false).await;
-        let token = auth.login("a@example.com", "supersecret").await.unwrap().token;
+        let token = auth
+            .login("a@example.com", "supersecret")
+            .await
+            .unwrap()
+            .token;
 
         repo.delete_user(&created.id).await.unwrap();
-        assert_eq!(auth.user_from_token(&token).await.unwrap_err().status_code, 401);
+        assert_eq!(
+            auth.user_from_token(&token).await.unwrap_err().status_code,
+            401
+        );
     }
 
     #[tokio::test]
     async fn disabled_account_cannot_log_in_and_its_token_is_rejected() {
         let (auth, repo) = service();
         let created = account_with_password(&auth, "a@example.com", "supersecret", false).await;
-        let token = auth.login("a@example.com", "supersecret").await.unwrap().token;
+        let token = auth
+            .login("a@example.com", "supersecret")
+            .await
+            .unwrap()
+            .token;
 
         {
             let mut users = repo.users.write().unwrap();
@@ -1017,8 +1152,17 @@ mod tests {
             user.is_active = false;
         }
 
-        assert_eq!(auth.login("a@example.com", "supersecret").await.unwrap_err().status_code, 403);
-        assert_eq!(auth.user_from_token(&token).await.unwrap_err().status_code, 403);
+        assert_eq!(
+            auth.login("a@example.com", "supersecret")
+                .await
+                .unwrap_err()
+                .status_code,
+            403
+        );
+        assert_eq!(
+            auth.user_from_token(&token).await.unwrap_err().status_code,
+            403
+        );
     }
 
     #[tokio::test]
@@ -1029,28 +1173,57 @@ mod tests {
 
         // The only administrator cannot stop being one, stop being active, or be deleted.
         assert_eq!(
-            auth.update_user(&admin.id, UpdateUserRequest { is_admin: Some(false), ..Default::default() })
-                .await.unwrap_err()
-                .status_code,
+            auth.update_user(
+                &admin.id,
+                UpdateUserRequest {
+                    is_admin: Some(false),
+                    ..Default::default()
+                }
+            )
+            .await
+            .unwrap_err()
+            .status_code,
             409
         );
         assert_eq!(
-            auth.update_user(&admin.id, UpdateUserRequest { is_active: Some(false), ..Default::default() })
-                .await.unwrap_err()
-                .status_code,
+            auth.update_user(
+                &admin.id,
+                UpdateUserRequest {
+                    is_active: Some(false),
+                    ..Default::default()
+                }
+            )
+            .await
+            .unwrap_err()
+            .status_code,
             409
         );
-        assert_eq!(auth.delete_user(&admin.id).await.unwrap_err().status_code, 409);
+        assert_eq!(
+            auth.delete_user(&admin.id).await.unwrap_err().status_code,
+            409
+        );
 
         // With a second administrator the demotion is allowed...
         let second = account_with_password(&auth, "second@example.com", "supersecret", true).await;
-        assert!(!auth
-            .update_user(&admin.id, UpdateUserRequest { is_admin: Some(false), ..Default::default() })
-            .await.unwrap()
-            .is_admin);
+        assert!(
+            !auth
+                .update_user(
+                    &admin.id,
+                    UpdateUserRequest {
+                        is_admin: Some(false),
+                        ..Default::default()
+                    }
+                )
+                .await
+                .unwrap()
+                .is_admin
+        );
 
         // ...and then the remaining administrator is the protected one.
-        assert_eq!(auth.delete_user(&second.id).await.unwrap_err().status_code, 409);
+        assert_eq!(
+            auth.delete_user(&second.id).await.unwrap_err().status_code,
+            409
+        );
         // The demoted account and a plain editor can be removed.
         auth.delete_user(&admin.id).await.unwrap();
         auth.delete_user(&editor.id).await.unwrap();
@@ -1066,39 +1239,87 @@ mod tests {
         let updated = auth
             .update_user(
                 &viewer.id,
-                UpdateUserRequest { permission: Some(Permission::editor()), ..Default::default() },
+                UpdateUserRequest {
+                    permission: Some(Permission::editor()),
+                    ..Default::default()
+                },
             )
-            .await.unwrap();
+            .await
+            .unwrap();
         assert!(updated.permission.can_edit);
         assert!(!updated.permission.can_publish);
         assert!(updated.is_active);
 
         // Disabling keeps the account but stops it signing in.
-        auth.update_user(&viewer.id, UpdateUserRequest { is_active: Some(false), ..Default::default() })
-            .await.unwrap();
+        auth.update_user(
+            &viewer.id,
+            UpdateUserRequest {
+                is_active: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(
-            auth.login("viewer@example.com", "supersecret").await.unwrap_err().status_code,
+            auth.login("viewer@example.com", "supersecret")
+                .await
+                .unwrap_err()
+                .status_code,
             403
         );
-        auth.update_user(&viewer.id, UpdateUserRequest { is_active: Some(true), ..Default::default() })
-            .await.unwrap();
+        auth.update_user(
+            &viewer.id,
+            UpdateUserRequest {
+                is_active: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         // Your own password needs the current one.
         assert_eq!(
-            auth.change_own_password(&viewer.id, "wrong", "newsupersecret").await.unwrap_err().status_code,
+            auth.change_own_password(&viewer.id, "wrong", "newsupersecret")
+                .await
+                .unwrap_err()
+                .status_code,
             403
         );
-        auth.change_own_password(&viewer.id, "supersecret", "newsupersecret").await.unwrap();
-        assert!(auth.login("viewer@example.com", "newsupersecret").await.is_ok());
+        auth.change_own_password(&viewer.id, "supersecret", "newsupersecret")
+            .await
+            .unwrap();
+        assert!(
+            auth.login("viewer@example.com", "newsupersecret")
+                .await
+                .is_ok()
+        );
 
         // An administrator reset does not, but the minimum length still applies.
-        assert_eq!(auth.set_password(&viewer.id, "short").await.unwrap_err().status_code, 400);
-        auth.set_password(&viewer.id, "resetpassword").await.unwrap();
-        assert!(auth.login("viewer@example.com", "resetpassword").await.is_ok());
+        assert_eq!(
+            auth.set_password(&viewer.id, "short")
+                .await
+                .unwrap_err()
+                .status_code,
+            400
+        );
+        auth.set_password(&viewer.id, "resetpassword")
+            .await
+            .unwrap();
+        assert!(
+            auth.login("viewer@example.com", "resetpassword")
+                .await
+                .is_ok()
+        );
 
         // A change to an account that does not exist is a 404.
         let missing = UserId::from("00000000-0000-0000-0000-000000000000");
-        assert_eq!(auth.set_password(&missing, "supersecret").await.unwrap_err().status_code, 404);
+        assert_eq!(
+            auth.set_password(&missing, "supersecret")
+                .await
+                .unwrap_err()
+                .status_code,
+            404
+        );
     }
 
     /// A provisioner that writes down what it was asked to do, and can refuse.
@@ -1158,12 +1379,11 @@ mod tests {
         // The provider refuses: no record is written, so there is no account that cannot sign
         // in and no half-created user to clean up.
         let (refusing_auth, refusing_store) = service();
-        let refusing_auth = refusing_auth.with_account_provisioner(Arc::new(
-            RecordingProvisioner {
+        let refusing_auth =
+            refusing_auth.with_account_provisioner(Arc::new(RecordingProvisioner {
                 refuse: true,
                 ..Default::default()
-            },
-        ));
+            }));
         assert_eq!(
             refusing_auth
                 .create_user(account("nope@example.com"))
@@ -1264,20 +1484,29 @@ mod tests {
         let (auth, _) = service();
         // Empty store and no credentials -> refuse.
         assert_eq!(
-            auth.bootstrap_admin(None, None, None).await.unwrap_err().status_code,
+            auth.bootstrap_admin(None, None, None)
+                .await
+                .unwrap_err()
+                .status_code,
             500
         );
 
         let created = auth
             .bootstrap_admin(Some("ops"), Some("supersecret"), Some("ops@example.com"))
-            .await.unwrap()
+            .await
+            .unwrap()
             .expect("admin should have been created");
         assert!(created.is_admin);
         assert_eq!(created.username, "ops");
         assert_eq!(created.email.as_deref(), Some("ops@example.com"));
 
         // Once seeded, bootstrap is a no-op even without credentials.
-        assert!(auth.bootstrap_admin(None, None, None).await.unwrap().is_none());
+        assert!(
+            auth.bootstrap_admin(None, None, None)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// A bootstrap that cannot store the credential must not leave the account behind: the next
@@ -1294,10 +1523,11 @@ mod tests {
             PasswordResetIssuer::new(b"test-secret", 30),
         );
 
-        assert!(auth
-            .bootstrap_admin(Some("ops"), Some("supersecret"), None)
-            .await
-            .is_err());
+        assert!(
+            auth.bootstrap_admin(Some("ops"), Some("supersecret"), None)
+                .await
+                .is_err()
+        );
         assert!(
             repository.users.read().unwrap().is_empty(),
             "the account has to go with the credential it could not keep"

@@ -22,7 +22,7 @@ export class ImagesService {
    * The two steps are: ask for a place to put it, then put it there.
    */
   uploadImage(file: File): Observable<NewImageInfo> {
-    const extension = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
+    const extension = file.name.includes('.') ? (file.name.split('.').pop() ?? '') : '';
     return this.images
       .requestUploadUrl({ original_filename: file.name, ext: extension })
       .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
@@ -36,14 +36,18 @@ export class ImagesService {
    * the new bytes are in place.
    */
   replaceImage(id: number, file: File): Observable<ReplacementInfo> {
-    const extension = file.name.includes('.') ? file.name.split('.').pop() ?? '' : '';
+    const extension = file.name.includes('.') ? (file.name.split('.').pop() ?? '') : '';
     return this.images
       .requestReplacement(id, extension)
       .pipe(
         switchMap((info) =>
           this.images
             .upload(info.upload_url, file)
-            .pipe(switchMap(() => this.images.applyReplacement(id, info.file_name).pipe(map(() => info)))),
+            .pipe(
+              switchMap(() =>
+                this.images.applyReplacement(id, info.file_name).pipe(map(() => info)),
+              ),
+            ),
         ),
       );
   }

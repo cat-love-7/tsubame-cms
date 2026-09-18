@@ -24,8 +24,7 @@ describe('EditSchema', () => {
       imports: [EditSchema],
       // The layout preview renders `ValueField`, which uploads images.
       providers: [provideHttpClient(), provideHttpClientTesting()],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(EditSchema);
     component = fixture.componentInstance;
@@ -101,7 +100,9 @@ describe('EditSchema', () => {
     expect(first.field_type).not.toBe(second.field_type);
 
     (first.field_type as { Text: { max_length?: number } }).Text.max_length = 20;
-    expect((second.field_type as { Text: { max_length?: number } }).Text.max_length).toBeUndefined();
+    expect(
+      (second.field_type as { Text: { max_length?: number } }).Text.max_length,
+    ).toBeUndefined();
   });
 
   // What the form held is not what the server reads: a limit typed into a text input arrives as a
@@ -111,7 +112,9 @@ describe('EditSchema', () => {
     fresh.componentInstance.schema = [
       {
         name: 'title',
-        field_type: { Text: { max_length: '8' as unknown as number, min_length: '' as unknown as number } },
+        field_type: {
+          Text: { max_length: '8' as unknown as number, min_length: '' as unknown as number },
+        },
         required: false,
         ...DefaultFieldLayout,
       },

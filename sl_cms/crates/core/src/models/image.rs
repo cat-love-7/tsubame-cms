@@ -1,6 +1,5 @@
 use crate::models::identity::UintId;
 
-
 pub type ImageId = UintId<Image>;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
@@ -51,7 +50,9 @@ impl ImageEntry {
 ///
 /// A collection item is named by its collection and its id; a single page is named by the page,
 /// because it has exactly one item and the id would say nothing.
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub struct ImageOwner {
     pub kind: ImageOwnerKind,
     pub name: String,
@@ -59,7 +60,9 @@ pub struct ImageOwner {
     pub item: Option<u64>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageOwnerKind {
     CollectionItem,
@@ -102,9 +105,10 @@ impl ImageOwner {
     pub fn from_storage_key(key: &str) -> Option<Self> {
         let mut parts = key.splitn(3, ':');
         match (parts.next(), parts.next(), parts.next()) {
-            (Some("collection"), Some(name), Some(item)) => item.parse().ok().map(|item| {
-                ImageOwner::collection_item(&unescape(name), item)
-            }),
+            (Some("collection"), Some(name), Some(item)) => item
+                .parse()
+                .ok()
+                .map(|item| ImageOwner::collection_item(&unescape(name), item)),
             (Some("page"), Some(name), _) => Some(ImageOwner::single_page(&unescape(name))),
             _ => None,
         }
@@ -133,7 +137,10 @@ pub fn referenced_images<T>(item: &crate::models::field::FieldValueMap<T>) -> Ve
     found.into_iter().collect()
 }
 
-fn collect_images(value: &crate::models::field::FieldValue, found: &mut std::collections::BTreeSet<ImageId>) {
+fn collect_images(
+    value: &crate::models::field::FieldValue,
+    found: &mut std::collections::BTreeSet<ImageId>,
+) {
     use crate::models::field::FieldValue;
     match value {
         FieldValue::Image(Some(id)) => {
@@ -165,7 +172,10 @@ pub fn image_ids_in_markdown(text: &str) -> Vec<ImageId> {
     let mut rest = text;
     while let Some(at) = rest.find(MARKER) {
         rest = &rest[at + MARKER.len()..];
-        let digits: String = rest.chars().take_while(|character| character.is_ascii_digit()).collect();
+        let digits: String = rest
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .collect();
         if digits.is_empty() {
             // Not a link: keep looking from where the marker was left behind.
             continue;
@@ -184,8 +194,16 @@ mod reference_tests {
     use crate::models::field::{CompositeFieldValue, FieldValue, FieldValueMap};
     use std::collections::HashMap;
 
-    fn values(entries: Vec<(&str, FieldValue)>) -> FieldValueMap<Vec<crate::models::schema::FieldSchema>> {
-        FieldValueMap(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect(), std::marker::PhantomData)
+    fn values(
+        entries: Vec<(&str, FieldValue)>,
+    ) -> FieldValueMap<Vec<crate::models::schema::FieldSchema>> {
+        FieldValueMap(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+            std::marker::PhantomData,
+        )
     }
 
     #[test]
@@ -210,7 +228,10 @@ mod reference_tests {
     #[test]
     fn image_fields_are_read_wherever_they_sit() {
         let mut composite_values = HashMap::new();
-        composite_values.insert("photo".to_string(), FieldValue::Image(Some(ImageId::from_u64(3))));
+        composite_values.insert(
+            "photo".to_string(),
+            FieldValue::Image(Some(ImageId::from_u64(3))),
+        );
         let item = values(vec![
             ("cover", FieldValue::Image(Some(ImageId::from_u64(1)))),
             ("empty", FieldValue::Image(None)),
@@ -238,11 +259,17 @@ mod reference_tests {
     fn markdown_is_read_for_the_durable_link_only() {
         let text = "See ![one](/images/by-id/4) and [two](https://cms.example.com/images/by-id/12).\n\
                     Not this: /images/3ec3df37.png or /images/by-id/ or /images/by-id/abc";
-        let found: Vec<u64> = image_ids_in_markdown(text).into_iter().map(|id| *id).collect();
+        let found: Vec<u64> = image_ids_in_markdown(text)
+            .into_iter()
+            .map(|id| *id)
+            .collect();
         assert_eq!(found, vec![4, 12]);
 
         // The same link written twice is one image.
-        assert_eq!(image_ids_in_markdown("/images/by-id/4 /images/by-id/4").len(), 2);
+        assert_eq!(
+            image_ids_in_markdown("/images/by-id/4 /images/by-id/4").len(),
+            2
+        );
         assert!(image_ids_in_markdown("no links here").is_empty());
     }
 }
@@ -298,12 +325,12 @@ pub fn is_safe_display_name(name: &str) -> bool {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct NewImageRequest{
+pub struct NewImageRequest {
     pub original_filename: String,
     pub ext: String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct NewImageInfo{
+pub struct NewImageInfo {
     pub id: ImageId,
     /// Where to PUT the bytes. On-premises this points at the CMS (with a one-shot token in
     /// the query), on AWS at S3 with a signature — either way it is **short-lived** and is not
@@ -413,7 +440,13 @@ mod tests {
 
     #[test]
     fn rejects_extension_containing_path_characters() {
-        for ext in ["../../etc/passwd", "a/b", "..\\..\\x", "p n g", "waytoolongextension"] {
+        for ext in [
+            "../../etc/passwd",
+            "a/b",
+            "..\\..\\x",
+            "p n g",
+            "waytoolongextension",
+        ] {
             assert!(!is_safe_image_ext(ext), "expected {ext:?} to be rejected");
         }
     }
@@ -424,7 +457,10 @@ mod tests {
         assert_eq!(sanitize_ext(".PNG").as_deref(), Some("png"));
         assert_eq!(sanitize_ext("jpeg").as_deref(), Some("jpeg"));
         // Path separators and dots cannot survive.
-        assert_eq!(sanitize_ext("../../etc/passwd").as_deref(), Some("etcpasswd"));
+        assert_eq!(
+            sanitize_ext("../../etc/passwd").as_deref(),
+            Some("etcpasswd")
+        );
         assert_eq!(sanitize_ext("a/b").as_deref(), Some("ab"));
         assert_eq!(sanitize_ext("..\\..\\x").as_deref(), Some("x"));
         // Nothing usable left -> no extension.

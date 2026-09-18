@@ -23,7 +23,8 @@ const DEFAULT_PAGE_SIZE = 25;
 
 @Component({
   selector: 'app-collection-item-list',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     ItemStatusBadge,
     MatButtonModule,
     MatIconModule,
@@ -184,8 +185,7 @@ export class CollectionItemList {
   }
 
   onPage(event: PageEvent) {
-    const moved =
-      event.pageIndex !== this.pageIndex() || event.pageSize !== this.pageSize();
+    const moved = event.pageIndex !== this.pageIndex() || event.pageSize !== this.pageSize();
     this.pageIndex.set(event.pageIndex);
     this.pageSize.set(event.pageSize);
     // The paginator also emits when it clamps itself (e.g. after the row count shrinks);
@@ -230,9 +230,7 @@ export class CollectionItemList {
   }
 
   toggleAll() {
-    this.selected.set(
-      this.allSelected() ? new Set() : new Set(this.items().map(([id]) => id)),
-    );
+    this.selected.set(this.allSelected() ? new Set() : new Set(this.items().map(([id]) => id)));
   }
 
   /**
@@ -253,34 +251,34 @@ export class CollectionItemList {
       .setItemsStatus(started.name, ids, status)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-      next: (outcomes) => {
-        if (!this.stillOn(started)) {
-          return;
-        }
-        this.error.set(null);
-        const refusals: { id: number; code: string; message: string }[] = [];
-        // The server answered with the new metadata, so the badges move without a reload.
-        const metadata = { ...this.metadata() };
-        let changed = 0;
-        for (const outcome of outcomes) {
-          if (outcome.outcome === 'changed') {
-            changed += 1;
-            metadata[String(outcome.id)] = outcome.metadata;
-          } else {
-            refusals.push({ id: outcome.id, code: outcome.code, message: outcome.message });
+        next: (outcomes) => {
+          if (!this.stillOn(started)) {
+            return;
           }
-        }
-        this.refusals.set(refusals);
-        this.selected.set(new Set());
-        this.metadata.set(metadata);
-        this.batchReport.set({ changed, refused: refusals.length });
-      },
-      error: (e) => {
-        if (this.stillOn(started)) {
-          this.error.set(failure('content.failedToChangePublished', e));
-        }
-      },
-    });
+          this.error.set(null);
+          const refusals: { id: number; code: string; message: string }[] = [];
+          // The server answered with the new metadata, so the badges move without a reload.
+          const metadata = { ...this.metadata() };
+          let changed = 0;
+          for (const outcome of outcomes) {
+            if (outcome.outcome === 'changed') {
+              changed += 1;
+              metadata[String(outcome.id)] = outcome.metadata;
+            } else {
+              refusals.push({ id: outcome.id, code: outcome.code, message: outcome.message });
+            }
+          }
+          this.refusals.set(refusals);
+          this.selected.set(new Set());
+          this.metadata.set(metadata);
+          this.batchReport.set({ changed, refused: refusals.length });
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToChangePublished', e));
+          }
+        },
+      });
   }
 
   /** Whether the screen is still on the collection a slow answer was about, as it was then. */

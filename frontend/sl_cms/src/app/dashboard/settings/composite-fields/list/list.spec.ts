@@ -13,8 +13,7 @@ describe('CompositeFieldList', () => {
     await TestBed.configureTestingModule({
       imports: [CompositeFieldList],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(CompositeFieldList);
     component = fixture.componentInstance;

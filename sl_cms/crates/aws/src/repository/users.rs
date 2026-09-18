@@ -7,7 +7,7 @@
 //! settles the race.
 
 use super::*;
-use sl_cms_core::models::user::{normalize_username, User, UserId};
+use sl_cms_core::models::user::{User, UserId, normalize_username};
 use sl_cms_core::repositories::user_repository::UserRepository;
 
 impl AwsRepository {
@@ -37,7 +37,8 @@ async fn reserve_username(inner: &Inner, username: &str, id: &UserId) -> Result<
         .send()
         .await
         .map_err(|e| -> BoxError {
-            if e.as_service_error().and_then(|e| e.code()) == Some("ConditionalCheckFailedException")
+            if e.as_service_error().and_then(|e| e.code())
+                == Some("ConditionalCheckFailedException")
             {
                 format!("the username {username:?} is already taken").into()
             } else {
@@ -78,7 +79,11 @@ async fn release_username(inner: &Inner, username: &str, id: &UserId) -> Result<
 
 /// Claim `external_id` for `id`, the same way a username is claimed: an identity provider
 /// identifier resolves to exactly one account.
-async fn reserve_external_id(inner: &Inner, external_id: &str, id: &UserId) -> Result<(), BoxError> {
+async fn reserve_external_id(
+    inner: &Inner,
+    external_id: &str,
+    id: &UserId,
+) -> Result<(), BoxError> {
     inner
         .client
         .put_item()
@@ -90,9 +95,11 @@ async fn reserve_external_id(inner: &Inner, external_id: &str, id: &UserId) -> R
         .send()
         .await
         .map_err(|e| -> BoxError {
-            if e.as_service_error().and_then(|e| e.code()) == Some("ConditionalCheckFailedException")
+            if e.as_service_error().and_then(|e| e.code())
+                == Some("ConditionalCheckFailedException")
             {
-                format!("the provider identity {external_id:?} already belongs to an account").into()
+                format!("the provider identity {external_id:?} already belongs to an account")
+                    .into()
             } else {
                 format!("dynamodb put_item failed: {}", describe(&e)).into()
             }
@@ -101,7 +108,11 @@ async fn reserve_external_id(inner: &Inner, external_id: &str, id: &UserId) -> R
 }
 
 /// Give up an identifier, but only if it is still ours.
-async fn release_external_id(inner: &Inner, external_id: &str, id: &UserId) -> Result<(), BoxError> {
+async fn release_external_id(
+    inner: &Inner,
+    external_id: &str,
+    id: &UserId,
+) -> Result<(), BoxError> {
     let answer = inner
         .client
         .delete_item()
@@ -135,19 +146,11 @@ impl UserRepository for AwsRepository {
         }
     }
 
-    async fn get_user_from_external_id(
-        &self,
-        external_id: &str,
-    ) -> Result<Option<User>, BoxError> {
+    async fn get_user_from_external_id(&self, external_id: &str) -> Result<Option<User>, BoxError> {
         let inner = self.inner.clone();
         let external_id = external_id.to_string();
         async move {
-            let Some(id) = read(
-                &inner,
-                key::USER_INDEX,
-                &key::external_id(&external_id),
-            )
-            .await?
+            let Some(id) = read(&inner, key::USER_INDEX, &key::external_id(&external_id)).await?
             else {
                 return Ok(None);
             };

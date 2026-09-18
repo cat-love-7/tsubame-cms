@@ -19,10 +19,10 @@
 use aws_sdk_dynamodb::Client;
 
 use sl_cms_core::app_module::AppModule;
+use sl_cms_core::auth::cognito::{CognitoSettings, CognitoVerifier, HttpJwks};
 use sl_cms_core::auth::token::TokenIssuer;
 use sl_cms_core::config::Config;
 use sl_cms_core::password_reset::PasswordResetIssuer;
-use sl_cms_core::auth::cognito::{CognitoSettings, CognitoVerifier, HttpJwks};
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
 pub mod lambda;
@@ -37,8 +37,11 @@ pub use settings::{AwsSettings, ImageDelivery};
 ///
 /// The token endpoint lives on the pool's own domain, which is what the sign-in URL names, so the
 /// deployment does not need to be told it twice.
-fn cognito_login(settings: &AwsSettings) -> Option<sl_cms_core::http::cognito_login::TokenEndpoint> {
-    let endpoint = sl_cms_core::http::cognito_login::token_endpoint(settings.login_url.as_deref()?)?;
+fn cognito_login(
+    settings: &AwsSettings,
+) -> Option<sl_cms_core::http::cognito_login::TokenEndpoint> {
+    let endpoint =
+        sl_cms_core::http::cognito_login::token_endpoint(settings.login_url.as_deref()?)?;
     Some(sl_cms_core::http::cognito_login::TokenEndpoint::new(
         settings.client_id.clone(),
         endpoint,
@@ -62,15 +65,15 @@ fn emulator_credentials(settings: &AwsSettings) -> Option<aws_sdk_dynamodb::conf
         return None;
     }
     match (&settings.access_key_id, &settings.secret_access_key) {
-        (Some(access_key_id), Some(secret_access_key)) => Some(
-            aws_sdk_dynamodb::config::Credentials::new(
+        (Some(access_key_id), Some(secret_access_key)) => {
+            Some(aws_sdk_dynamodb::config::Credentials::new(
                 access_key_id.clone(),
                 secret_access_key.clone(),
                 settings.session_token.clone(),
                 None,
                 "cms",
-            ),
-        ),
+            ))
+        }
         _ => None,
     }
 }
@@ -78,7 +81,9 @@ fn emulator_credentials(settings: &AwsSettings) -> Option<aws_sdk_dynamodb::conf
 /// Build a DynamoDB client pointed at `settings`, which may be a local emulator.
 async fn dynamodb_client(settings: &AwsSettings) -> Client {
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(aws_sdk_dynamodb::config::Region::new(settings.region.clone()))
+        .region(aws_sdk_dynamodb::config::Region::new(
+            settings.region.clone(),
+        ))
         .endpoint_url(settings.endpoint_url());
     if let Some(credentials) = emulator_credentials(settings) {
         loader = loader.credentials_provider(credentials);
@@ -235,8 +240,7 @@ pub fn build_router_with(
         // The durable link to an image: the id resolves to wherever the bytes are now. Here that
         // is object storage, so this points at it rather than passing bytes through the API.
         .merge(
-            axum::Router::new()
-                .route("/images/by-id/{id}", axum::routing::get(redirect_to_image)),
+            axum::Router::new().route("/images/by-id/{id}", axum::routing::get(redirect_to_image)),
         );
     let extra_protected = sl_cms_core::http::password_auth::unavailable_protected(message);
 
@@ -260,10 +264,7 @@ async fn redirect_to_image(
         .await?
     {
         Some(url) => Ok((
-            [(
-                axum::http::header::CACHE_CONTROL,
-                "no-cache",
-            )],
+            [(axum::http::header::CACHE_CONTROL, "no-cache")],
             axum::response::Redirect::temporary(&url),
         )
             .into_response()),
@@ -428,8 +429,7 @@ fn run_in_emulator(script: &str) {
     // The compose file is at the root of the crate's workspace (`sl_cms/`), which is two levels up
     // from this crate. A path that does not resolve is a mistake in this line, not a missing
     // emulator.
-    let compose =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
+    let compose = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docker-compose.yml");
     assert!(
         compose.is_file(),
         "the compose file should be at {}",
@@ -625,8 +625,16 @@ mod secret_tests {
     fn a_secret_is_fetched_only_when_the_deployment_names_one() {
         let arn = "arn:aws:secretsmanager:eu-west-1:1:secret:sl-cms/jwt-AbCdEf";
         assert_eq!(secret_arn_to_fetch(false, Some(arn)), Some(arn));
-        assert_eq!(secret_arn_to_fetch(false, Some("   ")), None, "blank is not an ARN");
-        assert_eq!(secret_arn_to_fetch(false, None), None, "a local run has neither");
+        assert_eq!(
+            secret_arn_to_fetch(false, Some("   ")),
+            None,
+            "blank is not an ARN"
+        );
+        assert_eq!(
+            secret_arn_to_fetch(false, None),
+            None,
+            "a local run has neither"
+        );
         assert_eq!(
             secret_arn_to_fetch(true, Some(arn)),
             None,

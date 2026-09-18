@@ -16,7 +16,8 @@ import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 @Component({
   selector: 'app-single-page-schema-list',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,

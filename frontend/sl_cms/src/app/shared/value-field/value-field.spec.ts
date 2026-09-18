@@ -32,7 +32,10 @@ const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
     field('aside', { Text: {} }, { width: 4 }),
   ],
   // A block that holds blocks: the definition reaches itself through an array.
-  tree: [field('line', { Text: {} }), field('children', { Array: [{ CompositeField: { id: 'tree' } }] })],
+  tree: [
+    field('line', { Text: {} }),
+    field('children', { Array: [{ CompositeField: { id: 'tree' } }] }),
+  ],
 };
 
 const LIBRARY: ImageEntry[] = [
@@ -61,7 +64,11 @@ class StubImagesService {
   };
   uploadImage = (file: File) => {
     const index = this.uploaded.push(file.name);
-    return of({ id: 100 + index, upload_url: `/images/${file.name}?key=k`, url: `/images/${file.name}` });
+    return of({
+      id: 100 + index,
+      upload_url: `/images/${file.name}?key=k`,
+      url: `/images/${file.name}`,
+    });
   };
   deleteImage = () => of(void 0);
 }
@@ -128,9 +135,7 @@ describe('ValueField', () => {
       expect(label.textContent).toContain(schema.name);
       const element = query(control) as HTMLElement;
       expect(element, `${schema.name}: ${control}`).toBeTruthy();
-      expect(element.getAttribute('aria-labelledby'), `${schema.name}: ${control}`).toBe(
-        label.id,
-      );
+      expect(element.getAttribute('aria-labelledby'), `${schema.name}: ${control}`).toBe(label.id);
     }
 
     // A select keeps its own aria-labelledby (it points at the value it shows), so the name goes
@@ -208,10 +213,10 @@ describe('ValueField', () => {
   it('emits the bare object for a composite value, unwrapping the read wrapper', () => {
     // Reads wrap a composite as `{id, values}`; the wrapper must not leak into sub-fields
     // or back out onto the wire.
-    const component = create(
-      field('seo', { CompositeField: { id: 'seo' } }),
-      { id: 'seo', values: { description: 'meta' } },
-    );
+    const component = create(field('seo', { CompositeField: { id: 'seo' } }), {
+      id: 'seo',
+      values: { description: 'meta' },
+    });
     const emitted: FieldValue[] = [];
     component.valueChange.subscribe((value) => emitted.push(value));
 
@@ -355,10 +360,7 @@ describe('ValueField', () => {
   });
 
   it('offers to take the slug from the field the schema names', () => {
-    const component = create(
-      field('address', { Slug: { generate_from: 'title' } }),
-      '',
-    );
+    const component = create(field('address', { Slug: { generate_from: 'title' } }), '');
     component.siblings = { title: 'Hello World' };
     const values: FieldValue[] = [];
     component.valueChange.subscribe((value) => values.push(value));
@@ -393,9 +395,7 @@ describe('ValueField', () => {
     expect(problems[0]).toEqual(t('errors.invalid_slug', { field: 'address' }));
 
     component.update('a'.repeat(201));
-    expect(problems[1]).toEqual(
-      t('content.valueTooLong', { field: 'address', max: 200 }),
-    );
+    expect(problems[1]).toEqual(t('content.valueTooLong', { field: 'address', max: 200 }));
 
     // Empty is allowed (unless the field is required), and the cap is the type's.
     component.update('');
@@ -490,7 +490,9 @@ describe('ValueField', () => {
     component.openLibrary(false);
     fixture.detectChanges();
 
-    const thumbs = fixture.nativeElement.querySelectorAll('.thumb') as NodeListOf<HTMLButtonElement>;
+    const thumbs = fixture.nativeElement.querySelectorAll(
+      '.thumb',
+    ) as NodeListOf<HTMLButtonElement>;
     expect(thumbs.length).toBe(2);
 
     thumbs[0].click();
@@ -532,7 +534,9 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     // Multi mode: clicking ticks rather than choosing, until the add button is pressed.
-    const thumbs = fixture.nativeElement.querySelectorAll('.thumb') as NodeListOf<HTMLButtonElement>;
+    const thumbs = fixture.nativeElement.querySelectorAll(
+      '.thumb',
+    ) as NodeListOf<HTMLButtonElement>;
     thumbs[0].click();
     thumbs[1].click();
     fixture.detectChanges();
@@ -641,10 +645,9 @@ describe('ValueField', () => {
   });
 
   it('edits an image array that lives inside a composite', () => {
-    const component = create(
-      field('block', { CompositeField: { id: 'gallery' } }),
-      { images: [{ id: 3, url: '/images/logo.png' }] } as unknown as FieldValue,
-    );
+    const component = create(field('block', { CompositeField: { id: 'gallery' } }), {
+      images: [{ id: 3, url: '/images/logo.png' }],
+    } as unknown as FieldValue);
     fixture.detectChanges();
 
     // Sub-fields are edited by this same component, so the nested array gets the same UI.
@@ -653,7 +656,9 @@ describe('ValueField', () => {
 
     (query('fieldset.composite button.array-add') as HTMLButtonElement).click();
     fixture.detectChanges();
-    (fixture.nativeElement.querySelectorAll('fieldset.composite .thumb')[1] as HTMLButtonElement).click();
+    (
+      fixture.nativeElement.querySelectorAll('fieldset.composite .thumb')[1] as HTMLButtonElement
+    ).click();
     fixture.detectChanges();
     (query('fieldset.composite button.array-add-selected') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -762,7 +767,9 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(1);
-    expect(fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length).toBe(0);
+    expect(
+      fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length,
+    ).toBe(0);
     expect(
       (fixture.nativeElement.querySelector('.composite-element .note') as HTMLElement)?.textContent,
     ).toContain('No elements yet');
@@ -780,7 +787,9 @@ describe('ValueField', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.composite-element').length).toBe(2);
-    expect(fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length).toBe(1);
+    expect(
+      fixture.nativeElement.querySelectorAll('.composite-element .composite-element').length,
+    ).toBe(1);
   });
 
   it('leaves a mixed array to the JSON view, which accepts composite elements', () => {

@@ -38,10 +38,13 @@ class StubSinglePagesService {
   public heldPreviews?: Subject<{ path: string; expires_at: string }>;
 
   createPreviewLink(_name: string): Observable<{ path: string; expires_at: string }> {
-    return this.heldPreviews ?? of({
-      path: '/preview/single-pages/home?token=1758000000.abc123',
-      expires_at: '2026-09-13T12:00:00Z',
-    });
+    return (
+      this.heldPreviews ??
+      of({
+        path: '/preview/single-pages/home?token=1758000000.abc123',
+        expires_at: '2026-09-13T12:00:00Z',
+      })
+    );
   }
 
   getPageSchema(name: string): Observable<unknown> {
@@ -78,14 +81,28 @@ class StubSinglePagesService {
 
   publishPage(name: string): Observable<ItemMetadata> {
     this.published.push(name);
-    return of({ status: 'published', published_at: '2024-01-01T00:00:00Z',
-      last_published_at: '2024-01-01T00:00:00Z', published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z',
+      published_by: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      has_draft: false,
+    });
   }
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     this.unpublished.push(name);
-    return of({ status: 'draft', published_at: null,
-    last_published_at: null, published_by: null, created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z', has_draft: false });
+    return of({
+      status: 'draft',
+      published_at: null,
+      last_published_at: null,
+      published_by: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      has_draft: false,
+    });
   }
 }
 
@@ -302,7 +319,7 @@ describe('SinglePageEdit', () => {
 
     expect(component.notice()).toBeNull();
     expect(component.error()).toBeNull();
-    expect(component.hasUnsavedChanges()).toBe(false, );
+    expect(component.hasUnsavedChanges()).toBe(false);
     expect(component.values()).toEqual({ title: 'Home' });
   });
 
@@ -430,7 +447,7 @@ describe('SinglePageEdit', () => {
       published_by: { id: 'u1', username: 'admin@example.com' },
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
-    has_draft: false,
+      has_draft: false,
     };
     const fresh = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();

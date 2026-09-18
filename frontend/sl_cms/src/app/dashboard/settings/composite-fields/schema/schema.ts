@@ -83,25 +83,25 @@ export class CompositeFieldSchema implements HasUnsavedChanges {
       .updateCompositeFieldSchema(started.id, schema)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-      next: () => {
-        if (!this.stillOn(started)) {
-          return;
-        }
-        // Content forms read the definitions from a cache, so it has to be dropped or they
-        // would keep rendering the previous shape.
-        this.compositeFields.invalidate();
-        this.error.set(null);
-        this.status.set(t('common.saved'));
-        this.saved.set(fingerprint(this.schema()));
-      },
-      error: (e) => {
-        if (!this.stillOn(started)) {
-          return;
-        }
-        this.status.set(null);
-        this.error.set(failure('content.saveFailed', e));
-      },
-    });
+        next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          // Content forms read the definitions from a cache, so it has to be dropped or they
+          // would keep rendering the previous shape.
+          this.compositeFields.invalidate();
+          this.error.set(null);
+          this.status.set(t('common.saved'));
+          this.saved.set(fingerprint(this.schema()));
+        },
+        error: (e) => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          this.status.set(null);
+          this.error.set(failure('content.saveFailed', e));
+        },
+      });
   }
 
   /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */

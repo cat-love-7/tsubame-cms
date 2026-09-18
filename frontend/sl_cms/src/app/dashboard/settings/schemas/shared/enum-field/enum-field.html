@@ -5,18 +5,19 @@
       <mat-chip-row
         (removed)="removeEnumOption(value)"
         [editable]="true"
-        (edited)="editEnumOption(value,$event)"
+        (edited)="editEnumOption(value, $event)"
       >
         <button matChipEdit [attr.aria-label]="'schema.editEnumValue' | transloco: { value }">
           <mat-icon>edit</mat-icon>
         </button>
-        {{value}}
+        {{ value }}
         <button matChipRemove [attr.aria-label]="'schema.removeEnumValue' | transloco: { value }">
           <mat-icon>cancel</mat-icon>
         </button>
       </mat-chip-row>
     }
-    <input [placeholder]="'schema.newEnumValue' | transloco"
+    <input
+      [placeholder]="'schema.newEnumValue' | transloco"
       [matChipInputFor]="chipGrid"
       [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
       [matChipInputAddOnBlur]="addOnBlur"

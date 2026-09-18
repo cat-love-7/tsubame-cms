@@ -47,7 +47,8 @@ interface ResizeState {
 
 @Component({
   selector: 'app-edit-schema',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     Field,
     MatIconModule,
     MatInputModule,

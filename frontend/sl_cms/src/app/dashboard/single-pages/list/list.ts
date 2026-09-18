@@ -21,7 +21,15 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
  */
 @Component({
   selector: 'app-single-page-list',
-  imports: [ MatTooltipModule,ItemStatusBadge, MatButtonModule, MatIconModule, MessagePipe, RouterLink, TranslocoPipe],
+  imports: [
+    MatTooltipModule,
+    ItemStatusBadge,
+    MatButtonModule,
+    MatIconModule,
+    MessagePipe,
+    RouterLink,
+    TranslocoPipe,
+  ],
   templateUrl: './list.html',
   styleUrl: './list.scss',
 })
@@ -87,9 +95,7 @@ export class SinglePageList {
   }
 
   private setPublished(name: string, published: boolean) {
-    const request = published
-      ? this.pages.publishPage(name)
-      : this.pages.unpublishPage(name);
+    const request = published ? this.pages.publishPage(name) : this.pages.unpublishPage(name);
     request.subscribe({
       next: (metadata) => {
         this.error.set(null);

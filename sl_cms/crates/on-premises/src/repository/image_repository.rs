@@ -3,12 +3,11 @@ use std::path::PathBuf;
 
 use rkv::{StoreOptions, Value};
 
+use crate::repository::{IMAGE_STORE, RkvRepository};
 use sl_cms_core::models::image::{
-    is_safe_file_name, sanitize_ext, Image, ImageId, NewImageInfo, NewImageRequest,
-    ReplacementInfo,
-    ImageOwner,
+    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo, is_safe_file_name,
+    sanitize_ext,
 };
-use crate::repository::{RkvRepository, IMAGE_STORE};
 use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
 use sl_cms_core::repositories::local_image_bytes::LocalImageBytes;
 
@@ -115,7 +114,10 @@ impl ImageRepository for RkvRepository {
         Ok(images)
     }
 
-    async fn generate_image_upload_url(&self, upload_info: &NewImageRequest) -> Result<NewImageInfo, BoxError> {
+    async fn generate_image_upload_url(
+        &self,
+        upload_info: &NewImageRequest,
+    ) -> Result<NewImageInfo, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
@@ -142,8 +144,13 @@ impl ImageRepository for RkvRepository {
             deleted_at: None,
             pending_replacement: None,
         };
-        store.put(&mut writer, new_id.to_le_bytes(), &Value::Str(&serde_json::to_string(&image_data)?))?;
-        self.counter_store.put(&mut writer, "image", &Value::U64(new_id))?;
+        store.put(
+            &mut writer,
+            new_id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&image_data)?),
+        )?;
+        self.counter_store
+            .put(&mut writer, "image", &Value::U64(new_id))?;
         writer.commit()?;
 
         // The capability token must be registered, otherwise the upload endpoint can
@@ -321,10 +328,7 @@ impl ImageRepository for RkvRepository {
         let before_set: std::collections::BTreeSet<u64> = before.iter().map(|id| **id).collect();
         let mut writer = env.write()?;
         for id in before_set.difference(&after) {
-            store.delete(
-                &mut writer,
-                format!("{owner_prefix}image|{id}").as_bytes(),
-            )?;
+            store.delete(&mut writer, format!("{owner_prefix}image|{id}").as_bytes())?;
             store.delete(
                 &mut writer,
                 image_owner_key(&ImageId::from_u64(*id), owner).as_bytes(),
@@ -407,7 +411,6 @@ impl ImageRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
-
 }
 
 /// The bytes themselves: this adapter stores them on disk and hands out its own upload URL,

@@ -1,5 +1,15 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, signal } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnInit,
+  Output,
+  SimpleChanges,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -61,7 +71,8 @@ let nextValueFieldId = 0;
 
 @Component({
   selector: 'app-value-field',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatCheckboxModule,
@@ -406,7 +417,11 @@ export class ValueField implements OnInit, OnChanges {
     const max = this.maxLength();
     const min = this.minLength();
     // Nothing to say about a field the schema left unlimited, and nothing to clear either.
-    if (this.textOptions() === null || typeof value !== 'string' || (max === null && min === null)) {
+    if (
+      this.textOptions() === null ||
+      typeof value !== 'string' ||
+      (max === null && min === null)
+    ) {
       return;
     }
     if (max !== null && [...value].length > max) {
@@ -703,7 +718,9 @@ export class ValueField implements OnInit, OnChanges {
   isImageArray(): boolean {
     const type = this.field.field_type;
     return (
-      isArrayFieldSchema(type) && type.Array.length > 0 && type.Array.every((item) => item === 'Image')
+      isArrayFieldSchema(type) &&
+      type.Array.length > 0 &&
+      type.Array.every((item) => item === 'Image')
     );
   }
 

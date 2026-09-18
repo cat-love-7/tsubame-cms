@@ -69,7 +69,10 @@ describe('Accounts', () => {
         provideHttpClientTesting(),
         { provide: UsersService, useValue: stub },
         { provide: AuthService, useValue: { user: () => null, isAdmin: () => true } },
-        { provide: CollectionsService, useValue: { getAllCollectionNames: () => of(['blog', 'news']) } },
+        {
+          provide: CollectionsService,
+          useValue: { getAllCollectionNames: () => of(['blog', 'news']) },
+        },
         { provide: SinglePagesService, useValue: { listPageNames: () => of(['home']) } },
       ],
     }).compileComponents();
@@ -118,7 +121,7 @@ describe('Accounts', () => {
     expect(fixture.componentInstance.resetFor()).toBe('editor@example.com');
   });
 
-  it('lists an account\'s overrides in its row', () => {
+  it("lists an account's overrides in its row", () => {
     const user = account({
       collection_permissions: { blog: { can_view: true, can_edit: true, can_publish: false } },
       single_page_permissions: { home: { can_view: false, can_edit: false, can_publish: false } },
@@ -205,5 +208,4 @@ describe('Accounts', () => {
 
     expect(stub.removed).toEqual(['user-1']);
   });
-
 });

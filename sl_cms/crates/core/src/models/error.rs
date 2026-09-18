@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use std::error::Error;
+use std::fmt::Display;
 
 /// The codes that name what went wrong, where the status alone could not say it usefully.
 ///
@@ -145,7 +145,11 @@ impl FieldRefusal {
 
     /// A required field held nothing.
     pub fn required(field: &str) -> Self {
-        Self::new("field_required", field, format!("field {field} is required"))
+        Self::new(
+            "field_required",
+            field,
+            format!("field {field} is required"),
+        )
     }
 
     pub fn too_long(field: &str, max_length: usize) -> Self {
@@ -382,7 +386,10 @@ mod tests {
         assert_eq!(error.status_code, STATUS_BAD_REQUEST);
         assert_eq!(error.code, "field_too_long");
         assert_eq!(error.field.as_deref(), Some("seo.description"));
-        assert_eq!(error.message, "field seo.description exceeds maximum length of 20");
+        assert_eq!(
+            error.message,
+            "field seo.description exceeds maximum length of 20"
+        );
         assert!(ERROR_CODES.contains(&error.code));
     }
 
@@ -391,7 +398,6 @@ mod tests {
         assert_eq!(HttpError::Conflict("taken"), HttpError::new(409, "taken"));
         assert_ne!(HttpError::Conflict("taken"), HttpError::Conflict("other"));
     }
-
 
     /// The client's copy of the lists, split the same way. A Rust test owns it so the two cannot
     /// drift: adding a code here without adding it there fails, and the frontend test then fails
@@ -424,7 +430,10 @@ mod tests {
             .collect();
         both.sort_unstable();
         both.dedup();
-        assert_eq!(both.len(), SITUATIONAL_ERROR_CODES.len() + STATUS_ERROR_CODES.len());
+        assert_eq!(
+            both.len(),
+            SITUATIONAL_ERROR_CODES.len() + STATUS_ERROR_CODES.len()
+        );
 
         let mut all = ERROR_CODES.to_vec();
         all.sort_unstable();
@@ -435,7 +444,10 @@ mod tests {
     fn every_status_has_a_code_from_the_list() {
         for status in [400, 401, 403, 404, 409, 429, 500, 501, 418] {
             let code = default_code(status);
-            assert!(ERROR_CODES.contains(&code), "{status} → {code} is not published");
+            assert!(
+                ERROR_CODES.contains(&code),
+                "{status} → {code} is not published"
+            );
         }
     }
 }

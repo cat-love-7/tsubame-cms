@@ -5,7 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 
 use crate::app_module::Storage;
-use crate::http::{require_admin, AppState, AuthenticatedUser};
+use crate::http::{AppState, AuthenticatedUser, require_admin};
 use crate::models::error::HttpError;
 use crate::models::field::CompositeFieldSchema;
 use crate::models::schema::CompositeFieldId;
@@ -29,7 +29,10 @@ async fn list_composite_field_schemas<R: Storage>(
     State(module): State<AppState<R>>,
 ) -> Result<impl IntoResponse, HttpError> {
     Ok(Json(
-        module.composite_field_service.list_composite_field_schemas().await?,
+        module
+            .composite_field_service
+            .list_composite_field_schemas()
+            .await?,
     ))
 }
 
@@ -39,7 +42,10 @@ async fn get_composite_field_schema<R: Storage>(
 ) -> Result<impl IntoResponse, HttpError> {
     let id = CompositeFieldId::from(id.as_str());
     Ok(Json(
-        module.composite_field_service.get_composite_field_schema(&id).await?,
+        module
+            .composite_field_service
+            .get_composite_field_schema(&id)
+            .await?,
     ))
 }
 
@@ -54,7 +60,8 @@ async fn add_composite_field_schema<R: Storage>(
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service
-        .add_composite_field_schema(&id, &schema).await?;
+        .add_composite_field_schema(&id, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -68,7 +75,8 @@ async fn update_composite_field_schema<R: Storage>(
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service
-        .update_composite_field_schema(&id, &schema).await?;
+        .update_composite_field_schema(&id, &schema)
+        .await?;
     Ok(StatusCode::OK)
 }
 
@@ -81,6 +89,7 @@ async fn delete_composite_field_schema<R: Storage>(
     let id = CompositeFieldId::from(id.as_str());
     module
         .composite_field_service
-        .delete_composite_field_schema(&id).await?;
+        .delete_composite_field_schema(&id)
+        .await?;
     Ok(StatusCode::OK)
 }

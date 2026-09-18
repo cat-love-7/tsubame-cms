@@ -209,7 +209,9 @@ mod tests {
     #[test]
     fn a_page_size_outside_the_allowed_range_is_rejected() {
         assert_eq!(
-            Pagination::limited(query(Some(0), None)).unwrap_err().status_code,
+            Pagination::limited(query(Some(0), None))
+                .unwrap_err()
+                .status_code,
             400
         );
         assert_eq!(

@@ -1,4 +1,3 @@
-
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.fieldName' | transloco }}</mat-label>
   <input matInput [(ngModel)]="field.name" name="fieldName" />
@@ -16,7 +15,11 @@
 }
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.fieldType' | transloco }}</mat-label>
-  <mat-select name="fieldType" [value]="field.field_type | FieldTypeString" (selectionChange)="onFieldTypeChange($event.value)">
+  <mat-select
+    name="fieldType"
+    [value]="field.field_type | FieldTypeString"
+    (selectionChange)="onFieldTypeChange($event.value)"
+  >
     @for (typeOption of typeOptions; track typeOption) {
       <mat-option [value]="typeOption">{{ typeOption }}</mat-option>
     }
@@ -66,10 +69,10 @@
     <input matInput type="number" min="1" [(ngModel)]="field.height" name="fieldHeight" />
   </mat-form-field>
 </div>
-@if ((field.field_type | isTextFieldSchema)) {
+@if (field.field_type | isTextFieldSchema) {
   <app-text-field [(fieldOptions)]="field.field_type.Text"></app-text-field>
 }
-@if ((field.field_type | isMarkdownFieldSchema)) {
+@if (field.field_type | isMarkdownFieldSchema) {
   <app-text-field [(fieldOptions)]="field.field_type.Markdown"></app-text-field>
 }
 @if (field.field_type | isCompositeFieldSchema) {

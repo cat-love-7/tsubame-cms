@@ -12,8 +12,7 @@ describe('CompositeField', () => {
     await TestBed.configureTestingModule({
       imports: [CompositeField],
       providers: [provideHttpClient(), provideHttpClientTesting()],
-    })
-    .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(CompositeField);
     component = fixture.componentInstance;

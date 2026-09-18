@@ -12,32 +12,32 @@
 pub mod auth;
 /// What this deployment can do, for a client that has to ask.
 pub mod capabilities;
+/// The password endpoints, which only a deployment that stores credentials itself has.
+pub mod cognito_login;
 pub mod collections;
 pub mod composite_fields;
 pub mod content;
 pub mod images;
-/// The password endpoints, which only a deployment that stores credentials itself has.
-pub mod cognito_login;
-pub mod password_auth;
 /// The byte-serving routes, which only a backend that stores the bytes itself has.
 pub mod local_images;
+pub mod password_auth;
 pub mod single_pages;
 
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::app_module::{AppModule, Storage};
 use crate::models::error::HttpError;
-use crate::preview_link::PreviewLinkError;
 use crate::models::user::{Permission, User};
+use crate::preview_link::PreviewLinkError;
 
 pub type AppState<R> = Arc<AppModule<R>>;
 

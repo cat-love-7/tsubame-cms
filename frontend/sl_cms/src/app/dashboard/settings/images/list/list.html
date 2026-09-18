@@ -85,7 +85,9 @@
           <span class="name" [title]="image.original_filename">{{ image.original_filename }}</span>
           <span class="meta">
             @if (showTrash()) {
-              {{ 'content.imageTrashedMeta' | transloco: { id: image.id, trashed: trashedAt(image) } }}
+              {{
+                'content.imageTrashedMeta' | transloco: { id: image.id, trashed: trashedAt(image) }
+              }}
             } @else {
               {{ 'content.imageMeta' | transloco: { id: image.id, uploaded: uploadedAt(image) } }}
             }

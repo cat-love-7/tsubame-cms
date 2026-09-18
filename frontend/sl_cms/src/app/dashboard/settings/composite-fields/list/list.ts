@@ -21,7 +21,8 @@ interface DefinitionRow {
 
 @Component({
   selector: 'app-composite-field-list',
-  imports: [ MatTooltipModule,
+  imports: [
+    MatTooltipModule,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,

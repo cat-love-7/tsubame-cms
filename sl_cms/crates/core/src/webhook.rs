@@ -201,7 +201,10 @@ impl Notifier for WebhookNotifier {
     fn notify(&self, event: ContentEvent) -> NotifyFuture<'_> {
         let body = event.body();
         let event_name = event.name();
-        let signature = self.secret.as_deref().map(|secret| sign(secret, body.as_bytes()));
+        let signature = self
+            .secret
+            .as_deref()
+            .map(|secret| sign(secret, body.as_bytes()));
 
         for target in &self.targets {
             let client = self.client.clone();
@@ -216,7 +219,15 @@ impl Notifier for WebhookNotifier {
             // already complete - a Lambda deployment would instead await `deliver` here, since
             // its execution environment is frozen once the response is sent.
             tokio::spawn(async move {
-                deliver(&client, &target, &event_name, &delivery, &body, signature.as_deref()).await;
+                deliver(
+                    &client,
+                    &target,
+                    &event_name,
+                    &delivery,
+                    &body,
+                    signature.as_deref(),
+                )
+                .await;
             });
         }
         Box::pin(async {})
@@ -311,7 +322,10 @@ pub fn build_notifier(targets: Vec<String>, secret: Option<Vec<u8>>) -> Arc<dyn 
 
     match WebhookNotifier::new(targets, secret) {
         Ok(notifier) => {
-            tracing::info!(receivers = notifier.targets().len(), "content webhooks enabled");
+            tracing::info!(
+                receivers = notifier.targets().len(),
+                "content webhooks enabled"
+            );
             Arc::new(notifier)
         }
         Err(error) => {
@@ -336,8 +350,14 @@ mod tests {
 
     #[test]
     fn names_the_event_after_the_kind_and_the_new_status() {
-        assert_eq!(collection_event(ItemStatus::Published).name(), "collection_item.published");
-        assert_eq!(collection_event(ItemStatus::Draft).name(), "collection_item.unpublished");
+        assert_eq!(
+            collection_event(ItemStatus::Published).name(),
+            "collection_item.published"
+        );
+        assert_eq!(
+            collection_event(ItemStatus::Draft).name(),
+            "collection_item.unpublished"
+        );
 
         let page = ContentEvent::single_page(
             &SinglePageName::from("home"),
@@ -402,7 +422,10 @@ mod tests {
         assert_ne!(sign(b"secret-a", body), sign(b"secret-a", b"[]"));
         // Always lower-case hex of 32 bytes.
         assert_eq!(sign(b"secret-a", body).len(), 64);
-        assert!(sign(b"secret-a", body).chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(
+            sign(b"secret-a", body)
+                .chars()
+                .all(|c| c.is_ascii_hexdigit())
+        );
     }
-
 }

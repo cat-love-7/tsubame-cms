@@ -9,11 +9,7 @@ import { AuthService } from 'app/core/auth/auth.service';
   selector: 'app-main-layout',
   templateUrl: './main-layout.html',
   styleUrl: './main-layout.scss',
-  imports: [
-    Header,
-    Sidebar,
-    RouterModule,
-  ]
+  imports: [Header, Sidebar, RouterModule],
 })
 export class MainLayout implements OnInit {
   private auth = inject(AuthService);

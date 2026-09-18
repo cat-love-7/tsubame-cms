@@ -35,7 +35,9 @@
             </span>
           }
           @if (publishedBy(name); as publisher) {
-            <span class="publisher" [title]="'content.publishedBy' | transloco">{{ publisher }}</span>
+            <span class="publisher" [title]="'content.publishedBy' | transloco">{{
+              publisher
+            }}</span>
           }
         </td>
         <td class="updated">{{ updatedAt(name) }}</td>
@@ -65,7 +67,9 @@
                   | transloco: { id: name }
               "
             >
-              <mat-icon>{{ statusOf(name) === 'published' ? 'visibility_off' : 'publish' }}</mat-icon>
+              <mat-icon>{{
+                statusOf(name) === 'published' ? 'visibility_off' : 'publish'
+              }}</mat-icon>
             </button>
           }
           @if (canEdit(name)) {

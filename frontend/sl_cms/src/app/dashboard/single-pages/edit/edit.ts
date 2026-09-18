@@ -121,46 +121,48 @@ export class SinglePageEdit implements HasUnsavedChanges {
     this.problemField.set(null);
     this.fieldErrors = {};
 
-    this.pages.getPageSchema(name).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (schema) => {
-        if (token !== this.loadToken) {
-          return;
-        }
-        this.schema.set(schema);
-        this.loadItem(schema, token);
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadSchema', e));
-        }
-      },
-    });
+    this.pages
+      .getPageSchema(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (schema) => {
+          if (token !== this.loadToken) {
+            return;
+          }
+          this.schema.set(schema);
+          this.loadItem(schema, token);
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadSchema', e));
+          }
+        },
+      });
 
     this.loadMetadata(token);
   }
 
   private loadItem(schema: CollectionSchema, token: number) {
-    this.pages.getPageItem(this.pageName()).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (values) => {
-        if (token !== this.loadToken) {
-          return;
-        }
-        const filled = withDefaults(schema, values);
-        this.values.set(filled);
-        this.saved.set(fingerprint(filled));
-        // Only now can the form be edited and saved: before this, what it holds is not the page.
-        this.loaded.set(true);
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadContent', e));
-        }
-      },
-    });
+    this.pages
+      .getPageItem(this.pageName())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (values) => {
+          if (token !== this.loadToken) {
+            return;
+          }
+          const filled = withDefaults(schema, values);
+          this.values.set(filled);
+          this.saved.set(fingerprint(filled));
+          // Only now can the form be edited and saved: before this, what it holds is not the page.
+          this.loaded.set(true);
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadContent', e));
+          }
+        },
+      });
   }
 
   /**
@@ -247,34 +249,35 @@ export class SinglePageEdit implements HasUnsavedChanges {
     const started = this.start();
     this.error.set(null);
     this.notice.set(null);
-    this.pages.createPreviewLink(started.name).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: async (link) => {
-        if (!this.stillOn(started)) {
-          return;
-        }
-        const url = absoluteApiUrl(link.path);
-        this.previewUrl.set(url);
-        // Copying is asynchronous, so the screen can move on while the clipboard is written: what
-        // is said about the link has to be about the page it is for.
-        const copied = await copyToClipboard(url);
-        if (!this.stillOn(started)) {
-          return;
-        }
-        const expires = this.dates.format(link.expires_at);
-        this.notice.set(
-          copied
-            ? t('content.previewCopied', { expires })
-            : t('content.previewNotCopied', { expires }),
-        );
-      },
-      error: (e) => {
-        if (this.stillOn(started)) {
-          this.error.set(failure('content.failedToCreatePreviewLink', e));
-        }
-      },
-    });
+    this.pages
+      .createPreviewLink(started.name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: async (link) => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          const url = absoluteApiUrl(link.path);
+          this.previewUrl.set(url);
+          // Copying is asynchronous, so the screen can move on while the clipboard is written: what
+          // is said about the link has to be about the page it is for.
+          const copied = await copyToClipboard(url);
+          if (!this.stillOn(started)) {
+            return;
+          }
+          const expires = this.dates.format(link.expires_at);
+          this.notice.set(
+            copied
+              ? t('content.previewCopied', { expires })
+              : t('content.previewNotCopied', { expires }),
+          );
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToCreatePreviewLink', e));
+          }
+        },
+      });
   }
 
   /** Ask again after a load that failed (see the collection item editor). */
@@ -314,50 +317,52 @@ export class SinglePageEdit implements HasUnsavedChanges {
     // pressed for, whatever the sidebar shows by the time the answer arrives.
     const start = this.start();
     const name = start.name;
-    this.pages.updatePageItem(name, values).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: () => {
-        // Everything below describes *this* form - what it holds, what it was, what it is told -
-        // so none of it may be written once the screen is on another page, or on the same page
-        // opened afresh.
-        if (!this.stillOn(start)) {
-          return;
-        }
-        this.error.set(null);
-        this.notice.set(t('common.saved'));
-        // The form and the server agree again, so leaving no longer needs asking about.
-        this.saved.set(fingerprint(values));
-        // A page that has never been saved has no status on screen yet; this is what puts the
-        // badge and the publish controls there without a reload.
-        this.loadMetadata(this.loadToken);
-        then?.(name);
-      },
-      error: (e) => {
-        if (!this.stillOn(start)) {
-          return;
-        }
-        this.problemField.set(fieldOf(e));
-        this.error.set(failure('content.saveFailed', e));
-      },
-    });
+    this.pages
+      .updatePageItem(name, values)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          // Everything below describes *this* form - what it holds, what it was, what it is told -
+          // so none of it may be written once the screen is on another page, or on the same page
+          // opened afresh.
+          if (!this.stillOn(start)) {
+            return;
+          }
+          this.error.set(null);
+          this.notice.set(t('common.saved'));
+          // The form and the server agree again, so leaving no longer needs asking about.
+          this.saved.set(fingerprint(values));
+          // A page that has never been saved has no status on screen yet; this is what puts the
+          // badge and the publish controls there without a reload.
+          this.loadMetadata(this.loadToken);
+          then?.(name);
+        },
+        error: (e) => {
+          if (!this.stillOn(start)) {
+            return;
+          }
+          this.problemField.set(fieldOf(e));
+          this.error.set(failure('content.saveFailed', e));
+        },
+      });
   }
 
   private loadMetadata(token: number) {
-    this.pages.getPageMetadata(this.pageName()).pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe({
-      next: (metadata) => {
-        if (token === this.loadToken) {
-          this.metadata.set(metadata);
-        }
-      },
-      error: (e) => {
-        if (token === this.loadToken) {
-          this.error.set(failure('content.failedToLoadPublishedState', e));
-        }
-      },
-    });
+    this.pages
+      .getPageMetadata(this.pageName())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (metadata) => {
+          if (token === this.loadToken) {
+            this.metadata.set(metadata);
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadPublishedState', e));
+          }
+        },
+      });
   }
 
   /**

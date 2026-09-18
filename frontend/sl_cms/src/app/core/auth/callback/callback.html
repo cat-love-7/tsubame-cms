@@ -6,7 +6,9 @@
     <mat-card-content>
       @if (error(); as problem) {
         <p class="error" role="alert">{{ problem | message }}</p>
-        <a matButton class="full-width" routerLink="/login">{{ 'auth.backToSignIn' | transloco }}</a>
+        <a matButton class="full-width" routerLink="/login">{{
+          'auth.backToSignIn' | transloco
+        }}</a>
       } @else {
         <p class="note" role="status">{{ 'auth.signingInHint' | transloco }}</p>
       }

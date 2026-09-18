@@ -5,12 +5,14 @@
 
 use std::sync::Arc;
 
-use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
+use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::settings::AwsSettings;
-use sl_cms_core::models::collection::{CollectionItem, CollectionItemId, CollectionName, CollectionSchema};
+use sl_cms_core::models::collection::{
+    CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
+};
 use sl_cms_core::models::item_status::ItemMetadata;
 use sl_cms_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
@@ -242,10 +244,10 @@ async fn change_record<T: serde::Serialize + serde::de::DeserializeOwned>(
             return Ok(Some(()));
         }
     }
-    Err(format!(
-        "the record at {sk} kept changing under a change after {RECORD_ATTEMPTS} attempts"
+    Err(
+        format!("the record at {sk} kept changing under a change after {RECORD_ATTEMPTS} attempts")
+            .into(),
     )
-    .into())
 }
 
 async fn remove(inner: &Inner, pk: &str, sk: &str) -> Result<(), BoxError> {
@@ -307,8 +309,16 @@ async fn list(inner: &Inner, pk: &str, prefix: &str) -> Result<Vec<(String, Stri
             .await
             .map_err(|e| format!("dynamodb query failed: {e:?}"))?;
         for item in answer.items() {
-            let sk = item.get("sk").and_then(|v| v.as_s().ok()).cloned().unwrap_or_default();
-            let data = item.get("data").and_then(|v| v.as_s().ok()).cloned().unwrap_or_default();
+            let sk = item
+                .get("sk")
+                .and_then(|v| v.as_s().ok())
+                .cloned()
+                .unwrap_or_default();
+            let data = item
+                .get("data")
+                .and_then(|v| v.as_s().ok())
+                .cloned()
+                .unwrap_or_default();
             found.push((sk, data));
         }
         // A query stops at 1MB; the contract is "everything", so keep going.
@@ -385,10 +395,7 @@ fn delete_draft_in_transaction(
                 .key("sk", AttributeValue::S(sk.to_string()))
                 .condition_expression("#data = :expected")
                 .expression_attribute_names("#data", "data")
-                .expression_attribute_values(
-                    ":expected",
-                    AttributeValue::S(expected.to_string()),
-                )
+                .expression_attribute_values(":expected", AttributeValue::S(expected.to_string()))
                 .build()?,
         )
         .build())
@@ -450,7 +457,9 @@ async fn transact(
             };
             match refused {
                 Some(write) => Ok(TransactOutcome::Refused { write }),
-                None => Err(format!("dynamodb transact_write_items failed: {}", describe(&e)).into()),
+                None => {
+                    Err(format!("dynamodb transact_write_items failed: {}", describe(&e)).into())
+                }
             }
         }
     }
@@ -627,14 +636,23 @@ impl CollectionRepository for AwsRepository {
     async fn list_collection_items(
         &self,
         collection_name: &CollectionName,
-    ) -> Result<Vec<(CollectionItemId, sl_cms_core::models::collection::CollectionItem)>, BoxError> {
+    ) -> Result<
+        Vec<(
+            CollectionItemId,
+            sl_cms_core::models::collection::CollectionItem,
+        )>,
+        BoxError,
+    > {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let partition = key::collection(&name);
         let mut items = Vec::new();
         for (sk, data) in list(&inner, &partition, "item#").await? {
             let id = sk.trim_start_matches("item#").parse::<u64>()?;
-            items.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+            items.push((
+                CollectionItemId::from_u64(id),
+                AwsRepository::decode(&data)?,
+            ));
         }
         Ok(items)
     }
@@ -753,14 +771,23 @@ impl CollectionRepository for AwsRepository {
     async fn list_collection_item_drafts(
         &self,
         collection_name: &CollectionName,
-    ) -> Result<Vec<(CollectionItemId, sl_cms_core::models::collection::CollectionItem)>, BoxError> {
+    ) -> Result<
+        Vec<(
+            CollectionItemId,
+            sl_cms_core::models::collection::CollectionItem,
+        )>,
+        BoxError,
+    > {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let partition = key::collection(&name);
         let mut drafts = Vec::new();
         for (sk, data) in list(&inner, &partition, "draft#").await? {
             let id = sk.trim_start_matches("draft#").parse::<u64>()?;
-            drafts.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+            drafts.push((
+                CollectionItemId::from_u64(id),
+                AwsRepository::decode(&data)?,
+            ));
         }
         Ok(drafts)
     }
@@ -823,10 +850,7 @@ impl CollectionRepository for AwsRepository {
         collection_name: &CollectionName,
         offset: usize,
         limit: Option<usize>,
-    ) -> Result<
-        (Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize),
-        BoxError,
-    > {
+    ) -> Result<(Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize), BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let partition = key::collection(&name);
@@ -934,14 +958,14 @@ impl CollectionRepository for AwsRepository {
                     match read(&inner, &partition, &unique.value).await? {
                         // Ours already: not a conflict with itself, and nothing to give back.
                         Some(owner) if owner == id.to_string() => {
-                            return Ok(Reservation::AlreadyHeld)
+                            return Ok(Reservation::AlreadyHeld);
                         }
                         // Say who holds it, so the refusal can name the item rather than only the
                         // value.
                         Some(owner) => {
                             return Ok(Reservation::Taken {
                                 owner: CollectionItemId::from_u64(owner.parse()?),
-                            })
+                            });
                         }
                         None => continue,
                     }
@@ -1064,9 +1088,7 @@ impl CollectionRepository for AwsRepository {
         match outcome {
             TransactOutcome::Applied => Ok(()),
             // Position 1 is the draft delete above.
-            TransactOutcome::Refused { write: 1 } => {
-                Err(Box::new(ApplyStatusError::DraftChanged))
-            }
+            TransactOutcome::Refused { write: 1 } => Err(Box::new(ApplyStatusError::DraftChanged)),
             TransactOutcome::Refused { write } => Err(format!(
                 "publishing item {id} was refused by write {write}, which has no condition"
             )
@@ -1084,7 +1106,10 @@ impl CollectionRepository for AwsRepository {
         let mut metadata = Vec::new();
         for (sk, data) in list(&inner, &partition, "meta#").await? {
             let id = sk.trim_start_matches("meta#").parse::<u64>()?;
-            metadata.push((CollectionItemId::from_u64(id), AwsRepository::decode(&data)?));
+            metadata.push((
+                CollectionItemId::from_u64(id),
+                AwsRepository::decode(&data)?,
+            ));
         }
         Ok(metadata)
     }
@@ -1125,31 +1150,86 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_test").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_test")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
 
         // Schema, and the index that makes listing them a query.
-        assert!(repository.get_collection_schema(&name).await.unwrap().is_none());
-        repository.add_collection_schema(&name, &schema()).await.unwrap();
-        assert_eq!(repository.get_collection_schema(&name).await.unwrap(), Some(schema()));
-        assert_eq!(repository.list_collection_names().await.unwrap(), vec![name.clone()]);
+        assert!(
+            repository
+                .get_collection_schema(&name)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        repository
+            .add_collection_schema(&name, &schema())
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.get_collection_schema(&name).await.unwrap(),
+            Some(schema())
+        );
+        assert_eq!(
+            repository.list_collection_names().await.unwrap(),
+            vec![name.clone()]
+        );
 
         // Item ids come from the atomic counter: 1, then 2.
-        let first = repository.add_collection_item(&name, &values("First")).await.unwrap();
-        let second = repository.add_collection_item(&name, &values("Second")).await.unwrap();
+        let first = repository
+            .add_collection_item(&name, &values("First"))
+            .await
+            .unwrap();
+        let second = repository
+            .add_collection_item(&name, &values("Second"))
+            .await
+            .unwrap();
         assert_eq!((first, second), (1, 2));
-        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap(), Some(values("First")));
-        assert_eq!(repository.list_collection_items(&name).await.unwrap().len(), 2);
+        assert_eq!(
+            repository
+                .get_collection_item(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap(),
+            Some(values("First"))
+        );
+        assert_eq!(
+            repository.list_collection_items(&name).await.unwrap().len(),
+            2
+        );
 
         // The working copy is separate from the published one.
-        repository.set_collection_item_draft(&name, &CollectionItemId::from_u64(1), &values("Draft wording")).await.unwrap();
+        repository
+            .set_collection_item_draft(
+                &name,
+                &CollectionItemId::from_u64(1),
+                &values("Draft wording"),
+            )
+            .await
+            .unwrap();
         assert_eq!(
-            repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).await.unwrap(),
+            repository
+                .get_collection_item_draft(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap(),
             Some(values("Draft wording"))
         );
-        assert_eq!(repository.list_collection_item_drafts(&name).await.unwrap().len(), 1);
+        assert_eq!(
+            repository
+                .list_collection_item_drafts(&name)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         // ...and the published copy still says what it said.
-        assert_eq!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap(), Some(values("First")));
+        assert_eq!(
+            repository
+                .get_collection_item(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap(),
+            Some(values("First"))
+        );
 
         // Metadata, including the status the admin list reads.
         let metadata = ItemMetadata {
@@ -1157,24 +1237,63 @@ mod tests {
             published_at: Some(chrono::Utc::now()),
             ..ItemMetadata::default()
         };
-        repository.set_item_metadata(&name, &CollectionItemId::from_u64(1), &metadata).await.unwrap();
+        repository
+            .set_item_metadata(&name, &CollectionItemId::from_u64(1), &metadata)
+            .await
+            .unwrap();
         assert_eq!(
-            repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).await.unwrap(),
+            repository
+                .get_item_metadata(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap(),
             Some(metadata)
         );
         assert_eq!(repository.list_item_metadata(&name).await.unwrap().len(), 1);
 
         // Deleting an item takes all three records with it.
-        repository.delete_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap();
-        assert!(repository.get_collection_item(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
-        assert!(repository.get_collection_item_draft(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
-        assert!(repository.get_item_metadata(&name, &CollectionItemId::from_u64(1)).await.unwrap().is_none());
+        repository
+            .delete_collection_item(&name, &CollectionItemId::from_u64(1))
+            .await
+            .unwrap();
+        assert!(
+            repository
+                .get_collection_item(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            repository
+                .get_collection_item_draft(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            repository
+                .get_item_metadata(&name, &CollectionItemId::from_u64(1))
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         // Deleting a collection takes its items and its index entry.
         repository.delete_collection(&name).await.unwrap();
-        assert!(repository.get_collection_schema(&name).await.unwrap().is_none());
+        assert!(
+            repository
+                .get_collection_schema(&name)
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert!(repository.list_collection_names().await.unwrap().is_empty());
-        assert!(repository.list_collection_items(&name).await.unwrap().is_empty());
+        assert!(
+            repository
+                .list_collection_items(&name)
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
         repository.delete_table().await.unwrap();
     }
@@ -1191,16 +1310,22 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_stale").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_stale")
+            .await
+            .expect("a table for this test");
         let inner = repository.inner.clone();
         let (pk, sk) = (key::IMAGE_INDEX, key::image(1));
 
-        write(&inner, pk, &sk, "{\"file_name\":\"old.png\"}").await.unwrap();
+        write(&inner, pk, &sk, "{\"file_name\":\"old.png\"}")
+            .await
+            .unwrap();
         let stale = read(&inner, pk, &sk).await.unwrap().expect("the record");
 
         // Somebody else moves the record on - an apply, say - and this writer then writes back what
         // it read.
-        write(&inner, pk, &sk, "{\"file_name\":\"new.png\"}").await.unwrap();
+        write(&inner, pk, &sk, "{\"file_name\":\"new.png\"}")
+            .await
+            .unwrap();
         assert!(
             !write_if_unchanged(&inner, pk, &sk, &stale, "{\"file_name\":\"old.png\"}")
                 .await
@@ -1216,9 +1341,15 @@ mod tests {
         // The same write lands while the record is still the one that was read.
         let current = read(&inner, pk, &sk).await.unwrap().expect("the record");
         assert!(
-            write_if_unchanged(&inner, pk, &sk, &current, "{\"file_name\":\"new.png\",\"pending\":\"next\"}")
-                .await
-                .unwrap(),
+            write_if_unchanged(
+                &inner,
+                pk,
+                &sk,
+                &current,
+                "{\"file_name\":\"new.png\",\"pending\":\"next\"}"
+            )
+            .await
+            .unwrap(),
             "a write from the current record should land"
         );
         assert_eq!(
@@ -1243,7 +1374,9 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_touch").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_touch")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
         let id = CollectionItemId::from_u64(1);
 
@@ -1259,7 +1392,11 @@ mod tests {
             .expect("the record the touch created");
         assert_eq!(first.status, ItemStatus::Draft);
         let stamped_at = first.updated_at.expect("the save is recorded");
-        assert_eq!(first.created_at, Some(stamped_at), "the first stamp is when it started");
+        assert_eq!(
+            first.created_at,
+            Some(stamped_at),
+            "the first stamp is when it started"
+        );
 
         // A publish writes the record; a save that follows must not undo it.
         let published_at = chrono::Utc::now() - chrono::Duration::hours(1);
@@ -1290,13 +1427,20 @@ mod tests {
             .await
             .unwrap()
             .expect("the record");
-        assert_eq!(after.status, ItemStatus::Published, "a save is not a publish");
+        assert_eq!(
+            after.status,
+            ItemStatus::Published,
+            "a save is not a publish"
+        );
         assert_eq!(after.published_at, Some(published_at));
         assert_eq!(
             after.published_by.as_ref().map(|by| by.username.as_str()),
             Some("ops")
         );
-        assert!(after.updated_at >= Some(stamped_at), "and the save is recorded");
+        assert!(
+            after.updated_at >= Some(stamped_at),
+            "and the save is recorded"
+        );
 
         repository.delete_table().await.unwrap();
     }
@@ -1332,7 +1476,10 @@ mod tests {
             Reservation::Claimed
         );
         assert_eq!(
-            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            repository
+                .find_unique_value(&name, &value("intro"))
+                .await
+                .unwrap(),
             Some(one)
         );
 
@@ -1359,7 +1506,13 @@ mod tests {
             .release_unique_value(&name, &one, &value("intro"))
             .await
             .unwrap();
-        assert_eq!(repository.find_unique_value(&name, &value("intro")).await.unwrap(), None);
+        assert_eq!(
+            repository
+                .find_unique_value(&name, &value("intro"))
+                .await
+                .unwrap(),
+            None
+        );
         assert_eq!(
             repository
                 .reserve_unique_value(&name, &two, &value("intro"))
@@ -1368,7 +1521,10 @@ mod tests {
             Reservation::Claimed
         );
         assert_eq!(
-            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            repository
+                .find_unique_value(&name, &value("intro"))
+                .await
+                .unwrap(),
             Some(two)
         );
 
@@ -1378,7 +1534,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            repository.find_unique_value(&name, &value("intro")).await.unwrap(),
+            repository
+                .find_unique_value(&name, &value("intro"))
+                .await
+                .unwrap(),
             Some(CollectionItemId::from_u64(2))
         );
     }
@@ -1395,9 +1554,14 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_concurrent").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_concurrent")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).await.unwrap();
+        repository
+            .add_collection_schema(&name, &schema())
+            .await
+            .unwrap();
 
         let writers = 8;
         let each = 5;
@@ -1408,7 +1572,12 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let mut ids = Vec::new();
                 for _ in 0..each {
-                    ids.push(repository.add_collection_item(&name, &values("x")).await.unwrap());
+                    ids.push(
+                        repository
+                            .add_collection_item(&name, &values("x"))
+                            .await
+                            .unwrap(),
+                    );
                 }
                 ids
             }));
@@ -1442,23 +1611,35 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_size").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_size")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).await.unwrap();
+        repository
+            .add_collection_schema(&name, &schema())
+            .await
+            .unwrap();
 
         let large = "a".repeat(300_000);
-        let id = repository.add_collection_item(&name, &values(&large)).await.unwrap();
+        let id = repository
+            .add_collection_item(&name, &values(&large))
+            .await
+            .unwrap();
         assert_eq!(
             repository
                 .get_collection_item(&name, &CollectionItemId::from_u64(id))
-                .await.unwrap(),
+                .await
+                .unwrap(),
             Some(values(&large)),
             "a 300KB value should survive the round trip"
         );
 
         let oversized = "a".repeat(500_000);
         assert!(
-            repository.add_collection_item(&name, &values(&oversized)).await.is_err(),
+            repository
+                .add_collection_item(&name, &values(&oversized))
+                .await
+                .is_err(),
             "a record over DynamoDB's 400KB limit has to be refused"
         );
 
@@ -1478,17 +1659,31 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_publish").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_publish")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).await.unwrap();
+        repository
+            .add_collection_schema(&name, &schema())
+            .await
+            .unwrap();
         let id = CollectionItemId::from_u64(
-            repository.add_collection_item(&name, &values("Published text")).await.unwrap(),
+            repository
+                .add_collection_item(&name, &values("Published text"))
+                .await
+                .unwrap(),
         );
         repository
             .set_collection_item_draft(&name, &id, &values("Draft text"))
-            .await.unwrap();
+            .await
+            .unwrap();
         assert!(
-            !repository.get_item_metadata(&name, &id).await.unwrap().unwrap_or_default().is_published(),
+            !repository
+                .get_item_metadata(&name, &id)
+                .await
+                .unwrap()
+                .unwrap_or_default()
+                .is_published(),
             "the item starts unpublished, so publishing has something to change"
         );
 
@@ -1501,7 +1696,10 @@ mod tests {
         let refused = repository
             .apply_item_status(&name, &id, Some(&values(&oversized)), &published)
             .await;
-        assert!(refused.is_err(), "a working copy over 400KB cannot be published");
+        assert!(
+            refused.is_err(),
+            "a working copy over 400KB cannot be published"
+        );
 
         // Nothing moved: not the published copy, not the working copy, not the status.
         assert_eq!(
@@ -1510,26 +1708,48 @@ mod tests {
             "the published copy changed even though the publish failed"
         );
         assert_eq!(
-            repository.get_collection_item_draft(&name, &id).await.unwrap(),
+            repository
+                .get_collection_item_draft(&name, &id)
+                .await
+                .unwrap(),
             Some(values("Draft text")),
             "the working copy was consumed by a publish that failed"
         );
         assert!(
-            !repository.get_item_metadata(&name, &id).await.unwrap().unwrap_or_default().is_published(),
+            !repository
+                .get_item_metadata(&name, &id)
+                .await
+                .unwrap()
+                .unwrap_or_default()
+                .is_published(),
             "the status says published although nothing was"
         );
 
         // And the same call with a working copy that fits does all three at once.
         repository
             .apply_item_status(&name, &id, Some(&values("Draft text")), &published)
-            .await.expect("a publish that fits");
+            .await
+            .expect("a publish that fits");
         assert_eq!(
             repository.get_collection_item(&name, &id).await.unwrap(),
             Some(values("Draft text")),
             "the working copy should have replaced the published one"
         );
-        assert!(repository.get_collection_item_draft(&name, &id).await.unwrap().is_none());
-        assert!(repository.get_item_metadata(&name, &id).await.unwrap().unwrap().is_published());
+        assert!(
+            repository
+                .get_collection_item_draft(&name, &id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            repository
+                .get_item_metadata(&name, &id)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_published()
+        );
 
         repository.delete_table().await.unwrap();
     }
@@ -1545,14 +1765,22 @@ mod tests {
             eprintln!("skipped: no DynamoDB at {endpoint} (start it with `docker compose up -d`)");
             return;
         }
-        let (repository, _table) = crate::open_test_repository("cms_onemb").await.expect("a table for this test");
+        let (repository, _table) = crate::open_test_repository("cms_onemb")
+            .await
+            .expect("a table for this test");
         let name = CollectionName::from("blog");
-        repository.add_collection_schema(&name, &schema()).await.unwrap();
+        repository
+            .add_collection_schema(&name, &schema())
+            .await
+            .unwrap();
 
         let items = 120;
         let value = "a".repeat(10_000);
         for _ in 0..items {
-            repository.add_collection_item(&name, &values(&value)).await.unwrap();
+            repository
+                .add_collection_item(&name, &values(&value))
+                .await
+                .unwrap();
         }
 
         let before = QUERY_ROUND_TRIPS.load(std::sync::atomic::Ordering::Relaxed);
@@ -1568,4 +1796,3 @@ mod tests {
         repository.delete_table().await.unwrap();
     }
 }
-
