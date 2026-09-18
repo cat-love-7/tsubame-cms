@@ -74,6 +74,19 @@ fresh database; `scripts/test-e2e.sh` starts both halves and is what CI runs. Se
 npm run e2e
 ```
 
+## Linting and formatting
+
+Both are checks in CI, and both are one command:
+
+```bash
+npm run lint          # ESLint (eslint.config.mjs)
+npm run format:check  # Prettier; `npm run format` rewrites
+```
+
+The lint reads the two tsconfigs, so a promise nobody awaits, an `any` that leaks out of a
+library's types or an unused import is an error rather than a note. Formatting stays Prettier's
+job: the ESLint config turns off every rule that would disagree with it.
+
 ## Additional Resources
 
 For the Angular CLI itself, see the
