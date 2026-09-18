@@ -13,6 +13,9 @@
 //! This file is the harness: the imports, the `TestApp` alias that specialises the suite to one
 //! backend, and the helpers every test file shares (through `use super::*`). Each topic is a file
 //! of its own - what they are is in the `mod` list at the bottom.
+//!
+//! It is `mod.rs` rather than `suite.rs` because the runners pull the directory in with `#[path]`,
+//! and such a module does not get a directory named after its file (see `src/lib.rs`).
 
 use std::collections::HashMap;
 use std::sync::Arc;

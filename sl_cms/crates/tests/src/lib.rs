@@ -9,6 +9,12 @@
 //! tests/aws.rs         -> type Backend = Aws;        #[path = "../suite/mod.rs"] mod contract;
 //! ```
 //!
+//! `suite/mod.rs` rather than `suite.rs` beside a `suite/` directory is deliberate, and the one
+//! place in the workspace where the `mod.rs` shape is right: a module pulled in with `#[path]` does
+//! not get a directory named after the file, so `mod collections;` in `suite.rs` would be looked
+//! for beside the runner rather than in `suite/`. Everywhere else a directory module is
+//! `<dir>.rs` next to `<dir>/` (`core/src/auth.rs`, `repository.rs`).
+//!
 //! That is the reason this package exists. The suite is the contract, so a backend that passes
 //! it is interchangeable with one that does — and one command (`cargo test -p sl-cms-tests`)
 //! runs it against both, which is something a single crate selecting a backend with a Cargo

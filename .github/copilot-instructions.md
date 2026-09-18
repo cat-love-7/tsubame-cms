@@ -12,6 +12,8 @@ with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese
 | `sl_cms/crates/aws` | DynamoDB + S3 + Lambda adapter |
 | `sl_cms/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
 | `frontend/sl_cms/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
+| `infra/` | Terraform |
+| `doc/` | design documents, in Japanese: `content-api.md` is the API contract |
 
 Both adapters lay their repositories out the same way, and it is worth keeping that way: the
 traits live in `core/src/repositories/<trait>.rs` (one per trait), an adapter implements them in
@@ -19,8 +21,11 @@ traits live in `core/src/repositories/<trait>.rs` (one per trait), an adapter im
 `single_pages`, `composite_fields`, `users`), and the module file (`repository.rs`) holds what is
 shared - the key layout, the read/write helpers, and the tests that span resources. A file name
 that says "repository" tells a reader nothing they did not already know from the directory.
-| `infra/` | Terraform |
-| `doc/` | design documents, in Japanese: `content-api.md` is the API contract |
+
+A directory module anywhere in the workspace is `<dir>.rs` beside `<dir>/` (`core/src/auth.rs`,
+`core/src/http.rs`) - never `<dir>/mod.rs`. The one exception is a module pulled in with `#[path]`,
+where the file's stem does not become the module directory, so its submodules would be looked for
+in the wrong place (`crates/tests/suite/mod.rs` says so itself).
 
 ## Running things
 
