@@ -35,7 +35,7 @@
 |---|---|
 | 画像の配信 | **S3 の URL**。保存するのは**安定した URL**(CloudFront + OAC、または公開バケット)で、**presigned URL は保存しない**(コンテンツに入ると数分で腐る)。presigned はアップロードの PUT にだけ使う |
 | 認証 | **ローカルは現状のまま、AWS は Cognito**。トークン検証を抽象化し(HS256 / RS256 + JWKS)、`sub` → ローカル権限レコードに対応づける |
-| アカウント管理 | AWS では**ローカル管理者を置かない**。作成・パスワード変更・リセットは Cognito の担当なので、該当 API は AWS ビルドで **501** を返す。UI は「この配備で何ができるか」で出し分ける |
+| アカウント管理 | 作成・削除・リセット・有効/無効は**どちらの配備でも管理者の仕事**なので、ルートは共有(`http::auth`)。違うのは**渡すもの**: CMS がパスワードを持つ配備はリンク、Cognito が持つ配備は `AdminSetUserPassword` の**一時パスワード**。`GET /api/auth/capabilities` の `password_reset` が事前に、応答の `kind` が直前に言う。CMS 自身のパスワード経路(`/auth/login`、`/auth/password-reset`、`/auth/me/password`)だけが AWS ビルドで **501** |
 | Webhook | **予算付きの同期呼び出し**(例: 合計 5 秒)。`Notifier` を async にし、on-prem は spawn のまま、AWS は await する。超過・失敗はログに残して諦める |
 | IaC | **Terraform**(他クラウドも視野) |
 | 公開の原子性 | **`TransactWriteItems` を使う**(公開コピーへの複製 + 下書き削除 + メタデータ更新) |
@@ -363,8 +363,7 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
       その秘密を知る者が管理者トークンを鋳造できてしまう。
       → **完了条件**: 配備の合成が自前トークンを拒否すること(401)、検証器がプールを正しく
       指すこと → `deployed_verifier_tests` で達成。
-      **残り**: Cognito のユーザー作成・削除・パスワード再設定(`AccountProvisioner`)は未配線
-      (アカウント画面はまだ AWS では 501)。
+      → Cognito のユーザー作成・削除・リセットは後に配線した(下の P4 の項目、2026-09)。
 
 - [x] **Hosted UI でのサインインを最後まで通した**(2026-09)。
       これまでは `login_url` へのリンクがあるだけで、**Cognito 側に `callback_urls` も
@@ -395,7 +394,9 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
       - 契約スイートは `Backend::PASSWORD_LOGIN` でパスワード系 6 件をスキップし、
         `Backend::PASSWORD_RESET` で「渡すもの」の形を断言する。AWS のアカウント作成は
         **本物のルート**を通る(プロバイダだけが偽で、Cognito のエミュレータが無いため)。
-      → **完了条件**: UI が capabilities で出し分け、AWS ビルドでは該当画面が出ない
+      → **完了条件**: UI が capabilities で出し分けること。AWS でも**アカウント画面は出る**
+      (作成・削除・リセットは管理者の仕事)が、リンクの代わりに一時パスワードを渡し、
+      自分のパスワード変更欄は出ない(そちらは 501 のままで、案内文に置き換わる)
       → テストは達成(契約スイート 46 件 × 2、capabilities と 501 のテストを含む)。
       - [x] **UI 側も対応した**(`CapabilitiesService`)。`GET /api/auth/capabilities` を最初の
         画面が 1 回だけ読み、**答えが来るまでは「パスワード方式」とみなす**(capabilities を
