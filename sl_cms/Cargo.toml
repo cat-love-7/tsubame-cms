@@ -68,6 +68,13 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
     "behavior-version-latest",
     "rt-tokio",
 ] }
+# Account management: an administrator creates, resets and removes Cognito users from the CMS's
+# own account screen (`crates/aws/src/provisioner.rs`). Same features as the others, for the same
+# reason: no aws-lc-rs, no CMake.
+aws-sdk-cognitoidentityprovider = { version = "1", default-features = false, features = [
+    "behavior-version-latest",
+    "rt-tokio",
+] }
 tower = { version = "0.5", features = ["util"] }
 strum = "0.28.0"
 strum_macros = "0.28.0"

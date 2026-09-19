@@ -94,6 +94,20 @@ impl<R: Storage> AppModule<R> {
         AppModule::assemble(repository, notifier, preview_links, auth_service, limits)
     }
 
+    /// Let the deployment's identity provider look after the accounts themselves.
+    ///
+    /// After the module is built rather than among its arguments, because this is the one part
+    /// that needs a client for the provider's own API - which is the composition root's business,
+    /// not the module's.
+    pub fn with_account_provisioner(
+        mut self,
+        provisioner: Arc<dyn crate::auth::provisioner::AccountProvisioner>,
+    ) -> Self {
+        self.auth_service
+            .set_account_provisioner(provisioner);
+        self
+    }
+
     fn assemble(
         repository: Arc<R>,
         notifier: Arc<dyn Notifier>,

@@ -17,12 +17,12 @@ export interface PreviewLink {
 }
 
 /**
- * A freshly issued password reset link.
+ * What an administrator has to hand over after resetting an account's password.
  *
- * The token goes in the URL of the reset screen; the CMS mails nothing, so the administrator
- * hands the link on however they like.
+ * Two deployments, two shapes, and the answer says which. Where the CMS holds the password it
+ * mints a **link** whose owner chooses the password, so nobody else ever knows it; where an
+ * identity provider holds it, the provider sets a **temporary password** that the person has to
+ * change at their next sign-in. Nothing is mailed either way - the administrator passes it on.
  */
-export interface PasswordResetLink {
-  token: string;
-  expires_at: string;
-}
+export type PasswordReset =
+  { kind: 'link'; token: string; expires_at: string } | { kind: 'temporary'; password: string };

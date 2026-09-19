@@ -83,70 +83,70 @@ async fn create_user(app: &TestApp, email: &str, password: &str, is_admin: bool)
 
 /// Create an account, the way this deployment creates one.
 ///
-/// Where the CMS stores the credential this is `POST /auth/users`, so the endpoint and its 201
-/// and 409 are exercised. Where an identity provider owns the credential there is no such
-/// endpoint yet — provisioning a Cognito user is `doc/aws-plan.md` P4 — so the account record is
-/// written directly: the tests *about* permissions run against both deployments, and the ones
-/// about passwords are gated on `Backend::PASSWORD_LOGIN`.
-///
-/// A `password` in the payload is not sent: creating an account chooses no credential. The helper
-/// completes the two steps a deployment takes — create, then follow a reset link — so a test can
-/// still ask for "an account that signs in with this password".
+/// `POST /auth/users` is the same route in both, so its 201 and its 409 are exercised against both.
+/// A `password` in the payload is *not* sent: creating an account chooses no credential
+/// (`AuthService::create_user` says why). When a test asks for one, the helper takes the second
+/// step a deployment takes - a reset - and follows it as far as this router can: it completes the
+/// link where the CMS holds the password, and where an identity provider does, the reset comes
+/// back with a temporary password that only the provider's own screen can change.
 async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
-    if app.password_login() {
-        let mut payload = payload;
-        let password = payload["password"].as_str().map(str::to_string);
-        if let Some(object) = payload.as_object_mut() {
-            object.remove("password");
+    let mut payload = payload;
+    let password = payload["password"].as_str().map(str::to_string);
+    if let Some(object) = payload.as_object_mut() {
+        object.remove("password");
+    }
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/api/auth/users",
+        Some(&app.admin_token),
+        Some(payload),
+    )
+    .await;
+    let Some(password) = password.filter(|_| status == StatusCode::CREATED) else {
+        return (status, created);
+    };
+    let id = created["id"].as_str().expect("the new account's id");
+    let (status, reset) = send(
+        &app.router,
+        Method::POST,
+        &format!("/api/auth/users/{id}/password-reset"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "a reset for a new account");
+    match reset["kind"].as_str() {
+        // The CMS holds the password: it hands over a link, and the owner chooses the password.
+        Some("link") => {
+            let token = reset["token"].as_str().expect("the reset token");
+            let (status, _) = send(
+                &app.router,
+                Method::POST,
+                "/api/auth/password-reset",
+                None,
+                Some(json!({ "token": token, "new_password": password })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "the owner choosing a password");
         }
-        let (status, created) = send(
-            &app.router,
-            Method::POST,
-            "/api/auth/users",
-            Some(&app.admin_token),
-            Some(payload),
-        )
-        .await;
-        let Some(password) = password.filter(|_| status == StatusCode::CREATED) else {
-            return (status, created);
-        };
-        let id = created["id"].as_str().expect("the new account's id");
-        let (status, link) = send(
-            &app.router,
-            Method::POST,
-            &format!("/api/auth/users/{id}/password-reset-link"),
-            Some(&app.admin_token),
-            None,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "a reset link for a new account");
-        let token = link["token"].as_str().expect("the reset token").to_string();
-        let (status, _) = send(
-            &app.router,
-            Method::POST,
-            "/api/auth/password-reset",
-            None,
-            Some(json!({ "token": token, "new_password": password })),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "the owner choosing a password");
-        return (StatusCode::CREATED, created);
+        // The provider holds it: it set a temporary password, and the person changes it on the
+        // provider's own screen at the next sign-in, which is nothing this router can drive.
+        Some("temporary") => {
+            assert!(
+                !app.password_login(),
+                "a provider-owned credential is the only one that resets this way"
+            );
+            assert!(
+                reset["password"]
+                    .as_str()
+                    .is_some_and(|value| value.len() >= 8),
+                "a temporary password is something a person can be handed: {reset}"
+            );
+        }
+        other => panic!("a reset answers with a link or a temporary password, not {other:?}"),
     }
-    let username = payload["username"].as_str().expect("a username");
-    let is_admin = payload["is_admin"].as_bool().unwrap_or(false);
-    let permission: Permission = serde_json::from_value(payload["permission"].clone())
-        .unwrap_or_else(|_| Permission::viewer());
-    match app
-        .backend()
-        .create_account(username, is_admin, permission)
-        .await
-    {
-        Ok(user) => (
-            StatusCode::CREATED,
-            serde_json::to_value(user.to_response()).expect("a serialisable account"),
-        ),
-        Err(_) => (StatusCode::CONFLICT, Value::Null),
-    }
+    (StatusCode::CREATED, created)
 }
 
 /// Sign in, the way this deployment signs in.

@@ -5,6 +5,7 @@
 //! callers already use keep working.
 
 use super::*;
+use sl_cms_core::auth::provisioner::AccountProvisioner;
 
 /// The endpoints the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT` and
 /// `CMS_TEST_S3_ENDPOINT`, or the emulators from `docker-compose.yml`.
@@ -24,6 +25,79 @@ pub fn test_access_key() -> String {
 
 pub fn test_secret_key() -> String {
     std::env::var("CMS_TEST_SECRET_ACCESS_KEY").unwrap_or_else(|_| "test-secret".to_string())
+}
+
+/// A user pool that only remembers what it was asked.
+///
+/// There is no Cognito emulator to run against (`doc/aws-plan.md`, P4), so the contract suite needs
+/// something that answers like the admin API and writes nothing anywhere. It is deliberately not a
+/// clever fake: a call succeeds, and every call is kept, so a test can see that the provider was
+/// asked and with what. What the SDK calls themselves do is read rather than run here.
+#[derive(Default)]
+pub struct InMemoryCognito {
+    calls: std::sync::Mutex<Vec<String>>,
+}
+
+impl InMemoryCognito {
+    /// Everything asked of this pool, oldest first.
+    pub fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: String) {
+        self.calls.lock().unwrap().push(call);
+    }
+}
+
+impl CognitoAdmin for InMemoryCognito {
+    fn create_user<'a>(
+        &'a self,
+        username: &'a str,
+        email: Option<&'a str>,
+    ) -> AdminFuture<'a, Option<String>> {
+        Box::pin(async move {
+            self.record(format!("create {username} email={}", email.unwrap_or("-")));
+            // What a pool answers with, so a record written from this has something a token could
+            // resolve to.
+            Ok(Some(format!("sub-of-{username}")))
+        })
+    }
+
+    fn delete_user<'a>(&'a self, username: &'a str) -> AdminFuture<'a, ()> {
+        Box::pin(async move {
+            self.record(format!("delete {username}"));
+            Ok(())
+        })
+    }
+
+    fn set_temporary_password<'a>(
+        &'a self,
+        username: &'a str,
+        password: &'a str,
+    ) -> AdminFuture<'a, ()> {
+        Box::pin(async move {
+            self.record(format!("temporary {username} {password}"));
+            Ok(())
+        })
+    }
+
+    fn set_enabled<'a>(&'a self, username: &'a str, enabled: bool) -> AdminFuture<'a, ()> {
+        Box::pin(async move {
+            self.record(format!("enabled {username} {enabled}"));
+            Ok(())
+        })
+    }
+}
+
+/// The provisioner a local run or a test gets: the real mapping over a pool that is not there.
+///
+/// A deployment builds its own over the SDK client ([`super::build_deployed_module`]); this is what
+/// keeps `POST /auth/users` and a password reset answering the AWS *shape* without a service to talk
+/// to.
+pub fn in_memory_provisioner() -> std::sync::Arc<dyn AccountProvisioner> {
+    std::sync::Arc::new(CognitoAccountProvisioner::with_admin(std::sync::Arc::new(
+        InMemoryCognito::default(),
+    )))
 }
 
 /// A MinIO user with exactly that policy, and the credentials to sign as it.

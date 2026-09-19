@@ -22,7 +22,7 @@ describe('App', () => {
   function answerCapabilities(): void {
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: true,
-      password_reset_links: true,
+      password_reset: 'link',
       image_upload: 'proxied',
     });
   }

@@ -40,9 +40,18 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
 scripts/check-iam-actions.sh  # every action in the deployer policies exists, and the plan one is a subset
 scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS credentials
 scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS credentials with a URL
+# Against a deployment, with APP_URL/ADMIN_USERNAME/ADMIN_PASSWORD (staging; see e2e/README.md):
+#   node frontend/sl_cms/e2e/hosted-signin.mjs    # sign in through the provider
+#   node frontend/sl_cms/e2e/hosted-accounts.mjs  # create, reset, sign in as it, remove
 ```
 
 ## Rules that are easy to get wrong
+
+- **An account the CMS creates where an identity provider owns it must record the provider's own
+  identifier** (`User::external_id`, Cognito's `sub`). A token from the provider is resolved to a
+  local record *by that value and nothing else*, so an account that exists in both places without
+  it is refused with `not_provisioned`. `AccountProvisioner::create` returns it for exactly this
+  reason, and `AdminGetUser` is what finds it when the user was already in the pool.
 
 - **Comments explain why, not what.** A comment that restates the line below it is noise; one that
   says what the alternative would break is the point.

@@ -128,6 +128,31 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-signin.mjs
 前提: サインインするアカウントが先に存在すること(管理者が `AdminCreateUser` +
 `AdminSetUserPassword` で作り、その名前が `BOOTSTRAP_ADMIN_USERNAMES` に入っている)。
 
+## デプロイ先のアカウント管理(AWS)
+
+Cognito のエミュレータは無いので、`crates/aws/src/provisioner.rs` の SDK 呼び出しは手元では
+**実行されない**(継ぎ目の向こうの対応付けだけが unit テストで見られる)。`hosted-accounts.mjs` が
+実機でそこを通す。サインインそのものは共通の `hosted-login.mjs` が担う(ホステッドページの 2 つの
+フォーム、PKCE、そして初回の一時パスワードに対する「新しいパスワードを決めさせる」ステップ)。
+
+```bash
+cd frontend/sl_cms
+APP_URL=https://cms.example.com \
+ADMIN_USERNAME=cat ADMIN_PASSWORD=... \
+PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-accounts.mjs
+```
+
+1. 管理者としてサインイン
+2. `POST /api/auth/users` でアカウント作成(アカウント画面と同じ呼び出し)
+3. `POST /api/auth/users/{id}/password-reset` → `kind: "temporary"` と一時パスワード
+4. **その一時パスワードで本人としてサインイン** → プロバイダが新パスワードを要求するので決めて入る
+   ——ここが `external_id` の検証でもある: 作成時に Cognito の `sub` を記録していないと、本人は
+   `not_provisioned` で弾かれる
+5. 管理者に戻って削除
+6. 削除後はサインインできない(プロバイダが拒否する)
+
+途中で失敗してもアカウントは残らない(`finally` で削除する)。
+
 ## データ
 
 実行のたびに `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` と複合フィールド定義

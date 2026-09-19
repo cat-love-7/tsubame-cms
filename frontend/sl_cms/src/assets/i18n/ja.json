@@ -35,7 +35,8 @@
     "passwordChangedOwn": "パスワードを変更しました(他の端末のセッションは終了しました)",
     "changePasswordFailed": "パスワードを変更できませんでした: {{message}}",
     "setPasswordFailed": "パスワードを設定できませんでした: {{message}}",
-    "signInFailed": "サインインできませんでした。もう一度お試しください。"
+    "signInFailed": "サインインできませんでした。もう一度お試しください。",
+    "passwordManagedElsewhere": "この配備のサインインは ID プロバイダが行い、パスワードもそちらが保持しています。CMS からは変更できません。新しいパスワードが必要な場合は、管理者がアカウント画面から再設定し、手渡された値を次回サインイン時に変更してもらいます。"
   },
   "accounts": {
     "title": "アカウント",
@@ -79,7 +80,11 @@
     "changeFailed": "{{user}} を変更できませんでした: {{message}}",
     "failedToLoadCollections": "コレクションを読み込めませんでした: {{message}}",
     "failedToLoadSinglePages": "単一ページを読み込めませんでした: {{message}}",
-    "failedToLoadAccounts": "アカウントを読み込めませんでした: {{message}}"
+    "failedToLoadAccounts": "アカウントを読み込めませんでした: {{message}}",
+    "issueResetFailed": "パスワードを再設定できませんでした: {{message}}",
+    "resetPasswordCopied": "{{user}} の一時パスワードをコピーしました。次回サインイン時に変更してもらってください",
+    "resetPasswordNotCopied": "{{user}} の一時パスワードを発行しました(下に表示)。コピーできなかったので読み上げるか手動でコピーしてください。次回サインイン時に変更してもらってください",
+    "temporaryPasswordHint": "次回サインイン時に変更してもらいます。"
   },
   "roles": {
     "viewer": "閲覧者",

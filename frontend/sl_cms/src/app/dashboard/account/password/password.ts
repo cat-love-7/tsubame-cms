@@ -6,6 +6,7 @@ import { MatInputModule } from '@angular/material/input';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
 
@@ -31,8 +32,17 @@ import { UsersService } from 'app/services/auth/users.service';
 export class Password {
   private users = inject(UsersService);
   private auth = inject(AuthService);
+  private capabilities = inject(CapabilitiesService);
 
   public username = this.auth.user()?.username ?? '';
+  /**
+   * Whether this deployment checks the password at all.
+   *
+   * Where it does not, the form below would only ever answer 501: the credential belongs to an
+   * identity provider, and an administrator resets it from the account screen. Saying that is
+   * more use than a form that cannot work.
+   */
+  public passwordLogin = this.capabilities.passwordLogin;
   public current = '';
   public next = '';
   public repeated = '';

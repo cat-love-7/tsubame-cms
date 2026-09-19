@@ -15,10 +15,17 @@
 @if (status(); as note) {
   <p class="status" role="status">{{ note | message }}</p>
 }
-@if (resetLink()) {
+@if (resetValue()) {
   <p class="reset-link">
     {{ resetFor() }}:
-    <a [href]="resetLink()" target="_blank" rel="noopener">{{ resetLink() }}</a>
+    @if (resetIsLink()) {
+      <a [href]="resetValue()" target="_blank" rel="noopener">{{ resetValue() }}</a>
+    } @else {
+      <!-- A temporary password, to read out or copy. Selectable rather than a link, and the
+           person changes it the first time they sign in. -->
+      <code class="temporary-password">{{ resetValue() }}</code>
+      <span class="hint">{{ 'accounts.temporaryPasswordHint' | transloco }}</span>
+    }
   </p>
 }
 
@@ -111,14 +118,15 @@
         </td>
         <td class="updated">{{ lastSignIn(user) }}</td>
         <td class="actions">
-          @if (passwordResetLinks()) {
+          @if (passwordReset()) {
             <button
               matIconButton
-              (click)="issuePasswordResetLink(user)"
+              (click)="issuePasswordReset(user)"
               [attr.aria-label]="'labels.issueResetLinkOf' | transloco: { username: user.username }"
               [matTooltip]="'labels.issueResetLinkOf' | transloco: { username: user.username }"
             >
-              <mat-icon>link</mat-icon>
+              <!-- A link to pass on, or a temporary password to read out. -->
+              <mat-icon>{{ passwordReset() === 'link' ? 'link' : 'key' }}</mat-icon>
             </button>
           }
           <button

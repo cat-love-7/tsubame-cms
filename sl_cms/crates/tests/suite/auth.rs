@@ -20,6 +20,7 @@ async fn capabilities_say_how_this_deployment_signs_users_in() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["password_login"], Backend::PASSWORD_LOGIN);
+    assert_eq!(body["password_reset"], Backend::PASSWORD_RESET);
     assert_eq!(
         body["image_upload"],
         if Backend::SERVES_IMAGE_BYTES {
@@ -72,6 +73,67 @@ async fn a_deployment_without_local_passwords_explains_itself() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+}
+
+/// The reset a deployment answers with is the one its capabilities promised: a client shows the
+/// promise ("you will get a link" / "you will get a temporary password") and then has to make
+/// sense of what actually arrives.
+#[tokio::test]
+async fn a_reset_answers_the_shape_this_deployment_promised() {
+    let app = test_app().await;
+
+    let (status, capabilities) = send(
+        &app.router,
+        Method::GET,
+        "/api/auth/capabilities",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(capabilities["password_reset"], Backend::PASSWORD_RESET);
+
+    // An account with no credential yet, which is what a reset is for.
+    let (status, created) = send(
+        &app.router,
+        Method::POST,
+        "/api/auth/users",
+        Some(&app.admin_token),
+        Some(json!({
+            "username": "reset-shape@example.com",
+            "email": null,
+            "is_admin": false,
+            "permission": Permission::viewer(),
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["id"].as_str().expect("the new account's id");
+
+    let (status, reset) = send(
+        &app.router,
+        Method::POST,
+        &format!("/api/auth/users/{id}/password-reset"),
+        Some(&app.admin_token),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{reset}");
+    assert_eq!(reset["kind"], Backend::PASSWORD_RESET, "{reset}");
+    if Backend::PASSWORD_RESET == "link" {
+        assert!(
+            reset["token"].as_str().is_some_and(|token| !token.is_empty()),
+            "a link has to carry the token that makes it one: {reset}"
+        );
+    } else {
+        assert!(
+            reset["password"]
+                .as_str()
+                .is_some_and(|value| value.len() >= 8),
+            "a temporary password has to be one a person can be handed: {reset}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -160,7 +222,7 @@ async fn rejects_duplicate_and_weak_user_registrations() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset"),
         Some(&app.admin_token),
         None,
     )
@@ -211,7 +273,7 @@ async fn an_account_can_be_created_without_a_password() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset"),
         Some(&admin),
         None,
     )
@@ -269,7 +331,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset"),
         Some(&old_token),
         None,
     )
@@ -279,7 +341,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset"),
         Some(&admin),
         None,
     )
@@ -469,7 +531,7 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{editor_id}/password-reset-link"),
+        &format!("/api/auth/users/{editor_id}/password-reset"),
         Some(&admin),
         None,
     )
@@ -651,7 +713,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/api/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset"),
         Some(&admin),
         None,
     )

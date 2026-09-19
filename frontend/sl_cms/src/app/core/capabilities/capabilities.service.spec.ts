@@ -27,12 +27,13 @@ describe('CapabilitiesService', () => {
     service.load();
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: false,
-      password_reset_links: false,
+      password_reset: 'temporary',
       image_upload: 'presigned',
     });
 
     expect(service.passwordLogin()).toBe(false);
-    expect(service.passwordResetLinks()).toBe(false);
+    // A provider holds the password, so a reset hands over a temporary one.
+    expect(service.passwordReset()).toBe('temporary');
     expect(service.imageUpload()).toBe('presigned');
   });
 
@@ -41,7 +42,7 @@ describe('CapabilitiesService', () => {
     service.load();
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: true,
-      password_reset_links: true,
+      password_reset: 'link',
       image_upload: 'proxied',
     });
     httpMock.expectNone('/api/auth/capabilities');

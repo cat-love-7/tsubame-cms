@@ -70,12 +70,30 @@ pub trait TestBackend: Sized {
     /// password endpoint at all, so those tests have nothing to drive.
     const PASSWORD_LOGIN: bool;
 
+    /// What an administrator hands over after a password reset.
+    ///
+    /// Every deployment answers, and both answers are useful: `"link"` where the CMS holds the
+    /// password, so its owner chooses it and nobody else ever sees it; `"temporary"` where an
+    /// identity provider does, so the administrator passes on a value that has to be changed at
+    /// the next sign-in. The capabilities answer promises one, and a reset has to match it.
+    const PASSWORD_RESET: &'static str;
+
     /// A storage of its own, with whatever scratch space it needs. Dropping it cleans up.
     ///
     /// `hint` names the scratch space; it is unique per test so tests can run at once.
     fn open(hint: &str) -> impl std::future::Future<Output = Self> + Send;
 
     fn storage(&self) -> Arc<Self::Storage>;
+
+    /// Anything this backend has to install into the module before the suite uses it.
+    ///
+    /// The default changes nothing. The AWS adapter uses it to give its account management a pool
+    /// to talk to: there is no Cognito emulator, so the suite drives the real routes over an
+    /// in-memory one, which is also what keeps `POST /auth/users` and a reset answering the shape
+    /// a deployment answers.
+    fn prepare(module: AppModule<Self::Storage>) -> AppModule<Self::Storage> {
+        module
+    }
 
     /// The whole router for this backend: the shared one, plus any routes it adds.
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router;
@@ -147,7 +165,7 @@ impl<B: TestBackend> TestApp<B> {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
         let backend = B::open(&format!("test_http_{id}")).await;
-        let module = Arc::new(AppModule::new(
+        let module = Arc::new(B::prepare(AppModule::new(
             backend.storage(),
             TokenIssuer::new(TEST_SECRET, TEST_TOKEN_TTL_HOURS),
             notifier,
@@ -156,7 +174,7 @@ impl<B: TestBackend> TestApp<B> {
             PreviewLinkIssuer::new(TEST_SECRET, 60),
             PasswordResetIssuer::new(TEST_SECRET, 30),
             limits,
-        ));
+        )));
 
         let admin_token = backend.sign_in_admin(&module).await;
         let router = B::router(module.clone());

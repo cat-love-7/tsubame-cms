@@ -64,8 +64,8 @@
 
 Cognito を入れると「配備によってできることが違う」状態になる。UI の出し分け・E2E の分岐・
 ドキュメントの記述が散らばらないよう、`GET /api/auth/capabilities`(または `/api/auth/me` の項目)で
-**この配備で何ができるか**を返す。例: `{"local_accounts": true/false, "password_change":
-true/false, "password_reset_links": true/false}`。
+**この配備で何ができるか**を返す。例: `{"password_login": true/false, "password_reset":
+"link"|"temporary", "image_upload": "proxied"|"presigned", "login_url": …}`。
 
 ## 2. TODO
 
@@ -385,13 +385,16 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
         Argon2id と rkv の `credential` DB)。**core は argon2 に依存しない**——`User` に
         パスワード欄が無いので、デバッグ出力やログから漏れることも構造上ありえない。
       - パスワード系のルートは `http::password_auth`(`local_images` と同じ形)にあり、
-        **on-prem の `build_router` だけが合成**する。
-      - AWS は同じパスを **501** で登録する(404 だと「URL が違う」と読まれるため)。
+        **on-prem の `build_router` だけが合成**する。アカウント作成・リセットは
+        `http::auth` の**共有ルート**にある(管理者の仕事はどちらの配備にもあるため)。
+      - AWS は残ったパスワード経路(`POST /auth/login`、`POST /auth/password-reset`、
+        `POST /auth/me/password`)を **501** で登録する(404 だと「URL が違う」と読まれるため)。
         メッセージは Cognito を名指しする。
-      - `GET /api/auth/capabilities` を両方が公開: `password_login` / `password_reset_links` /
-        `image_upload`(`proxied` | `presigned`)。
-      - 契約スイートは `Backend::PASSWORD_LOGIN` でパスワード系 6 件をスキップし、AWS では
-        アカウント作成とトークン発行をハーネスが直接行う(権限のテストは両方で走る)。
+      - `GET /api/auth/capabilities` を両方が公開: `password_login` / `password_reset`
+        (`link` | `temporary` | null) / `image_upload`(`proxied` | `presigned`) / `login_url`。
+      - 契約スイートは `Backend::PASSWORD_LOGIN` でパスワード系 6 件をスキップし、
+        `Backend::PASSWORD_RESET` で「渡すもの」の形を断言する。AWS のアカウント作成は
+        **本物のルート**を通る(プロバイダだけが偽で、Cognito のエミュレータが無いため)。
       → **完了条件**: UI が capabilities で出し分け、AWS ビルドでは該当画面が出ない
       → テストは達成(契約スイート 46 件 × 2、capabilities と 501 のテストを含む)。
       - [x] **UI 側も対応した**(`CapabilitiesService`)。`GET /api/auth/capabilities` を最初の
@@ -418,17 +421,33 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
       → **達成**: `a_role_change_takes_effect_on_the_next_request`(ビューア → 編集許可 →
       コレクション単位の拒否、を同じトークンで確認。両バックエンドで実行)。
 
-- [~] **Cognito のユーザー管理**(`AdminCreateUser` / `AdminDeleteUser` /
-      `AdminSetUserPassword`)。継ぎ目は先に入れた:
-      `auth::provisioner::AccountProvisioner`(create / delete)を `AuthService` が持ち、
-      `create_account` は**プロバイダを先に**呼んでから記録を書く(拒否されたら何も残らない)。
-      `delete_user` も先にプロバイダへ依頼する。テストは偽プロバイダで
-      「作成時に依頼される」「拒否されたら記録が残らない」「削除時にも依頼される」を確認。
-      **残り**: `aws-sdk-cognitoidentityprovider` を足して `CognitoAccountProvisioner` を実装し、
-      AWS の `build_router` が `POST /api/auth/users` の 501 スタブを本物のルートに差し替えること。
-      この SDK 呼び出しは**手元で検証する手段が無い**(Cognito のエミュレータは無く、
-      LocalStack は採用していない)ので、P5 の staging で確かめられる段階で入れるのが正直な順序。
-      パスワード再設定(`AdminSetUserPassword` で一時パスワード + 変更強制)もそこで。
+- [x] **Cognito のユーザー管理**(2026-09)。`aws-sdk-cognitoidentityprovider` を足し、
+      `crates/aws/src/provisioner.rs` の `CognitoAccountProvisioner` が
+      `auth::provisioner::AccountProvisioner` を実装する。作成・削除・リセット・有効/無効が
+      プール側にも届き、`AuthService` は**プロバイダを先に**呼ぶ(拒否されたら CMS 側は何も
+      変わらない)。継ぎ目は `CognitoAdmin` の 4 呼び出しで、**Cognito のエミュレータが無い**以上
+      手元で見られるのは対応付けだけ——だから unit テストは偽のプールで
+      「何を・どの順で・どの値で呼ぶか」「拒否は成功に見せない」を確かめる。
+
+      実装で分かった 2 点、どちらも「コードを読むだけでは気づきにくい」もの:
+
+      - **`create` はプール側の識別子(`sub`)を返す**。CMS のトークン解決は `external_id` でしか
+        引かないので、管理者が作ったアカウントにこれを記録しないと、本人がサインインしても
+        `not_provisioned` で弾かれる(両方に存在するのに、片方から見つけられない)。
+        既にプールにある名前なら `AdminGetUser` で拾う。
+      - **リセットは `AdminSetUserPassword`(`Permanent=false`)で一時パスワード**。CMS は
+        パスワードを持たないので値を作れず、代わりに「次回サインインで変更させる」。
+        `AdminCreateUser` は `MessageAction::Suppress`(メールを送らない配備なので招待は届かない)。
+        渡す値はリセットが作る——画面はリンクでも一時パスワードでも「渡すものをコピーさせる」
+        同じ形で、`password_reset` が事前に、応答の `kind` が直前に言う。
+
+      `POST /api/auth/users` とリセットは**共有ルート**(`http::auth`)になり、501 スタブは
+      自分のパスワード変更だけに縮んだ。契約スイートは `Backend::PASSWORD_RESET` で形を断言し、
+      AWS 側は in-memory の偽プールで**本物のルート**を通す。
+
+      → **確認(staging、2026-09)**: `frontend/sl_cms/e2e/hosted-accounts.mjs` が実ブラウザで
+      作成 → 一時パスワード → **本人としてサインインし変更を強制される** → 削除 → 削除後は
+      プールが拒否、まで通す(管理者 `cat` と実 Cognito プールに対して)。
 
 ### P5. デプロイと運用
 

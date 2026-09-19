@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 
 import { AuthService, CurrentUser } from 'app/core/auth/auth.service';
 import { t } from 'app/core/i18n/message';
+import { PasswordReset } from 'app/models/links';
 import { UsersService } from 'app/services/auth/users.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
@@ -35,6 +36,18 @@ class StubUsersService {
   public updated: { id: string; change: unknown }[] = [];
   public removed: string[] = [];
   public reset: string[] = [];
+  /**
+   * What a reset hands over here.
+   *
+   * A link, because this CMS holds the password; a test that stands in for a deployment whose
+   * identity provider does says `temporary` instead, which is the same choice the server makes.
+   */
+  public resetAnswer: PasswordReset = {
+    kind: 'link',
+    token: 'user-1.0.1758000000.abc123',
+    expires_at: '2026-09-13T12:00:00Z',
+  };
+  public resetIssued: string[] = [];
 
   list = () => of(this.accounts);
   create = (user: unknown) => {
@@ -50,11 +63,10 @@ class StubUsersService {
     return of(void 0);
   };
   changeOwnPassword = () => of({ token: 'replacement-token', expires_at: '2024-01-01T00:00:00Z' });
-  issuePasswordResetLink = (id: string) => {
+  issuePasswordReset = (id: string) => {
     this.resetIssued.push(id);
-    return of({ token: 'user-1.0.1758000000.abc123', expires_at: '2026-09-13T12:00:00Z' });
+    return of(this.resetAnswer);
   };
-  public resetIssued: string[] = [];
 }
 
 describe('Accounts', () => {
@@ -112,13 +124,27 @@ describe('Accounts', () => {
   });
 
   /** The administrator gets a link to hand on; the CMS mails nothing. */
-  it('issues a password reset link and shows it', () => {
-    fixture.componentInstance.issuePasswordResetLink(stub.accounts[0]);
+  it('issues a password reset and shows the link', () => {
+    fixture.componentInstance.issuePasswordReset(stub.accounts[0]);
 
     expect(stub.resetIssued).toEqual(['user-1']);
-    expect(fixture.componentInstance.resetLink()).toBe(
+    expect(fixture.componentInstance.resetIsLink()).toBe(true);
+    expect(fixture.componentInstance.resetValue()).toBe(
       `${location.origin}/reset-password?token=user-1.0.1758000000.abc123`,
     );
+    expect(fixture.componentInstance.resetFor()).toBe('editor@example.com');
+  });
+
+  // Where an identity provider holds the credential there is nothing to open a link with: the
+  // reset comes back with a temporary password, which is shown as a value to pass on - and the
+  // person changes it the next time they sign in.
+  it('shows a temporary password where the deployment resets that way', () => {
+    stub.resetAnswer = { kind: 'temporary', password: 'Temp-pass-1!' };
+
+    fixture.componentInstance.issuePasswordReset(stub.accounts[0]);
+
+    expect(fixture.componentInstance.resetIsLink()).toBe(false);
+    expect(fixture.componentInstance.resetValue()).toBe('Temp-pass-1!');
     expect(fixture.componentInstance.resetFor()).toBe('editor@example.com');
   });
 
@@ -150,8 +176,8 @@ describe('Accounts', () => {
   });
 
   // No password is chosen here: the account has no credential until its owner follows the reset
-  // link this screen hands over, which is the only path that may set one.
-  it('creates an account with the chosen role, and offers a reset link for it', () => {
+  // this screen hands over, which is the only path that may set one.
+  it('creates an account with the chosen role, and offers a reset for it', () => {
     fixture.componentInstance.newUsername = 'new-ops';
     fixture.componentInstance.newRole = 'viewer';
     fixture.componentInstance.create();
@@ -166,7 +192,7 @@ describe('Accounts', () => {
       },
     ]);
     expect(stub.resetIssued).toEqual(['user-1']);
-    expect(fixture.componentInstance.resetLink()).toContain('/reset-password?token=');
+    expect(fixture.componentInstance.resetValue()).toContain('/reset-password?token=');
   });
 
   /** An address, when the operator records one, is passed on as contact data. */

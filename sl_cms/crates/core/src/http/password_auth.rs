@@ -1,25 +1,25 @@
 //! The password endpoints, for a deployment that stores credentials itself.
 //!
-//! These are the routes that cannot exist where sign-in belongs to an identity provider: there
-//! is no password for the CMS to check, and none for it to set. A backend that has an
-//! [`LocalCredentials`] implementation composes them (the on-premises one does); a backend
-//! that does not simply has no such endpoints.
+//! These are the routes that cannot exist where sign-in belongs to an identity provider: there is
+//! no password for the CMS to check, none for it to complete a reset with, and none for it to
+//! change on someone's behalf. A backend that has an [`LocalCredentials`] implementation composes
+//! them (the on-premises one does); a backend that does not registers the same paths answering 501,
+//! so a client that guessed them learns which deployment this is instead of "wrong URL".
 //!
-//! What is left in [`crate::http::auth`] — who am I, list accounts, change a role — is shared,
-//! because an administrator manages accounts in both deployments; only the credential differs.
+//! What is left in [`crate::http::auth`] — who am I, list accounts, create one, change a role or a
+//! permission, remove one, reset a password — is shared, because an administrator manages accounts
+//! in both deployments; only the credential's value differs.
 
 use axum::Json;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{Router, post};
 
 use crate::app_module::Storage;
-use crate::http::{AppState, AuthenticatedUser, require_admin};
+use crate::http::{AppState, AuthenticatedUser};
 use crate::models::error::HttpError;
-use crate::models::user::{
-    ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest, NewAccountRequest, UserId,
-};
+use crate::models::user::{ChangePasswordRequest, CompletePasswordResetRequest, LoginRequest};
 use crate::repositories::local_credentials::LocalCredentials;
 
 /// Reachable without a token: signing in, and finishing a reset (the link *is* the credential).
@@ -32,11 +32,6 @@ pub fn public_routes<R: Storage + LocalCredentials>() -> Router<AppState<R>> {
 /// Account routes that touch a credential; the caller needs to be an administrator.
 pub fn protected_routes<R: Storage + LocalCredentials>() -> Router<AppState<R>> {
     Router::new()
-        .route("/auth/users", post(create_user::<R>))
-        .route(
-            "/auth/users/{id}/password-reset-link",
-            post(issue_password_reset::<R>),
-        )
         // Self-service: any authenticated account may change its own password.
         .route("/auth/me/password", post(change_own_password::<R>))
 }
@@ -49,31 +44,6 @@ async fn login<R: Storage + LocalCredentials>(
         module
             .auth_service
             .login(&request.username, &request.password)
-            .await?,
-    ))
-}
-
-async fn create_user<R: Storage + LocalCredentials>(
-    State(module): State<AppState<R>>,
-    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
-    Json(request): Json<NewAccountRequest>,
-) -> Result<impl IntoResponse, HttpError> {
-    require_admin(&user)?;
-    let created = module.auth_service.create_user(request).await?;
-    Ok((StatusCode::CREATED, Json(created)))
-}
-
-/// Issue a link an administrator passes on, so the account sets its own new password.
-async fn issue_password_reset<R: Storage + LocalCredentials>(
-    State(module): State<AppState<R>>,
-    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
-    Path(id): Path<String>,
-) -> Result<impl IntoResponse, HttpError> {
-    require_admin(&user)?;
-    Ok(Json(
-        module
-            .auth_service
-            .issue_password_reset(&UserId::from(id.as_str()))
             .await?,
     ))
 }
@@ -117,15 +87,9 @@ pub fn unavailable_public<R: Storage>(message: &'static str) -> Router<AppState<
         .route("/auth/password-reset", post(unavailable::<R>(message)))
 }
 
-/// The account routes that touch a credential (`POST /auth/users`, reset links, own password).
+/// The one account route that touches a credential's *value*: changing your own password.
 pub fn unavailable_protected<R: Storage>(message: &'static str) -> Router<AppState<R>> {
-    Router::new()
-        .route("/auth/users", post(unavailable::<R>(message)))
-        .route(
-            "/auth/users/{id}/password-reset-link",
-            post(unavailable::<R>(message)),
-        )
-        .route("/auth/me/password", post(unavailable::<R>(message)))
+    Router::new().route("/auth/me/password", post(unavailable::<R>(message)))
 }
 
 fn unavailable<R: Storage>(

@@ -22,7 +22,7 @@ describe('ImagesService', () => {
     capabilities.load();
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: true,
-      password_reset_links: true,
+      password_reset: 'link',
       image_upload: 'proxied',
       ...(maxImageBytes === undefined ? {} : { max_image_bytes: maxImageBytes }),
     });

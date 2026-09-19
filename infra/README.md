@@ -16,6 +16,7 @@ API, and the Lambda function the API runs as.
 | The function actually answering an invocation | **staging** — `scripts/smoke-test.sh https://cms.example.com <function-url>` passes, and `/api/content/collections` answers `200 []` from the DynamoDB table, which is the execution role working rather than just the function being reachable |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`), and `scripts/build-lambda.sh --zig` here |
 | Someone actually signing in | **staging** — `frontend/sl_cms/e2e/hosted-signin.mjs` (a real browser: PKCE handoff, the registered callback, the code exchange, the admin screen, no console errors) |
+| Managing an account at the pool | **staging** — `frontend/sl_cms/e2e/hosted-accounts.mjs`: creates an account, resets it to a temporary password, signs in *as it* and changes the password the provider demands, removes it, and finds the pool refusing it afterwards |
 
 The first deployment is done, and it is the first deployment that found things a `validate` cannot.
 In the order they surfaced:
@@ -284,6 +285,8 @@ has to stay on x86_64 for some reason.
   Plus plan's rather than a web ACL's (`doc/aws-plan.md`, P5). So a busy address can still spend
   the pool's share; a regional rate-based rule is what fixes that, and it was left out on purpose
   rather than forgotten - a handful of resources and roughly $5/month plus $1 per rule.
-- **No account recovery by email for accounts without one.** Recovery uses a verified address;
-  an account an operator created without one is reset by an administrator
-  (`AdminSetUserPassword`, still to be wired into the account screen).
+- **No account recovery by email, for anyone.** Cognito's own recovery sends a code to a verified
+  address, and this deployment sends no mail, so an account whose password is lost is reset by an
+  administrator instead: the account screen sets a **temporary password** (`AdminSetUserPassword`)
+  that the person changes the first time they sign in. Nothing is mailed, so an account with no
+  address on file is covered too - which is also why creating one does not email an invitation.

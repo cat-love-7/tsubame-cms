@@ -40,6 +40,7 @@ impl TestBackend for OnPremises {
 
     const SERVES_IMAGE_BYTES: bool = true;
     const PASSWORD_LOGIN: bool = true;
+    const PASSWORD_RESET: &'static str = "link";
 
     async fn open(hint: &str) -> Self {
         // Under `target/`, so a leaked directory from a panicking run is ignored by git and
@@ -123,6 +124,14 @@ impl TestBackend for Aws {
 
     const SERVES_IMAGE_BYTES: bool = false;
     const PASSWORD_LOGIN: bool = false;
+    const PASSWORD_RESET: &'static str = "temporary";
+
+    fn prepare(module: AppModule<AwsRepository>) -> AppModule<AwsRepository> {
+        // The pool the account screen manages. A deployment builds this over the SDK
+        // (`sl_cms_aws::build_deployed_module`); here it is the same mapping over a pool that only
+        // remembers what it was asked, because there is no Cognito emulator to point at.
+        module.with_account_provisioner(sl_cms_aws::in_memory_provisioner())
+    }
 
     async fn open(hint: &str) -> Self {
         let (repository, _table) =

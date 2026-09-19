@@ -8,11 +8,16 @@
 /// A deployment's shape, as `GET /auth/capabilities` reports it.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Capabilities {
-    /// Whether the CMS verifies passwords: `/auth/login`, `/auth/me/password` and the reset
-    /// links exist only where it does.
+    /// Whether the CMS verifies passwords: `/auth/login`, `/auth/me/password` and completing a
+    /// reset link exist only where it does.
     pub password_login: bool,
-    /// Whether an administrator can mint a password-reset link to hand to someone.
-    pub password_reset_links: bool,
+    /// What an administrator gets to hand over after a password reset, or `None` where an
+    /// administrator cannot reset one at all.
+    ///
+    /// The client shows what it is told to show; the answer to the reset request says the same
+    /// thing again, because that is the moment it has something to copy.
+    #[serde(default)]
+    pub password_reset: Option<PasswordResetKind>,
     /// How image bytes reach storage.
     pub image_upload: ImageUpload,
     /// Where to send someone to sign in, when that is not here.
@@ -30,6 +35,18 @@ pub struct Capabilities {
     pub max_image_bytes: usize,
 }
 
+/// What an administrator hands to an account's owner after resetting its password.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PasswordResetKind {
+    /// A single-use link the owner opens to choose the password: a deployment that stores the
+    /// credential itself. Nobody else ever sees the password.
+    Link,
+    /// A temporary password the provider already set, which its owner has to change before the
+    /// next sign-in completes: a deployment whose identity provider owns the credential.
+    Temporary,
+}
+
 /// Who accepts the bytes of an uploaded image.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -45,7 +62,7 @@ impl Capabilities {
     pub const fn on_premises(max_image_bytes: usize) -> Capabilities {
         Capabilities {
             password_login: true,
-            password_reset_links: true,
+            password_reset: Some(PasswordResetKind::Link),
             image_upload: ImageUpload::Proxied,
             // This deployment *is* the sign-in page.
             login_url: None,
@@ -58,10 +75,14 @@ impl Capabilities {
     /// `login_url` is the pool's hosted sign-in page when the deployment knows it (Terraform
     /// creates the domain and passes it in); without one, a client can only describe where to
     /// go.
+    ///
+    /// A reset here is Cognito's `AdminSetUserPassword`: the CMS cannot choose a password for an
+    /// account it does not own the credential of, so an administrator gets a temporary one to pass
+    /// on and the person changes it at their next sign-in.
     pub fn aws(login_url: Option<String>, max_image_bytes: usize) -> Capabilities {
         Capabilities {
             password_login: false,
-            password_reset_links: false,
+            password_reset: Some(PasswordResetKind::Temporary),
             image_upload: ImageUpload::Presigned,
             login_url,
             max_image_bytes,

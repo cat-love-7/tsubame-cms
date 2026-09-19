@@ -35,7 +35,8 @@
     "passwordChangedOwn": "Your password was changed. Other sessions have ended.",
     "changePasswordFailed": "Could not change the password: {{message}}",
     "setPasswordFailed": "Could not set the password: {{message}}",
-    "signInFailed": "Sign in failed. Try again."
+    "signInFailed": "Sign in failed. Try again.",
+    "passwordManagedElsewhere": "This deployment signs you in through its identity provider, which holds your password; the CMS cannot change it. If you need a new one, an administrator resets it from the accounts screen, and the value you are handed is changed the next time you sign in."
   },
   "accounts": {
     "title": "Accounts",
@@ -79,7 +80,11 @@
     "changeFailed": "Could not change {{user}}: {{message}}",
     "failedToLoadCollections": "Failed to load the collections: {{message}}",
     "failedToLoadSinglePages": "Failed to load the single pages: {{message}}",
-    "failedToLoadAccounts": "Failed to load the accounts: {{message}}"
+    "failedToLoadAccounts": "Failed to load the accounts: {{message}}",
+    "issueResetFailed": "Could not reset the password: {{message}}",
+    "resetPasswordCopied": "Copied the temporary password for {{user}}. It has to be changed the next time they sign in.",
+    "resetPasswordNotCopied": "Set a temporary password for {{user}}, shown below; it could not be copied, so read it out or copy it by hand. It has to be changed the next time they sign in.",
+    "temporaryPasswordHint": "They change this the next time they sign in."
   },
   "roles": {
     "viewer": "Viewer",

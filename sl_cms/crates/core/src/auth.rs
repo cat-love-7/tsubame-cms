@@ -16,7 +16,7 @@ use crate::models::user::{
     LoginResponse, NewAccountRequest, PasswordChangedResponse, Permission, UpdateUserRequest, User,
     UserId, UserResponse, is_plausible_email, is_plausible_username, normalize_username,
 };
-use crate::password_reset::{PasswordResetError, PasswordResetIssuer, PasswordResetLink};
+use crate::password_reset::{PasswordReset, PasswordResetError, PasswordResetIssuer};
 use crate::repositories::local_credentials::LocalCredentials;
 use crate::repositories::user_repository::UserRepository;
 use throttle::LoginThrottle;
@@ -90,6 +90,11 @@ impl<R: UserRepository> AuthService<R> {
         self
     }
 
+    /// The same, for a composition root that already owns the service.
+    pub fn set_account_provisioner(&mut self, provisioner: Arc<dyn AccountProvisioner>) {
+        self.provisioner = Some(provisioner);
+    }
+
     /// Create an account, asking the identity provider first when one is configured.
     ///
     /// No credential is chosen here. An account signs in either through a provider, or with a
@@ -133,7 +138,7 @@ impl<R: UserRepository> AuthService<R> {
             );
         }
 
-        if let Some(provisioner) = &self.provisioner {
+        let external_id = if let Some(provisioner) = &self.provisioner {
             let account = NewAccount {
                 username: username.clone(),
                 email: email.clone(),
@@ -142,8 +147,10 @@ impl<R: UserRepository> AuthService<R> {
                 // The provider's reason is worth logging, but not worth handing to a client.
                 tracing::warn!("could not create {username} at the identity provider: {e}");
                 HttpError::InternalServerError("the identity provider refused the account")
-            })?;
-        }
+            })?
+        } else {
+            None
+        };
 
         let permission = if request.is_admin {
             Permission::admin()
@@ -151,6 +158,9 @@ impl<R: UserRepository> AuthService<R> {
             request.permission
         };
         let mut user = User::new(&username, request.is_admin, permission);
+        // What the provider calls this account, where one owns it: a token it issues resolves to
+        // this record by that value and by nothing else.
+        user.external_id = external_id;
         user.email = email;
         self.repository.add_user(&user).await.map_err(internal)?;
         Ok(user.to_response())
@@ -259,6 +269,7 @@ impl<R: UserRepository> AuthService<R> {
         // Only losing an administrator has to be guarded; a viewer staying a viewer is not
         // what would leave the CMS without one.
         let was_active_admin = user.is_admin && user.is_active;
+        let was_active = user.is_active;
 
         if let Some(is_admin) = request.is_admin {
             user.is_admin = is_admin;
@@ -280,6 +291,26 @@ impl<R: UserRepository> AuthService<R> {
 
         if was_active_admin && !(user.is_admin && user.is_active) {
             self.ensure_another_active_admin(id).await?;
+        }
+
+        // Disabling someone has two halves, and the provider's comes first for the same reason
+        // creating an account does: if it refuses, the CMS is left as it was and the administrator
+        // sees why, rather than an account that is disabled here and still signs in there.
+        if user.is_active != was_active
+            && let Some(provisioner) = &self.provisioner
+        {
+            provisioner
+                .set_active(&user.username, user.is_active)
+                .await
+                .map_err(|e| {
+                    tracing::warn!(
+                        "could not change whether {} may sign in at the identity provider: {e}",
+                        user.username
+                    );
+                    HttpError::InternalServerError(
+                        "the identity provider refused the change to the account",
+                    )
+                })?;
         }
 
         self.repository
@@ -347,6 +378,40 @@ impl<R: UserRepository> AuthService<R> {
         users.sort_by(|a, b| a.email.cmp(&b.email));
         Ok(users.iter().map(User::to_response).collect())
     }
+
+    /// Give an account a new way in, and answer with what the administrator hands over.
+    ///
+    /// Two shapes, and the deployment decides which: where the CMS holds the password it mints a
+    /// single-use link, and the account's owner chooses the password so nobody else ever sees it;
+    /// where an identity provider holds it, the provider sets a temporary password that its owner
+    /// has to change before the next sign-in completes. Nothing is mailed either way - an
+    /// administrator passes on whatever comes back, which is also the only thing that works for an
+    /// account with no address on file.
+    ///
+    /// Not in the `LocalCredentials` block below, because a reset exists in both deployments; only
+    /// the value that comes back differs.
+    pub async fn issue_password_reset(&self, id: &UserId) -> Result<PasswordReset, HttpError> {
+        let user = self.require_user(id).await?;
+        // A disabled account cannot sign in, so a reset for it would only mislead.
+        if !user.is_active {
+            return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
+        }
+        if let Some(provisioner) = &self.provisioner {
+            let password = provisioner.reset_password(&user.username).await.map_err(|e| {
+                tracing::warn!(
+                    "could not reset {} at the identity provider: {e}",
+                    user.username
+                );
+                HttpError::InternalServerError("the identity provider refused the reset")
+            })?;
+            return Ok(PasswordReset::Temporary { password });
+        }
+        let link = self.password_resets.issue(&user, chrono::Utc::now());
+        Ok(PasswordReset::Link {
+            token: link.token,
+            expires_at: link.expires_at,
+        })
+    }
 }
 
 /// The same service, for a deployment that stores passwords itself.
@@ -405,18 +470,6 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {
             expires_at,
             user: user.to_response(),
         })
-    }
-    /// Issue a link that lets one account set a new password, for an administrator to pass on.
-    ///
-    /// Nothing is mailed: the administrator decides how the link reaches its owner, which is
-    /// the only thing that works for an account with no address on file.
-    pub async fn issue_password_reset(&self, id: &UserId) -> Result<PasswordResetLink, HttpError> {
-        let user = self.require_user(id).await?;
-        // A disabled account cannot sign in, so a link for it would only mislead.
-        if !user.is_active {
-            return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
-        }
-        Ok(self.password_resets.issue(&user, chrono::Utc::now()))
     }
     /// Set a new password using an issued link, and sign the caller in with the result.
     ///
@@ -903,14 +956,18 @@ mod tests {
         let id = UserId::from(account.id.to_string().as_str());
 
         let link = auth.issue_password_reset(&id).await.unwrap();
-        assert!(link.expires_at > chrono::Utc::now());
+        // This deployment stores the password itself, so what it hands over is a link.
+        let PasswordReset::Link { token, expires_at } = link else {
+            panic!("a deployment with local passwords resets by link");
+        };
+        assert!(expires_at > chrono::Utc::now());
 
         // An old session, to watch it die.
         let old_token = auth.login("ops", "old-password").await.unwrap().token;
         assert!(auth.user_from_token(&old_token).await.is_ok());
 
         let changed = auth
-            .complete_password_reset(&link.token, "chosen-by-the-owner")
+            .complete_password_reset(&token, "chosen-by-the-owner")
             .await
             .unwrap();
 
@@ -928,7 +985,7 @@ mod tests {
 
         // ...and the link cannot be used twice.
         let again = auth
-            .complete_password_reset(&link.token, "another-password")
+            .complete_password_reset(&token, "another-password")
             .await
             .unwrap_err();
         assert_eq!(again.status_code, 403, "{}", again.message);
@@ -1323,21 +1380,39 @@ mod tests {
     }
 
     /// A provisioner that writes down what it was asked to do, and can refuse.
-    #[derive(Default)]
     struct RecordingProvisioner {
         created: std::sync::Mutex<Vec<String>>,
         deleted: std::sync::Mutex<Vec<String>>,
+        reset: std::sync::Mutex<Vec<String>>,
+        active: std::sync::Mutex<Vec<(String, bool)>>,
         refuse: bool,
+        /// What a reset hands back, so a test can see it travel through the service.
+        temporary_password: String,
+    }
+
+    impl Default for RecordingProvisioner {
+        fn default() -> Self {
+            RecordingProvisioner {
+                created: Default::default(),
+                deleted: Default::default(),
+                reset: Default::default(),
+                active: Default::default(),
+                refuse: false,
+                temporary_password: "Temp-pass-1!".to_string(),
+            }
+        }
     }
 
     impl AccountProvisioner for RecordingProvisioner {
-        fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, ()> {
+        fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, Option<String>> {
             Box::pin(async move {
                 if self.refuse {
                     return Err("no".to_string());
                 }
                 self.created.lock().unwrap().push(account.username.clone());
-                Ok(())
+                // What a provider that knows its own accounts answers with; the CMS stores it so a
+                // token from that provider resolves to the record.
+                Ok(Some(format!("external-{}", account.username)))
             })
         }
         fn delete<'a>(&'a self, username: &'a str) -> ProvisionFuture<'a, ()> {
@@ -1346,6 +1421,27 @@ mod tests {
                     return Err("no".to_string());
                 }
                 self.deleted.lock().unwrap().push(username.to_string());
+                Ok(())
+            })
+        }
+        fn reset_password<'a>(&'a self, username: &'a str) -> ProvisionFuture<'a, String> {
+            Box::pin(async move {
+                if self.refuse {
+                    return Err("no".to_string());
+                }
+                self.reset.lock().unwrap().push(username.to_string());
+                Ok(self.temporary_password.clone())
+            })
+        }
+        fn set_active<'a>(&'a self, username: &'a str, active: bool) -> ProvisionFuture<'a, ()> {
+            Box::pin(async move {
+                if self.refuse {
+                    return Err("no".to_string());
+                }
+                self.active
+                    .lock()
+                    .unwrap()
+                    .push((username.to_string(), active));
                 Ok(())
             })
         }
@@ -1375,6 +1471,18 @@ mod tests {
             ["ops@example.com".to_string()]
         );
         assert_eq!(repository.users.read().unwrap().len(), 1);
+        // ...and the record carries what the provider calls the account: a token it issues later
+        // resolves to a local account by that value and by nothing else, so an administrator-created
+        // account without it would exist in both places and still be refused at the door.
+        let stored = repository
+            .get_user_from_username("ops@example.com")
+            .await
+            .unwrap()
+            .expect("the account");
+        assert_eq!(
+            stored.external_id.as_deref(),
+            Some("external-ops@example.com")
+        );
 
         // The provider refuses: no record is written, so there is no account that cannot sign
         // in and no half-created user to clean up.
@@ -1405,6 +1513,96 @@ mod tests {
             ["ops@example.com".to_string()]
         );
         assert!(repository.users.read().unwrap().is_empty());
+    }
+
+    /// Where the provider owns the credential, a reset is the provider's: the CMS asks it, and
+    /// hands the administrator whatever came back.
+    #[tokio::test]
+    async fn a_reset_at_the_provider_returns_what_the_provider_set() {
+        let (auth, _) = service();
+        let account = account_with_password(&auth, "ops", "old-password", false).await;
+        let provisioner = Arc::new(RecordingProvisioner::default());
+        let auth = auth.with_account_provisioner(provisioner.clone());
+
+        let reset = auth
+            .issue_password_reset(&UserId::from(account.id.to_string().as_str()))
+            .await
+            .unwrap();
+
+        assert_eq!(provisioner.reset.lock().unwrap().as_slice(), ["ops"]);
+        match reset {
+            PasswordReset::Temporary { password } => {
+                assert_eq!(password, provisioner.temporary_password)
+            }
+            other => panic!("a provider-owned credential resets to a temporary password: {other:?}"),
+        }
+    }
+
+    /// A provider that refuses must not leave the administrator holding a password that does not
+    /// work.
+    #[tokio::test]
+    async fn a_provider_that_refuses_a_reset_hands_over_nothing() {
+        let (auth, _) = service();
+        let account = account_with_password(&auth, "ops", "old-password", false).await;
+        let refusing = Arc::new(RecordingProvisioner {
+            refuse: true,
+            ..RecordingProvisioner::default()
+        });
+        let auth = auth.with_account_provisioner(refusing);
+
+        let refused = auth
+            .issue_password_reset(&UserId::from(account.id.to_string().as_str()))
+            .await
+            .unwrap_err();
+
+        assert_eq!(refused.status_code, 500, "{}", refused.message);
+    }
+
+    /// Whether someone may sign in is the provider's half of the record, so a change to it has to
+    /// reach the provider - and a change that has nothing to do with signing in must not.
+    #[tokio::test]
+    async fn only_a_change_to_signing_in_reaches_the_provider() {
+        let (auth, _) = service();
+        let account = account_with_password(&auth, "ops", "old-password", false).await;
+        let id = UserId::from(account.id.to_string().as_str());
+        let provisioner = Arc::new(RecordingProvisioner::default());
+        let auth = auth.with_account_provisioner(provisioner.clone());
+
+        // A role change is the CMS's own business.
+        auth.update_user(
+            &id,
+            UpdateUserRequest {
+                permission: Some(Permission::viewer()),
+                ..UpdateUserRequest::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(provisioner.active.lock().unwrap().is_empty());
+
+        auth.update_user(
+            &id,
+            UpdateUserRequest {
+                is_active: Some(false),
+                ..UpdateUserRequest::default()
+            },
+        )
+        .await
+        .unwrap();
+        auth.update_user(
+            &id,
+            UpdateUserRequest {
+                is_active: Some(true),
+                ..UpdateUserRequest::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            provisioner.active.lock().unwrap().as_slice(),
+            [("ops".to_string(), false), ("ops".to_string(), true)]
+        );
     }
 
     /// A verifier that always says the same thing, so the *resolution* is what is under test.

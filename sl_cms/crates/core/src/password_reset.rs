@@ -33,6 +33,28 @@ pub struct PasswordResetLink {
     pub expires_at: DateTime<Utc>,
 }
 
+/// What an administrator has to hand over after a reset.
+///
+/// Two deployments, two shapes. Where the CMS stores the password itself, it mints a **link** and
+/// the account's owner chooses the password, so nobody else ever knows it. Where an identity
+/// provider owns the credential, the provider sets a **temporary password** instead and makes the
+/// person change it before they are signed in - the provider is the only thing that can set a
+/// password there, and nothing about it can be mailed, because the deployment does not send mail.
+///
+/// The client is told which one it got rather than inferring it from the deployment's shape,
+/// because this is also exactly what it has to show: a link to copy, or a password to copy.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PasswordReset {
+    /// A single-use link; the account's owner picks the password it sets.
+    Link {
+        token: String,
+        expires_at: DateTime<Utc>,
+    },
+    /// A password the provider already set, which its owner has to change at the next sign-in.
+    Temporary { password: String },
+}
+
 /// Why a link was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasswordResetError {

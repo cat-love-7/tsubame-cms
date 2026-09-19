@@ -23,7 +23,7 @@ import {
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
-import { PasswordResetLink } from 'app/models/links';
+import { PasswordReset } from 'app/models/links';
 import { UsersService } from 'app/services/auth/users.service';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -74,7 +74,8 @@ export class UsersList {
    * its password reset at the identity provider, so those controls are not this CMS's to offer.
    */
   public passwordLogin = this.capabilities.passwordLogin;
-  public passwordResetLinks = this.capabilities.passwordResetLinks;
+  /** What a reset hands over here, or null where this deployment cannot reset one. */
+  public passwordReset = this.capabilities.passwordReset;
 
   public accounts = signal<CurrentUser[]>([]);
   /** A failure or a note about what just happened: keys, so they follow a language change. */
@@ -159,41 +160,50 @@ export class UsersList {
     return option ? this.i18n.translate(option.labelKey) : role;
   }
 
-  /** The reset link that was issued last, so an administrator can copy it. */
-  public resetLink = signal('');
-  /** The account the shown link belongs to. */
+  /** What the last reset produced, so an administrator can copy it. */
+  public resetValue = signal('');
+  /** Whether that was a link (the owner completes it) or a temporary password. */
+  public resetIsLink = signal(true);
+  /** The account the shown value belongs to. */
   public resetFor = signal('');
 
   /**
-   * Issue a link that lets one account set its own new password, and offer it for copying.
+   * Give one account a new way in, and offer what comes back for copying.
    *
-   * The CMS sends no mail, so the link travels however the administrator likes - which also
-   * works for an account with no address on file.
+   * The CMS sends no mail, so whatever this is travels however the administrator likes - which is
+   * also the only thing that works for an account with no address on file. Which shape it is
+   * depends on the deployment, and the deployment said so in `GET /auth/capabilities`.
    */
-  issuePasswordResetLink(user: CurrentUser) {
+  issuePasswordReset(user: CurrentUser) {
     this.error.set(null);
     this.status.set(null);
-    this.users.issuePasswordResetLink(user.id).subscribe({
-      next: (link) => {
+    this.users.issuePasswordReset(user.id).subscribe({
+      next: (reset) => {
         // The clipboard write is asynchronous and nothing waits for it; the method that does it
         // says so by returning a promise this handler deliberately drops.
-        void this.copyResetLink(link, user);
+        void this.offerReset(reset, user);
       },
-      error: (e) => this.error.set(failure('accounts.issueResetLinkFailed', e)),
+      error: (e) => this.error.set(failure('accounts.issueResetFailed', e)),
     });
   }
 
-  /** Put a reset link on the clipboard, and report how that went. */
-  private async copyResetLink(link: PasswordResetLink, user: CurrentUser) {
-    const url = passwordResetUrl(link.token);
-    this.resetLink.set(url);
+  /** Put a reset on the clipboard, and report how that went. */
+  private async offerReset(reset: PasswordReset, user: CurrentUser) {
+    // A link is a URL to open; a temporary password is a value to type, so it is shown as one.
+    const value = reset.kind === 'link' ? passwordResetUrl(reset.token) : reset.password;
+    this.resetValue.set(value);
+    this.resetIsLink.set(reset.kind === 'link');
     this.resetFor.set(user.username);
-    const copied = await copyToClipboard(url);
-    const expires = this.dates.format(link.expires_at);
+    const copied = await copyToClipboard(value);
+    const expires = reset.kind === 'link' ? this.dates.format(reset.expires_at) : '';
     this.status.set(
       copied
-        ? t('accounts.resetLinkCopied', { user: user.username, expires })
-        : t('accounts.resetLinkNotCopied', { user: user.username, expires }),
+        ? reset.kind === 'link'
+          ? t('accounts.resetLinkCopied', { user: user.username, expires })
+          : t('accounts.resetPasswordCopied', { user: user.username })
+        : reset.kind === 'link'
+          ? t('accounts.resetLinkNotCopied', { user: user.username, expires })
+          : t('accounts.resetPasswordNotCopied', { user: user.username }),
     );
   }
 
@@ -252,7 +262,7 @@ export class UsersList {
   create() {
     this.error.set(null);
     this.status.set(null);
-    this.resetLink.set('');
+    this.resetValue.set('');
     this.users
       .create({
         username: this.newUsername,
@@ -268,9 +278,9 @@ export class UsersList {
           this.newRole = 'viewer';
           this.newIsAdmin = false;
           this.load();
-          if (this.passwordResetLinks()) {
+          if (this.passwordReset()) {
             // The only way in, so it is offered rather than left to be found in the row.
-            this.issuePasswordResetLink(created);
+            this.issuePasswordReset(created);
           } else {
             this.status.set(t('accounts.created'));
           }

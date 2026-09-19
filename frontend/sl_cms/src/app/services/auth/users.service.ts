@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser } from 'app/core/auth/auth.service';
-import { PasswordResetLink } from 'app/models/links';
+import { PasswordReset } from 'app/models/links';
 
 import {
   NewUser,
@@ -33,8 +33,8 @@ export class UsersService {
     return this.users.remove(id);
   }
 
-  issuePasswordResetLink(id: string): Observable<PasswordResetLink> {
-    return this.users.issuePasswordResetLink(id);
+  issuePasswordReset(id: string): Observable<PasswordReset> {
+    return this.users.issuePasswordReset(id);
   }
 
   changeOwnPassword(currentPassword: string, newPassword: string): Observable<PasswordChanged> {

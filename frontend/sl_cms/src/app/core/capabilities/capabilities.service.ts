@@ -14,8 +14,12 @@ import { apiUrl } from '../api-url';
 export interface Capabilities {
   /** Whether the CMS verifies passwords, so whether `/auth/login` and friends exist at all. */
   password_login: boolean;
-  /** Whether an administrator can mint a password-reset link to hand to someone. */
-  password_reset_links: boolean;
+  /**
+   * What an administrator gets to hand over after a password reset, or null where this deployment
+   * cannot reset one at all: a link the account's owner completes, or a temporary password the
+   * identity provider already set, which has to be changed at the next sign-in.
+   */
+  password_reset: 'link' | 'temporary' | null;
   /** Who accepts the bytes of an uploaded image. */
   image_upload: 'proxied' | 'presigned';
   /** Where to sign in, when that is not here. Absent when the deployment does not know. */
@@ -37,7 +41,7 @@ export interface Capabilities {
  */
 const ASSUMED: Capabilities = {
   password_login: true,
-  password_reset_links: true,
+  password_reset: 'link',
   image_upload: 'proxied',
   login_url: null,
 };
@@ -54,8 +58,8 @@ export class CapabilitiesService {
   /** Whether the CMS checks passwords itself. */
   readonly passwordLogin = computed(() => this.known().password_login);
 
-  /** Whether an administrator can issue a reset link. */
-  readonly passwordResetLinks = computed(() => this.known().password_reset_links);
+  /** What an administrator can hand over after a reset, or null where none is possible. */
+  readonly passwordReset = computed(() => this.known().password_reset ?? null);
 
   /** Whether image bytes go through this API or straight to object storage. */
   readonly imageUpload = computed(() => this.known().image_upload);

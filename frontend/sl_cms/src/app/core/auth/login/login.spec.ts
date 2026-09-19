@@ -29,7 +29,7 @@ describe('Login', () => {
   it('sends the browser to the provider with a challenge and a state', async () => {
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: false,
-      password_reset_links: false,
+      password_reset: 'temporary',
       login_url: 'https://pool.example.com/login?client_id=abc',
     });
     await fixture.whenStable();
@@ -74,7 +74,7 @@ describe('Login', () => {
     // is that question.
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: false,
-      password_reset_links: false,
+      password_reset: 'temporary',
       image_upload: 'presigned',
     });
     await fixture.whenStable();
@@ -90,7 +90,7 @@ describe('Login', () => {
   it('sends the user to the provider when the deployment names a sign-in page', async () => {
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: false,
-      password_reset_links: false,
+      password_reset: 'temporary',
       image_upload: 'presigned',
       login_url: 'https://cms.auth.eu-west-1.amazoncognito.com/login?client_id=abc',
     });
@@ -107,7 +107,7 @@ describe('Login', () => {
   it('can be switched to Japanese, and remembers the choice', async () => {
     httpMock.expectOne('/api/auth/capabilities').flush({
       password_login: true,
-      password_reset_links: true,
+      password_reset: 'link',
       image_upload: 'proxied',
     });
     await fixture.whenStable();

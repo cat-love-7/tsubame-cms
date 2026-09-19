@@ -276,7 +276,13 @@ async function createAccount(username, password, extra = {}, token) {
     },
     token,
   );
-  const link = await api('POST', `/auth/users/${created.id}/password-reset-link`, undefined, token);
+  const link = await api('POST', `/auth/users/${created.id}/password-reset`, undefined, token);
+  // This suite drives the on-premises deployment, whose answer is a link. A deployment where the
+  // identity provider holds the password answers a temporary password instead, and there is
+  // nothing here to complete it with - that is what `hosted-signin.mjs` is for.
+  if (link.kind !== 'link') {
+    throw new Error(`this suite expects a reset link, got ${JSON.stringify(link)}`);
+  }
   await api(
     'POST',
     '/auth/password-reset',

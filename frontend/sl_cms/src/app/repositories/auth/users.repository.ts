@@ -4,7 +4,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
-import { PasswordResetLink } from 'app/models/links';
+import { PasswordReset } from 'app/models/links';
 
 export interface NewUser {
   /** The sign-in identifier; the CMS does not require an email address. */
@@ -61,16 +61,17 @@ export class UsersRepository {
   }
 
   /**
-   * An administrator issuing a link that lets one account set its own new password.
+   * An administrator giving one account a new way in.
    *
-   * Nothing is mailed: the caller shows the link so it can be passed on, which is also the only
-   * thing that works for an account with no address on file.
+   * What comes back depends on the deployment: here the CMS holds the password, so it is a link
+   * the owner completes; where an identity provider holds it, the answer is a temporary password
+   * the person changes at their next sign-in. `kind` says which, and `GET /auth/capabilities`
+   * promised it in advance.
    */
-  issuePasswordResetLink(id: string): Observable<PasswordResetLink> {
-    return this.http.post<PasswordResetLink>(apiUrl(`/auth/users/${id}/password-reset-link`), null);
+  issuePasswordReset(id: string): Observable<PasswordReset> {
+    return this.http.post<PasswordReset>(apiUrl(`/auth/users/${id}/password-reset`), null);
   }
 
-  /** An administrator setting someone else's password. */
   /**
    * Changing your own password; the current one proves it is really you.
    *

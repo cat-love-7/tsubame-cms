@@ -61,6 +61,25 @@ data "aws_iam_policy_document" "function" {
     resources = [aws_s3_bucket.images.arn]
   }
 
+  # The account screen's own calls (`crates/aws/src/provisioner.rs`): creating an account puts a
+  # user in the pool, removing one takes it away, deactivating one stops it signing in, and a reset
+  # sets a temporary password the person changes at their next sign-in. Nothing here can read a
+  # password - Cognito does not expose one - so this is administration, not access to a credential.
+  statement {
+    effect = "Allow"
+    actions = [
+      "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDeleteUser",
+      "cognito-idp:AdminSetUserPassword",
+      "cognito-idp:AdminEnableUser",
+      "cognito-idp:AdminDisableUser",
+      # Read back the `sub` of an account that was already in the pool: it is what a token from
+      # this pool resolves to, so a record without it could never sign in.
+      "cognito-idp:AdminGetUser",
+    ]
+    resources = [aws_cognito_user_pool.cms.arn]
+  }
+
   # The signing secret, read once at startup (`resolve_jwt_secret`). Scoped to the one secret:
   # the function has no business reading any other.
   statement {

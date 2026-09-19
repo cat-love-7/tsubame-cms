@@ -26,6 +26,7 @@ use sl_cms_core::password_reset::PasswordResetIssuer;
 use sl_cms_core::preview_link::PreviewLinkIssuer;
 
 pub mod lambda;
+pub mod provisioner;
 pub mod repository;
 pub mod settings;
 
@@ -36,6 +37,7 @@ mod testing;
 use credentials::emulator_credentials;
 
 pub use policy::*;
+pub use provisioner::{AdminFuture, CognitoAccountProvisioner, CognitoAdmin, temporary_password};
 pub use repository::AwsRepository;
 pub use settings::{AwsSettings, ImageDelivery};
 pub use testing::*;
@@ -90,6 +92,19 @@ async fn s3_client(settings: &AwsSettings) -> aws_sdk_s3::Client {
         builder = builder.force_path_style(true);
     }
     aws_sdk_s3::Client::from_conf(builder.build())
+}
+
+/// Build a Cognito client for the pool this deployment manages.
+///
+/// No endpoint override, unlike the two clients above: those exist for the emulators, and there is
+/// no Cognito emulator to point at (`doc/aws-plan.md`, P4). A *local* run therefore composes its
+/// module without a provisioner at all ([`build_app_module`]), which is the honest reading of it -
+/// it cannot manage accounts at a pool it cannot reach.
+async fn cognito_client(settings: &AwsSettings) -> aws_sdk_cognitoidentityprovider::Client {
+    let loader = aws_config::defaults(aws_config::BehaviorVersion::latest()).region(
+        aws_sdk_cognitoidentityprovider::config::Region::new(settings.region.clone()),
+    );
+    aws_sdk_cognitoidentityprovider::Client::new(&loader.load().await)
 }
 
 /// Build the AWS composition root described by `config`.
@@ -160,7 +175,7 @@ pub async fn build_deployed_module(
         cognito_settings(settings),
         HttpJwks::new(cognito_settings(settings).jwks_url()),
     ));
-    Ok(AppModule::new_with_verifier(
+    let module = AppModule::new_with_verifier(
         parts.repository,
         parts.token_issuer,
         parts.notifier,
@@ -169,7 +184,16 @@ pub async fn build_deployed_module(
         verifier,
         settings.bootstrap_admin_usernames.clone(),
         config.limits,
-    ))
+    );
+    // The account screen manages the pool: creating an account puts a user there, removing one
+    // takes it away, and a reset is `AdminSetUserPassword` with a temporary password. The
+    // credential is the pool's, so this is the only side that can do any of it.
+    Ok(module.with_account_provisioner(std::sync::Arc::new(
+        CognitoAccountProvisioner::new(
+            cognito_client(settings).await,
+            settings.user_pool_id.clone(),
+        ),
+    )))
 }
 
 /// What the verifier has to be told, from what the deployment was given.
@@ -202,11 +226,14 @@ pub fn build_router_with(
     login_url: Option<String>,
     exchange: Option<sl_cms_core::http::cognito_login::TokenEndpoint>,
 ) -> axum::Router {
-    // Sign-in belongs to Cognito here, so the password endpoints do not exist. They are
-    // registered anyway, answering 501 with a sentence that says where to sign in: a client
+    // Sign-in belongs to Cognito here, and so does the credential: what is left answering 501 is
+    // the CMS's own password endpoints, which have no meaning where it holds no password. They are
+    // registered anyway, with a sentence that says where to sign in and who can reset one: a client
     // that guessed the path learns something, and a 404 would only say "wrong URL".
-    let message = "this deployment signs users in through Cognito, so the CMS does not handle \
-                   passwords; GET /auth/capabilities says where to sign in";
+    let message = "this deployment signs users in through Cognito, and the CMS does not hold the \
+                   password, so it cannot change one here - an administrator resets it from the \
+                   account screen, and the value they hand over is changed at the next sign-in; \
+                   GET /auth/capabilities says where to sign in";
     let extra_public = sl_cms_core::http::password_auth::unavailable_public(message)
         .merge(sl_cms_core::http::capabilities::routes(
             sl_cms_core::models::capabilities::Capabilities::aws(
