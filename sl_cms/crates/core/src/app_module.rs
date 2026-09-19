@@ -8,6 +8,7 @@ use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_targets::RelationTargetSource;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::repositories::user_repository::UserRepository;
 use crate::services::collection_service::CollectionService;
@@ -103,8 +104,7 @@ impl<R: Storage> AppModule<R> {
         mut self,
         provisioner: Arc<dyn crate::auth::provisioner::AccountProvisioner>,
     ) -> Self {
-        self.auth_service
-            .set_account_provisioner(provisioner);
+        self.auth_service.set_account_provisioner(provisioner);
         self
     }
 
@@ -115,17 +115,22 @@ impl<R: Storage> AppModule<R> {
         auth_service: AuthService<R>,
         limits: Limits,
     ) -> Self {
+        // Both services are handed the same storage, which answers what a relation may point at
+        // by being both repositories (see `RelationTargetSource`).
+        let relation_targets: Arc<dyn RelationTargetSource> = repository.clone();
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
                 repository.clone(),
                 repository.clone(),
+                relation_targets.clone(),
                 notifier.clone(),
             ),
             single_page_service: SinglePageService::new(
                 repository.clone(),
                 repository.clone(),
                 repository.clone(),
+                relation_targets,
                 notifier,
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),

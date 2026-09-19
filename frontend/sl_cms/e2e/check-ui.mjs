@@ -1386,6 +1386,30 @@ try {
     ),
   );
 
+  // A relation points at another collection's items - or at a single page - and how many it may
+  // hold is the field's own choice. The target list is what the server says exists.
+  await page.click('button:has-text("Add field")');
+  const relationField = page.locator('.schema-field').nth(5);
+  await relationField.locator('input[name=fieldName]').fill('related');
+  await relationField.locator('mat-select[name=fieldType]').click();
+  await page.locator('mat-option', { hasText: 'Relation' }).click();
+  await relationField.locator('mat-select[name=relationTarget]').click();
+  await page.locator('mat-option', { hasText: COLLECTION }).click();
+  // The panel lingers over the form for a moment, and the checkbox is underneath it. The plain
+  // `check()` (not `force`) is what lets Playwright wait for the box to be clickable: a forced
+  // click at a stale point lands on the panel instead, and the box never changes state.
+  await page.keyboard.press('Escape');
+  await relationField.locator('input[name=relationHasMany]').check();
+  await relationField.locator('input[name=relationInverseName]').fill('posts');
+  check(
+    'リレーションの対象を画面で選べる',
+    ((await relationField.locator('mat-select[name=relationTarget]').textContent()) ?? '').includes(
+      COLLECTION,
+    ) &&
+      (await relationField.locator('input[name=relationHasMany]').isChecked()) &&
+      (await relationField.locator('input[name=relationInverseName]').inputValue()) === 'posts',
+  );
+
   // Half of the 12-column grid, from the presets rather than the number input.
   await textField.locator('.width-presets button', { hasText: '1/2' }).click();
 
@@ -1404,6 +1428,7 @@ try {
   const builtEnum = builtSchema.find((field) => field.name === 'state');
   const builtArray = builtSchema.find((field) => field.name === 'blocks');
   const builtSlug = builtSchema.find((field) => field.name === 'address');
+  const builtRelation = builtSchema.find((field) => field.name === 'related');
   check(
     '画面で組んだスキーマが保存される',
     builtText?.width === 6 &&
@@ -1411,7 +1436,11 @@ try {
       builtText?.field_type?.Text !== undefined &&
       builtEnum?.field_type?.TextEnum?.join() === 'published' &&
       builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK &&
-      builtSlug?.field_type?.Slug?.generate_from === 'title',
+      builtSlug?.field_type?.Slug?.generate_from === 'title' &&
+      builtRelation?.field_type?.Relation?.target?.kind === 'collection' &&
+      builtRelation?.field_type?.Relation?.target?.name === COLLECTION &&
+      builtRelation?.field_type?.Relation?.has_many === true &&
+      builtRelation?.field_type?.Relation?.inverse_name === 'posts',
     JSON.stringify(builtSchema),
   );
 
@@ -1485,6 +1514,32 @@ try {
     .catch(() => false);
   check('複合配列の要素を並べ替えられる', reordered);
 
+  // A relation is a set of references, and until the picker exists it is the JSON the API takes.
+  // The box says what it points at, because "which items?" is the one thing a reader needs.
+  const related = page.locator('app-value-field textarea[name=related]');
+  await related.waitFor({ timeout: 15000 });
+  check(
+    'リレーションの対象が画面に出る',
+    ((await related.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
+      COLLECTION,
+    ),
+  );
+
+  // A reference that names no item is refused before the form is sent, and the input is marked.
+  await related.fill(`[{"target":"${COLLECTION}"}]`);
+  await save().click();
+  await page.waitForTimeout(600);
+  const relatedProblem = await page.locator('.field-cell.problem').count();
+  const relatedError = ((await page.locator('.error').first().textContent()) ?? '').trim();
+  check(
+    '参照が不正なら保存前に止まる',
+    page.url().includes('/create') && relatedProblem === 1 && relatedError.includes('related[0]'),
+    `${page.url()} / ${relatedProblem} / ${relatedError}`,
+  );
+
+  // The item the relation points at exists: the lists in the schema editor are the site's.
+  await related.fill(`[{"target":"${COLLECTION}","item":1}]`);
+
   await save().click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
@@ -1516,10 +1571,22 @@ try {
       JSON.stringify([`${SCHEMA_BLOCK}:second block`, `${SCHEMA_BLOCK}:first block`]),
     JSON.stringify(savedElements),
   );
+  check(
+    'リレーションが参照として保存される',
+    JSON.stringify(builtItem?.related) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
+    JSON.stringify(builtItem?.related),
+  );
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('.composite-element').first().waitFor({ timeout: 15000 });
+  // The reference comes back in the box the editor typed it into, so a load-then-save keeps it.
+  check(
+    '保存した参照がフォームに出る',
+    (await page.locator('app-value-field textarea[name=related]').inputValue()) ===
+      `[{"target":"${COLLECTION}","item":1}]`,
+    await page.locator('app-value-field textarea[name=related]').inputValue(),
+  );
   check(
     '保存した複合配列がフォームに出る',
     (await page.locator('.composite-element').nth(0).locator('input').first().inputValue()) ===

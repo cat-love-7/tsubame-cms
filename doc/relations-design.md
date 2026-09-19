@@ -1,7 +1,8 @@
 # コンテンツの関係(リレーション)の設計
 
-**状態: 設計(未実装)**。最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、
-同ツールは現在リレーションを既定で落としている。
+**状態: 第 1 段階(型と値)を実装済み**。§9 の段階でいう 1 まで入っており、2 以降は未実装。
+最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在リレーションを
+既定で落としている。
 
 Strapi の relation に相当するもの — コレクションのアイテムが、別のコレクションのアイテムを
 参照する — を、この CMS の設計に合わせて入れる。**画像参照が既にその原型**なので、新しい概念を
@@ -37,6 +38,7 @@ Strapi の relation に相当するもの — コレクションのアイテム�
 | 削除される側 | **拒否が既定**。`?detach=true` で参照を外してから削除(参照は全部外れる) | 画像の「ゴミ箱 → 参照確認 → 完全削除」と同じ思想 |
 | 公開 API の展開 | **既定は id のみ**、`?populate=<field>` で 1 段展開 | 画像は常に展開しているが、多対多では応答が重くなり、循環・未公開の説明も要る。明示が安全 |
 | 循環・自己参照 | **許す** | 値であって定義ではないので作成順の問題が無い。展開は 1 段なので再帰しない |
+| 配列の要素型 | **なれない**。複数持つのは `has_many` だけ | relation は既に集合なので、配列にすると「集合の集合」という 2 つ目の言い方になる。編集も配信もできない(検証で拒否) |
 
 ## 3. データの形
 
@@ -53,6 +55,10 @@ FieldType::Relation(RelationOptions {
 - 検証は**複合フィールド参照と同じ場所**で: 対象が存在すること、単一ページなら `has_many: false` で
   あること、`inverse_name` が対象側で一意であること(`referenced_composite_ids` の隣に
   `referenced_targets` を足す)。
+  - **対象の存在**はコレクションと単一ページの一覧が要るので、スキーマ保存のサービスで見る
+    (`RelationTargetSource` が両方の名前を答える。`SchemaScope::CompositeDefinition` は relation
+    自体を拒否する: 複合定義は使う側のアイテムに埋め込まれるので、対象が決まらない)。
+  - **`inverse_name` の一意性**はまだ見ていない(第 5 段階。逆引きの展開が入る時)。
 - `inverse_name` は**呼び名だけ**でデータを持たない。逆引きは常にインデックスから引く。
 - 定義の作成順に制約が出る(対象が先)。Strapi の相互参照は片側だけ採用して回避する(§7)。
 
@@ -81,6 +87,14 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 | `FieldValue::to_response`(values.rs L721) | 画像と同じく**解決用の情報を渡す**形にする(今は `&HashMap<ImageId, Image>` を取る) |
 | `referenced_images` の隣 | `referenced_items`(値の木を走査。配列・複合の中も見る) |
 | フロント `value-field` | 型ごとの分岐(§6) |
+
+**第 1 段階で実装した形**(`FieldValueResponse` は参照の配列をそのまま返す。展開は第 4 段階):
+
+- `RelationTarget` は `{ "kind": "collection" | "single_page", "name": "..." }` の内部タグ付き。
+  同じ名前でも種類が違えば別の対象なので、検証は種類ごとの一覧と突き合わせる。
+- 単一ページの値は `{ "target": "home" }`(`item` は付かない)。`item` を送ると拒否する。
+- 配列の要素型にはできない(`validate_field_type` が拒否)。読み出しも `validate_at` が
+  「配列の要素が relation だった」を型不一致として返す。
 
 ### 逆引きインデックス
 
@@ -158,24 +172,29 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 ## 6. 画面(コストの見積り)
 
-型を 1 つ足すのは**追加的**で、触る場所は集中している(調査済み):
+型を 1 つ足すのは**追加的**で、触る場所は集中している(調査済み)。**第 1 段階で入ったのは
+「対象 + 複数 + 呼び名」の選択まで**で、値は JSON 欄のまま(ピッカーは第 5 段階):
 
-| 場所 | 追加するもの |
-|---|---|
-| `models/schema/fields.ts` | `RelationFieldSchema` + `FieldTypeMap`(L59–71)/`FieldDefaults`(L73–85)、型ガード(L181–201)、`FieldTypeStringPipe`(L282–298)の分岐 |
-| `shared/field/field.ts` | `loadCompositeIds()`(L184–195)と同じ形で、コレクション一覧を遅延取得して選択肢にする |
-| `shared/field/field.html`(L72–118) | 型ごとのオプション欄に「対象」+「複数」 |
-| `shared/relation-field/`(新規) | 対象(コレクション / 単一ページ)の選択(複合フィールドの選択と同じ形) |
-| `models/values/fields.ts`(L82–98) | 既定値(空の配列) |
-| `shared/value-field/value-field.{ts,html}` | `FieldKind`(L45–57) + `kind()`(L191–203) + `@switch` の `@case` + **ピッカー**(画像ピッカー L559–609 / L410–453 と同じ形: 遅延一覧 + 単一/複数 + 選択。集合なので並べ替えは無し) |
-| `assets/i18n/{en,ja}.json` | `schema.relation*` / `content.*`(ピッカーの文言)。カタログの整合は `catalog.spec.ts` と `keys.spec.ts` が見ている |
-| spec 4 本 | `field.spec` / `edit-schema.spec` / `fields.spec` / `value-field.spec` |
+| 場所 | 追加するもの | 第 1 段階 |
+|---|---|---|
+| `models/schema/fields.ts` | `RelationFieldSchema` + `FieldTypeMap`(L59–71)/`FieldDefaults`(L73–85)、型ガード(L181–201)、`FieldTypeStringPipe`(L282–298)の分岐 | 済 |
+| `dashboard/settings/shared/field/field.ts` | `loadCompositeIds()`(L184–195)と同じ形で、コレクションと単一ページの一覧を遅延取得して選択肢にする | 済(専用コンポーネントは作らず、`field` の中で完結した) |
+| `dashboard/settings/shared/field/field.html`(L72–118) | 型ごとのオプション欄に「対象」+「複数」+「逆側での呼び名」 | 済 |
+| `shared/relation-field/`(新規) | 対象(コレクション / 単一ページ)の選択(複合フィールドの選択と同じ形) | 作らなかった(選択肢が 2 つだけなので `field` の中の 3 つのコントロールで足りる) |
+| `models/values/fields.ts`(L82–98) | 既定値(空の配列) | 済 |
+| `shared/value-field/value-field.{ts,html}` | `FieldKind`(L45–57) + `kind()`(L191–203) + `@switch` の `@case` + **ピッカー**(画像ピッカー L559–609 / L410–453 と同じ形: 遅延一覧 + 単一/複数 + 選択。集合なので並べ替えは無し) | `@case` と JSON 欄の検証まで。ピッカーは第 5 段階 |
+| `assets/i18n/{en,ja}.json` | `schema.relation*` / `content.relation*`。カタログの整合は `catalog.spec.ts` と `keys.spec.ts` が見ている | 済 |
+| spec 4 本 | `field.spec` / `edit-schema.spec` / `fields.spec` / `value-field.spec` | `fields.spec` / `field.spec` / `value-field.spec` に追加した(`edit-schema.spec` は型を列挙していないので変更が要らなかった) |
 
 - 型のドロップダウンは `Object.keys(FieldDefaults)` から作られるので、**一覧の編集は要らない**。
 - 型名はどれも翻訳していない(画面には生の `Text` / `CompositeField` が出る)。`Relation` も同じ扱いに
   なる。ここを直すなら別の小さな作業として分ける。
 - **型の一覧を列挙しているテストは無い**ので、追加は 4 本の spec に集中する。
 - 参照元パネル(逆引き)はアイテム画面に足す。画像の「使用している場所」が前例。
+- JSON 欄は relation の値が**配列**であることを使って、配列の JSON 編集と同じ欄・同じバッファで
+  編集する。違うのは検証だけで、配列の要素型ではなくフィールド自身の対象と突き合わせる
+  (対象名・アイテム id の有無・単一か複数か)。サーバーが正準化するので、欄の中身は送ったまま
+  保存され、次に読み出したときに整列済みで戻る。
 
 ## 7. 移行(Strapi)
 
@@ -194,17 +213,29 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 ## 8. テスト
 
+**第 1 段階で入ったもの**:
+
+- unit(`core/src/models/{schema,values}.rs`): 対象の検証、単一ページの `has_many` 拒否、複合定義の
+  relation 拒否、配列要素の拒否、`validate_relation_targets` の種類違い、値の正準化(整列・重複除去)、
+  対象の食い違い・アイテム id の欠落・単一に複数・単一ページの `item` の拒否、`required` の空
+- service(`core/src/services/{collection,single_page}_service.rs`): 存在しない対象を名指すスキーマ保存は
+  400(種類違いも 400)
+- 契約スイート(`crates/tests/suite/relations.rs`、両アダプタ): 集合の往復、単一ページの値の形、
+  スキーマ保存の 400 3 種、値の 400 4 種、`required` な relation が空のままの公開は 400
+- spec(`fields.spec` / `field.spec` / `value-field.spec`): 型の分岐、送信前の正規化、
+  一覧の遅延取得、値の JSON 欄の検証
+
+**これから要るもの**:
+
 - **契約スイート**(両アダプタ。インデックスの実装が別なので特に重要):
-  - 値の往復(単一・複数・集合の正準化)、存在しない相手は 400、参照先の種類と合わない値は 400
   - 逆引きが保存・公開・削除のそれぞれで正しい
-  - **`required` な relation が公開時に空になるなら公開は 409**、任意なら通って配信から落ちる
+  - **`required` な relation が公開時に空になるなら公開は 409**、任意なら通って配信から落とす
   - **参照されているアイテムの削除 → 409**、`?detach=true` で成功(参照が外れる)
   - 公開 API: 既定は対象と id のみ / `?populate=` で 1 段展開 / 未公開の相手は出ない
   - **逆引きのフィルタ**(`?where=category:3`): 公開済みだけが返り、ページングが効き、公開されて
     いない参照元は出ない
   - **逆引きの展開**(`?populate=<inverse_name>`): 1 段、公開済みのみ、件数の上限
-  - 単一ページを対象にした relation(値の形が違う)
-- **unit**: 値の検証、`referenced_items` の走査(配列・複合の中)、インデックスの差分計算
+- **unit**: `referenced_items` の走査(配列・複合の中)、インデックスの差分計算
 - **E2E**: スキーマ編集で relation を定義 → ピッカーで選ぶ → 保存 → 公開 → 配信 API で展開
 - **移行ツール**: relation のマッピング(片側採用・2 パス・順序の警告)
 - 新しい拒否コード(`detach` が要る / `required` が空になる)は **3 点契約**(Rust ↔
@@ -212,12 +243,16 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 ## 9. 段階(コミット分割)
 
-1. **型と値**: `FieldType::Relation`(コレクション + 単一ページ)+ `FieldValue::Relation` +
+1. ✅ **型と値**: `FieldType::Relation`(コレクション + 単一ページ)+ `FieldValue::Relation` +
    検証 + 管理 API での往復(フロントは対象と id を並べる JSON 欄。既存の配列編集がそのまま使える)
+   — **実装済み**。対象の存在はスキーマ保存で、値の形は `from_untyped` で見る。単一ページの
+   `item` と配列要素の relation は拒否。契約スイートは `crates/tests/suite/relations.rs`。
+   `required` な relation が空のままの公開は、公開時の required 検査(既存の規則)がそのまま拒否する。
 2. **逆引きと安全**: インデックス(本体と同一トランザクション)+ `references` + 削除の拒否と detach
 3. **公開の整合**: 公開時の検査(`required` が空になるなら 409)+ unpublish の扱い
 4. **配信**: `?populate=` の 1 段展開 + 逆引きのフィルタ(`?where=`)と逆引きの展開(`inverse_name`)
-5. **UI**: スキーマ編集の relation 型 + ピッカー + 参照元パネル(見出しは `inverse_name`)
+5. **UI**: スキーマ編集の relation 型 + ピッカー + 参照元パネル(見出しは `inverse_name`。
+   `inverse_name` の一意性もここで見る)
 6. **移行**: `--relations=relation`
 
 1〜3 で「移行して壊れない」まで届く。4〜6 が「使える」。

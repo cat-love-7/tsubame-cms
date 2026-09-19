@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FieldDefaults,
+  FieldTypeStringPipe,
+  isRelationFieldSchema,
   newFieldType,
   numberOrUndefined,
   reconcileArrayItemTypes,
@@ -101,5 +103,74 @@ describe('newFieldType', () => {
     const array = newFieldType('Array') as { Array: unknown[] };
     array.Array.push('Number');
     expect((FieldDefaults.Array as { Array: unknown[] }).Array).toEqual([]);
+
+    // A relation's target is an object too, so one field's choice must not become the default.
+    const relation = newFieldType('Relation') as {
+      Relation: { target: { name: string } };
+    };
+    relation.Relation.target.name = 'authors';
+    expect(
+      (FieldDefaults.Relation as { Relation: { target: { name: string } } }).Relation.target.name,
+    ).toBe('');
+  });
+});
+
+describe('relation fields', () => {
+  const relation = (options: Record<string, unknown>) => ({
+    name: 'author',
+    field_type: { Relation: options },
+    required: false,
+    width: 12,
+    height: 1,
+  });
+
+  it('is named Relation, like every other type on the wire', () => {
+    expect(new FieldTypeStringPipe().transform(newFieldType('Relation'))).toBe('Relation');
+    expect(isRelationFieldSchema(newFieldType('Relation'))).toBe(true);
+    expect(isRelationFieldSchema('Number')).toBe(false);
+  });
+
+  // A blank name is not a label, and the server refuses one: it is left off the wire instead.
+  it('drops a blank inverse name', () => {
+    const saved = schemaForSaving([
+      relation({
+        target: { kind: 'collection', name: 'authors' },
+        has_many: true,
+        inverse_name: '  ',
+      }),
+    ] as never);
+
+    expect(saved[0].field_type).toEqual({
+      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+    });
+  });
+
+  it('trims the inverse name it does send', () => {
+    const saved = schemaForSaving([
+      relation({
+        target: { kind: 'collection', name: 'authors' },
+        has_many: false,
+        inverse_name: ' articles ',
+      }),
+    ] as never);
+
+    expect(saved[0].field_type).toEqual({
+      Relation: {
+        target: { kind: 'collection', name: 'authors' },
+        has_many: false,
+        inverse_name: 'articles',
+      },
+    });
+  });
+
+  // A page is one item, so "several" is not a choice there and the server refuses it.
+  it('never asks for several references to a single page', () => {
+    const saved = schemaForSaving([
+      relation({ target: { kind: 'single_page', name: 'home' }, has_many: true }),
+    ] as never);
+
+    expect(saved[0].field_type).toEqual({
+      Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false },
+    });
   });
 });

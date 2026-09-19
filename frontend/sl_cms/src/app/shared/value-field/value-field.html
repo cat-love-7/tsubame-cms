@@ -349,6 +349,26 @@
       <ng-container *ngTemplateOutlet="jsonArray" />
     }
   }
+  @case ('Relation') {
+    <!-- A relation is its target and the ids of the items it points at. Until the picker lands
+         (see doc/relations-design.md, phase 5) it is edited as the JSON the API takes, with the
+         shape checked as it is typed. -->
+    <mat-form-field appearance="fill" class="full-width">
+      <textarea
+        matInput
+        rows="3"
+        [name]="field.name"
+        [disabled]="disabled"
+        [ngModel]="arrayText"
+        (ngModelChange)="onArrayTextChange($event)"
+        [placeholder]="'content.relationPlaceholder' | transloco"
+        [attr.aria-labelledby]="labelId"
+      ></textarea>
+      @if (relationHint(); as hint) {
+        <mat-hint>{{ hint.key | transloco: hint.params }}</mat-hint>
+      }
+    </mat-form-field>
+  }
   @case ('Image') {
     <div class="image-field">
       @if (imagePreviewUrl()) {

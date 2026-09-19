@@ -7,7 +7,8 @@ use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{
-    CompositeFieldId, SchemaScope, validate_composite_references, validate_schema,
+    CompositeFieldId, RelationTarget, SchemaScope, referenced_relation_targets,
+    validate_composite_references, validate_relation_targets, validate_schema,
 };
 use crate::models::single_page::{
     SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema,
@@ -15,6 +16,7 @@ use crate::models::single_page::{
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_targets::RelationTargetSource;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::webhook::{ContentEvent, Notifier};
 
@@ -26,6 +28,8 @@ pub struct SinglePageService<
     single_page_repository: Arc<SR>,
     composite_field_repository: Arc<CFR>,
     image_repository: Arc<IR>,
+    /// What a relation field may point at, which only the schema save asks for.
+    relation_targets: Arc<dyn RelationTargetSource>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -37,12 +41,14 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         single_page_repository: Arc<SR>,
         composite_field_repository: Arc<CFR>,
         image_repository: Arc<IR>,
+        relation_targets: Arc<dyn RelationTargetSource>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         SinglePageService {
             single_page_repository,
             composite_field_repository,
             image_repository,
+            relation_targets,
             notifier,
         }
     }
@@ -67,6 +73,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema).await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -103,6 +110,26 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collect();
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
     }
+
+    /// The same for relations: a target that does not exist is a field that can never hold
+    /// anything, so the schema that names it is refused rather than stored.
+    ///
+    /// Most schemas name no relation at all, and answering the question costs two lists of names,
+    /// so a schema without one asks for nothing.
+    async fn ensure_relation_targets_exist(
+        &self,
+        schema: &SinglePageSchema,
+    ) -> Result<(), HttpError> {
+        if referenced_relation_targets(schema).is_empty() {
+            return Ok(());
+        }
+        let available: Vec<RelationTarget> = self
+            .relation_targets
+            .relation_targets()
+            .await
+            .map_err(map_internal_error)?;
+        validate_relation_targets(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+    }
     pub async fn add_single_page_schema(
         &self,
         name: &SinglePageName,
@@ -110,6 +137,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema).await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -556,7 +584,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::CompositeFieldId;
+    use crate::models::schema::{CompositeFieldId, RelationOptions};
     use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
     use crate::models::values::{
         FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
@@ -564,6 +592,7 @@ mod tests {
     use crate::repositories::image_repository::Replacement;
 
     use super::*;
+    use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
 
@@ -685,7 +714,11 @@ mod tests {
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             // A patch applied under the one lock, like the adapters.
             let mut all = self.page_metadata.write().unwrap();
-            let metadata = all.get(page_name).cloned().unwrap_or_default().with_dates(dates);
+            let metadata = all
+                .get(page_name)
+                .cloned()
+                .unwrap_or_default()
+                .with_dates(dates);
             all.insert(page_name.clone(), metadata);
             Ok(())
         }
@@ -885,6 +918,17 @@ mod tests {
         MockCompositeFieldRepository,
         MockImageRepository,
     > {
+        create_test_service_with_targets(Vec::new())
+    }
+
+    /// The same, for a site that has something a relation could point at.
+    fn create_test_service_with_targets(
+        targets: Vec<RelationTarget>,
+    ) -> SinglePageService<
+        MockSinglePageRepository,
+        MockCompositeFieldRepository,
+        MockImageRepository,
+    > {
         let single_page_repository = MockSinglePageRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
@@ -900,6 +944,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::new(targets)),
             Arc::new(NoopNotifier),
         )
     }
@@ -937,6 +982,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             notifier.clone(),
         );
 
@@ -1065,6 +1111,53 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(retrieved_schema, schema);
+    }
+
+    /// The same rule as a collection's schema: a page may only relate to what the site has.
+    #[tokio::test]
+    async fn a_page_schema_may_only_relate_to_what_the_site_has() {
+        let service = create_test_service_with_targets(vec![RelationTarget::Collection {
+            name: "authors".to_string(),
+        }]);
+
+        let related_to = |target: RelationTarget| {
+            vec![FieldSchema {
+                name: "author".to_string(),
+                field_type: FieldType::Relation(RelationOptions {
+                    target,
+                    has_many: false,
+                    inverse_name: None,
+                }),
+                required: false,
+                width: 12,
+                height: 1,
+                unique: false,
+            }]
+        };
+        let authors = || RelationTarget::Collection {
+            name: "authors".to_string(),
+        };
+
+        service
+            .add_single_page_schema(&"home".into(), &related_to(authors()))
+            .await
+            .unwrap();
+
+        let missing = service
+            .update_single_page_schema(
+                &"home".into(),
+                &related_to(RelationTarget::Collection {
+                    name: "writers".to_string(),
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(missing.status_code, 400, "{}", missing.message);
+        assert!(
+            missing.message.contains("'writers' is not a collection"),
+            "{}",
+            missing.message
+        );
     }
 
     #[tokio::test]
@@ -1229,6 +1322,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1270,6 +1364,7 @@ mod tests {
                 schemas: Arc::new(RwLock::new(HashMap::new())),
             }),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1338,6 +1433,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1376,6 +1472,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1405,6 +1502,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
         let result = service.get_single_page_item(&"test_schema".into()).await;
@@ -1452,6 +1550,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1488,6 +1587,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
         let result = service
@@ -1541,6 +1641,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -1578,6 +1679,7 @@ mod tests {
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 

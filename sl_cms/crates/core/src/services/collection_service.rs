@@ -8,17 +8,20 @@ use crate::models::collection::{
 };
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
-use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy};
+use crate::models::item_status::{
+    ItemDates, ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy,
+};
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
-    CompositeFieldId, SchemaScope, has_unique_fields, unique_values, validate_composite_references,
-    validate_schema,
+    CompositeFieldId, RelationTarget, SchemaScope, has_unique_fields, referenced_relation_targets,
+    unique_values, validate_composite_references, validate_relation_targets, validate_schema,
 };
 use crate::models::values::{FieldValue, FieldValueMap};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_targets::RelationTargetSource;
 use crate::webhook::{ContentEvent, Notifier};
 
 pub struct CollectionService<
@@ -29,6 +32,8 @@ pub struct CollectionService<
     collection_repository: Arc<CR>,
     composite_field_repository: Arc<CFR>,
     image_repository: Arc<IR>,
+    /// What a relation field may point at, which only the schema save asks for.
+    relation_targets: Arc<dyn RelationTargetSource>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -40,12 +45,14 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_repository: Arc<CR>,
         composite_field_repository: Arc<CFR>,
         image_repository: Arc<IR>,
+        relation_targets: Arc<dyn RelationTargetSource>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         CollectionService {
             collection_repository,
             composite_field_repository,
             image_repository,
+            relation_targets,
             notifier,
         }
     }
@@ -70,6 +77,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema).await?;
         let Some(previous) = self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -161,6 +169,26 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .collect();
         validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
     }
+
+    /// The same for relations: a target that does not exist is a field that can never hold
+    /// anything, so the schema that names it is refused rather than stored.
+    ///
+    /// Most schemas name no relation at all, and answering the question costs two lists of names,
+    /// so a schema without one asks for nothing.
+    async fn ensure_relation_targets_exist(
+        &self,
+        schema: &CollectionSchema,
+    ) -> Result<(), HttpError> {
+        if referenced_relation_targets(schema).is_empty() {
+            return Ok(());
+        }
+        let available: Vec<RelationTarget> = self
+            .relation_targets
+            .relation_targets()
+            .await
+            .map_err(map_internal_error)?;
+        validate_relation_targets(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+    }
     pub async fn add_collection_schema(
         &self,
         collection_name: &CollectionName,
@@ -168,6 +196,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
         self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema).await?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -1609,7 +1638,7 @@ mod tests {
 
     use crate::models::collection::CollectionName;
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::CompositeFieldId;
+    use crate::models::schema::{CompositeFieldId, RelationOptions};
     use crate::models::values::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
     use crate::models::values::{FieldSchema, FieldType, FieldValue};
     use crate::repositories::image_repository::{ImageRepository, Replacement};
@@ -1617,6 +1646,7 @@ mod tests {
     use super::*;
     use crate::models::user::UserId;
     use crate::repositories::collection_repository::{Reservation, UniqueValue};
+    use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
 
@@ -2199,6 +2229,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             notifier.clone(),
         );
 
@@ -2283,6 +2314,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         )
     }
@@ -2378,6 +2410,81 @@ mod tests {
         assert_eq!(retrieved_schema, schema);
     }
 
+    /// A relation is a promise that the other end is there, so a schema naming something this
+    /// site does not have is refused rather than stored as a field nobody could ever fill in.
+    #[tokio::test]
+    async fn a_schema_may_only_relate_to_what_the_site_has() {
+        let name = CollectionName::from("blog");
+        let service = service_over_with_targets(
+            test_repository(HashMap::new(), false),
+            vec![
+                RelationTarget::Collection {
+                    name: "authors".to_string(),
+                },
+                RelationTarget::SinglePage {
+                    name: "home".to_string(),
+                },
+            ],
+        );
+
+        let related_to = |target: RelationTarget| {
+            vec![FieldSchema {
+                name: "author".to_string(),
+                field_type: FieldType::Relation(RelationOptions {
+                    target,
+                    has_many: false,
+                    inverse_name: None,
+                }),
+                required: false,
+                width: 12,
+                height: 1,
+                unique: false,
+            }]
+        };
+        let collection = |name: &str| RelationTarget::Collection {
+            name: name.to_string(),
+        };
+
+        service
+            .add_collection_schema(&name, &related_to(collection("authors")))
+            .await
+            .unwrap();
+        // A single page is a target as much as a collection is.
+        service
+            .update_collection_schema(
+                &name,
+                &related_to(RelationTarget::SinglePage {
+                    name: "home".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Nothing of that name: refused, and the message says which kind was wanted.
+        let missing = service
+            .update_collection_schema(&name, &related_to(collection("writers")))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.status_code, 400, "{}", missing.message);
+        assert!(
+            missing.message.contains("'writers' is not a collection"),
+            "{}",
+            missing.message
+        );
+
+        // A name that exists as the other kind is a different target, so it is missing too.
+        let wrong_kind = service
+            .update_collection_schema(&name, &related_to(collection("home")))
+            .await
+            .unwrap_err();
+        assert_eq!(wrong_kind.status_code, 400, "{}", wrong_kind.message);
+        assert!(
+            wrong_kind.message.contains("'home' is not a collection"),
+            "{}",
+            wrong_kind.message
+        );
+    }
+
     /// Everything a mock store needs, with the index and the schemas the test placed in it.
     fn test_repository(
         schemas: HashMap<CollectionName, CollectionSchema>,
@@ -2422,12 +2529,25 @@ mod tests {
         MockCompositeFieldRepository,
         MockImageRepository,
     > {
+        service_over_with_targets(repository, Vec::new())
+    }
+
+    /// The same, for a site that has something a relation could point at.
+    fn service_over_with_targets(
+        repository: Arc<MockCollectionRepository>,
+        targets: Vec<RelationTarget>,
+    ) -> CollectionService<
+        MockCollectionRepository,
+        MockCompositeFieldRepository,
+        MockImageRepository,
+    > {
         CollectionService::new(
             repository,
             Arc::new(MockCompositeFieldRepository {
                 schemas: Arc::new(RwLock::new(HashMap::new())),
             }),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::new(targets)),
             Arc::new(NoopNotifier),
         )
     }
@@ -2795,6 +2915,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -2849,6 +2970,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -2901,6 +3023,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -2939,6 +3062,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -2997,6 +3121,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3059,6 +3184,7 @@ mod tests {
                 schemas: Arc::new(RwLock::new(HashMap::new())),
             }),
             Arc::new(MockImageRepository::default()),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3122,6 +3248,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3188,6 +3315,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3242,6 +3370,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3302,6 +3431,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 
@@ -3345,6 +3475,7 @@ mod tests {
             Arc::new(collection_repository),
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
+            Arc::new(StaticRelationTargets::none()),
             Arc::new(NoopNotifier),
         );
 

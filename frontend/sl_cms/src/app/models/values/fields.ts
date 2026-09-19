@@ -3,6 +3,7 @@ import {
   isArrayFieldSchema,
   isCompositeFieldSchema,
   isEnumFieldSchema,
+  isRelationFieldSchema,
 } from '../schema/fields';
 
 /**
@@ -25,6 +26,7 @@ import {
  * | TextEnum           | `string[]`                                                          |
  * | Array              | array of the declared item types                                    |
  * | CompositeField     | object keyed by the composite's own field names                     |
+ * | Relation           | `[{ target, item }]` — a page reference has no `item`                |
  */
 /**
  * A whole form's values, by field name.
@@ -87,7 +89,7 @@ export function defaultValueForField(field: FieldSchema): FieldValue {
   if (type === 'Number' || type === 'Date' || type === 'DateTime' || type === 'Image') {
     return null;
   }
-  if (isEnumFieldSchema(type) || isArrayFieldSchema(type)) {
+  if (isEnumFieldSchema(type) || isArrayFieldSchema(type) || isRelationFieldSchema(type)) {
     return [];
   }
   if (isCompositeFieldSchema(type)) {

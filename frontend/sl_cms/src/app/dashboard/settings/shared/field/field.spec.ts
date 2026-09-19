@@ -3,7 +3,12 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { DefaultFieldLayout, FieldDefaults, FieldSchema } from 'app/models/schema/fields';
+import {
+  DefaultFieldLayout,
+  FieldDefaults,
+  FieldSchema,
+  newFieldType,
+} from 'app/models/schema/fields';
 
 import { TypedFixture } from 'app/core/testing/fixture';
 import { Field } from './field';
@@ -230,6 +235,85 @@ describe('Field', () => {
     const enumEditor = fixture.nativeElement.querySelector('app-enum-field') as HTMLElement;
     expect(enumEditor).toBeTruthy();
     expect(enumEditor.textContent).toContain('draft');
+  });
+
+  // A relation needs both lists: it can point at any collection or any single page.
+  it('offers the collections and single pages as relation targets', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('field', field({ field_type: newFieldType('Relation') }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Asked for only once a relation is being edited.
+    http.expectOne('/api/models/collections').flush(['authors', 'categories']);
+    http.expectOne('/api/models/single_pages').flush(['home']);
+    fixture.detectChanges();
+
+    expect(component.relationTargetKind()).toBe('collection');
+    expect(component.relationTargetNames()).toEqual(['authors', 'categories']);
+    expect(fixture.nativeElement.querySelector('mat-select[name="relationTarget"]')).toBeTruthy();
+
+    component.setRelationTargetName('authors');
+    expect(component.field.field_type).toEqual({
+      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
+    });
+
+    component.relationHasMany = true;
+    expect(component.relationHasMany).toBe(true);
+
+    component.setRelationInverseName('articles');
+    expect(component.relationInverseName()).toBe('articles');
+
+    // A page and a collection may share a name, so switching clears it rather than pointing the
+    // relation somewhere else by accident. The inverse label names the direction, not the target,
+    // so it is left for the user to keep or change.
+    component.setRelationTargetKind('single_page');
+    expect(component.field.field_type).toEqual({
+      Relation: {
+        target: { kind: 'single_page', name: '' },
+        has_many: false,
+        inverse_name: 'articles',
+      },
+    });
+    expect(component.relationTargetNames()).toEqual(['home']);
+
+    // A page is one item, so "several" is not on offer there.
+    component.relationHasMany = true;
+    expect(component.relationHasMany).toBe(false);
+  });
+
+  // The controls have to work by clicking them, not only by calling the method behind them.
+  it('takes several references from the checkbox', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('field', field({ field_type: newFieldType('Relation') }));
+    await fixture.whenStable();
+    http.expectOne('/api/models/collections').flush(['authors']);
+    http.expectOne('/api/models/single_pages').flush([]);
+    fixture.detectChanges();
+
+    component.setRelationTargetName('authors');
+    fixture.detectChanges();
+
+    const checkbox = fixture.nativeElement.querySelector(
+      'input[name="relationHasMany"]',
+    ) as HTMLInputElement;
+    expect(checkbox).toBeTruthy();
+    checkbox.click();
+    fixture.detectChanges();
+
+    expect(component.field.field_type).toEqual({
+      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+    });
+  });
+
+  it('does not ask for relation targets unless the field is a relation', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('field', field({ field_type: { Text: {} } }));
+    await fixture.whenStable();
+
+    http.expectNone('/api/models/collections');
+    http.expectNone('/api/models/single_pages');
+    expect(fixture.nativeElement.querySelector('mat-select[name="relationTarget"]')).toBeNull();
   });
 
   // Switching type must not hand the field the shared default object: the widgets write into it.

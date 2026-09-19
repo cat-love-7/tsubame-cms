@@ -31,6 +31,7 @@ import {
   isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
+  isRelationFieldSchema,
   isSlugFieldSchema,
   isTextFieldSchema,
 } from 'app/models/schema/fields';
@@ -54,6 +55,7 @@ type FieldKind =
   | 'TextEnum'
   | 'Array'
   | 'CompositeField'
+  | 'Relation'
   | 'Unknown';
 
 /**
@@ -199,6 +201,7 @@ export class ValueField implements OnInit, OnChanges {
     if ('TextEnum' in type) return 'TextEnum';
     if ('Array' in type) return 'Array';
     if ('CompositeField' in type) return 'CompositeField';
+    if ('Relation' in type) return 'Relation';
     return 'Unknown';
   }
 
@@ -493,29 +496,104 @@ export class ValueField implements OnInit, OnChanges {
       this.update([]);
       return;
     }
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (!Array.isArray(parsed)) {
-        this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
-        return;
-      }
-      // The declared item types are what the array accepts, so an item none of them could read is
-      // reported here rather than by the server after the whole form has been sent.
-      const unsuitable = parsed.findIndex((item) => !this.itemFitsDeclaredTypes(item));
-      if (unsuitable >= 0) {
-        this.errorChange.emit(
-          t('content.arrayItemType', {
-            field: `${this.field.name}[${unsuitable}]`,
-            types: this.itemTypeNames().join(', '),
-          }),
-        );
-        return;
-      }
-      this.errorChange.emit(null);
-      this.update(parsed as FieldValue);
+      parsed = JSON.parse(trimmed);
     } catch {
       this.errorChange.emit(t('content.invalidJson', { field: this.field.name }));
+      return;
     }
+    if (!Array.isArray(parsed)) {
+      this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
+      return;
+    }
+    // A relation is a set of references, so it is array-shaped too - but what an element may hold
+    // is what its own target says, not the array item types.
+    if (isRelationFieldSchema(this.field.field_type)) {
+      const problem = this.relationProblem(parsed);
+      this.errorChange.emit(problem);
+      if (problem === null) {
+        this.update(parsed as FieldValue);
+      }
+      return;
+    }
+    // The declared item types are what the array accepts, so an item none of them could read is
+    // reported here rather than by the server after the whole form has been sent.
+    const unsuitable = parsed.findIndex((item) => !this.itemFitsDeclaredTypes(item));
+    if (unsuitable >= 0) {
+      this.errorChange.emit(
+        t('content.arrayItemType', {
+          field: `${this.field.name}[${unsuitable}]`,
+          types: this.itemTypeNames().join(', '),
+        }),
+      );
+      return;
+    }
+    this.errorChange.emit(null);
+    this.update(parsed as FieldValue);
+  }
+
+  /**
+   * The wording a relation's JSON box carries: which key, and what to fill in.
+   *
+   * Three wordings rather than one with flags: whether it holds one or several, and whether the
+   * target is a page (which has no id), are each a different sentence.
+   */
+  relationHint(): { key: string; params: Record<string, unknown> } | null {
+    const type = this.field.field_type;
+    if (!isRelationFieldSchema(type)) {
+      return null;
+    }
+    const { target, has_many } = type.Relation;
+    const key =
+      target.kind === 'single_page'
+        ? 'content.relationJsonHintPage'
+        : has_many
+          ? 'content.relationJsonHintMany'
+          : 'content.relationJsonHintOne';
+    return { key, params: { target: target.name } };
+  }
+
+  /**
+   * What is wrong with a relation's references, or null when the server would take them.
+   *
+   * The same rules the server applies (`FieldValue::from_untyped` and the schema save): every
+   * reference names this field's target, a collection reference carries the id of an item, a page
+   * reference carries no id, and a single reference holds at most one. Saying so here means the
+   * reader is told in their own language while still looking at the box, rather than by a 400
+   * after the whole form has been sent.
+   */
+  private relationProblem(refs: unknown[]): Message | null {
+    const type = this.field.field_type;
+    if (!isRelationFieldSchema(type)) {
+      return null;
+    }
+    const { target, has_many } = type.Relation;
+    // A page is one item, and a single reference holds one: the server calls either "one".
+    if ((target.kind === 'single_page' || !has_many) && refs.length > 1) {
+      return t('content.relationSingle', { field: this.field.name });
+    }
+    for (const [index, ref] of refs.entries()) {
+      const field = `${this.field.name}[${index}]`;
+      if (ref === null || typeof ref !== 'object' || Array.isArray(ref)) {
+        return t('content.relationShape', { field });
+      }
+      const record = ref as { target?: unknown; item?: unknown };
+      if (record.target !== target.name) {
+        return t('content.relationTargetMismatch', { field, target: target.name });
+      }
+      if (target.kind === 'single_page') {
+        if (record.item !== undefined && record.item !== null) {
+          return t('content.relationPageHasNoItem', { field });
+        }
+        continue;
+      }
+      const item = record.item;
+      if (typeof item !== 'number' || !Number.isInteger(item) || item < 1) {
+        return t('content.relationItemId', { field });
+      }
+    }
+    return null;
   }
 
   setCompositeValue(subField: FieldSchema, value: FieldValue) {
@@ -916,7 +994,8 @@ export class ValueField implements OnInit, OnChanges {
   }
 
   private syncArrayBuffer() {
-    if (!isArrayFieldSchema(this.field.field_type)) {
+    const type = this.field.field_type;
+    if (!isArrayFieldSchema(type) && !isRelationFieldSchema(type)) {
       return;
     }
     // Our own emission comes straight back as `value`; re-seeding then would fight the

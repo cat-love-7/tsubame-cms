@@ -455,6 +455,90 @@ describe('ValueField', () => {
     expect(values.at(-1)).toEqual([]);
   });
 
+  // A relation is a set of references, so it is array-shaped too - but what an element may hold
+  // comes from the field's own target, not from array item types.
+  it('edits a relation as the references its target accepts', () => {
+    const component = create(
+      field('authors', { Relation: { target: { kind: 'collection', name: 'authors' } } }),
+      [{ target: 'authors', item: 1 }],
+    );
+    const values: FieldValue[] = [];
+    const errors: (Message | null)[] = [];
+    component.valueChange.subscribe((value) => values.push(value));
+    component.errorChange.subscribe((error) => errors.push(error));
+
+    // Seeded from the value the server sent, so a load-then-save keeps what was there.
+    expect(component.arrayText).toBe('[{"target":"authors","item":1}]');
+    expect(component.kind()).toBe('Relation');
+
+    component.onArrayTextChange('[{"target":"categories","item":1}]');
+    expect(errors.at(-1)).toEqual(
+      t('content.relationTargetMismatch', { field: 'authors[0]', target: 'authors' }),
+    );
+    expect(values).toHaveLength(0);
+
+    component.onArrayTextChange('[{"target":"authors"}]');
+    expect(errors.at(-1)).toEqual(t('content.relationItemId', { field: 'authors[0]' }));
+
+    component.onArrayTextChange('[{"item":1}]');
+    expect(errors.at(-1)).toEqual(
+      t('content.relationTargetMismatch', { field: 'authors[0]', target: 'authors' }),
+    );
+
+    component.onArrayTextChange('["authors"]');
+    expect(errors.at(-1)).toEqual(t('content.relationShape', { field: 'authors[0]' }));
+
+    component.onArrayTextChange('[{"target":"authors","item":2}]');
+    expect(errors.at(-1)).toBeNull();
+    expect(values).toEqual([[{ target: 'authors', item: 2 }]]);
+  });
+
+  it('holds one reference unless the field asks for several', () => {
+    const single = create(
+      field('author', {
+        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
+      }),
+    );
+    const singleErrors: (Message | null)[] = [];
+    single.errorChange.subscribe((error) => singleErrors.push(error));
+
+    single.onArrayTextChange('[{"target":"authors","item":1},{"target":"authors","item":2}]');
+    expect(singleErrors.at(-1)).toEqual(t('content.relationSingle', { field: 'author' }));
+    // Nothing is emitted, so the parent keeps the value it had.
+    expect(single.value).toBeNull();
+
+    const many = create(
+      field('authors', {
+        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+      }),
+    );
+    many.onArrayTextChange('[{"target":"authors","item":1},{"target":"authors","item":2}]');
+    expect(many.value).toEqual([
+      { target: 'authors', item: 1 },
+      { target: 'authors', item: 2 },
+    ]);
+  });
+
+  it('names a page reference without an item id', () => {
+    const component = create(
+      field('landing', { Relation: { target: { kind: 'single_page', name: 'home' } } }),
+      [{ target: 'home' }],
+    );
+    const errors: (Message | null)[] = [];
+    component.errorChange.subscribe((error) => errors.push(error));
+
+    expect(component.arrayText).toBe('[{"target":"home"}]');
+    expect(component.relationHint()?.key).toBe('content.relationJsonHintPage');
+
+    // A page has no id, so one sent anyway is a value the schema has nowhere to keep.
+    component.onArrayTextChange('[{"target":"home","item":1}]');
+    expect(errors.at(-1)).toEqual(t('content.relationPageHasNoItem', { field: 'landing[0]' }));
+
+    component.onArrayTextChange('[{"target":"home"}]');
+    expect(errors.at(-1)).toBeNull();
+    expect(component.value).toEqual([{ target: 'home' }]);
+  });
+
   it('converts date-times between local input and RFC 3339', () => {
     const component = create(field('at', 'DateTime'), '2024-03-01T10:00:00.000Z');
 

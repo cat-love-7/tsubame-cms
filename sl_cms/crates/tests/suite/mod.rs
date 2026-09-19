@@ -384,6 +384,8 @@ mod permissions;
 mod preview;
 /// Publishing a working copy: who may, what is refused, and what a batch does.
 mod publishing;
+/// Relations: the targets a schema may name, and the references a value holds.
+mod relations;
 /// Single pages and the states their list reports.
 mod single_pages;
 /// Slugs: how they are normalised, and when a field may become one.

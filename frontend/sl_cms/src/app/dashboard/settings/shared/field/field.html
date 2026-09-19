@@ -116,3 +116,56 @@
 @if (field.field_type | isEnumFieldSchema) {
   <app-enum-field [(field)]="field.field_type.TextEnum"></app-enum-field>
 }
+@if (isRelation()) {
+  <div class="relation-options">
+    <mat-form-field appearance="fill" class="full-width">
+      <mat-label>{{ 'schema.relationTargetKind' | transloco }}</mat-label>
+      <mat-select
+        name="relationTargetKind"
+        [ngModel]="relationTargetKind()"
+        (ngModelChange)="setRelationTargetKind($event)"
+      >
+        @for (kind of relationTargetKinds; track kind.value) {
+          <mat-option [value]="kind.value">{{ kind.label | transloco }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+    <mat-form-field appearance="fill" class="full-width">
+      <mat-label>{{ 'schema.relationTarget' | transloco }}</mat-label>
+      <mat-select
+        name="relationTarget"
+        [ngModel]="relationTargetName()"
+        (ngModelChange)="setRelationTargetName($event)"
+      >
+        @for (name of relationTargetNames(); track name) {
+          <mat-option [value]="name">{{ name }}</mat-option>
+        }
+      </mat-select>
+      <mat-hint>
+        {{
+          (relationTargetNames().length === 0
+            ? 'schema.relationNoTargets'
+            : 'schema.relationTargetHint'
+          ) | transloco
+        }}
+      </mat-hint>
+    </mat-form-field>
+    <mat-checkbox
+      name="relationHasMany"
+      [(ngModel)]="relationHasMany"
+      [disabled]="relationTargetKind() === 'single_page'"
+    >
+      {{ 'schema.relationHasMany' | transloco }}
+    </mat-checkbox>
+    <mat-form-field appearance="fill" class="full-width">
+      <mat-label>{{ 'schema.relationInverseName' | transloco }}</mat-label>
+      <input
+        matInput
+        name="relationInverseName"
+        [ngModel]="relationInverseName()"
+        (ngModelChange)="setRelationInverseName($event)"
+      />
+      <mat-hint>{{ 'schema.relationInverseHint' | transloco }}</mat-hint>
+    </mat-form-field>
+  </div>
+}

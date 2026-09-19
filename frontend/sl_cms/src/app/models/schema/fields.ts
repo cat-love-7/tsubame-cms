@@ -56,6 +56,34 @@ export type EnumFieldSchema = {
   TextEnum: string[];
 };
 
+/**
+ * What a relation points at: the items of another collection, or a single page.
+ *
+ * `kind` and `name` together are the target, because a collection and a page may share a name and
+ * are different things. A single page is one item whose identity is its name, so a relation to one
+ * never holds an item id.
+ */
+export type RelationTarget =
+  { kind: 'collection'; name: string } | { kind: 'single_page'; name: string };
+
+/**
+ * What a relation field is told, matching the Rust `RelationOptions`.
+ *
+ * A reference is a *set*: the order an editor sent does not survive, and the same reference twice
+ * is one reference.
+ */
+export type RelationOptions = {
+  target: RelationTarget;
+  /** Whether several may be referenced at once. Always false for a single page. */
+  has_many?: boolean;
+  /** What the other side is called in screens and in `?populate=`. A label, not a second field. */
+  inverse_name?: string;
+};
+
+export type RelationFieldSchema = {
+  Relation: RelationOptions;
+};
+
 export type FieldTypeMap = {
   Text: TextFieldSchema;
   Slug: SlugFieldSchema;
@@ -66,6 +94,7 @@ export type FieldTypeMap = {
   DateTime: 'DateTime';
   Image: 'Image';
   CompositeField: CompositeFieldType;
+  Relation: RelationFieldSchema;
   Array: ArrayFieldSchema;
   TextEnum: EnumFieldSchema;
 };
@@ -80,6 +109,9 @@ export const FieldDefaults: FieldTypeMap = {
   DateTime: 'DateTime',
   Image: 'Image',
   CompositeField: { CompositeField: { id: '' } },
+  // A new relation starts as "points at a collection", with the name still to be chosen - the
+  // server refuses a target that does not exist, so the choice has to be made before a save.
+  Relation: { Relation: { target: { kind: 'collection', name: '' }, has_many: false } },
   Array: { Array: [] },
   TextEnum: { TextEnum: [] },
 };
@@ -174,6 +206,23 @@ export function schemaForSaving(fields: FieldSchema[]): FieldSchema[] {
         },
       };
     }
+    if (isRelationFieldSchema(type)) {
+      const { target, has_many, inverse_name } = type.Relation;
+      const inverse = inverse_name?.trim();
+      return {
+        ...field,
+        field_type: {
+          Relation: {
+            target,
+            // A single page is one item, so it can only ever be a single reference; the server
+            // refuses anything else, and the editor's checkbox is disabled there.
+            has_many: target.kind === 'single_page' ? false : Boolean(has_many),
+            // A blank name is not a label: the server refuses it, so it is left off the wire.
+            ...(inverse ? { inverse_name: inverse } : {}),
+          },
+        },
+      };
+    }
     return field;
   });
 }
@@ -195,6 +244,9 @@ export function isCompositeFieldSchema(field: FieldType): field is CompositeFiel
 }
 export function isArrayFieldSchema(field: FieldType): field is ArrayFieldSchema {
   return typeof field === 'object' && field !== null && 'Array' in field;
+}
+export function isRelationFieldSchema(field: FieldType): field is RelationFieldSchema {
+  return typeof field === 'object' && field !== null && 'Relation' in field;
 }
 export function isEnumFieldSchema(field: FieldType): field is EnumFieldSchema {
   return typeof field === 'object' && field !== null && 'TextEnum' in field;
@@ -277,6 +329,14 @@ export class IsEnumFieldSchemaPipe implements PipeTransform {
   }
 }
 @Pipe({
+  name: 'isRelationFieldSchema',
+})
+export class IsRelationFieldSchemaPipe implements PipeTransform {
+  transform(field: FieldType): field is RelationFieldSchema {
+    return isRelationFieldSchema(field);
+  }
+}
+@Pipe({
   name: 'FieldTypeString',
 })
 export class FieldTypeStringPipe implements PipeTransform {
@@ -289,6 +349,8 @@ export class FieldTypeStringPipe implements PipeTransform {
       return 'Markdown';
     } else if (isCompositeFieldSchema(field)) {
       return 'CompositeField';
+    } else if (isRelationFieldSchema(field)) {
+      return 'Relation';
     } else if (isArrayFieldSchema(field)) {
       return 'Array';
     } else if (isEnumFieldSchema(field)) {

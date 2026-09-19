@@ -65,6 +65,71 @@ pub struct TextFieldOptions {
     pub min_length: Option<usize>,
 }
 
+/// What a relation points at.
+///
+/// The names are strings rather than the typed name structs so this module stays free of the
+/// collection and page modules; the schema save is what checks them against what exists (see
+/// [`validate_relation_targets`]).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RelationTarget {
+    Collection { name: String },
+    SinglePage { name: String },
+}
+
+impl Default for RelationTarget {
+    /// A new relation field starts as "points at a collection", with the name still to be chosen.
+    fn default() -> Self {
+        RelationTarget::Collection {
+            name: String::new(),
+        }
+    }
+}
+
+impl RelationTarget {
+    /// The collection or page name, whichever this is.
+    pub fn name(&self) -> &str {
+        match self {
+            RelationTarget::Collection { name } | RelationTarget::SinglePage { name } => name,
+        }
+    }
+
+    /// Whether this points at a single page, which cannot hold several references.
+    pub fn is_single_page(&self) -> bool {
+        matches!(self, RelationTarget::SinglePage { .. })
+    }
+}
+
+/// What a relation field is told: what it points at, whether it may point at several things, and
+/// what the other side is called.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct RelationOptions {
+    pub target: RelationTarget,
+    /// Whether several may be referenced at once.
+    ///
+    /// A single page is one item whose whole identity is its name, so it can only ever be a
+    /// single reference: a field pointing at two pages would be two fields.
+    #[serde(default)]
+    pub has_many: bool,
+    /// What the other side is called in the screens and in `?populate=`.
+    ///
+    /// A **label**, not a second field: nothing about the relation is stored on the target, and
+    /// the inverse direction is always answered from the index. It exists so a category's screen
+    /// can say "articles" without the schema having to define a field called that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inverse_name: Option<String>,
+}
+
+impl RelationOptions {
+    /// Whether this holds at most one reference, which is what a value is checked against.
+    ///
+    /// A page target is always one, whatever `has_many` says - which `validate_relation_options`
+    /// refuses to store in the first place, so this stays true about a stored schema.
+    pub fn is_single(&self) -> bool {
+        !self.has_many || self.target.is_single_page()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(EnumIter))]
 pub enum FieldType {
@@ -78,6 +143,8 @@ pub enum FieldType {
     DateTime,
     Image,
     CompositeField(CompositeFieldReference),
+    /// A reference to another collection's items, or to a single page.
+    Relation(RelationOptions),
     Array(Vec<FieldType>),
     TextEnum(Vec<String>),
 }
@@ -98,6 +165,7 @@ impl FieldType {
             (FieldType::DateTime, FieldValue::DateTime(date_time_opt)) => date_time_opt.is_some(),
             (FieldType::Image, FieldValue::Image(img_opt)) => img_opt.is_some(),
             (FieldType::CompositeField(_), FieldValue::CompositeField(value)) => value.is_some(),
+            (FieldType::Relation(_), FieldValue::Relation(refs)) => !refs.is_empty(),
             (FieldType::Array(_), FieldValue::Array(values)) => !values.is_empty(),
             (FieldType::TextEnum(_), FieldValue::TextEnum(vals)) => !vals.is_empty(),
             _ => false,
@@ -157,6 +225,7 @@ impl FieldSchema {
             FieldType::DateTime => FieldValue::DateTime(None),
             FieldType::Image => FieldValue::Image(None),
             FieldType::CompositeField(_) => FieldValue::CompositeField(None),
+            FieldType::Relation(_) => FieldValue::Relation(vec![]),
             FieldType::Array(_schema) => FieldValue::Array(vec![]),
             FieldType::TextEnum(_options) => FieldValue::TextEnum(vec![]),
         }
@@ -243,6 +312,108 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
             ));
         }
         validate_field_type(name, &field.field_type)?;
+        validate_relation_options(name, &field.field_type)?;
+        // A composite definition is reused inside other schemas, so a relation in one would have
+        // to be checked against the collections of whichever item embeds it. Refusing it here is
+        // the honest answer: the relation belongs to the collection or page that owns the values.
+        if matches!(scope, SchemaScope::CompositeDefinition)
+            && !referenced_relation_targets(std::slice::from_ref(field)).is_empty()
+        {
+            return Err(format!(
+                "field '{name}': a composite definition cannot hold a relation; put it in the \
+                 collection or page itself"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A relation has to say what it points at, and a single page can only be a single reference.
+///
+/// Whether that target *exists* is checked where the collections and pages are known (the schema
+/// save in the API), because this module deliberately knows nothing about them.
+fn validate_relation_options(name: &str, field_type: &FieldType) -> Result<(), String> {
+    match field_type {
+        FieldType::Relation(options) => {
+            if options.target.name().trim().is_empty() {
+                return Err(format!(
+                    "field '{name}': a relation must name the collection or single page it points at"
+                ));
+            }
+            if options
+                .inverse_name
+                .as_deref()
+                .is_some_and(|inverse| inverse.trim().is_empty())
+            {
+                return Err(format!(
+                    "field '{name}': the inverse name must not be blank - leave it out instead"
+                ));
+            }
+            if options.target.is_single_page() && options.has_many {
+                return Err(format!(
+                    "field '{name}': a single page is one item, so a relation to one can only be a \
+                     single reference"
+                ));
+            }
+            Ok(())
+        }
+        FieldType::Array(items) => {
+            // An array cannot hold one (see `validate_field_type`), for the same reason the walk
+            // above looks inside them.
+            for item in items {
+                validate_relation_options(name, item)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Every relation target a schema names.
+///
+/// Arrays are walked as well as fields: `validate_field_type` refuses to store a relation as an
+/// array item, and this walk is what would still find the target if that rule ever changed.
+pub fn referenced_relation_targets(fields: &[FieldSchema]) -> Vec<RelationTarget> {
+    let mut targets = Vec::new();
+    for field in fields {
+        collect_relation_targets(&field.field_type, &mut targets);
+    }
+    targets
+}
+
+fn collect_relation_targets(field_type: &FieldType, into: &mut Vec<RelationTarget>) {
+    match field_type {
+        FieldType::Relation(options) => into.push(options.target.clone()),
+        FieldType::Array(items) => {
+            for item in items {
+                collect_relation_targets(item, into);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every relation a schema declares has to point at something that exists.
+///
+/// `available` is what the site has - the collections and the single pages - because this module
+/// knows neither (see `RelationTargetSource`, which is what hands them over). A typo here would
+/// otherwise leave a field that can never hold anything, refused only when somebody tries to fill
+/// it in.
+pub fn validate_relation_targets(
+    fields: &[FieldSchema],
+    available: &[RelationTarget],
+) -> Result<(), String> {
+    for target in referenced_relation_targets(fields) {
+        if !available.contains(&target) {
+            let kind = match target {
+                RelationTarget::Collection { .. } => "collection",
+                RelationTarget::SinglePage { .. } => "single page",
+            };
+            return Err(format!(
+                "relation target '{}' is not a {kind} of this site",
+                target.name()
+            ));
+        }
     }
     Ok(())
 }
@@ -300,6 +471,15 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
     for item in items {
         if let FieldType::Array(_) = item {
             return Err(format!("field '{name}': nested arrays are not supported"));
+        }
+        // A relation is a set already, and how many it holds is its own `has_many`: an array of
+        // relations would be a second way to say "several references", with nothing that could
+        // edit or deliver it.
+        if matches!(item, FieldType::Relation(_)) {
+            return Err(format!(
+                "field '{name}': a relation cannot be an array item; a relation already holds \
+                 several references when it asks for them"
+            ));
         }
     }
 
@@ -732,6 +912,185 @@ mod tests {
                 .unwrap_err()
                 .contains("composite field 'nope' does not exist")
         );
+    }
+
+    fn collection_target(name: &str) -> RelationTarget {
+        RelationTarget::Collection {
+            name: name.to_string(),
+        }
+    }
+
+    fn page_target(name: &str) -> RelationTarget {
+        RelationTarget::SinglePage {
+            name: name.to_string(),
+        }
+    }
+
+    fn relation(target: RelationTarget, has_many: bool) -> FieldType {
+        FieldType::Relation(RelationOptions {
+            target,
+            has_many,
+            inverse_name: None,
+        })
+    }
+
+    #[test]
+    fn a_relation_names_what_it_points_at() {
+        assert!(
+            validate_schema(
+                &[field(
+                    "author",
+                    relation(collection_target("authors"), true)
+                )],
+                SchemaScope::Collection
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_schema(
+                &[field("home", relation(page_target("home"), false))],
+                SchemaScope::Collection
+            )
+            .is_ok()
+        );
+
+        // A relation with no target at all is a field that could never be filled in.
+        assert!(
+            validate_schema(
+                &[field("author", relation(collection_target("  "), false))],
+                SchemaScope::Collection
+            )
+            .unwrap_err()
+            .contains("must name the collection")
+        );
+
+        // A page is one item whose identity is its name, so asking for several is asking for
+        // something that cannot exist.
+        assert!(
+            validate_schema(
+                &[field("homes", relation(page_target("home"), true))],
+                SchemaScope::Collection
+            )
+            .unwrap_err()
+            .contains("can only be a single reference")
+        );
+
+        // A blank inverse name is a label with nothing in it; leaving it out says more.
+        let blank_inverse = FieldType::Relation(RelationOptions {
+            target: collection_target("authors"),
+            has_many: false,
+            inverse_name: Some("   ".to_string()),
+        });
+        assert!(
+            validate_schema(&[field("author", blank_inverse)], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("must not be blank")
+        );
+
+        // A composite definition is embedded in whatever item uses it, so nothing would say which
+        // items its relation could point at.
+        assert!(
+            validate_schema(
+                &[field(
+                    "author",
+                    relation(collection_target("authors"), false)
+                )],
+                SchemaScope::CompositeDefinition
+            )
+            .unwrap_err()
+            .contains("cannot hold a relation")
+        );
+    }
+
+    #[test]
+    fn a_relation_is_never_an_array_item() {
+        let array = FieldType::Array(vec![relation(collection_target("authors"), true)]);
+        assert!(
+            validate_schema(&[field("related", array)], SchemaScope::Collection)
+                .unwrap_err()
+                .contains("cannot be an array item")
+        );
+    }
+
+    #[test]
+    fn collects_every_relation_target_a_schema_names() {
+        let fields = vec![
+            field("author", relation(collection_target("authors"), false)),
+            // Walking arrays too, so a target is never missed wherever it was written.
+            field(
+                "related",
+                FieldType::Array(vec![relation(page_target("home"), false)]),
+            ),
+            field("plain", FieldType::Number),
+        ];
+
+        assert_eq!(
+            referenced_relation_targets(&fields),
+            vec![collection_target("authors"), page_target("home")]
+        );
+        assert!(referenced_relation_targets(&[field("plain", FieldType::Number)]).is_empty());
+    }
+
+    #[test]
+    fn rejects_relations_to_targets_that_do_not_exist() {
+        let available = vec![collection_target("authors"), page_target("home")];
+
+        assert!(
+            validate_relation_targets(
+                &[field(
+                    "author",
+                    relation(collection_target("authors"), false)
+                )],
+                &available
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_relation_targets(
+                &[field("home", relation(page_target("home"), false))],
+                &available
+            )
+            .is_ok()
+        );
+
+        let error = validate_relation_targets(
+            &[field(
+                "author",
+                relation(collection_target("writers"), false),
+            )],
+            &available,
+        )
+        .unwrap_err();
+        assert!(error.contains("'writers' is not a collection"), "{error}");
+
+        // The same name of the other kind is a different target, so it is still missing.
+        let error = validate_relation_targets(
+            &[field("home", relation(collection_target("home"), false))],
+            &available,
+        )
+        .unwrap_err();
+        assert!(error.contains("'home' is not a collection"), "{error}");
+
+        let error = validate_relation_targets(
+            &[field("about", relation(page_target("about"), false))],
+            &available,
+        )
+        .unwrap_err();
+        assert!(error.contains("'about' is not a single page"), "{error}");
+    }
+
+    #[test]
+    fn only_a_multiple_reference_to_a_collection_is_not_single() {
+        let single = |target: RelationTarget, has_many: bool| RelationOptions {
+            target,
+            has_many,
+            inverse_name: None,
+        };
+
+        assert!(single(collection_target("authors"), false).is_single());
+        // A page is a single reference whatever the flag says, which the schema refuses anyway.
+        assert!(single(page_target("home"), true).is_single());
+        assert!(!single(collection_target("authors"), true).is_single());
     }
 
     #[test]

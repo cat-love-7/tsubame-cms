@@ -27,10 +27,12 @@ import {
   IsCompositeFieldSchemaPipe,
   IsEnumFieldSchemaPipe,
   IsMarkdownFieldSchema,
+  IsRelationFieldSchemaPipe,
   IsTextFieldSchema,
   isArrayFieldSchema,
   isCompositeFieldSchema,
   isMarkdownFieldSchema,
+  isRelationFieldSchema,
   isSlugFieldSchema,
   isTextFieldSchema,
   newFieldType,
@@ -41,6 +43,8 @@ import { CompositeField } from '../composite-field/composite-field';
 import { TextField } from '../text-field/text-field';
 import { FieldWidthPresets } from 'app/core/field-layout';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
+import { CollectionsService } from 'app/services/schema/collections.service';
+import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
 @Component({
   selector: 'app-field',
@@ -58,6 +62,7 @@ import { CompositeFieldsService } from 'app/services/schema/composite-fields.ser
     IsCompositeFieldSchemaPipe,
     IsArrayFieldSchemaPipe,
     IsEnumFieldSchemaPipe,
+    IsRelationFieldSchemaPipe,
     FieldTypeStringPipe,
     EnumField,
     CompositeField,
@@ -68,6 +73,8 @@ import { CompositeFieldsService } from 'app/services/schema/composite-fields.ser
 })
 export class Field implements OnInit, OnChanges {
   private compositeFields = inject(CompositeFieldsService);
+  private collections = inject(CollectionsService);
+  private singlePages = inject(SinglePagesService);
 
   @Input() field: FieldSchema = {
     name: '',
@@ -111,15 +118,30 @@ export class Field implements OnInit, OnChanges {
   public scalarTypes: FieldType[] = [];
   public compositeTypeIds: string[] = [];
 
+  /**
+   * The names a relation may point at, by target kind.
+   *
+   * A relation can point at any collection or any single page, so both lists are needed; they are
+   * fetched only when a field is a relation, like the composite ids an array needs.
+   */
+  public collectionNames: string[] = [];
+  public pageNames: string[] = [];
+
   private compositeIdsRequested = false;
+  private relationTargetsRequested = false;
 
   ngOnInit() {
     this.refreshItemTypes();
     this.loadCompositeIds();
+    this.loadRelationTargets();
   }
   public typeOptions = Object.keys(FieldDefaults);
   public arrayItemTypeOptions = ArrayItemTypeOptions;
   public widthPresets = FieldWidthPresets;
+  public relationTargetKinds = [
+    { label: 'content.collection', value: 'collection' as const },
+    { label: 'content.singlePage', value: 'single_page' as const },
+  ];
 
   /** Whether this field is a slug, whose only option is where to generate the value from. */
   isSlug(): boolean {
@@ -158,6 +180,90 @@ export class Field implements OnInit, OnChanges {
     this.fieldChange.emit(this.field);
   }
 
+  /** Whether this field is a relation, whose options are its target and its cardinality. */
+  isRelation(): boolean {
+    return isRelationFieldSchema(this.field.field_type);
+  }
+
+  /** The relation's options, or null when this field is not a relation. */
+  private relation() {
+    const type = this.field.field_type;
+    return isRelationFieldSchema(type) ? type.Relation : null;
+  }
+
+  relationTargetKind(): 'collection' | 'single_page' {
+    return this.relation()?.target.kind ?? 'collection';
+  }
+
+  relationTargetName(): string {
+    return this.relation()?.target.name ?? '';
+  }
+
+  /** The names this relation could point at, for the target it has chosen. */
+  relationTargetNames(): string[] {
+    return this.relationTargetKind() === 'single_page' ? this.pageNames : this.collectionNames;
+  }
+
+  /**
+   * Whether several may be referenced, as the checkbox binds it.
+   *
+   * A getter/setter pair because the value lives inside the relation's options rather than on the
+   * field itself, which is what lets the control be an ordinary two-way binding like the other
+   * checkboxes on this screen.
+   */
+  get relationHasMany(): boolean {
+    return this.relation()?.has_many ?? false;
+  }
+
+  set relationHasMany(hasMany: boolean) {
+    const options = this.relation();
+    // A page is one item, so "several" is not a choice there; the server refuses it too.
+    if (!options || options.target.kind === 'single_page') {
+      return;
+    }
+    options.has_many = hasMany;
+    this.fieldChange.emit(this.field);
+  }
+
+  relationInverseName(): string {
+    return this.relation()?.inverse_name ?? '';
+  }
+
+  /**
+   * Switching the kind of target clears the name: a collection and a page may share one, but they
+   * are different targets, and keeping the name would silently point the relation somewhere else.
+   */
+  setRelationTargetKind(kind: 'collection' | 'single_page') {
+    const options = this.relation();
+    if (!options || options.target.kind === kind) {
+      return;
+    }
+    options.target = { kind, name: '' };
+    if (kind === 'single_page') {
+      // A page is one item, so it can only be a single reference; the server refuses otherwise.
+      options.has_many = false;
+    }
+    this.fieldChange.emit(this.field);
+  }
+
+  setRelationTargetName(name: string) {
+    const options = this.relation();
+    if (!options) {
+      return;
+    }
+    options.target = { kind: options.target.kind, name };
+    this.fieldChange.emit(this.field);
+  }
+
+  setRelationInverseName(name: string) {
+    const options = this.relation();
+    if (!options) {
+      return;
+    }
+    options.inverse_name = name;
+    this.fieldChange.emit(this.field);
+  }
+
   public onFieldTypeChange(value: keyof typeof FieldDefaults) {
     // A copy of the default: this editor writes its limits and item types into the type.
     this.field.field_type = newFieldType(value);
@@ -165,6 +271,7 @@ export class Field implements OnInit, OnChanges {
     // Switching *to* an array is how most arrays are made, and the input object does not
     // change identity when the type does, so `ngOnChanges` never sees it.
     this.loadCompositeIds();
+    this.loadRelationTargets();
     this.fieldChange.emit(this.field);
   }
 
@@ -172,6 +279,7 @@ export class Field implements OnInit, OnChanges {
     if (changes['field']) {
       this.refreshItemTypes();
       this.loadCompositeIds();
+      this.loadRelationTargets();
     }
   }
 
@@ -191,6 +299,28 @@ export class Field implements OnInit, OnChanges {
       // Without the list the picker is empty; the rest of the editor still works, and a
       // schema that already references a composite keeps that reference.
       error: () => (this.compositeIds = []),
+    });
+  }
+
+  /**
+   * Ask for the collections and single pages a relation may point at, once.
+   *
+   * Both lists are needed because a relation can point at either; a field that is not a relation
+   * never asks. Without them the target picker is empty, and a relation that already names a target
+   * keeps it.
+   */
+  private loadRelationTargets() {
+    if (this.relationTargetsRequested || !isRelationFieldSchema(this.field.field_type)) {
+      return;
+    }
+    this.relationTargetsRequested = true;
+    this.collections.getAllCollectionNames().subscribe({
+      next: (names) => (this.collectionNames = names),
+      error: () => (this.collectionNames = []),
+    });
+    this.singlePages.listPageNames().subscribe({
+      next: (names) => (this.pageNames = names),
+      error: () => (this.pageNames = []),
     });
   }
 
