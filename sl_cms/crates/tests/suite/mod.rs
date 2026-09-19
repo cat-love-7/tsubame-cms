@@ -174,11 +174,16 @@ async fn login(app: &TestApp, username: &str, password: &str) -> (StatusCode, Va
 
 /// Put some bytes where the upload URL says, the way the browser does.
 async fn put_bytes(app: &TestApp, token: &str, upload_url: &str) {
+    put_bytes_of(app, token, upload_url, b"PNG-BYTES").await;
+}
+
+/// The same, with the bytes a test chooses - a size test is about the size.
+async fn put_bytes_of(app: &TestApp, token: &str, upload_url: &str, bytes: &[u8]) {
     let request = Request::builder()
         .method(Method::PUT)
         .uri(upload_url)
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
-        .body(Body::from("PNG-BYTES"))
+        .body(Body::from(bytes.to_vec()))
         .unwrap();
     let response = app.router.clone().oneshot(request).await.unwrap();
     assert!(

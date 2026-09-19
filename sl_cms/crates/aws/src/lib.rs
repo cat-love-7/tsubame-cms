@@ -139,6 +139,7 @@ pub async fn build_app_module(
         parts.notifier,
         parts.preview_links,
         parts.password_resets,
+        config.limits,
     ))
 }
 
@@ -167,6 +168,7 @@ pub async fn build_deployed_module(
         parts.password_resets,
         verifier,
         settings.bootstrap_admin_usernames.clone(),
+        config.limits,
     ))
 }
 

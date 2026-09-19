@@ -27,8 +27,15 @@ pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 /// Public so it can be driven by a synthetic event in a test — which is the only way to check
 /// the event shapes without deploying.
 pub async fn dispatch(router: Router, request: Request<Body>) -> Result<Response<Body>, Error> {
-    let (parts, body) = request.into_parts();
+    let (mut parts, body) = request.into_parts();
     let body = into_bytes(body);
+
+    // The length the *decoded* body has, which is not what the event's header said when API
+    // Gateway base64-encoded it. The router checks that header against the CMS's own limit, so
+    // leaving the encoded length there would refuse a body that is inside it.
+    if let Ok(length) = header::HeaderValue::from_str(&body.len().to_string()) {
+        parts.headers.insert(header::CONTENT_LENGTH, length);
+    }
 
     if body.len() > MAX_BODY_BYTES {
         return Ok(text(

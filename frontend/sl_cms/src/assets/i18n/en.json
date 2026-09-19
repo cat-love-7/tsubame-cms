@@ -273,6 +273,7 @@
     "not_found": "That was not found.",
     "conflict": "That conflicts with something that already exists.",
     "too_many_requests": "Too many attempts. Try again shortly.",
+    "payload_too_large": "The request was larger than this deployment accepts.",
     "internal_error": "Something went wrong on the server.",
     "not_implemented": "This deployment does not support that.",
     "value_taken": "The value of '{{field}}' is already used by another item.",

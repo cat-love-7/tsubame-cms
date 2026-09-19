@@ -29,6 +29,43 @@ pub const DEFAULT_PREVIEW_LINK_TTL_MINUTES: i64 = 60;
 /// (`PASSWORD_RESET_TTL_MINUTES`).
 pub const DEFAULT_PASSWORD_RESET_TTL_MINUTES: i64 = 30;
 
+/// Default ceiling for a JSON request body (`MAX_REQUEST_BYTES`).
+///
+/// A CMS request is JSON: image bytes go to object storage with a presigned URL, or (on-premises)
+/// to their own route, and never into one of these. One megabyte of JSON is a very long article
+/// or a schema with hundreds of fields, and it is below what the deployment can store anyway
+/// (DynamoDB holds 400KB per item).
+pub const DEFAULT_MAX_REQUEST_BYTES: usize = 1024 * 1024;
+
+/// Default ceiling for one image's bytes (`MAX_IMAGE_BYTES`).
+///
+/// The bytes do not travel through the API on AWS, but the number still belongs to the CMS: it
+/// is what the presigned upload is signed for, and what the on-premises route accepts.
+pub const DEFAULT_MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
+/// How large a request this deployment accepts.
+///
+/// Both numbers are the deployment's, not the CMS's: a site with huge images raises the second,
+/// and an operator who wants a tighter bound on what a single invocation has to buffer lowers
+/// the first. They are applied in `http::body_limit`, and reported to clients through
+/// `/auth/capabilities` so a browser can refuse an upload before sending it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// The largest JSON request body, in bytes (`MAX_REQUEST_BYTES`).
+    pub max_request_bytes: usize,
+    /// The largest image, in bytes, wherever its bytes land (`MAX_IMAGE_BYTES`).
+    pub max_image_bytes: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Limits {
+            max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
+            max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Interface to bind. Local development defaults to loopback; deployments that need
@@ -69,6 +106,8 @@ pub struct Config {
     /// HMAC-SHA256 secret used to sign webhook bodies (`WEBHOOK_SECRET`). Optional: without
     /// it, payloads are delivered unsigned.
     pub webhook_secret: Option<Vec<u8>>,
+    /// How large a request this deployment accepts (`MAX_REQUEST_BYTES`, `MAX_IMAGE_BYTES`).
+    pub limits: Limits,
 }
 
 impl Default for Config {
@@ -88,6 +127,7 @@ impl Default for Config {
             admin_password: None,
             webhook_urls: Vec::new(),
             webhook_secret: None,
+            limits: Limits::default(),
         }
     }
 }
@@ -186,6 +226,12 @@ impl Config {
             config.webhook_urls = parse_webhook_urls(&urls)?;
         }
         config.webhook_secret = non_empty_env("WEBHOOK_SECRET").map(String::into_bytes);
+        if let Some(bytes) = env_bytes("MAX_REQUEST_BYTES")? {
+            config.limits.max_request_bytes = bytes;
+        }
+        if let Some(bytes) = env_bytes("MAX_IMAGE_BYTES")? {
+            config.limits.max_image_bytes = bytes;
+        }
         Ok(config)
     }
 
@@ -194,6 +240,27 @@ impl Config {
         raw.parse()
             .map_err(|e| format!("invalid listen address {raw:?}: {e}"))
     }
+}
+
+/// A byte count from the environment, refusing zero: a limit of nothing is a deployment that
+/// cannot be used at all, and silently accepting it would look like a broken client.
+fn env_bytes(name: &str) -> Result<Option<usize>, String> {
+    match non_empty_env(name) {
+        Some(raw) => parse_bytes(name, &raw).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// The parse on its own, so a test can check it without touching the process environment.
+fn parse_bytes(name: &str, raw: &str) -> Result<usize, String> {
+    let value: usize = raw
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid {name} {raw:?}: {e}"))?;
+    if value == 0 {
+        return Err(format!("{name} must be at least 1 byte"));
+    }
+    Ok(value)
 }
 
 fn non_empty_env(name: &str) -> Option<String> {
@@ -302,6 +369,23 @@ mod tests {
         let config = Config::default();
         assert!(config.webhook_urls.is_empty());
         assert!(config.webhook_secret.is_none());
+    }
+
+    #[test]
+    fn the_limits_default_to_one_megabyte_of_json_and_ten_of_image() {
+        let limits = Config::default().limits;
+        assert_eq!(limits.max_request_bytes, DEFAULT_MAX_REQUEST_BYTES);
+        assert_eq!(limits.max_image_bytes, DEFAULT_MAX_IMAGE_BYTES);
+    }
+
+    #[test]
+    fn a_byte_limit_is_read_and_zero_is_refused() {
+        assert_eq!(parse_bytes("MAX_REQUEST_BYTES", "2048").unwrap(), 2048);
+        assert_eq!(parse_bytes("MAX_IMAGE_BYTES", " 1024 ").unwrap(), 1024);
+        // Zero would be a deployment that cannot be used at all, and a typo should stop the
+        // process rather than look like a broken client.
+        assert!(parse_bytes("MAX_REQUEST_BYTES", "0").is_err());
+        assert!(parse_bytes("MAX_REQUEST_BYTES", "lots").is_err());
     }
 
     #[test]

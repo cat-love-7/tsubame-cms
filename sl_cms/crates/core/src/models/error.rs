@@ -46,6 +46,8 @@ pub const STATUS_ERROR_CODES: &[&str] = &[
     "forbidden",
     "not_found",
     "conflict",
+    // The body was larger than this deployment accepts (see `config::Limits`).
+    "payload_too_large",
     "too_many_requests",
     "internal_error",
     "not_implemented",
@@ -87,6 +89,7 @@ pub const ERROR_CODES: &[&str] = &[
     "forbidden",
     "not_found",
     "conflict",
+    "payload_too_large",
     "too_many_requests",
     "internal_error",
     "not_implemented",
@@ -100,6 +103,7 @@ pub fn default_code(status_code: u16) -> &'static str {
         STATUS_FORBIDDEN => "forbidden",
         STATUS_NOT_FOUND => "not_found",
         STATUS_CONFLICT => "conflict",
+        STATUS_PAYLOAD_TOO_LARGE => "payload_too_large",
         STATUS_TOO_MANY_REQUESTS => "too_many_requests",
         501 => "not_implemented",
         _ => "internal_error",
@@ -112,6 +116,7 @@ pub const STATUS_UNAUTHORIZED: u16 = 401;
 pub const STATUS_FORBIDDEN: u16 = 403;
 pub const STATUS_NOT_FOUND: u16 = 404;
 pub const STATUS_CONFLICT: u16 = 409;
+pub const STATUS_PAYLOAD_TOO_LARGE: u16 = 413;
 pub const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 pub const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
 
@@ -296,6 +301,16 @@ impl HttpError {
     #[allow(non_snake_case)]
     pub fn Conflict(message: &str) -> Self {
         HttpError::new(STATUS_CONFLICT, message)
+    }
+
+    /// The body was larger than this deployment accepts.
+    ///
+    /// The message names the limit, because the number is a deployment's choice
+    /// (`MAX_REQUEST_BYTES` / `MAX_IMAGE_BYTES`) and a client that reads it can say something
+    /// useful rather than "the request was too big".
+    #[allow(non_snake_case)]
+    pub fn PayloadTooLarge(message: &str) -> Self {
+        HttpError::new(STATUS_PAYLOAD_TOO_LARGE, message)
     }
 
     /// Too many attempts: the caller has to wait, and is told for how long.

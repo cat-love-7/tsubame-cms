@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::auth::AuthService;
 use crate::auth::token::TokenIssuer;
+use crate::config::Limits;
 use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
@@ -53,6 +54,10 @@ pub struct AppModule<R: Storage> {
     pub auth_service: AuthService<R>,
     /// Mints the signed, expiring links that let someone without an account review a draft.
     pub preview_links: PreviewLinkIssuer,
+    /// How large a request this deployment accepts (`config::Limits`). The router applies them,
+    /// and `/auth/capabilities` reports them, so both come from the one place the composition
+    /// root read.
+    pub limits: Limits,
 }
 
 impl<R: Storage> AppModule<R> {
@@ -62,10 +67,11 @@ impl<R: Storage> AppModule<R> {
         notifier: Arc<dyn Notifier>,
         preview_links: PreviewLinkIssuer,
         password_resets: PasswordResetIssuer,
+        limits: Limits,
     ) -> Self {
         let auth_service =
             AuthService::new(repository.clone(), token_issuer, password_resets.clone());
-        AppModule::assemble(repository, notifier, preview_links, auth_service)
+        AppModule::assemble(repository, notifier, preview_links, auth_service, limits)
     }
 
     /// The same, for a deployment whose tokens an identity provider issues.
@@ -80,11 +86,12 @@ impl<R: Storage> AppModule<R> {
         password_resets: PasswordResetIssuer,
         verifier: Arc<dyn crate::auth::identity::TokenVerifier>,
         bootstrap_admins: Vec<String>,
+        limits: Limits,
     ) -> Self {
         let auth_service = AuthService::new(repository.clone(), token_issuer, password_resets)
             .with_external_verifier(verifier)
             .with_bootstrap_admins(bootstrap_admins);
-        AppModule::assemble(repository, notifier, preview_links, auth_service)
+        AppModule::assemble(repository, notifier, preview_links, auth_service, limits)
     }
 
     fn assemble(
@@ -92,6 +99,7 @@ impl<R: Storage> AppModule<R> {
         notifier: Arc<dyn Notifier>,
         preview_links: PreviewLinkIssuer,
         auth_service: AuthService<R>,
+        limits: Limits,
     ) -> Self {
         AppModule {
             collection_service: CollectionService::new(
@@ -110,6 +118,7 @@ impl<R: Storage> AppModule<R> {
             image_service: ImageService::new(repository.clone()),
             auth_service,
             preview_links,
+            limits,
         }
     }
 }

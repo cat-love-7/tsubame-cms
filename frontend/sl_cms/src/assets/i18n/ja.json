@@ -273,6 +273,7 @@
     "not_found": "見つかりませんでした。",
     "conflict": "すでに存在する内容と競合しています。",
     "too_many_requests": "試行が多すぎます。しばらくしてからお試しください。",
+    "payload_too_large": "この配信先が受け取れる大きさを超えています。",
     "internal_error": "サーバーで問題が発生しました。",
     "not_implemented": "この配備では対応していません。",
     "value_taken": "'{{field}}' の値は別のアイテムで既に使われています。",

@@ -26,7 +26,7 @@ pub mod single_pages;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{Request, State};
+use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -66,6 +66,43 @@ pub fn cors_layer(origins: &[String]) -> CorsLayer {
     }
 }
 
+/// Refuse a body larger than `bytes`, in the shape every other refusal uses.
+///
+/// axum's extractors have a limit of their own (2MB) and answer a body over it with a plain-text
+/// 413 that says nothing a client can translate, which is not what a CMS that translates every
+/// other refusal should send. This reads the declared length from `Content-Length`, before the
+/// handler runs, and answers with [`HttpError::PayloadTooLarge`] - a request over the limit never
+/// reaches an extractor, so the two limits cannot disagree.
+///
+/// A body that does not declare its length (a chunked upload) cannot get past `bytes` either: the
+/// extractor limit below this layer cuts the stream off. That answer stays the plain one, which is
+/// the honest thing for a request that would not say how big it was.
+pub fn body_limit<S>(router: Router<S>, bytes: usize) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router
+        // The backstop for a body that does not declare a length; the middleware above decides
+        // what a client is told in the case that matters.
+        .layer(DefaultBodyLimit::max(bytes))
+        .layer(axum::middleware::from_fn(
+            move |request: Request, next: axum::middleware::Next| async move {
+                let declared = request
+                    .headers()
+                    .get(header::CONTENT_LENGTH)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<u64>().ok());
+                match declared {
+                    Some(length) if length > bytes as u64 => HttpError::PayloadTooLarge(&format!(
+                        "the request body is {length} bytes; this deployment accepts at most {bytes}"
+                    ))
+                    .into_response(),
+                    _ => next.run(request).await,
+                }
+            },
+        ))
+}
+
 pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
     router_with(state, cors, Router::new(), Router::new())
 }
@@ -82,36 +119,47 @@ pub fn router_with<R: Storage>(
     extra_public: Router<AppState<R>>,
     extra_protected: Router<AppState<R>>,
 ) -> Router {
-    // Everything that reads or writes CMS content requires a token.
-    let protected = Router::new()
-        .merge(collections::routes::<R>())
-        .merge(composite_fields::routes::<R>())
-        .merge(single_pages::routes::<R>())
-        .merge(images::protected_routes::<R>())
-        .merge(auth::protected_routes::<R>())
-        .merge(extra_protected)
-        // `route_layer` applies only to the routes above, so unknown paths still 404
-        // instead of being reported as 401.
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_auth::<R>,
-        ));
+    // The CMS's own limit, from the deployment's configuration. An adapter's extra routes bring
+    // their own: one that takes image bytes accepts more than a JSON request carries, and says so
+    // where it registers the route (`local_images::protected_routes`).
+    let max_request_bytes = state.limits.max_request_bytes;
 
-    Router::new()
-        .route("/", get(root))
-        .merge(auth::public_routes::<R>())
-        .merge(extra_public)
-        // The read-only content API a site build consumes. Published content only, so it
-        // needs no token.
-        .merge(content::routes::<R>())
-        // Shareable preview links. Public by design: the signature in the query string is
-        // the credential, and it only ever opens the one working copy it was made for.
-        .merge(collections::preview_routes::<R>())
-        .merge(single_pages::preview_routes::<R>())
-        .merge(protected)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    // Everything that reads or writes CMS content requires a token.
+    let protected = body_limit(
+        Router::new()
+            .merge(collections::routes::<R>())
+            .merge(composite_fields::routes::<R>())
+            .merge(single_pages::routes::<R>())
+            .merge(images::protected_routes::<R>())
+            .merge(auth::protected_routes::<R>()),
+        max_request_bytes,
+    )
+    .merge(extra_protected)
+    // `route_layer` applies only to the routes above - the backend's own included, which is why
+    // they are merged first - so unknown paths still 404 instead of being reported as 401.
+    .route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_auth::<R>,
+    ));
+
+    body_limit(
+        Router::new()
+            .route("/", get(root))
+            .merge(auth::public_routes::<R>())
+            // The read-only content API a site build consumes. Published content only, so it
+            // needs no token.
+            .merge(content::routes::<R>())
+            // Shareable preview links. Public by design: the signature in the query string is
+            // the credential, and it only ever opens the one working copy it was made for.
+            .merge(collections::preview_routes::<R>())
+            .merge(single_pages::preview_routes::<R>()),
+        max_request_bytes,
+    )
+    .merge(extra_public)
+    .merge(protected)
+    .layer(cors)
+    .layer(TraceLayer::new_for_http())
+    .with_state(state)
 }
 
 /// One resource that can carry permissions of its own.

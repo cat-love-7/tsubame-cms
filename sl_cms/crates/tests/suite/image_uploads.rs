@@ -476,3 +476,53 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// An image the size of a photograph is accepted where the CMS takes the bytes itself.
+///
+/// axum's own extractor limit is 2MB, and until the limits were made explicit that was the real
+/// ceiling for an upload on this deployment - a size no photograph has ever been, and nothing said
+/// so. The route carries the deployment's image limit now (`MAX_IMAGE_BYTES`, ten megabytes by
+/// default), which is also why a body this size is not refused by the JSON limit: the two limits
+/// belong to two different routes.
+#[tokio::test]
+async fn an_image_larger_than_two_megabytes_is_accepted() {
+    if !Backend::SERVES_IMAGE_BYTES {
+        eprintln!("skipped: this backend hands the browser a signed URL instead of serving bytes");
+        return;
+    }
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "photograph.png", "ext": "png" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{info}");
+
+    // Three megabytes: over axum's 2MB default and over the JSON limit, under the image one.
+    let bytes = vec![0x89u8; 3 * 1024 * 1024];
+    put_bytes_of(
+        &app,
+        &token,
+        info["upload_url"].as_str().expect("an upload URL"),
+        &bytes,
+    )
+    .await;
+
+    // And it is really there, at the size it was sent.
+    let file = file_name_of(info["upload_url"].as_str().unwrap());
+    let (status, body) = send_raw(
+        &app.router,
+        Method::GET,
+        &format!("/images/{file}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.len(), bytes.len());
+}

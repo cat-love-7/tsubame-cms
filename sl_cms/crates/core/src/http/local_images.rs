@@ -65,8 +65,15 @@ async fn get_image_by_id<R: Storage + LocalImageBytes>(
 /// Accepting the bytes, with the one-shot token the upload URL carried. The route sits behind
 /// the same auth middleware as the rest of the admin API; the token is what actually
 /// authorises the write, and it is bound to this file name.
-pub fn protected_routes<R: Storage + LocalImageBytes>() -> Router<AppState<R>> {
-    Router::new().route("/images/{file_name}", put(put_image_file::<R>))
+///
+/// `max_bytes` is the deployment's image limit (`config::Limits::max_image_bytes`), applied here
+/// because this is the one route whose body is not JSON: without it the router's own limit - the
+/// JSON one - would cut an image off at a size no photograph has ever been.
+pub fn protected_routes<R: Storage + LocalImageBytes>(max_bytes: usize) -> Router<AppState<R>> {
+    crate::http::body_limit(
+        Router::new().route("/images/{file_name}", put(put_image_file::<R>)),
+        max_bytes,
+    )
 }
 
 #[derive(serde::Deserialize)]

@@ -87,6 +87,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository>
         notifier,
         preview_links,
         password_resets,
+        config.limits,
     )
 }
 
@@ -108,8 +109,9 @@ pub fn build_router(
         .merge(sl_cms_core::http::capabilities::routes(
             sl_cms_core::models::capabilities::Capabilities::ON_PREMISES,
         ));
-    let extra_protected = sl_cms_core::http::local_images::protected_routes()
-        .merge(sl_cms_core::http::password_auth::protected_routes());
+    let extra_protected =
+        sl_cms_core::http::local_images::protected_routes(module.limits.max_image_bytes)
+            .merge(sl_cms_core::http::password_auth::protected_routes());
 
     sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
 }

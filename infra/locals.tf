@@ -47,6 +47,10 @@ locals {
       AWS_IMAGE_URL_TTL_SECONDS = tostring(var.image_url_ttl_seconds)
     },
     var.webhook_secret == "" ? {} : { WEBHOOK_SECRET = var.webhook_secret },
+    # Only when an operator has an opinion: the defaults belong to the application, and a
+    # deployment that never mentions them should follow the application when they change.
+    var.max_request_bytes == null ? {} : { MAX_REQUEST_BYTES = tostring(var.max_request_bytes) },
+    var.max_image_bytes == null ? {} : { MAX_IMAGE_BYTES = tostring(var.max_image_bytes) },
     var.image_delivery == "public"
     ? {
       AWS_IMAGE_BASE_URL = "https://${aws_s3_bucket.images.bucket}.s3.${var.region}.amazonaws.com"

@@ -108,6 +108,37 @@ variable "image_url_ttl_seconds" {
   }
 }
 
+variable "max_request_bytes" {
+  description = <<-EOT
+    The largest JSON request body the function accepts (`MAX_REQUEST_BYTES`). Left unset, the
+    application's own default is used (1MB) - a large value on a platform that refuses an
+    invocation over 6MB and base64-encodes what it sends would only turn one refusal into another.
+  EOT
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.max_request_bytes == null || var.max_request_bytes >= 1
+    error_message = "A request body limit is at least one byte."
+  }
+}
+
+variable "max_image_bytes" {
+  description = <<-EOT
+    The largest image the CMS accepts, in bytes (`MAX_IMAGE_BYTES`). It is what the presigned
+    upload is signed for, so S3 refuses anything else, and it is reported to clients through
+    `GET /auth/capabilities` so a browser can refuse the file before sending it. Left unset, the
+    application's own default is used (10MB).
+  EOT
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.max_image_bytes == null || var.max_image_bytes >= 1
+    error_message = "An image limit is at least one byte."
+  }
+}
+
 variable "cognito_domain_prefix" {
   description = <<-EOT
     The prefix of the hosted sign-in page's address. Cognito requires it to be unique across

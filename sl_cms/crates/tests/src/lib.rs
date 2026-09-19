@@ -142,6 +142,9 @@ impl<B: TestBackend> TestApp<B> {
             // the same secret the tokens use, as a deployment does.
             PreviewLinkIssuer::new(TEST_SECRET, 60),
             PasswordResetIssuer::new(TEST_SECRET, 30),
+            // The limits a deployment gets by default: a test that needs to see one enforced
+            // posts a body over it, and the CMS's own numbers are what a deployment runs with.
+            sl_cms_core::config::Limits::default(),
         ));
 
         let admin_token = backend.sign_in_admin(&module).await;
@@ -203,10 +206,16 @@ pub async fn send_raw(
         builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
     let request = match body {
-        Some(value) => builder
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(value.to_string()))
-            .expect("failed to build request"),
+        Some(value) => {
+            let encoded = value.to_string();
+            // What a browser sends: the length is on the wire, and the CMS's limit check reads it
+            // before any extractor runs.
+            builder
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::CONTENT_LENGTH, encoded.len())
+                .body(Body::from(encoded))
+                .expect("failed to build request")
+        }
         None => builder
             .body(Body::empty())
             .expect("failed to build request"),

@@ -28,6 +28,7 @@
     "forbidden",
     "not_found",
     "conflict",
+    "payload_too_large",
     "too_many_requests",
     "internal_error",
     "not_implemented"

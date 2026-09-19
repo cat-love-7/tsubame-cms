@@ -329,3 +329,65 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body.as_array().unwrap().len(), created.len());
 }
+
+// ------------------------------------------------------------------------------- body limits
+
+/// A body over the limit is refused before anything reads it, in the shape of every other
+/// refusal: the status says what happened, the code lets a client say it in its own language,
+/// and the message names the size and the limit for whoever is reading a log.
+#[tokio::test]
+async fn a_body_over_the_request_limit_is_refused_in_the_cms_own_shape() {
+    use sl_cms_core::config::DEFAULT_MAX_REQUEST_BYTES;
+
+    let app = test_app().await;
+    // The JSON around the padding counts too, so the body is measured as it is sent rather than
+    // by the length of the string inside it.
+    let envelope = json!({ "padding": "" }).to_string().len();
+    let value = json!({ "padding": "a".repeat(DEFAULT_MAX_REQUEST_BYTES + 1 - envelope) });
+    let sent = value.to_string().len();
+    assert!(sent > DEFAULT_MAX_REQUEST_BYTES);
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&app.admin_token),
+        Some(value),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["code"], "payload_too_large");
+    let message = body["message"].as_str().expect("a message");
+    assert!(
+        message.contains(&sent.to_string())
+            && message.contains(&DEFAULT_MAX_REQUEST_BYTES.to_string()),
+        "the message should name the size sent and the limit: {message}"
+    );
+}
+
+/// The boundary itself: a body of exactly the limit is read and answered normally (here with the
+/// schema's own refusal), so the limit refuses what is over it and nothing else.
+#[tokio::test]
+async fn a_body_of_exactly_the_request_limit_is_read() {
+    use sl_cms_core::config::DEFAULT_MAX_REQUEST_BYTES;
+
+    let app = test_app().await;
+    let envelope = json!({ "padding": "" }).to_string().len();
+    let value = json!({ "padding": "a".repeat(DEFAULT_MAX_REQUEST_BYTES - envelope) });
+    assert_eq!(value.to_string().len(), DEFAULT_MAX_REQUEST_BYTES);
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/collections/blog/schema",
+        Some(&app.admin_token),
+        Some(value),
+    )
+    .await;
+
+    assert_ne!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    // The body arrived and was read: what refused it is its shape (the route wants an array of
+    // fields), which axum answers as 422 before the handler ever sees it.
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+}
