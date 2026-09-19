@@ -91,7 +91,21 @@ describe('Sidebar', () => {
 
   it('keeps the schema and account screens out of an editor’s navigation', () => {
     TestBed.inject(AuthService);
-    expect(hasLink(component.toTreeNodes([[], []]), '/settings/users')).toBe(false);
+    const tree = component.toTreeNodes([['blog'], []]);
+
+    // Nothing under Settings is an editor's to open, so the branch is not there at all - an empty
+    // one that opens onto nothing would be worse than absent.
+    expect(nodeNamed(tree, 'Settings')).toBeNull();
+    for (const path of [
+      '/settings/collections',
+      '/settings/single-pages',
+      '/settings/composite-fields',
+      '/settings/users',
+    ]) {
+      expect(hasLink(tree, path)).toBe(false);
+    }
+    // What an editor *does* get is the content: the collections their account may open.
+    expect(hasLink(tree, '/collections/blog')).toBe(true);
   });
 
   // Accounts are not a schema: what a schema describes is content, and an account is not content.
@@ -128,6 +142,8 @@ describe('Sidebar', () => {
     localStorage.removeItem('sl_cms.user');
 
     expect(TestBed.inject(AuthService).isAdmin()).toBe(true);
-    expect(hasLink(component.toTreeNodes([[], []]), '/settings/users')).toBe(true);
+    const tree = component.toTreeNodes([[], []]);
+    expect(hasLink(tree, '/settings/users')).toBe(true);
+    expect(hasLink(tree, '/settings/collections')).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { adminGuard } from 'app/core/auth/admin.guard';
 import { unsavedChangesGuard } from 'app/core/unsaved-changes.guard';
 
 /**
@@ -7,8 +8,8 @@ import { unsavedChangesGuard } from 'app/core/unsaved-changes.guard';
  *
  * `loadComponent` rather than a static import of fifteen components: as one chunk, a reader who
  * opens the image library downloads the schema editors, the account list and every other screen
- * with it. The guard is imported directly - it is a few lines, and it has to be there before the
- * first screen is activated.
+ * with it. The guards are imported directly - they are a few lines, and one has to be there before
+ * the first screen is activated.
  */
 export const dashboardRoutes: Routes = [
   {
@@ -56,22 +57,26 @@ export const dashboardRoutes: Routes = [
     path: 'settings/images',
     redirectTo: 'images',
   },
-  // Schema editing.
+  // Schema editing. Administrator-only screens: an editor reads a schema through the content
+  // editor, and the navigation does not offer these (`adminGuard` says why it is also a guard).
   {
     path: 'settings/collections',
     loadComponent: () =>
       import('./settings/collections/list/list').then((m) => m.CollectionSchemaList),
+    canActivate: [adminGuard],
   },
   {
     path: 'settings/collections/create',
     loadComponent: () =>
       import('./settings/collections/create/create').then((m) => m.CollectionSchemaCreate),
+    canActivate: [adminGuard],
     canDeactivate: [unsavedChangesGuard],
   },
   {
     path: 'settings/collections/:name/schema',
     loadComponent: () =>
       import('./settings/collections/schema/schema').then((m) => m.CollectionSchemaEdit),
+    canActivate: [adminGuard],
     canDeactivate: [unsavedChangesGuard],
   },
   // The addresses these screens used to have, under `settings/schemas/`: a bookmark is a link
@@ -92,11 +97,13 @@ export const dashboardRoutes: Routes = [
     path: 'settings/single-pages',
     loadComponent: () =>
       import('./settings/single-pages/list/list').then((m) => m.SinglePageSchemaList),
+    canActivate: [adminGuard],
   },
   {
     path: 'settings/single-pages/:name/schema',
     loadComponent: () =>
       import('./settings/single-pages/schema/schema').then((m) => m.SinglePageSchema),
+    canActivate: [adminGuard],
     canDeactivate: [unsavedChangesGuard],
   },
   // Composite fields: reusable groups of fields that other schemas reference by id.
@@ -104,17 +111,20 @@ export const dashboardRoutes: Routes = [
     path: 'settings/composite-fields',
     loadComponent: () =>
       import('./settings/composite-fields/list/list').then((m) => m.CompositeFieldList),
+    canActivate: [adminGuard],
   },
   {
     path: 'settings/composite-fields/:id/schema',
     loadComponent: () =>
       import('./settings/composite-fields/schema/schema').then((m) => m.CompositeFieldSchema),
+    canActivate: [adminGuard],
     canDeactivate: [unsavedChangesGuard],
   },
   // Accounts, for administrators. The server enforces the same rule.
   {
     path: 'settings/users',
     loadComponent: () => import('./settings/users/list/list').then((m) => m.UsersList),
+    canActivate: [adminGuard],
   },
   // Open to every signed-in account, read-only ones included.
   {

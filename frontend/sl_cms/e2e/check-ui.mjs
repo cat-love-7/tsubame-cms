@@ -1109,9 +1109,18 @@ try {
     .catch(() => {});
   await editor.page.waitForTimeout(200);
   check(
-    '編集ロール: 画像は見えるがアカウント管理は出ない',
+    '編集ロール: 画像は見えるが、設定は何も出ない',
     (await editor.page.locator('a[href="/images"]').count()) === 1 &&
-      (await editor.page.locator('a[href="/settings/users"]').count()) === 0,
+      (await editor.page.locator('a[href^="/settings/"]').count()) === 0,
+  );
+
+  // A link is not a rule: the schema screens are administrator-only addresses, so going to one
+  // directly lands back on the landing screen rather than on a screen whose save is refused.
+  await editor.page.goto(`${BASE}/settings/collections`, { waitUntil: 'networkidle' });
+  check(
+    '編集ロール: スキーマ画面のアドレスにも入れない',
+    new URL(editor.page.url()).pathname === '/',
+    editor.page.url(),
   );
 
   await editor.page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });

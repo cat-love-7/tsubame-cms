@@ -54,10 +54,10 @@ export class Sidebar implements OnInit {
   }
   toTreeNodes(obs: [string[], string[]]): SidebarItem[] {
     const [collectionNames, singlePageNames] = obs;
-    // The account screen is for administrators, so its link is not offered to anyone else (the
-    // server refuses them regardless). The schema screens are offered to every signed-in account:
-    // a schema is what the content editor is drawn from, so an editor reading one is the point -
-    // and changing one is what the server refuses.
+    // Everything under Settings - the schema screens and the account screen - is for
+    // administrators, so none of it is offered to anyone else. `adminGuard` keeps the addresses
+    // out of reach too, and the server refuses the writes regardless. Reading a schema is a
+    // different thing and is not what this branch is: the content editor reads one through the API.
     const isAdmin = this.auth.isAdmin();
     // An empty "Single Documents" has no children, so point it at the screen where one
     // can be created rather than rendering a dead link.
@@ -91,46 +91,47 @@ export class Sidebar implements OnInit {
           },
         ],
       },
-      {
-        name: 'Settings',
-        nameKey: 'nav.settings',
-        children: [
-          {
-            name: 'Schemas',
-            nameKey: 'nav.schemas',
-            children: [
-              {
-                name: 'Collections',
-                nameKey: 'content.collections',
-                link: '/settings/collections',
-              },
-              {
-                name: 'Single pages',
-                nameKey: 'content.singlePages',
-                link: '/settings/single-pages',
-              },
-              {
-                name: 'Composite fields',
-                nameKey: 'content.compositeFields',
-                link: '/settings/composite-fields',
-              },
-            ],
-          },
-          // Accounts are not a schema: what a schema describes is content, and an account is not
-          // content. They are one screen under Settings, so they are one item there - a sibling of
-          // the schema branch, not a fourth thing inside it. Only an administrator is offered the
-          // link (the server refuses everyone else anyway).
-          ...(isAdmin
-            ? [
+      // No administrator, no branch: an empty "Settings" that opens onto nothing would be worse
+      // than not being there.
+      ...(isAdmin
+        ? [
+            {
+              name: 'Settings',
+              nameKey: 'nav.settings',
+              children: [
+                {
+                  name: 'Schemas',
+                  nameKey: 'nav.schemas',
+                  children: [
+                    {
+                      name: 'Collections',
+                      nameKey: 'content.collections',
+                      link: '/settings/collections',
+                    },
+                    {
+                      name: 'Single pages',
+                      nameKey: 'content.singlePages',
+                      link: '/settings/single-pages',
+                    },
+                    {
+                      name: 'Composite fields',
+                      nameKey: 'content.compositeFields',
+                      link: '/settings/composite-fields',
+                    },
+                  ],
+                },
+                // Accounts are not a schema: what a schema describes is content, and an account is
+                // not content. They are one screen under Settings, so they are one item there - a
+                // sibling of the schema branch, not a fourth thing inside it.
                 {
                   name: 'Accounts',
                   nameKey: 'accounts.title',
                   link: '/settings/users',
                 },
-              ]
-            : []),
-        ],
-      },
+              ],
+            },
+          ]
+        : []),
     ];
   }
 }
