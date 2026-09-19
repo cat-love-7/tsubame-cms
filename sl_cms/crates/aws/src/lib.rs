@@ -188,12 +188,12 @@ pub async fn build_deployed_module(
     // The account screen manages the pool: creating an account puts a user there, removing one
     // takes it away, and a reset is `AdminSetUserPassword` with a temporary password. The
     // credential is the pool's, so this is the only side that can do any of it.
-    Ok(module.with_account_provisioner(std::sync::Arc::new(
-        CognitoAccountProvisioner::new(
+    Ok(
+        module.with_account_provisioner(std::sync::Arc::new(CognitoAccountProvisioner::new(
             cognito_client(settings).await,
             settings.user_pool_id.clone(),
-        ),
-    )))
+        ))),
+    )
 }
 
 /// What the verifier has to be told, from what the deployment was given.

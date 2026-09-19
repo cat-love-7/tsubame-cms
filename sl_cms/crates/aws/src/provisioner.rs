@@ -212,7 +212,10 @@ impl CognitoAdmin for CognitoApi {
                 request = request.user_attributes(attribute);
             }
             match request.send().await {
-                Ok(response) => Ok(response.user().map(|user| subject_of(user.attributes())).flatten()),
+                Ok(response) => Ok(response
+                    .user()
+                    .map(|user| subject_of(user.attributes()))
+                    .flatten()),
                 // Already there: still not a failure, but its identifier has to be found rather
                 // than skipped, or the record the CMS is about to write could never sign in.
                 Err(error) => match error.as_service_error() {
@@ -428,7 +431,10 @@ mod tests {
         let fake = Arc::new(FakeCognito::default());
         let accounts = provisioner(fake.clone());
 
-        let password = accounts.reset_password("cat").await.expect("the fake agrees");
+        let password = accounts
+            .reset_password("cat")
+            .await
+            .expect("the fake agrees");
 
         assert_eq!(
             fake.calls(),

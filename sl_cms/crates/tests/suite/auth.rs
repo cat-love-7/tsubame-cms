@@ -123,7 +123,9 @@ async fn a_reset_answers_the_shape_this_deployment_promised() {
     assert_eq!(reset["kind"], Backend::PASSWORD_RESET, "{reset}");
     if Backend::PASSWORD_RESET == "link" {
         assert!(
-            reset["token"].as_str().is_some_and(|token| !token.is_empty()),
+            reset["token"]
+                .as_str()
+                .is_some_and(|token| !token.is_empty()),
             "a link has to carry the token that makes it one: {reset}"
         );
     } else {

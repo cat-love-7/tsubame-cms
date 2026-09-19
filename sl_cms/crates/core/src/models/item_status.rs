@@ -493,11 +493,13 @@ mod tests {
     /// The publication dates are what a build compares, so stating them is publish permission.
     #[test]
     fn a_patch_knows_whether_it_touches_publication() {
-        assert!(!ItemDates {
-            created_at: Some(Utc::now()),
-            ..ItemDates::default()
-        }
-        .touches_publication());
+        assert!(
+            !ItemDates {
+                created_at: Some(Utc::now()),
+                ..ItemDates::default()
+            }
+            .touches_publication()
+        );
         assert!(
             ItemDates {
                 published_at: Some(Utc::now()),

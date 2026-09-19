@@ -448,7 +448,10 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     )
     .await;
     assert_eq!(timestamp(&body[0]["uploaded_at"]), imported);
-    assert_eq!(body[0]["url"], url, "and the bytes are still where they were");
+    assert_eq!(
+        body[0]["url"], url,
+        "and the bytes are still where they were"
+    );
 
     // A date that cannot be true is refused, as a content date is.
     let (status, _) = send_raw(

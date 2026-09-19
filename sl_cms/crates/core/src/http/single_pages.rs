@@ -128,7 +128,10 @@ async fn set_single_page_item_metadata<R: Storage>(
         require_publish(&user, Some(Resource::SinglePage(&name)))?;
     }
     Ok(Json(PageStatusResponse {
-        metadata: module.single_page_service.set_page_dates(&name, &dates).await?,
+        metadata: module
+            .single_page_service
+            .set_page_dates(&name, &dates)
+            .await?,
         has_draft: module.single_page_service.page_has_draft(&name).await?,
     }))
 }

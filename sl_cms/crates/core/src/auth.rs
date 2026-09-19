@@ -397,13 +397,16 @@ impl<R: UserRepository> AuthService<R> {
             return Err(HttpError::Forbidden("account is disabled").with_code("account_disabled"));
         }
         if let Some(provisioner) = &self.provisioner {
-            let password = provisioner.reset_password(&user.username).await.map_err(|e| {
-                tracing::warn!(
-                    "could not reset {} at the identity provider: {e}",
-                    user.username
-                );
-                HttpError::InternalServerError("the identity provider refused the reset")
-            })?;
+            let password = provisioner
+                .reset_password(&user.username)
+                .await
+                .map_err(|e| {
+                    tracing::warn!(
+                        "could not reset {} at the identity provider: {e}",
+                        user.username
+                    );
+                    HttpError::InternalServerError("the identity provider refused the reset")
+                })?;
             return Ok(PasswordReset::Temporary { password });
         }
         let link = self.password_resets.issue(&user, chrono::Utc::now());
@@ -1534,7 +1537,9 @@ mod tests {
             PasswordReset::Temporary { password } => {
                 assert_eq!(password, provisioner.temporary_password)
             }
-            other => panic!("a provider-owned credential resets to a temporary password: {other:?}"),
+            other => {
+                panic!("a provider-owned credential resets to a temporary password: {other:?}")
+            }
         }
     }
 
