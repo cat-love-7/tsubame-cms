@@ -107,7 +107,9 @@ pub fn build_router(
     let extra_public = sl_cms_core::http::local_images::public_routes()
         .merge(sl_cms_core::http::password_auth::public_routes())
         .merge(sl_cms_core::http::capabilities::routes(
-            sl_cms_core::models::capabilities::Capabilities::ON_PREMISES,
+            sl_cms_core::models::capabilities::Capabilities::on_premises(
+                module.limits.max_image_bytes,
+            ),
         ));
     let extra_protected =
         sl_cms_core::http::local_images::protected_routes(module.limits.max_image_bytes)

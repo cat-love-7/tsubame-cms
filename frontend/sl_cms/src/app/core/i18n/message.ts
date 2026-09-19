@@ -28,6 +28,15 @@ export function t(key: string, params?: Record<string, unknown>): Message {
  * only the screen's own context is translated around it. `params` adds anything else the site's
  * wording needs (`{id}` for "composite field X").
  */
+/** Whether `error` is already a [`Message`], rather than something to build one from. */
+export function isMessage(error: unknown): error is Message {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    ('key' in error ? typeof error.key === 'string' : 'text' in error)
+  );
+}
+
 /**
  * The field a refusal is about, when the server named one.
  *
@@ -44,6 +53,11 @@ export function failure(
   error: unknown,
   params?: Record<string, unknown>,
 ): Message {
+  // A failure this client made is already worded - an image the deployment will not take is not
+  // "the upload failed, <nothing>" - so the screen's own context is not put in front of it.
+  if (isMessage(error)) {
+    return error;
+  }
   const key = errorKey(error);
   if (key && !isStatusError(error)) {
     // A refusal that is about one field names it, so the wording can point at the input

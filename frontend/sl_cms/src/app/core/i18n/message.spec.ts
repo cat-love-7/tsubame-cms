@@ -66,6 +66,17 @@ describe('message helpers', () => {
     });
   });
 
+  it('passes a failure the client made itself through untouched', () => {
+    // An image the deployment will not take is worded here, not by the server: wrapping it in the
+    // screen's own "the upload failed" would put a vague sentence in front of a precise one.
+    expect(
+      failure('content.uploadFailed', { key: 'content.imageTooLarge', params: { max: 10 } }),
+    ).toEqual({ key: 'content.imageTooLarge', params: { max: 10 } });
+    expect(failure('content.uploadFailed', { text: 'as the server wrote it' })).toEqual({
+      text: 'as the server wrote it',
+    });
+  });
+
   it('builds a key with parameters', () => {
     expect(t('accounts.roleChanged', { user: 'a@example.com' })).toEqual({
       key: 'accounts.roleChanged',

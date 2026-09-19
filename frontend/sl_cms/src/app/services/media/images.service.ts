@@ -1,5 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { map, Observable, switchMap } from 'rxjs';
+import { Message } from 'app/core/i18n/message';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
+import { map, Observable, switchMap, throwError } from 'rxjs';
 
 import {
   ImageEntry,
@@ -14,6 +16,7 @@ import {
 })
 export class ImagesService {
   private images = inject(ImageRepository);
+  private capabilities = inject(CapabilitiesService);
 
   /**
    * Upload `file` and resolve to the info the server recorded for it, so the caller can
@@ -23,6 +26,10 @@ export class ImagesService {
    */
   uploadImage(file: File): Observable<NewImageInfo> {
     const extension = file.name.includes('.') ? (file.name.split('.').pop() ?? '') : '';
+    const refusal = this.refusalFor(file);
+    if (refusal) {
+      return throwError(() => refusal);
+    }
     return this.images
       .requestUploadUrl({ original_filename: file.name, ext: extension })
       .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
@@ -37,6 +44,10 @@ export class ImagesService {
    */
   replaceImage(id: number, file: File): Observable<ReplacementInfo> {
     const extension = file.name.includes('.') ? (file.name.split('.').pop() ?? '') : '';
+    const refusal = this.refusalFor(file);
+    if (refusal) {
+      return throwError(() => refusal);
+    }
     return this.images
       .requestReplacement(id, extension)
       .pipe(
@@ -50,6 +61,25 @@ export class ImagesService {
             ),
         ),
       );
+  }
+
+  /**
+   * Refuse a file the deployment will not take, before asking where to put it.
+   *
+   * The browser knows the size and the deployment has said what its limit is (`GET
+   * /auth/capabilities`), so sending megabytes only to be refused is a waste of the reader's
+   * connection. With no limit known - an older server, or an answer that has not arrived - the
+   * upload goes ahead and the server's own refusal is what the reader sees.
+   */
+  private refusalFor(file: File): Message | null {
+    const limit = this.capabilities.maxImageBytes();
+    if (limit === null || file.size <= limit) {
+      return null;
+    }
+    return {
+      key: 'content.imageTooLarge',
+      params: { size: megabytes(file.size), max: megabytes(limit) },
+    };
   }
 
   /** The durable link to an image: the id, which survives a replacement. */
@@ -91,4 +121,9 @@ export class ImagesService {
   restoreImage(id: number): Observable<void> {
     return this.images.restoreImage(id);
   }
+}
+
+/** A byte count as a reader reads it: megabytes, to one decimal. */
+function megabytes(bytes: number): number {
+  return Math.round((bytes / (1024 * 1024)) * 10) / 10;
 }

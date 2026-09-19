@@ -20,6 +20,12 @@ export interface Capabilities {
   image_upload: 'proxied' | 'presigned';
   /** Where to sign in, when that is not here. Absent when the deployment does not know. */
   login_url?: string | null;
+  /**
+   * The largest image the deployment accepts, in bytes. Absent from a server that predates the
+   * answer, and absent until the answer arrives: the client then lets the upload go and shows
+   * what the server says, rather than refusing a file on a number it invented.
+   */
+  max_image_bytes?: number;
 }
 
 /**
@@ -56,6 +62,9 @@ export class CapabilitiesService {
 
   /** Where to send someone to sign in, when the deployment named a page. */
   readonly loginUrl = computed(() => this.known().login_url ?? null);
+
+  /** How large an image may be, or null while that is not known. */
+  readonly maxImageBytes = computed(() => this.known().max_image_bytes ?? null);
 
   /**
    * Ask the deployment, once.

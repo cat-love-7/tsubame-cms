@@ -209,7 +209,10 @@ pub fn build_router_with(
                    passwords; GET /auth/capabilities says where to sign in";
     let extra_public = sl_cms_core::http::password_auth::unavailable_public(message)
         .merge(sl_cms_core::http::capabilities::routes(
-            sl_cms_core::models::capabilities::Capabilities::aws(login_url.clone()),
+            sl_cms_core::models::capabilities::Capabilities::aws(
+                login_url.clone(),
+                module.limits.max_image_bytes,
+            ),
         ))
         // Finishing a sign-in the provider started: the code it sent back becomes a session.
         .merge(

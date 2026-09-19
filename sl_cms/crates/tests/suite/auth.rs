@@ -21,6 +21,13 @@ async fn capabilities_say_how_this_deployment_signs_users_in() {
             "presigned"
         }
     );
+    // The image limit travels with the answer, so a browser can refuse a file it already knows is
+    // too big instead of uploading it to be told afterwards. The harness runs with the defaults,
+    // so this is also what a deployment that sets nothing reports.
+    assert_eq!(
+        body["max_image_bytes"].as_u64(),
+        Some(sl_cms_core::config::DEFAULT_MAX_IMAGE_BYTES as u64),
+    );
 }
 
 /// Where there are no local passwords, the endpoints that would use one say so rather than

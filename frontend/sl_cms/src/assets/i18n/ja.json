@@ -197,6 +197,7 @@
     "imagesEmptyHint": "まだ画像がありません。ここでアップロードするか、コンテンツ編集中に画像フィールドからアップロードしてください。",
     "uploadImage": "画像をアップロード",
     "imageMeta": "ID {{id}} · {{uploaded}}",
+    "imageTooLarge": "この画像は {{size}} MB です。画像は {{max}} MB までです。",
     "imageReplaced": "画像を差し替えました。この画像を使っている内容は新しい画像を表示します。",
     "replaceFailed": "画像を差し替えられませんでした: {{message}}",
     "imageLinkCopied": "リンクをコピーしました: {{url}}",
