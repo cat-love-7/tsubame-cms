@@ -35,6 +35,12 @@ In the order they surfaced:
   "Required parameters missing" - the browser adds `redirect_uri`, the PKCE challenge and the
   state. `scripts/smoke-test.sh` adds the registered callback, so the check covers the callback
   URL as well.
+* **The icon font was never applied**, which the first person to look at the deployed screen saw
+  at once: `mat-icon` sets the box and the ligature `::before` and leaves the *family* to the
+  application, and `@fontsource/material-icons` ships the face rather than the class that names
+  it - so every icon drew its own name as text, in every environment, and no suite noticed because
+  they assert on text and aria labels. `styles.scss` names the family now, and `check-ui.mjs`
+  checks that an icon's computed family is the icon font and that the face actually loaded.
 
 ## Before two people apply it
 

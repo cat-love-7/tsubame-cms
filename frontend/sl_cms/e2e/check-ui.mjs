@@ -365,6 +365,23 @@ try {
     .catch(() => {});
   check('ログインフォームからサインインできる', !page.url().includes('/login'), page.url());
 
+  // The icons are ligatures, so a font that never loads draws their *names* as text - and every
+  // assertion about text and aria labels still passes. `mat-icon` sets the box and leaves the
+  // family to the application, so this is the check that notices `styles.scss` no longer naming it.
+  const iconFont = await page.evaluate(() => {
+    const icon = document.querySelector('mat-icon');
+    if (!icon) return null;
+    return {
+      family: getComputedStyle(icon).fontFamily,
+      loaded: document.fonts.check("24px 'Material Icons'"),
+    };
+  });
+  check(
+    'アイコンがフォントで描かれる(リガチャ名が文字にならない)',
+    iconFont !== null && iconFont.family.includes('Material Icons') && iconFont.loaded,
+    JSON.stringify(iconFont),
+  );
+
   // ------------------------------------------------- a plain array, edited as JSON
   // An array's item types are decided in the schema editor and were invisible in the content
   // editor, which left the JSON box looking like it accepted anything.

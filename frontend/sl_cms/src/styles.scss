@@ -37,6 +37,30 @@ body {
   font: var(--mat-sys-body-medium);
 }
 
+// ------------------------------------------------------------------- the icon font
+//
+// `mat-icon` sets the box and the ligature `::before` and deliberately leaves the font *family* to
+// the application; `@fontsource/material-icons` ships the face, not the class that names it (the
+// stylesheet Google serves defines both, which is why this looks like it should be there already).
+// Without this rule the browser draws the ligature names as text - "menu", "chevron_right",
+// "expand_more" - in whatever font is inherited. Nothing in the test suites saw it: they assert on
+// text and aria labels, and the names *are* text.
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
 // ------------------------------------------------------------------- the vocabulary
 //
 // Screens are assembled from a handful of shapes: a page header, a panel, a banner, a table,
