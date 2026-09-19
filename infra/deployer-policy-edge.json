@@ -45,7 +45,10 @@
       "Action": [
         "cognito-idp:CreateUserPool",
         "cognito-idp:ListUserPools",
-        "cognito-idp:DescribeUserPoolDomain"
+        "cognito-idp:CreateUserPoolDomain",
+        "cognito-idp:DescribeUserPoolDomain",
+        "cognito-idp:UpdateUserPoolDomain",
+        "cognito-idp:DeleteUserPoolDomain"
       ],
       "Resource": "*"
     },
@@ -63,9 +66,6 @@
         "cognito-idp:UpdateUserPoolClient",
         "cognito-idp:DeleteUserPoolClient",
         "cognito-idp:ListUserPoolClients",
-        "cognito-idp:CreateUserPoolDomain",
-        "cognito-idp:UpdateUserPoolDomain",
-        "cognito-idp:DeleteUserPoolDomain",
         "cognito-idp:TagResource",
         "cognito-idp:UntagResource",
         "cognito-idp:ListTagsForResource"

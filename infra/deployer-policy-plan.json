@@ -78,14 +78,16 @@
       "Sid": "LogGroupRead",
       "Effect": "Allow",
       "Action": [
-        "logs:DescribeLogGroups",
         "logs:ListTagsForResource",
         "logs:ListTagsLogGroup",
         "logs:GetLogEvents",
         "logs:FilterLogEvents",
         "logs:DescribeLogStreams"
       ],
-      "Resource": "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>:*"
+      "Resource": [
+        "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>",
+        "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>:*"
+      ]
     },
     {
       "Sid": "LogsAcrossGroups",
