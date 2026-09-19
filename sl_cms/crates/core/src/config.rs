@@ -37,6 +37,14 @@ pub const DEFAULT_PASSWORD_RESET_TTL_MINUTES: i64 = 30;
 /// (DynamoDB holds 400KB per item).
 pub const DEFAULT_MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
+/// Default ceiling for one JSON response (`MAX_RESPONSE_BYTES`).
+///
+/// The public delivery API cuts a page by this as well as by count, so a page of large items
+/// arrives in pieces rather than as a response the platform refuses. Four megabytes is the same
+/// number the Lambda guard uses, for the same reason: an invocation answers with at most 6MB, and
+/// a body the platform decides is binary is base64-encoded on its way out.
+pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
 /// Default ceiling for one image's bytes (`MAX_IMAGE_BYTES`).
 ///
 /// The bytes do not travel through the API on AWS, but the number still belongs to the CMS: it
@@ -55,6 +63,9 @@ pub struct Limits {
     pub max_request_bytes: usize,
     /// The largest image, in bytes, wherever its bytes land (`MAX_IMAGE_BYTES`).
     pub max_image_bytes: usize,
+    /// The largest JSON response, in bytes (`MAX_RESPONSE_BYTES`). The delivery API cuts a page
+    /// of items to fit it.
+    pub max_response_bytes: usize,
 }
 
 impl Default for Limits {
@@ -62,6 +73,7 @@ impl Default for Limits {
         Limits {
             max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
             max_image_bytes: DEFAULT_MAX_IMAGE_BYTES,
+            max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         }
     }
 }
@@ -232,6 +244,9 @@ impl Config {
         if let Some(bytes) = env_bytes("MAX_IMAGE_BYTES")? {
             config.limits.max_image_bytes = bytes;
         }
+        if let Some(bytes) = env_bytes("MAX_RESPONSE_BYTES")? {
+            config.limits.max_response_bytes = bytes;
+        }
         Ok(config)
     }
 
@@ -372,10 +387,11 @@ mod tests {
     }
 
     #[test]
-    fn the_limits_default_to_one_megabyte_of_json_and_ten_of_image() {
+    fn the_limits_default_to_the_numbers_the_platforms_allow() {
         let limits = Config::default().limits;
         assert_eq!(limits.max_request_bytes, DEFAULT_MAX_REQUEST_BYTES);
         assert_eq!(limits.max_image_bytes, DEFAULT_MAX_IMAGE_BYTES);
+        assert_eq!(limits.max_response_bytes, DEFAULT_MAX_RESPONSE_BYTES);
     }
 
     #[test]

@@ -129,8 +129,21 @@ impl<B: TestBackend> TestApp<B> {
         Self::with_notifier(Arc::new(NoopNotifier)).await
     }
 
+    /// The same app, with the deployment's limits set to something a test can reach.
+    ///
+    /// A limit is a number a deployment chooses, and a test that wants to see one enforced should
+    /// not have to send megabytes to do it: this is how a page budget or a body limit becomes
+    /// something a test can step over with a few hundred bytes.
+    pub async fn with_limits(limits: sl_cms_core::config::Limits) -> Self {
+        Self::build(Arc::new(NoopNotifier), limits).await
+    }
+
     /// The same app, but with webhooks wired to `notifier`.
     pub async fn with_notifier(notifier: Arc<dyn Notifier>) -> Self {
+        Self::build(notifier, sl_cms_core::config::Limits::default()).await
+    }
+
+    async fn build(notifier: Arc<dyn Notifier>, limits: sl_cms_core::config::Limits) -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
         let backend = B::open(&format!("test_http_{id}")).await;
@@ -142,9 +155,7 @@ impl<B: TestBackend> TestApp<B> {
             // the same secret the tokens use, as a deployment does.
             PreviewLinkIssuer::new(TEST_SECRET, 60),
             PasswordResetIssuer::new(TEST_SECRET, 30),
-            // The limits a deployment gets by default: a test that needs to see one enforced
-            // posts a body over it, and the CMS's own numbers are what a deployment runs with.
-            sl_cms_core::config::Limits::default(),
+            limits,
         ));
 
         let admin_token = backend.sign_in_admin(&module).await;

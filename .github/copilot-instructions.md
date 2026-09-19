@@ -58,6 +58,12 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
   (`app/core/testing/fixture.ts`), never Angular's `ComponentFixture`, whose `nativeElement` is
   `any` and makes every query on it unchecked.
 - **A 500 says nothing.** Internal detail goes to the log (`map_internal_error`), never to the body.
+- **The size limits are the deployment's, not the CMS's**: `config::Limits` reads
+  `MAX_REQUEST_BYTES` (1MB), `MAX_IMAGE_BYTES` (10MB) and `MAX_RESPONSE_BYTES` (4MB), and
+  `http::body_limit` plus the delivery API's page cut apply them. The refusal is
+  `payload_too_large`, and `/auth/capabilities` reports the image one so a browser can refuse a
+  file before sending it. `infra/` passes each only when an operator sets it, so an unset
+  deployment follows the code when a default changes.
 - **The frontend never hardcodes `/api`**: use `apiUrl()`. Screens read route parameters from
   `route.paramMap` / `route.queryParamMap` (never `route.snapshot`): the router reuses a component
   when only a parameter changes. A screen that holds edits implements `HasUnsavedChanges` so

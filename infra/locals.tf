@@ -51,6 +51,9 @@ locals {
     # deployment that never mentions them should follow the application when they change.
     var.max_request_bytes == null ? {} : { MAX_REQUEST_BYTES = tostring(var.max_request_bytes) },
     var.max_image_bytes == null ? {} : { MAX_IMAGE_BYTES = tostring(var.max_image_bytes) },
+    var.max_response_bytes == null
+    ? {}
+    : { MAX_RESPONSE_BYTES = tostring(var.max_response_bytes) },
     var.image_delivery == "public"
     ? {
       AWS_IMAGE_BASE_URL = "https://${aws_s3_bucket.images.bucket}.s3.${var.region}.amazonaws.com"

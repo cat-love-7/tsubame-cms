@@ -139,6 +139,23 @@ variable "max_image_bytes" {
   }
 }
 
+variable "max_response_bytes" {
+  description = <<-EOT
+    The largest JSON response the function returns (`MAX_RESPONSE_BYTES`). The delivery API cuts
+    a page of items to fit it and reports where to continue, so this is the graceful answer to
+    Lambda's 6MB reply limit; a response that still does not fit (an admin list asked for whole,
+    say) is refused with the CMS's own error rather than failing the invocation. Left unset, the
+    application's own default is used (4MB).
+  EOT
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.max_response_bytes == null || var.max_response_bytes >= 1
+    error_message = "A response limit is at least one byte."
+  }
+}
+
 variable "cognito_domain_prefix" {
   description = <<-EOT
     The prefix of the hosted sign-in page's address. Cognito requires it to be unique across

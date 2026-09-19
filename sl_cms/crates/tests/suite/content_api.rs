@@ -598,3 +598,99 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+/// A page is cut by size as well as by count, and the cut is invisible to a client that walks it.
+///
+/// A page of large items is a response the platform refuses: an invocation answers with at most
+/// 6MB, so a client asking for fifty items of a few hundred kilobytes each would get a failed
+/// request instead of content. The page is therefore cut to the deployment's budget
+/// (`MAX_RESPONSE_BYTES`), and `next_offset` moves to the first item that did not fit - so
+/// nothing is skipped, and the walk ends where it should.
+///
+/// The budget here is a few hundred bytes rather than four megabytes: the number is the
+/// deployment's, and a test that had to send four megabytes to see the rule would be a slow way
+/// to check a subtraction.
+#[tokio::test]
+async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
+    let app = TestApp::with_limits(sl_cms_core::config::Limits {
+        max_response_bytes: 400,
+        ..sl_cms_core::config::Limits::default()
+    })
+    .await;
+
+    // A schema of its own, because the schema counts against the same budget as the items.
+    let collection = "paged";
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/collections/{collection}/schema"),
+        Some(&app.admin_token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Three items, each big enough that one page cannot carry all of them.
+    let mut published = Vec::new();
+    for index in 0..3 {
+        let title = "x".repeat(120);
+        let (status, body) = send(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/{collection}/item"),
+            Some(&app.admin_token),
+            Some(json!({ "title": title })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let id = body.as_u64().expect("the item id");
+        let (status, _) = send(
+            &app.router,
+            Method::POST,
+            &format!("/models/collections/{collection}/items/{id}/publish"),
+            Some(&app.admin_token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        published.push(id);
+    }
+
+    // Walk the pages the way a site build does: by `next_offset`, until there is none.
+    let mut seen = Vec::new();
+    let mut offset: Option<usize> = Some(0);
+    let mut pages = 0;
+    while let Some(from) = offset {
+        let (status, body) = send(
+            &app.router,
+            Method::GET,
+            &format!("/content/collections/{collection}?limit=3&offset={from}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let items = body["items"].as_array().expect("items").clone();
+        assert!(
+            !items.is_empty(),
+            "a page that carries nothing would loop: {body}"
+        );
+        if pages == 0 {
+            assert!(
+                items.len() < 3,
+                "the budget should have cut this page: {body}"
+            );
+        }
+        for item in &items {
+            seen.push(item["id"].as_u64().expect("an item id"));
+        }
+        offset = body["next_offset"].as_u64().map(|value| value as usize);
+        pages += 1;
+        assert!(pages < 10, "the walk should end: {body}");
+    }
+
+    // Every published item exactly once, so the cut neither skipped nor repeated anything.
+    assert_eq!(seen, published);
+}

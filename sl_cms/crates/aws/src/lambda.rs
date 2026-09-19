@@ -22,6 +22,16 @@ use tower::ServiceExt;
 /// being left with a function that did not run.
 pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 
+/// The largest response body this function will hand back, for the same reason and by the same
+/// arithmetic: an invocation answers with at most 6MB, and a body the platform treats as binary
+/// is base64-encoded on the way out, so 6MB of JSON arrives as 8MB and never leaves.
+///
+/// The delivery API keeps its pages inside this itself (`MAX_RESPONSE_BYTES`), which is the
+/// graceful answer. This is the backstop for everything else - an admin list asked for without a
+/// page, say - and it answers with the CMS's own error rather than letting the platform fail the
+/// invocation, which is a 502 the client cannot read.
+pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
 /// One invocation: the event's request through the router, the router's answer back.
 ///
 /// Public so it can be driven by a synthetic event in a test — which is the only way to check
@@ -57,6 +67,16 @@ pub async fn dispatch(router: Router, request: Request<Body>) -> Result<Response
     let body = axum::body::to_bytes(body, usize::MAX)
         .await
         .map_err(|e| Error::from(format!("could not read the response body: {e}")))?;
+
+    if body.len() > MAX_RESPONSE_BYTES {
+        return Ok(text(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &format!(
+                "the answer is {} bytes; this deployment can return at most {MAX_RESPONSE_BYTES}                  (ask for a smaller page: the delivery API's `limit`, or `offset`)",
+                body.len()
+            ),
+        ));
+    }
 
     // `Binary` rather than `Text`: the runtime marks it base64 for API Gateway, which is what
     // carries any content type back intact.
@@ -183,6 +203,45 @@ mod tests {
         .expect("a response");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.body(), &Body::Binary(b"got:hello".to_vec()));
+    }
+
+    /// The other direction: an answer too big for the platform to carry is replaced with the
+    /// CMS's own error, because the alternative is a failed invocation and a 502 the client can
+    /// read nothing from.
+    #[tokio::test]
+    async fn an_answer_over_the_lambda_limit_is_refused_with_a_reason() {
+        let oversized = "a".repeat(MAX_RESPONSE_BYTES + 1);
+        let response = dispatch(
+            Router::new().route("/big", get(move || async move { oversized })),
+            http_api_event("GET", "/big", "", false),
+        )
+        .await
+        .expect("a response");
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let Body::Text(message) = response.body() else {
+            panic!("expected a text answer");
+        };
+        assert!(
+            message.contains(&MAX_RESPONSE_BYTES.to_string()),
+            "the answer should name the limit: {message}"
+        );
+    }
+
+    /// Just under the limit still goes: the guard refuses what the platform cannot carry, and
+    /// nothing else.
+    #[tokio::test]
+    async fn an_answer_at_the_lambda_limit_is_returned() {
+        let body = "a".repeat(MAX_RESPONSE_BYTES);
+        let response = dispatch(
+            Router::new().route("/big", get(move || async move { body })),
+            http_api_event("GET", "/big", "", false),
+        )
+        .await
+        .expect("a response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_ref().len(), MAX_RESPONSE_BYTES);
     }
 
     #[tokio::test]

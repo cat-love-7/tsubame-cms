@@ -63,6 +63,40 @@ struct CollectionContent {
     next_offset: Option<usize>,
 }
 
+/// How many bytes a value takes as JSON, or zero when it cannot be measured.
+///
+/// Measuring by serialising is what makes the budget about the *response*: a hundred short
+/// strings and one long article are the same count of items and very different answers.
+fn json_bytes<T: serde::Serialize>(value: &T) -> usize {
+    serde_json::to_string(value)
+        .map(|json| json.len())
+        .unwrap_or(0)
+}
+
+fn schema_bytes(schema: &CollectionSchema) -> usize {
+    json_bytes(schema)
+}
+
+/// Keep the items that fit in `max_bytes`, per the budget `used` already spends.
+///
+/// The first item is kept even when it alone is over the budget: a page that returned nothing
+/// would leave a client asking for the same offset forever. Everything that did not fit belongs
+/// to the next page - the caller moves `next_offset` to it - so a client that walks the pages
+/// sees every item exactly once.
+fn fitting<T: serde::Serialize>(items: Vec<T>, used: usize, max_bytes: usize) -> Vec<T> {
+    let mut kept = Vec::new();
+    let mut spent = used;
+    for item in items {
+        let size = json_bytes(&item);
+        if !kept.is_empty() && spent + size > max_bytes {
+            break;
+        }
+        spent += size;
+        kept.push(item);
+    }
+    kept
+}
+
 #[derive(serde::Serialize)]
 struct PublishedItem {
     id: CollectionItemId,
@@ -142,9 +176,22 @@ async fn get_collection<R: Storage>(
         })
         .collect();
 
+    // A page is bounded by bytes as well as by count. The platform this runs on answers an
+    // invocation with at most 6MB, so fifty items of a few hundred kilobytes each would not
+    // arrive at all - the function would fail instead of the client learning anything. The
+    // schema counts against the budget too: it travels with every page.
+    let items = fitting(
+        items,
+        schema_bytes(&schema),
+        module.limits.max_response_bytes,
+    );
+    // `wrap` recomputes `next_offset` from what is left, which is what makes the cut invisible
+    // to a client that walks the pages: nothing is skipped, and the last page still says so.
+    let page = pagination.wrap(items, page.total);
+
     Ok(Json(CollectionContent {
         schema,
-        items,
+        items: page.items,
         total: page.total,
         limit: page.limit,
         offset: page.offset,
