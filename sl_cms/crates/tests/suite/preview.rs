@@ -15,7 +15,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&app.admin_token),
         Some(json!({ "title": "Second", "tags": [] })),
     )
@@ -27,7 +27,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/blog/items/{first}"),
+        &format!("/api/models/collections/blog/items/{first}"),
         Some(&app.admin_token),
         Some(json!({ "title": "Draft wording", "tags": [] })),
     )
@@ -40,7 +40,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
             let (status, body) = send(
                 &app.router,
                 Method::POST,
-                &format!("/models/collections/blog/items/{id}/preview-link"),
+                &format!("/api/models/collections/blog/items/{id}/preview-link"),
                 Some(&app.admin_token),
                 None,
             )
@@ -52,7 +52,9 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
 
     let link = mint(first).await;
     let path = link["path"].as_str().unwrap().to_string();
-    assert!(path.starts_with(&format!("/preview/collections/blog/items/{first}?token=")));
+    assert!(path.starts_with(&format!(
+        "/api/preview/collections/blog/items/{first}?token="
+    )));
     assert!(link["expires_at"].is_string());
 
     // Opening it needs no token: the signature is the credential.
@@ -69,7 +71,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{first}"),
+        &format!("/api/content/collections/blog/items/{first}"),
         None,
         None,
     )
@@ -95,7 +97,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        &format!("/preview/collections/blog/items/{first}?token=1.deadbeef"),
+        &format!("/api/preview/collections/blog/items/{first}?token=1.deadbeef"),
         None,
         None,
     )
@@ -104,7 +106,7 @@ async fn a_preview_link_shows_one_working_copy_without_a_token() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        &format!("/preview/collections/blog/items/{first}"),
+        &format!("/api/preview/collections/blog/items/{first}"),
         None,
         None,
     )
@@ -126,7 +128,7 @@ async fn a_single_page_preview_link_is_public_and_only_opens_that_page() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -135,7 +137,7 @@ async fn a_single_page_preview_link_is_public_and_only_opens_that_page() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Unpublished home", "tags": [] })),
     )
@@ -145,14 +147,14 @@ async fn a_single_page_preview_link_is_public_and_only_opens_that_page() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/preview-link",
+        "/api/models/single_pages/home/preview-link",
         Some(&token),
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let path = body["path"].as_str().unwrap().to_string();
-    assert!(path.starts_with("/preview/single_pages/home?token="));
+    assert!(path.starts_with("/api/preview/single_pages/home?token="));
 
     let (status, body) = send(&app.router, Method::GET, &path, None, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -173,8 +175,8 @@ async fn a_single_page_preview_link_is_public_and_only_opens_that_page() {
         &app.router,
         Method::GET,
         &path.replace(
-            "/preview/single_pages/home",
-            "/preview/collections/home/items/1",
+            "/api/preview/single_pages/home",
+            "/api/preview/collections/home/items/1",
         ),
         None,
         None,
@@ -186,7 +188,7 @@ async fn a_single_page_preview_link_is_public_and_only_opens_that_page() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/missing/preview-link",
+        "/api/models/single_pages/missing/preview-link",
         Some(&token),
         None,
     )
@@ -216,7 +218,7 @@ async fn an_expired_preview_link_is_refused() {
     // signing the deadline.
     let (_, signature) = expired.path.rsplit_once('.').unwrap();
     let forged = format!(
-        "/preview/collections/blog/items/{item_id}?token={}.{signature}",
+        "/api/preview/collections/blog/items/{item_id}?token={}.{signature}",
         (chrono::Utc::now() + chrono::Duration::days(30)).timestamp()
     );
     let (status, _) = send(&app.router, Method::GET, &forged, None, None).await;

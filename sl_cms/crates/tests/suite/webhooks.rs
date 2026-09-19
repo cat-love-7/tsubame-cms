@@ -19,7 +19,7 @@ async fn publishing_notifies_the_configured_webhook() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/publish"),
+        &format!("/api/models/collections/blog/items/{item_id}/publish"),
         Some(&app.admin_token),
         None,
     )
@@ -54,7 +54,7 @@ async fn publishing_notifies_the_configured_webhook() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/unpublish"),
+        &format!("/api/models/collections/blog/items/{item_id}/unpublish"),
         Some(&app.admin_token),
         None,
     )
@@ -82,7 +82,7 @@ async fn publishing_a_single_page_notifies_the_webhook() {
     send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&app.admin_token),
         Some(sample_schema()),
     )
@@ -90,7 +90,7 @@ async fn publishing_a_single_page_notifies_the_webhook() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&app.admin_token),
         Some(json!({ "title": "Home", "tags": [] })),
     )
@@ -100,7 +100,7 @@ async fn publishing_a_single_page_notifies_the_webhook() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/publish",
+        "/api/models/single_pages/home/publish",
         Some(&app.admin_token),
         None,
     )
@@ -132,7 +132,7 @@ async fn an_unreachable_webhook_receiver_does_not_break_publishing() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/publish"),
+        &format!("/api/models/collections/blog/items/{item_id}/publish"),
         Some(&app.admin_token),
         None,
     )
@@ -149,7 +149,7 @@ async fn an_unreachable_webhook_receiver_does_not_break_publishing() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{item_id}"),
+        &format!("/api/content/collections/blog/items/{item_id}"),
         None,
         None,
     )

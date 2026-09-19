@@ -102,7 +102,7 @@ async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
         let (status, created) = send(
             &app.router,
             Method::POST,
-            "/auth/users",
+            "/api/auth/users",
             Some(&app.admin_token),
             Some(payload),
         )
@@ -114,7 +114,7 @@ async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
         let (status, link) = send(
             &app.router,
             Method::POST,
-            &format!("/auth/users/{id}/password-reset-link"),
+            &format!("/api/auth/users/{id}/password-reset-link"),
             Some(&app.admin_token),
             None,
         )
@@ -124,7 +124,7 @@ async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/auth/password-reset",
+            "/api/auth/password-reset",
             None,
             Some(json!({ "token": token, "new_password": password })),
         )
@@ -308,7 +308,7 @@ async fn create_sample_item(app: &TestApp, collection: &str) -> u64 {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/{collection}/schema"),
+        &format!("/api/models/collections/{collection}/schema"),
         Some(&app.admin_token),
         Some(sample_schema()),
     )
@@ -318,7 +318,7 @@ async fn create_sample_item(app: &TestApp, collection: &str) -> u64 {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/{collection}/item"),
+        &format!("/api/models/collections/{collection}/item"),
         Some(&app.admin_token),
         Some(json!({ "title": "Hello", "tags": [] })),
     )
@@ -332,7 +332,7 @@ async fn create_published_items(app: &TestApp, collection: &str, count: u64) -> 
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/{collection}/schema"),
+        &format!("/api/models/collections/{collection}/schema"),
         Some(&app.admin_token),
         Some(sample_schema()),
     )
@@ -344,7 +344,7 @@ async fn create_published_items(app: &TestApp, collection: &str, count: u64) -> 
         let (status, body) = send(
             &app.router,
             Method::POST,
-            &format!("/models/collections/{collection}/item"),
+            &format!("/api/models/collections/{collection}/item"),
             Some(&app.admin_token),
             Some(json!({ "title": format!("Item {index}"), "tags": [] })),
         )
@@ -355,7 +355,7 @@ async fn create_published_items(app: &TestApp, collection: &str, count: u64) -> 
         let (status, _) = send(
             &app.router,
             Method::POST,
-            &format!("/models/collections/{collection}/items/{id}/publish"),
+            &format!("/api/models/collections/{collection}/items/{id}/publish"),
             Some(&app.admin_token),
             None,
         )

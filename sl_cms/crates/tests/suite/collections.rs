@@ -13,7 +13,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -23,7 +23,7 @@ async fn collection_item_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         None,
     )
@@ -38,7 +38,7 @@ async fn collection_item_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "Hello", "tags": ["news"] })),
     )
@@ -50,7 +50,7 @@ async fn collection_item_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items",
+        "/api/models/collections/blog/items",
         Some(&token),
         None,
     )
@@ -62,7 +62,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&token),
         None,
     )
@@ -75,7 +75,7 @@ async fn collection_item_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "tags": ["news"] })),
     )
@@ -86,7 +86,7 @@ async fn collection_item_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{incomplete}/publish"),
+        &format!("/api/models/collections/blog/items/{incomplete}/publish"),
         Some(&token),
         None,
     )
@@ -98,7 +98,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/models/collections/blog/items/{incomplete}"),
+        &format!("/api/models/collections/blog/items/{incomplete}"),
         Some(&token),
         None,
     )
@@ -109,7 +109,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&token),
         Some(json!({ "title": "Updated", "tags": [] })),
     )
@@ -119,7 +119,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&token),
         None,
     )
@@ -130,7 +130,7 @@ async fn collection_item_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/collections/blog",
+        "/api/models/collections/blog",
         Some(&token),
         None,
     )
@@ -146,7 +146,7 @@ async fn deleting_a_collection_without_items_succeeds() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/empty/schema",
+        "/api/models/collections/empty/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -156,7 +156,7 @@ async fn deleting_a_collection_without_items_succeeds() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/collections/empty",
+        "/api/models/collections/empty",
         Some(&token),
         None,
     )
@@ -183,7 +183,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(schema),
     )
@@ -193,7 +193,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, created) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "original", "slug": "original", "body": "the words" })),
     )
@@ -203,7 +203,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{original}/publish"),
+        &format!("/api/models/collections/blog/items/{original}/publish"),
         Some(&token),
         None,
     )
@@ -213,7 +213,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, copy) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{original}/duplicate"),
+        &format!("/api/models/collections/blog/items/{original}/duplicate"),
         Some(&token),
         None,
     )
@@ -225,7 +225,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (_, values) = send(
         &app.router,
         Method::GET,
-        &format!("/models/collections/blog/items/{copy}"),
+        &format!("/api/models/collections/blog/items/{copy}"),
         Some(&token),
         None,
     )
@@ -240,7 +240,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/blog/items/{copy}"),
+        &format!("/api/models/collections/blog/items/{copy}"),
         Some(&token),
         Some(json!({ "title": "a second one", "slug": "a-second-one", "body": "the words" })),
     )
@@ -251,7 +251,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (_, metadata) = send(
         &app.router,
         Method::GET,
-        &format!("/models/collections/blog/items/{copy}/metadata"),
+        &format!("/api/models/collections/blog/items/{copy}/metadata"),
         Some(&token),
         None,
     )
@@ -260,7 +260,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (_, source) = send(
         &app.router,
         Method::GET,
-        &format!("/models/collections/blog/items/{original}/metadata"),
+        &format!("/api/models/collections/blog/items/{original}/metadata"),
         Some(&token),
         None,
     )
@@ -271,7 +271,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, _) = send_raw(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{copy}"),
+        &format!("/api/content/collections/blog/items/{copy}"),
         None,
         None,
     )
@@ -282,7 +282,7 @@ async fn an_item_can_be_duplicated_into_a_draft_with_free_unique_fields() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/999/duplicate",
+        "/api/models/collections/blog/items/999/duplicate",
         Some(&token),
         None,
     )

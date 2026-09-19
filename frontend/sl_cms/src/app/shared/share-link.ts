@@ -1,14 +1,23 @@
+import { apiUrl } from 'app/core/api-url';
+
 /**
  * Shareable links, from the browser's side.
  *
- * The API hands back either a signed path relative to itself (a preview link) or a bare token
- * (a password reset), because only the browser knows which origin it reached the CMS through.
- * One place builds those URLs, so every screen offers the same thing.
+ * The API hands back either a signed path (a preview link, which already carries the API
+ * prefix) or a bare token (a password reset), because only the browser knows which origin it
+ * reached the CMS through. One place builds those URLs, so every screen offers the same thing.
  */
 
-/** A path the API returned, as a URL a browser can open: this origin plus the API prefix. */
+/**
+ * A path the API returned, as a URL a browser can open: this origin plus, if it is not already
+ * there, the API prefix. `apiUrl` decides the second half - it leaves a path that already names
+ * the API alone, which is what the API hands out now.
+ */
 export function absoluteApiUrl(path: string, origin: string = location.origin): string {
-  return `${origin}/api${path}`;
+  const url = apiUrl(path);
+  // An absolute URL is already an address: prefixing the origin to one would produce
+  // `https://cms.example.comhttps://…`, which is nobody's intention.
+  return /^https?:\/\//i.test(url) ? url : `${origin}${url}`;
 }
 
 /** A password reset token as the link an administrator passes on. */

@@ -63,7 +63,7 @@
 ### 配備ごとの差を API で表明する
 
 Cognito を入れると「配備によってできることが違う」状態になる。UI の出し分け・E2E の分岐・
-ドキュメントの記述が散らばらないよう、`GET /auth/capabilities`(または `/auth/me` の項目)で
+ドキュメントの記述が散らばらないよう、`GET /api/auth/capabilities`(または `/api/auth/me` の項目)で
 **この配備で何ができるか**を返す。例: `{"local_accounts": true/false, "password_change":
 true/false, "password_reset_links": true/false}`。
 
@@ -75,7 +75,7 @@ true/false, "password_reset_links": true/false}`。
 
 - [x] 画像のバイト読み書きを共有トレイトから外した(`LocalImageBytes`)。共有層は「どの
       バックエンドも実装する義務があるもの」だけを語るようになり、ルート `GET/PUT
-      /images/{file_name}` はローカルのフィーチャーでだけ登録される
+      /api/images/{file_name}` はローカルのフィーチャーでだけ登録される
       → 確認: 229 テスト + ブラウザ E2E 59/59(画像のアップロード/配信は E2E が実経路で見ている)。
 - [x] テスト用リポジトリ構築をバックエンド別ヘルパー(`on_premises::open_test_repository`)に
       集約し、統合テストをバックエンドのフィーチャーでゲートした
@@ -181,7 +181,7 @@ true/false, "password_reset_links": true/false}`。
       **向いているのは「ビルド時に取得して自前で配信する」サイト**(SSG が画像を変換して自分の
       コピーを配る場合): 署名はビルドの間だけ生きていればよく、バケットは誰も読めない。
       逆に、ページに CMS の URL をそのまま載せるサイトでは**キャッシュした URL が期限切れで
-      死ぬ**ので既定にはしない。`/images/by-id/{id}` の転送も同じ経路を通るので、モードに
+      死ぬ**ので既定にはしない。`/api/images/by-id/{id}` の転送も同じ経路を通るので、モードに
       かかわらず動く(手書きの Markdown リンクはそのまま使える)。
       → **完了条件**: 署名モードで (1) API の URL が署名付き、(2) その URL で実体が取れる、
       (3) **署名なしでは取れない** → `a_presigned_deployment_serves_a_url_that_expires` で達成。
@@ -313,7 +313,7 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
 | 失敗回数のカウンタ | **`auth/throttle.rs`**(5 回/15 分、429 + `Retry-After`、識別子の存在を隠す) | **持たない**(Cognito のロックアウトに委ねる) |
 | 存在しない識別子の隠蔽 | 同一メッセージ + 全識別子を数える | `PreventUserExistenceErrors: ENABLED`(アプリクライアント設定) |
 | 大量アクセス | プロセス内カウンタ | **AWS WAF のレートベースルール**(P5 の Terraform) |
-| パスワード系 API | 使える | `/auth/login` など **501** + capabilities で表明 |
+| パスワード系 API | 使える | `/api/auth/login` など **501** + capabilities で表明 |
 
 したがって **DynamoDB のカウンタも、Cognito からの回数取得も作らない。** 二重に持つと
 「どちらで弾かれたか」が説明できなくなる。サーバー側で `AdminInitiateAuth` して自前で数える案
@@ -362,9 +362,9 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       OAuth の許可も無く**、戻ってきた `code` を交換する経路も無かった。
       → Terraform のクライアントに `callback_urls`(`<app_url>/auth/callback`)・
       `allowed_oauth_flows = ["code"]`・`allowed_oauth_scopes` を設定し、画面が PKCE
-      challenge + `state` + `redirect_uri` を足して送り、`/auth/callback` が state を照合して
-      `POST /auth/cognito/exchange` に交換を依頼する(交換はサーバー: トークンエンドポイントは
-      CORS を返さない)。検証は `CognitoVerifier` が行う。
+      challenge + `state` + `redirect_uri` を足して送り、`/auth/callback`(画面のルート)が state を
+      照合して `POST /api/auth/cognito/exchange` に交換を依頼する(交換はサーバー:
+      トークンエンドポイントは CORS を返さない)。検証は `CognitoVerifier` が行う。
       → **完了条件**: challenge が RFC 7636 の例と一致、state 不一致・取り消し・交換拒否の
       3 経路が画面に出す → フロントの 8 テストで達成。
       → **完了条件**: リスト内の 1 人が初回ログインで管理者、リスト外は 403、2 回目は
@@ -379,13 +379,13 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
         **on-prem の `build_router` だけが合成**する。
       - AWS は同じパスを **501** で登録する(404 だと「URL が違う」と読まれるため)。
         メッセージは Cognito を名指しする。
-      - `GET /auth/capabilities` を両方が公開: `password_login` / `password_reset_links` /
+      - `GET /api/auth/capabilities` を両方が公開: `password_login` / `password_reset_links` /
         `image_upload`(`proxied` | `presigned`)。
       - 契約スイートは `Backend::PASSWORD_LOGIN` でパスワード系 6 件をスキップし、AWS では
         アカウント作成とトークン発行をハーネスが直接行う(権限のテストは両方で走る)。
       → **完了条件**: UI が capabilities で出し分け、AWS ビルドでは該当画面が出ない
       → テストは達成(契約スイート 46 件 × 2、capabilities と 501 のテストを含む)。
-      - [x] **UI 側も対応した**(`CapabilitiesService`)。`GET /auth/capabilities` を最初の
+      - [x] **UI 側も対応した**(`CapabilitiesService`)。`GET /api/auth/capabilities` を最初の
         画面が 1 回だけ読み、**答えが来るまでは「パスワード方式」とみなす**(capabilities を
         知らない古いサーバーや、応答が落ちた場合に UI が壊れない)。出し分けは:
         * ログイン画面: `password_login` が false ならフォームの代わりに
@@ -400,7 +400,7 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       境界は「Cognito = 身元(パスワード・MFA・セッション)、CMS = 認可(ロール・
       リソース単位の許可)」。`User.permission` / `is_admin` / `is_active` /
       `collection_permissions` / `single_page_permissions` はアカウントレコードにあり、
-      `PATCH /auth/users/{id}` は**共有ルート**なので AWS でもそのまま使える。
+      `PATCH /api/auth/users/{id}` は**共有ルート**なので AWS でもそのまま使える。
       トークンの中身で判定しない(ミドルウェアは毎回レコードを引く)ので、**権限変更は次の
       リクエストから効く**——トークンの再発行を待たない。Cognito のグループに寄せなかったのは、
       (a) リソース単位の上書き(コレクションごとの 3 ビット)がグループに収まらない、
@@ -416,7 +416,7 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
       `delete_user` も先にプロバイダへ依頼する。テストは偽プロバイダで
       「作成時に依頼される」「拒否されたら記録が残らない」「削除時にも依頼される」を確認。
       **残り**: `aws-sdk-cognitoidentityprovider` を足して `CognitoAccountProvisioner` を実装し、
-      AWS の `build_router` が `POST /auth/users` の 501 スタブを本物のルートに差し替えること。
+      AWS の `build_router` が `POST /api/auth/users` の 501 スタブを本物のルートに差し替えること。
       この SDK 呼び出しは**手元で検証する手段が無い**(Cognito のエミュレータは無く、
       LocalStack は採用していない)ので、P5 の staging で確かめられる段階で入れるのが正直な順序。
       パスワード再設定(`AdminSetUserPassword` で一時パスワード + 変更強制)もそこで。

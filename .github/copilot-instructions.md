@@ -64,7 +64,11 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
   `payload_too_large`, and `/auth/capabilities` reports the image one so a browser can refuse a
   file before sending it. `infra/` passes each only when an operator sets it, so an unset
   deployment follows the code when a default changes.
-- **The frontend never hardcodes `/api`**: use `apiUrl()`. Screens read route parameters from
+- **Everything the CMS serves is under `/api`** (`sl_cms_core::API_PREFIX`): `http::router_with`
+  nests the whole surface there, the paths the API hands out (preview links, image URLs) carry the
+  prefix, and nothing strips it - not the dev proxy, not nginx, not CloudFront. Only liveness
+  (`GET /`) is outside. The frontend mirrors the constant in `core/api-url.ts`; never hardcode the
+  prefix in a screen, use `apiUrl()`. Screens read route parameters from
   `route.paramMap` / `route.queryParamMap` (never `route.snapshot`): the router reuses a component
   when only a parameter changes. A screen that holds edits implements `HasUnsavedChanges` so
   `unsavedChangesGuard` can ask.

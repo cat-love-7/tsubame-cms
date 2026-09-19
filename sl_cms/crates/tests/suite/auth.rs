@@ -10,7 +10,14 @@ use super::*;
 async fn capabilities_say_how_this_deployment_signs_users_in() {
     let app = test_app().await;
 
-    let (status, body) = send(&app.router, Method::GET, "/auth/capabilities", None, None).await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/auth/capabilities",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["password_login"], Backend::PASSWORD_LOGIN);
     assert_eq!(
@@ -43,7 +50,7 @@ async fn a_deployment_without_local_passwords_explains_itself() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/auth/login",
+        "/api/auth/login",
         None,
         Some(json!({ "username": ADMIN_EMAIL, "password": ADMIN_PASSWORD })),
     )
@@ -59,7 +66,7 @@ async fn a_deployment_without_local_passwords_explains_itself() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/me/password",
+        "/api/auth/me/password",
         Some(&app.admin_token),
         Some(json!({ "current_password": "x", "new_password": "y" })),
     )
@@ -92,7 +99,7 @@ async fn me_returns_the_current_user_without_the_password_hash() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/auth/me",
+        "/api/auth/me",
         Some(&app.admin_token),
         None,
     )
@@ -129,7 +136,7 @@ async fn rejects_duplicate_and_weak_user_registrations() {
     let (status, created) = send(
         &app.router,
         Method::POST,
-        "/auth/users",
+        "/api/auth/users",
         Some(&app.admin_token),
         Some(json!({
             "username": "typed@example.com",
@@ -153,7 +160,7 @@ async fn rejects_duplicate_and_weak_user_registrations() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset-link"),
         Some(&app.admin_token),
         None,
     )
@@ -162,7 +169,7 @@ async fn rejects_duplicate_and_weak_user_registrations() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": link["token"], "new_password": "short" })),
     )
@@ -204,7 +211,7 @@ async fn an_account_can_be_created_without_a_password() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset-link"),
         Some(&admin),
         None,
     )
@@ -214,7 +221,7 @@ async fn an_account_can_be_created_without_a_password() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": token, "new_password": "chosen-by-the-owner" })),
     )
@@ -262,7 +269,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset-link"),
         Some(&old_token),
         None,
     )
@@ -272,7 +279,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset-link"),
         Some(&admin),
         None,
     )
@@ -285,7 +292,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": token, "new_password": "chosen-by-ops" })),
     )
@@ -301,12 +308,19 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     assert_eq!(status, StatusCode::OK);
     let (status, _) = login(&app, "ops", "ops-password").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&old_token), None).await;
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/auth/me",
+        Some(&old_token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/me",
+        "/api/auth/me",
         Some(&fresh_token),
         None,
     )
@@ -317,7 +331,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": token, "new_password": "someone-elses-choice" })),
     )
@@ -330,7 +344,7 @@ async fn an_administrator_can_issue_a_reset_link_that_works_once() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": "nonsense", "new_password": "irrelevant-password" })),
     )
@@ -357,7 +371,7 @@ async fn a_throttled_sign_in_answers_429_with_retry_after() {
 
     let request = Request::builder()
         .method(Method::POST)
-        .uri("/auth/login")
+        .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
             json!({ "username": ADMIN_EMAIL, "password": ADMIN_PASSWORD }).to_string(),
@@ -417,7 +431,7 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/auth/me/password",
+        "/api/auth/me/password",
         Some(&editor),
         Some(json!({ "current_password": "editor-password", "new_password": "editor-password-2" })),
     )
@@ -429,13 +443,20 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
         .to_string();
 
     // The token that existed before the change is rejected...
-    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&editor), None).await;
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/auth/me",
+        Some(&editor),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     // ...the replacement works...
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/me",
+        "/api/auth/me",
         Some(&replacement),
         None,
     )
@@ -448,7 +469,7 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{editor_id}/password-reset-link"),
+        &format!("/api/auth/users/{editor_id}/password-reset-link"),
         Some(&admin),
         None,
     )
@@ -459,7 +480,7 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": token, "new_password": "chosen-by-the-editor" })),
     )
@@ -469,13 +490,13 @@ async fn changing_a_password_ends_the_tokens_that_came_before_it() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/me",
+        "/api/auth/me",
         Some(&replacement),
         None,
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let (status, _) = send(&app.router, Method::GET, "/auth/me", Some(&admin), None).await;
+    let (status, _) = send(&app.router, Method::GET, "/api/auth/me", Some(&admin), None).await;
     assert_eq!(status, StatusCode::OK, "自分のセッションは終わらない");
 }
 
@@ -508,7 +529,14 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
         "new accounts are viewers"
     );
 
-    let (status, users) = send(&app.router, Method::GET, "/auth/users", Some(&admin), None).await;
+    let (status, users) = send(
+        &app.router,
+        Method::GET,
+        "/api/auth/users",
+        Some(&admin),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         users
@@ -522,7 +550,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, body) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "permission": { "can_view": true, "can_edit": true, "can_publish": true } })),
     )
@@ -533,7 +561,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "is_active": false })),
     )
@@ -549,7 +577,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({
             "is_active": true,
@@ -568,7 +596,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
         let (status, _) = send(
             &app.router,
             method.clone(),
-            &format!("/auth/users/{id}"),
+            &format!("/api/auth/users/{id}"),
             Some(&user_token),
             (method == Method::PATCH).then(|| json!({ "is_active": false })),
         )
@@ -578,7 +606,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/users",
+        "/api/auth/users",
         Some(&user_token),
         None,
     )
@@ -593,7 +621,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/me/password",
+        "/api/auth/me/password",
         Some(&user_token),
         Some(json!({ "current_password": "wrong-password", "new_password": "another-password" })),
     )
@@ -607,7 +635,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/me/password",
+        "/api/auth/me/password",
         Some(&user_token),
         Some(json!({ "current_password": "user-password", "new_password": "another-password" })),
     )
@@ -623,7 +651,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, link) = send(
         &app.router,
         Method::POST,
-        &format!("/auth/users/{id}/password-reset-link"),
+        &format!("/api/auth/users/{id}/password-reset-link"),
         Some(&admin),
         None,
     )
@@ -633,7 +661,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/auth/password-reset",
+        "/api/auth/password-reset",
         None,
         Some(json!({ "token": token, "new_password": "chosen-after-a-reset" })),
     )
@@ -647,14 +675,14 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     );
 
     // The last administrator cannot be demoted, disabled or deleted...
-    let (status, me) = send(&app.router, Method::GET, "/auth/me", Some(&admin), None).await;
+    let (status, me) = send(&app.router, Method::GET, "/api/auth/me", Some(&admin), None).await;
     assert_eq!(status, StatusCode::OK);
     let admin_id = me["id"].as_str().unwrap().to_string();
     for change in [json!({ "is_admin": false }), json!({ "is_active": false })] {
         let (status, _) = send(
             &app.router,
             Method::PATCH,
-            &format!("/auth/users/{admin_id}"),
+            &format!("/api/auth/users/{admin_id}"),
             Some(&admin),
             Some(change.clone()),
         )
@@ -664,7 +692,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/auth/users/{admin_id}"),
+        &format!("/api/auth/users/{admin_id}"),
         Some(&admin),
         None,
     )
@@ -675,7 +703,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         None,
     )
@@ -690,7 +718,7 @@ async fn accounts_can_be_managed_without_locking_the_cms_out() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         None,
     )

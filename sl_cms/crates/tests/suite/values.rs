@@ -14,7 +14,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -24,7 +24,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "Hello", "tags": ["blog"] })),
     )
@@ -35,7 +35,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&token),
         None,
     )
@@ -48,7 +48,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": 42 })),
     )
@@ -64,7 +64,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "ok", "titel": "typo" })),
     )
@@ -77,7 +77,7 @@ async fn item_values_are_untyped_and_mismatches_are_rejected() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "ok", "tags": ["not-an-option"] })),
     )
@@ -99,7 +99,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     send(
         &app.router,
         Method::POST,
-        "/models/composite_fields/seo",
+        "/api/models/composite_fields/seo",
         Some(&token),
         Some(composite),
     )
@@ -111,7 +111,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     send(
         &app.router,
         Method::POST,
-        "/models/composite_fields/deep",
+        "/api/models/composite_fields/deep",
         Some(&token),
         Some(deep),
     )
@@ -127,7 +127,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/limited/schema",
+        "/api/models/collections/limited/schema",
         Some(&token),
         Some(schema),
     )
@@ -139,7 +139,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "" })),
     )
@@ -149,7 +149,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/limited/items/{incomplete}/publish"),
+        &format!("/api/models/collections/limited/items/{incomplete}/publish"),
         Some(&token),
         None,
     )
@@ -163,7 +163,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "ok", "code": "あいうえおか" })),
     )
@@ -175,7 +175,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "ok", "code": "あいうえお" })),
     )
@@ -186,7 +186,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "ok", "tags": ["one", "toolong"] })),
     )
@@ -199,7 +199,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(json!({ "title": "ok", "seo": { "description": "toolong" } })),
     )
@@ -212,7 +212,7 @@ async fn a_value_outside_its_schema_is_refused_with_a_code_and_the_field() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/limited/item",
+        "/api/models/collections/limited/item",
         Some(&token),
         Some(
             json!({ "title": "ok", "parts": [{ "id": "deep", "values": { "label": "toolong" } }] }),
@@ -241,7 +241,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/mixed/schema",
+        "/api/models/collections/mixed/schema",
         Some(&token),
         Some(ambiguous),
     )
@@ -257,7 +257,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (_, upload) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "a.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -274,7 +274,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/gallery/schema",
+        "/api/models/collections/gallery/schema",
         Some(&token),
         Some(schema),
     )
@@ -285,7 +285,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/gallery/item",
+        "/api/models/collections/gallery/item",
         Some(&token),
         Some(json!({ "covers": [image_id] })),
     )
@@ -296,7 +296,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/gallery/items/1",
+        "/api/models/collections/gallery/items/1",
         Some(&token),
         None,
     )
@@ -307,7 +307,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/gallery/items/1",
+        "/api/models/collections/gallery/items/1",
         Some(&token),
         Some(body),
     )
@@ -348,7 +348,7 @@ async fn invalid_schemas_are_rejected_when_saved() {
         let (status, body) = send_raw(
             &app.router,
             Method::POST,
-            &format!("/models/collections/bad{index}/schema"),
+            &format!("/api/models/collections/bad{index}/schema"),
             Some(&token),
             Some(schema.clone()),
         )
@@ -376,7 +376,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/seo",
+        "/api/models/composite_fields/seo",
         Some(&token),
         Some(composite),
     )
@@ -390,7 +390,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/posts/schema",
+        "/api/models/collections/posts/schema",
         Some(&token),
         Some(schema),
     )
@@ -401,7 +401,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "Hello", "seo": { "description": "meta", "score": 7 } })),
     )
@@ -412,7 +412,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/posts/items/1",
+        "/api/models/collections/posts/items/1",
         Some(&token),
         None,
     )
@@ -424,7 +424,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/posts/items/1",
+        "/api/models/collections/posts/items/1",
         Some(&token),
         Some(body),
     )
@@ -440,7 +440,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/bad/schema",
+        "/api/models/collections/bad/schema",
         Some(&token),
         Some(dangling),
     )
@@ -457,7 +457,7 @@ async fn composite_values_round_trip_and_references_are_validated() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/loop",
+        "/api/models/composite_fields/loop",
         Some(&token),
         Some(cyclic),
     )
@@ -485,7 +485,7 @@ async fn composite_arrays_round_trip() {
         let (status, body) = send_raw(
             &app.router,
             Method::POST,
-            &format!("/models/composite_fields/{id}"),
+            &format!("/api/models/composite_fields/{id}"),
             Some(&token),
             Some(definition(field)),
         )
@@ -506,7 +506,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/page/schema",
+        "/api/models/collections/page/schema",
         Some(&token),
         Some(schema),
     )
@@ -517,7 +517,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/page/item",
+        "/api/models/collections/page/item",
         Some(&token),
         Some(json!({ "blocks": [
             { "id": "block_b", "values": { "body": "second" } },
@@ -530,7 +530,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/page/items/1",
+        "/api/models/collections/page/items/1",
         Some(&token),
         None,
     )
@@ -546,7 +546,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/page/items/1",
+        "/api/models/collections/page/items/1",
         Some(&token),
         Some(body),
     )
@@ -557,7 +557,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/page/item",
+        "/api/models/collections/page/item",
         Some(&token),
         Some(json!({ "blocks": [{ "id": "block_c", "values": { "heading": "x" } }] })),
     )
@@ -573,7 +573,7 @@ async fn composite_arrays_round_trip() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/page/item",
+        "/api/models/collections/page/item",
         Some(&token),
         Some(json!({ "blocks": [7] })),
     )
@@ -586,7 +586,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/tree",
+        "/api/models/composite_fields/tree",
         Some(&token),
         Some(json!([
             { "name": "line", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
@@ -600,7 +600,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/nested/schema",
+        "/api/models/collections/nested/schema",
         Some(&token),
         Some(json!([{
             "name": "blocks",
@@ -619,7 +619,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/nested/item",
+        "/api/models/collections/nested/item",
         Some(&token),
         Some(tree),
     )
@@ -629,7 +629,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/nested/items/1",
+        "/api/models/collections/nested/items/1",
         Some(&token),
         None,
     )
@@ -651,7 +651,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/loop_b",
+        "/api/models/composite_fields/loop_b",
         Some(&token),
         Some(json!([{
             "name": "value", "field_type": "Number",
@@ -664,7 +664,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/composite_fields/loop_a",
+        "/api/models/composite_fields/loop_a",
         Some(&token),
         Some(json!([{
             "name": "to_b",
@@ -680,7 +680,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/composite_fields/loop_b",
+        "/api/models/composite_fields/loop_b",
         Some(&token),
         Some(json!([{
             "name": "back",
@@ -700,7 +700,7 @@ async fn composite_arrays_round_trip() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/unknown/schema",
+        "/api/models/collections/unknown/schema",
         Some(&token),
         Some(json!([{
             "name": "blocks",

@@ -20,7 +20,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "kept.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -41,7 +41,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, listed) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -54,7 +54,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, body) = send(
         &app.router,
         Method::DELETE,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         None,
     )
@@ -64,7 +64,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, library) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -78,7 +78,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/trash"),
+        &format!("/api/models/images/{id}/trash"),
         Some(&token),
         None,
     )
@@ -87,7 +87,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, library) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -100,7 +100,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, trash) = send(
         &app.router,
         Method::GET,
-        "/models/images/trash",
+        "/api/models/images/trash",
         Some(&token),
         None,
     )
@@ -117,7 +117,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/trash"),
+        &format!("/api/models/images/{id}/trash"),
         Some(&token),
         None,
     )
@@ -128,7 +128,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/restore"),
+        &format!("/api/models/images/{id}/restore"),
         Some(&token),
         None,
     )
@@ -137,7 +137,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, library) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -146,7 +146,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, trash) = send(
         &app.router,
         Method::GET,
-        "/models/images/trash",
+        "/api/models/images/trash",
         Some(&token),
         None,
     )
@@ -157,7 +157,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/trash"),
+        &format!("/api/models/images/{id}/trash"),
         Some(&token),
         None,
     )
@@ -166,7 +166,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (status, _) = send_raw(
         &app.router,
         Method::DELETE,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         None,
     )
@@ -175,7 +175,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
     let (_, trash) = send(
         &app.router,
         Method::GET,
-        "/models/images/trash",
+        "/api/models/images/trash",
         Some(&token),
         None,
     )
@@ -209,7 +209,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
         let (status, info) = send(
             &app.router,
             Method::POST,
-            "/models/images/get_upload_url",
+            "/api/models/images/get_upload_url",
             Some(&token),
             Some(json!({ "original_filename": name, "ext": "png", "size": PNG_BYTES.len() })),
         )
@@ -240,7 +240,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema),
     )
@@ -250,7 +250,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, created) = send(
         &app.router,
         Method::POST,
-        "/models/collections/pages/item",
+        "/api/models/collections/pages/item",
         Some(&token),
         Some(json!({
             "title": "first",
@@ -268,7 +268,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/about/schema",
+        "/api/models/single_pages/about/schema",
         Some(&token),
         Some(json!([
             { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 },
@@ -280,7 +280,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/about/item",
+        "/api/models/single_pages/about/item",
         Some(&token),
         Some(json!({ "title": "about", "cover": other })),
     )
@@ -290,7 +290,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, references) = send(
         &app.router,
         Method::GET,
-        &format!("/models/images/{used}/references"),
+        &format!("/api/models/images/{used}/references"),
         Some(&token),
         None,
     )
@@ -305,7 +305,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (_, references) = send(
         &app.router,
         Method::GET,
-        &format!("/models/images/{other}/references"),
+        &format!("/api/models/images/{other}/references"),
         Some(&token),
         None,
     )
@@ -322,7 +322,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/pages/items/{first}"),
+        &format!("/api/models/collections/pages/items/{first}"),
         Some(&token),
         Some(json!({ "title": "first", "cover": null, "gallery": [], "body": "no images" })),
     )
@@ -331,7 +331,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (_, references) = send(
         &app.router,
         Method::GET,
-        &format!("/models/images/{used}/references"),
+        &format!("/api/models/images/{used}/references"),
         Some(&token),
         None,
     )
@@ -342,7 +342,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, _) = send_raw(
         &app.router,
         Method::DELETE,
-        "/models/single_pages/about",
+        "/api/models/single_pages/about",
         Some(&token),
         None,
     )
@@ -351,7 +351,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (_, references) = send(
         &app.router,
         Method::GET,
-        &format!("/models/images/{other}/references"),
+        &format!("/api/models/images/{other}/references"),
         Some(&token),
         None,
     )
@@ -362,7 +362,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
     let (status, _) = send_raw(
         &app.router,
         Method::GET,
-        "/models/images/999/references",
+        "/api/models/images/999/references",
         Some(&token),
         None,
     )
@@ -380,7 +380,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "photo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -393,7 +393,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, bytes) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "original_filename": "  表紙の写真.png  " })),
     )
@@ -409,7 +409,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -426,7 +426,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "original_filename": "   " })),
     )
@@ -436,7 +436,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "original_filename": "../../etc/passwd" })),
     )
@@ -447,7 +447,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/9999",
+        "/api/models/images/9999",
         Some(&token),
         Some(json!({ "original_filename": "other.png" })),
     )
@@ -472,7 +472,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&viewer),
         Some(json!({ "original_filename": "theirs.png" })),
     )
@@ -491,13 +491,13 @@ async fn images_can_be_listed_and_deleted() {
     let token = app.admin_token.clone();
 
     // The library is not public.
-    let (status, _) = send_raw(&app.router, Method::GET, "/models/images", None, None).await;
+    let (status, _) = send_raw(&app.router, Method::GET, "/api/models/images", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -509,7 +509,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "photo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -531,7 +531,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -539,7 +539,7 @@ async fn images_can_be_listed_and_deleted() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body[0]["id"], id);
     assert_eq!(body[0]["original_filename"], "photo.png");
-    assert!(body[0]["url"].as_str().unwrap().starts_with("/images/"));
+    assert!(body[0]["url"].as_str().unwrap().starts_with("/api/images/"));
     assert!(body[0]["uploaded_at"].is_string());
 
     let path = body[0]["url"].as_str().unwrap().to_string();
@@ -553,7 +553,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/trash"),
+        &format!("/api/models/images/{id}/trash"),
         Some(&token),
         None,
     )
@@ -564,7 +564,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, bytes) = send_raw(
         &app.router,
         Method::DELETE,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         None,
     )
@@ -576,7 +576,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -590,7 +590,7 @@ async fn images_can_be_listed_and_deleted() {
     let (status, _) = send_raw(
         &app.router,
         Method::DELETE,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         None,
     )
@@ -612,7 +612,7 @@ async fn rejects_unsafe_image_file_names_and_extensions() {
     let (status, _) = send_raw(
         &app.router,
         Method::GET,
-        "/images/..%2F..%2F..%2FCargo.toml",
+        "/api/images/..%2F..%2F..%2FCargo.toml",
         None,
         None,
     )
@@ -622,7 +622,7 @@ async fn rejects_unsafe_image_file_names_and_extensions() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(
             json!({ "original_filename": "x", "ext": "../../etc/passwd", "size": PNG_BYTES.len() }),

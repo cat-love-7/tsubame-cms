@@ -79,7 +79,7 @@ impl ImageRepository for RkvRepository {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
                 original_filename: image.original_filename,
-                url: format!("/images/{}", image.file_name),
+                url: format!("{}/images/{}", sl_cms_core::API_PREFIX, image.file_name),
                 uploaded_at: image.uploaded_at,
                 deleted_at: image.deleted_at,
             })),
@@ -104,7 +104,11 @@ impl ImageRepository for RkvRepository {
                 let image_data: ImageData = serde_json::from_str(&s)?;
                 let image = Image {
                     original_filename: image_data.original_filename,
-                    url: format!("/images/{}", image_data.file_name),
+                    url: format!(
+                        "{}/images/{}",
+                        sl_cms_core::API_PREFIX,
+                        image_data.file_name
+                    ),
                     uploaded_at: image_data.uploaded_at,
                     deleted_at: image_data.deleted_at,
                 };
@@ -159,8 +163,13 @@ impl ImageRepository for RkvRepository {
         self.register_upload_key(upload_key.clone(), save_file_name.clone());
 
         Ok(NewImageInfo {
-            upload_url: format!("/images/{}?key={}", save_file_name, upload_key),
-            url: format!("/images/{}", save_file_name),
+            upload_url: format!(
+                "{}/images/{}?key={}",
+                sl_cms_core::API_PREFIX,
+                save_file_name,
+                upload_key
+            ),
+            url: format!("{}/images/{}", sl_cms_core::API_PREFIX, save_file_name),
             id: image_id,
         })
     }
@@ -230,7 +239,12 @@ impl ImageRepository for RkvRepository {
         }
 
         Ok(ReplacementInfo {
-            upload_url: format!("/images/{}?key={}", file_name, upload_key),
+            upload_url: format!(
+                "{}/images/{}?key={}",
+                sl_cms_core::API_PREFIX,
+                file_name,
+                upload_key
+            ),
             file_name,
         })
     }

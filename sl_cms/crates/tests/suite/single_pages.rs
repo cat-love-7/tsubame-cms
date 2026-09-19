@@ -16,7 +16,7 @@ async fn the_single_page_list_reports_every_page_state() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            &format!("/models/single_pages/{name}/schema"),
+            &format!("/api/models/single_pages/{name}/schema"),
             Some(&token),
             Some(sample_schema()),
         )
@@ -25,7 +25,7 @@ async fn the_single_page_list_reports_every_page_state() {
         let (status, _) = send(
             &app.router,
             Method::PUT,
-            &format!("/models/single_pages/{name}/item"),
+            &format!("/api/models/single_pages/{name}/item"),
             Some(&token),
             Some(json!({ "title": name, "tags": [] })),
         )
@@ -37,7 +37,7 @@ async fn the_single_page_list_reports_every_page_state() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/about/publish",
+        "/api/models/single_pages/about/publish",
         Some(&token),
         None,
     )
@@ -47,7 +47,7 @@ async fn the_single_page_list_reports_every_page_state() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/items/metadata",
+        "/api/models/single_pages/items/metadata",
         Some(&token),
         None,
     )
@@ -62,7 +62,7 @@ async fn the_single_page_list_reports_every_page_state() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/about/item",
+        "/api/models/single_pages/about/item",
         Some(&token),
         Some(json!({ "title": "About us", "tags": [] })),
     )
@@ -71,7 +71,7 @@ async fn the_single_page_list_reports_every_page_state() {
     let (_, body) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/items/metadata",
+        "/api/models/single_pages/items/metadata",
         Some(&token),
         None,
     )
@@ -99,7 +99,7 @@ async fn the_single_page_list_reports_every_page_state() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/items/metadata",
+        "/api/models/single_pages/items/metadata",
         Some(&reader),
         None,
     )
@@ -116,7 +116,7 @@ async fn single_page_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -126,7 +126,7 @@ async fn single_page_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Home", "tags": [] })),
     )
@@ -136,7 +136,7 @@ async fn single_page_crud_round_trip() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         None,
     )
@@ -148,7 +148,7 @@ async fn single_page_crud_round_trip() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/single_pages/home",
+        "/api/models/single_pages/home",
         Some(&token),
         None,
     )

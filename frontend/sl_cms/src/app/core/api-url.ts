@@ -1,9 +1,13 @@
 /**
- * Prefix a backend-relative URL with the API prefix used by the dev proxy
- * (`/api` is stripped before reaching the server).
+ * Prefix a backend-relative URL with the API prefix.
  *
- * Absolute URLs are returned untouched: an S3 presigned URL on AWS is already complete,
- * and prefixing it would break it.
+ * Nothing strips it: the CMS serves its API under `/api` (`sl_cms_core::API_PREFIX` nests every
+ * route), so the path a client asks for is the path the server has - the dev proxy, nginx, and
+ * CloudFront all pass it through unchanged.
+ *
+ * A path that already names the API is returned as it came (the API hands out some of those
+ * itself, like a preview link), and so is an absolute URL: an S3 presigned URL on AWS is already
+ * complete, and prefixing it would break it.
  */
 /**
  * The prefix every endpoint hangs off.

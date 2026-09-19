@@ -24,13 +24,20 @@ async fn root_is_public_and_unknown_routes_404_rather_than_401() {
 async fn model_routes_require_a_bearer_token() {
     let app = test_app().await;
 
-    let (status, _) = send_raw(&app.router, Method::GET, "/models/collections", None, None).await;
+    let (status, _) = send_raw(
+        &app.router,
+        Method::GET,
+        "/api/models/collections",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     let (status, _) = send_raw(
         &app.router,
         Method::GET,
-        "/models/collections",
+        "/api/models/collections",
         Some("garbage"),
         None,
     )
@@ -40,7 +47,7 @@ async fn model_routes_require_a_bearer_token() {
     // A token without the `Bearer ` prefix is not accepted either.
     let request = Request::builder()
         .method(Method::GET)
-        .uri("/models/collections")
+        .uri("/api/models/collections")
         .header(header::AUTHORIZATION, &app.admin_token)
         .body(Body::empty())
         .unwrap();
@@ -50,7 +57,7 @@ async fn model_routes_require_a_bearer_token() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections",
+        "/api/models/collections",
         Some(&app.admin_token),
         None,
     )
@@ -68,24 +75,24 @@ async fn missing_resources_are_404_and_duplicates_are_409() {
 
     // Nothing exists yet, so every one of these is "not found".
     let not_found = [
-        (Method::DELETE, "/models/collections/nope", None),
+        (Method::DELETE, "/api/models/collections/nope", None),
         (
             Method::PUT,
-            "/models/collections/nope/schema",
+            "/api/models/collections/nope/schema",
             Some(sample_schema()),
         ),
-        (Method::DELETE, "/models/single_pages/nope", None),
+        (Method::DELETE, "/api/models/single_pages/nope", None),
         (
             Method::PUT,
-            "/models/single_pages/nope/item",
+            "/api/models/single_pages/nope/item",
             Some(json!({})),
         ),
         (
             Method::PUT,
-            "/models/composite_fields/nope",
+            "/api/models/composite_fields/nope",
             Some(json!([])),
         ),
-        (Method::DELETE, "/models/composite_fields/nope", None),
+        (Method::DELETE, "/api/models/composite_fields/nope", None),
     ];
     for (method, uri, body) in not_found {
         let (status, _) = send_raw(&app.router, method.clone(), uri, Some(&token), body).await;
@@ -94,9 +101,9 @@ async fn missing_resources_are_404_and_duplicates_are_409() {
 
     // Creating the same thing twice conflicts with the current state.
     let duplicates = [
-        ("/models/collections/dup/schema", sample_schema()),
-        ("/models/single_pages/dup/schema", sample_schema()),
-        ("/models/composite_fields/dup", sample_schema()),
+        ("/api/models/collections/dup/schema", sample_schema()),
+        ("/api/models/single_pages/dup/schema", sample_schema()),
+        ("/api/models/composite_fields/dup", sample_schema()),
     ];
     for (uri, body) in duplicates {
         let (status, _) = send_raw(
@@ -117,7 +124,7 @@ async fn missing_resources_are_404_and_duplicates_are_409() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/bad/schema",
+        "/api/models/collections/bad/schema",
         Some(&token),
         Some(json!([{ "name": "", "field_type": "Number", "required": false, "width": 12, "height": 1 }])),
     )
@@ -170,7 +177,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(schema.clone()),
     )
     .await;
@@ -178,7 +185,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::PUT,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(schema.clone()),
     )
     .await;
@@ -187,7 +194,7 @@ async fn mutations_answer_with_an_empty_body() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "Hello", "tags": [] })),
     )
@@ -199,7 +206,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::PUT,
-        &format!("/models/collections/blog/items/{id}"),
+        &format!("/api/models/collections/blog/items/{id}"),
         Some(json!({ "title": "Edited", "tags": [] })),
     )
     .await;
@@ -207,7 +214,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::DELETE,
-        &format!("/models/collections/blog/items/{id}"),
+        &format!("/api/models/collections/blog/items/{id}"),
         None,
     )
     .await;
@@ -215,7 +222,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::DELETE,
-        "/models/collections/blog",
+        "/api/models/collections/blog",
         None,
     )
     .await;
@@ -224,7 +231,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(schema.clone()),
     )
     .await;
@@ -232,7 +239,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::PUT,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(schema.clone()),
     )
     .await;
@@ -240,7 +247,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(json!({ "title": "Home", "tags": [] })),
     )
     .await;
@@ -248,7 +255,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::DELETE,
-        "/models/single_pages/home",
+        "/api/models/single_pages/home",
         None,
     )
     .await;
@@ -257,7 +264,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::POST,
-        "/models/composite_fields/seo",
+        "/api/models/composite_fields/seo",
         Some(schema.clone()),
     )
     .await;
@@ -265,7 +272,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::PUT,
-        "/models/composite_fields/seo",
+        "/api/models/composite_fields/seo",
         Some(schema.clone()),
     )
     .await;
@@ -273,7 +280,7 @@ async fn mutations_answer_with_an_empty_body() {
         &app,
         &token,
         Method::DELETE,
-        "/models/composite_fields/seo",
+        "/api/models/composite_fields/seo",
         None,
     )
     .await;
@@ -292,12 +299,12 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
     // The window the UI opens, split across the worker threads the way a browser's
     // separate connections are.
     let targets = [
-        "/models/collections/blog/items?limit=25&offset=0",
-        "/models/collections/blog/items/metadata",
-        "/models/collections/blog/items?limit=25&offset=0",
-        "/models/collections",
-        "/models/single_pages",
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/items?limit=25&offset=0",
+        "/api/models/collections/blog/items/metadata",
+        "/api/models/collections/blog/items?limit=25&offset=0",
+        "/api/models/collections",
+        "/api/models/single_pages",
+        "/api/models/collections/blog/schema",
     ];
 
     // Several rounds: a race that misses in one may land in the next.
@@ -321,7 +328,7 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items?limit=25&offset=0",
+        "/api/models/collections/blog/items?limit=25&offset=0",
         Some(&token),
         None,
     )
@@ -350,7 +357,7 @@ async fn a_body_over_the_request_limit_is_refused_in_the_cms_own_shape() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&app.admin_token),
         Some(value),
     )
@@ -380,7 +387,7 @@ async fn a_body_of_exactly_the_request_limit_is_read() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&app.admin_token),
         Some(value),
     )

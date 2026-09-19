@@ -29,7 +29,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
         let (status, info) = send(
             &app.router,
             Method::POST,
-            "/models/images/get_upload_url",
+            "/api/models/images/get_upload_url",
             Some(token),
             Some(json!({ "original_filename": what, "ext": "png", "size": PNG_BYTES.len() })),
         )
@@ -48,7 +48,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/1",
+        "/api/models/images/1",
         Some(&token),
         Some(json!({ "file_name": second })),
     )
@@ -65,7 +65,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, replacement) = send(
         &app.router,
         Method::POST,
-        "/models/images/1/replace",
+        "/api/models/images/1/replace",
         Some(&token),
         Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -78,7 +78,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/1",
+        "/api/models/images/1",
         Some(&token),
         Some(json!({ "file_name": second })),
     )
@@ -90,7 +90,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/1",
+        "/api/models/images/1",
         Some(&token),
         Some(json!({ "file_name": first })),
     )
@@ -102,7 +102,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/1",
+        "/api/models/images/1",
         Some(&token),
         Some(json!({ "file_name": pending })),
     )
@@ -111,7 +111,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/images/1",
+        "/api/models/images/1",
         Some(&token),
         Some(json!({ "file_name": pending })),
     )
@@ -134,7 +134,7 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "logo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -142,7 +142,7 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
     assert_eq!(status, StatusCode::OK);
     let upload_url = body["upload_url"].as_str().unwrap().to_string();
     assert!(
-        upload_url.starts_with("/images/"),
+        upload_url.starts_with("/api/images/"),
         "unexpected url: {upload_url}"
     );
 
@@ -189,7 +189,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&admin),
         Some(sample_schema()),
     )
@@ -213,7 +213,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     let (status, body) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{editor_id}"),
+        &format!("/api/auth/users/{editor_id}"),
         Some(&admin),
         Some(json!({
             "collection_permissions": {
@@ -232,7 +232,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&editor),
         Some(json!({ "original_filename": "from-editor.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -244,13 +244,13 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     for (method, path, body) in [
         (
             Method::PUT,
-            format!("/models/images/{id}"),
+            format!("/api/models/images/{id}"),
             Some(json!({ "original_filename": "theirs.png" })),
         ),
-        (Method::DELETE, format!("/models/images/{id}"), None),
+        (Method::DELETE, format!("/api/models/images/{id}"), None),
         (
             Method::POST,
-            format!("/models/images/{id}/replace"),
+            format!("/api/models/images/{id}/replace"),
             Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
         ),
     ] {
@@ -269,7 +269,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&viewer),
         Some(json!({ "original_filename": "nope.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -280,7 +280,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&admin),
         Some(
             json!({ "original_filename": "from-admin.png", "ext": "png", "size": PNG_BYTES.len() }),
@@ -312,7 +312,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
         let (status, info) = send(
             &app.router,
             Method::POST,
-            "/models/images/get_upload_url",
+            "/api/models/images/get_upload_url",
             Some(token),
             Some(json!({ "original_filename": name, "ext": "png", "size": bytes.len() })),
         )
@@ -338,7 +338,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (_, before) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -349,7 +349,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, replacement) = send(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/replace"),
+        &format!("/api/models/images/{id}/replace"),
         Some(&token),
         Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
     )
@@ -368,7 +368,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "file_name": new_file })),
     )
@@ -387,7 +387,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "file_name": new_file })),
     )
@@ -398,7 +398,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/images",
+        "/api/models/images",
         Some(&token),
         None,
     )
@@ -423,7 +423,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, bytes) = send_raw(
         &app.router,
         Method::GET,
-        &format!("/images/by-id/{id}"),
+        &format!("/api/images/by-id/{id}"),
         None,
         None,
     )
@@ -437,7 +437,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/images/by-id/{id}"))
+        .uri(format!("/api/images/by-id/{id}"))
         .body(Body::empty())
         .unwrap();
     let response = app.router.clone().oneshot(request).await.unwrap();
@@ -450,7 +450,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     // A link to an image that is not there is a 404 rather than a redirect to nowhere.
     let request = Request::builder()
         .method(Method::GET)
-        .uri("/images/by-id/9999")
+        .uri("/api/images/by-id/9999")
         .body(Body::empty())
         .unwrap();
     let response = app.router.clone().oneshot(request).await.unwrap();
@@ -461,7 +461,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "file_name": new_file })),
     )
@@ -471,7 +471,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        &format!("/models/images/{id}"),
+        &format!("/api/models/images/{id}"),
         Some(&token),
         Some(json!({ "file_name": other["url"].as_str().unwrap().rsplit('/').next().unwrap() })),
     )
@@ -500,7 +500,7 @@ async fn an_image_larger_than_two_megabytes_is_accepted() {
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "photograph.png", "ext": "png", "size": bytes.len() })),
     )
@@ -519,7 +519,7 @@ async fn an_image_larger_than_two_megabytes_is_accepted() {
     let (status, body) = send_raw(
         &app.router,
         Method::GET,
-        &format!("/images/{file}"),
+        &format!("/api/images/{file}"),
         None,
         None,
     )
@@ -542,7 +542,7 @@ async fn an_image_over_the_limit_is_refused_before_its_bytes_travel() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "huge.png", "ext": "png", "size": over })),
     )
@@ -559,7 +559,7 @@ async fn an_image_over_the_limit_is_refused_before_its_bytes_travel() {
     let (status, info) = send(
         &app.router,
         Method::POST,
-        "/models/images/get_upload_url",
+        "/api/models/images/get_upload_url",
         Some(&token),
         Some(json!({ "original_filename": "small.png", "ext": "png", "size": 9 })),
     )
@@ -570,7 +570,7 @@ async fn an_image_over_the_limit_is_refused_before_its_bytes_travel() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/images/{id}/replace"),
+        &format!("/api/models/images/{id}/replace"),
         Some(&token),
         Some(json!({ "ext": "png", "size": over })),
     )

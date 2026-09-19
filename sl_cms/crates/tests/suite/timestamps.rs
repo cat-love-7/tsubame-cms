@@ -15,7 +15,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let app = test_app().await;
     let token = app.admin_token.clone();
     let item_id = create_sample_item(&app, "blog").await;
-    let metadata_url = format!("/models/collections/blog/items/{item_id}/metadata");
+    let metadata_url = format!("/api/models/collections/blog/items/{item_id}/metadata");
 
     let (status, body) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
@@ -32,7 +32,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/publish"),
+        &format!("/api/models/collections/blog/items/{item_id}/publish"),
         Some(&token),
         None,
     )
@@ -55,7 +55,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/blog/items/{item_id}"),
+        &format!("/api/models/collections/blog/items/{item_id}"),
         Some(&token),
         Some(json!({ "title": "Edited", "tags": [] })),
     )
@@ -90,7 +90,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{item_id}"),
+        &format!("/api/content/collections/blog/items/{item_id}"),
         None,
         None,
     )
@@ -102,7 +102,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/publish"),
+        &format!("/api/models/collections/blog/items/{item_id}/publish"),
         Some(&token),
         None,
     )
@@ -111,7 +111,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{item_id}"),
+        &format!("/api/content/collections/blog/items/{item_id}"),
         None,
         None,
     )
@@ -142,7 +142,7 @@ async fn saving_records_when_content_changed_and_releasing_does_too() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/publish"),
+        &format!("/api/models/collections/blog/items/{item_id}/publish"),
         Some(&token),
         None,
     )
@@ -164,8 +164,8 @@ async fn the_delivery_api_reports_the_publication_date_and_the_release_time() {
     let app = test_app().await;
     let token = app.admin_token.clone();
     let item_id = create_sample_item(&app, "blog").await;
-    let item_url = format!("/models/collections/blog/items/{item_id}");
-    let content_url = format!("/content/collections/blog/items/{item_id}");
+    let item_url = format!("/api/models/collections/blog/items/{item_id}");
+    let content_url = format!("/api/content/collections/blog/items/{item_id}");
 
     let (status, body) = send(
         &app.router,
@@ -226,7 +226,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -235,14 +235,14 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Home", "tags": [] })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let metadata_url = "/models/single_pages/home/item/metadata";
+    let metadata_url = "/api/models/single_pages/home/item/metadata";
     let (status, body) = send(&app.router, Method::GET, metadata_url, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
     let updated_at = timestamp(&body["updated_at"]);
@@ -252,7 +252,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/publish",
+        "/api/models/single_pages/home/publish",
         Some(&token),
         None,
     )
@@ -262,7 +262,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Home again", "tags": [] })),
     )
@@ -278,7 +278,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages/home",
+        "/api/content/single-pages/home",
         None,
         None,
     )
@@ -289,7 +289,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/publish",
+        "/api/models/single_pages/home/publish",
         Some(&token),
         None,
     )
@@ -298,7 +298,7 @@ async fn saving_a_single_page_records_when_it_changed() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages/home",
+        "/api/content/single-pages/home",
         None,
         None,
     )

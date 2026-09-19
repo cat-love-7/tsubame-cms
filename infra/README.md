@@ -131,6 +131,9 @@ has to stay on x86_64 for some reason.
   (`doc/aws-plan.md`, P4): Cognito answers who someone is, the CMS what they may do.
 - **`allow_admin_create_user_only`.** Nobody signs themselves up; an administrator creates the
   account, and `BOOTSTRAP_ADMIN_USERNAMES` is how the first one appears.
+- **The API is served under `/api`.** `sl_cms_core::API_PREFIX` nests the whole surface there, so
+  a CloudFront distribution in front of the admin app can send `/api/*` to this function URL
+  without rewriting anything, and nothing has to strip a prefix on the way in.
 - **WAF, not threat protection.** Cognito's threat protection is risk scoring (Plus plan) and its
   documentation points at WAF for volume. This rule is the volume case; the per-account lockout
   is Cognito's own.

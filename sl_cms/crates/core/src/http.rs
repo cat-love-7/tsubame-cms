@@ -113,6 +113,10 @@ pub fn router<R: Storage>(state: AppState<R>, cors: CorsLayer) -> Router {
 /// that stores them itself brings its own routes, and only its composition root merges them.
 /// They are merged *before* the layers, so CORS and tracing apply to them like everything
 /// else.
+///
+/// Everything the CMS serves lives under [`crate::API_PREFIX`], so the path a client uses is the
+/// path this router has - nothing strips a prefix on the way in. Only liveness (`GET /`) is
+/// outside it.
 pub fn router_with<R: Storage>(
     state: AppState<R>,
     cors: CorsLayer,
@@ -142,9 +146,8 @@ pub fn router_with<R: Storage>(
         require_auth::<R>,
     ));
 
-    body_limit(
+    let api = body_limit(
         Router::new()
-            .route("/", get(root))
             .merge(auth::public_routes::<R>())
             // The read-only content API a site build consumes. Published content only, so it
             // needs no token.
@@ -156,10 +159,16 @@ pub fn router_with<R: Storage>(
         max_request_bytes,
     )
     .merge(extra_public)
-    .merge(protected)
-    .layer(cors)
-    .layer(TraceLayer::new_for_http())
-    .with_state(state)
+    .merge(protected);
+
+    Router::new()
+        // Liveness stays at the root: a platform's readiness check asks for `/`, and `root` is
+        // the only handler that touches no storage and needs no token.
+        .route("/", get(root))
+        .nest(crate::API_PREFIX, api)
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 /// One resource that can carry permissions of its own.

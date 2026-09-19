@@ -14,7 +14,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -25,7 +25,7 @@ async fn only_published_collection_items_reach_the_content_api() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/models/collections/blog/item",
+            "/api/models/collections/blog/item",
             Some(&token),
             Some(json!({ "title": title, "tags": [] })),
         )
@@ -38,7 +38,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog",
+        "/api/content/collections/blog",
         None,
         None,
     )
@@ -47,7 +47,14 @@ async fn only_published_collection_items_reach_the_content_api() {
     assert_eq!(body["schema"][0]["name"], "title");
     assert_eq!(body["items"], json!([]));
 
-    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!([]));
 
@@ -56,7 +63,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog/items/1",
+        "/api/content/collections/blog/items/1",
         None,
         None,
     )
@@ -67,7 +74,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items/1/metadata",
+        "/api/models/collections/blog/items/1/metadata",
         Some(&token),
         None,
     )
@@ -79,7 +86,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items/metadata",
+        "/api/models/collections/blog/items/metadata",
         Some(&token),
         None,
     )
@@ -92,7 +99,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/1/publish",
+        "/api/models/collections/blog/items/1/publish",
         Some(&token),
         None,
     )
@@ -107,7 +114,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog/items/1",
+        "/api/content/collections/blog/items/1",
         None,
         None,
     )
@@ -123,7 +130,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog",
+        "/api/content/collections/blog",
         None,
         None,
     )
@@ -134,7 +141,14 @@ async fn only_published_collection_items_reach_the_content_api() {
     // The second item stays a draft inside the same collection.
     assert_eq!(body["items"][0]["id"], 1);
 
-    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!(["blog"]));
 
@@ -142,7 +156,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/99/publish",
+        "/api/models/collections/blog/items/99/publish",
         Some(&token),
         None,
     )
@@ -154,7 +168,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/1/unpublish",
+        "/api/models/collections/blog/items/1/unpublish",
         Some(&token),
         None,
     )
@@ -166,14 +180,21 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog/items/1",
+        "/api/content/collections/blog/items/1",
         None,
         None,
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!([]));
 
@@ -182,7 +203,7 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/1/publish",
+        "/api/models/collections/blog/items/1/publish",
         Some(&token),
         None,
     )
@@ -191,13 +212,20 @@ async fn only_published_collection_items_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&token),
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, body) = send(&app.router, Method::GET, "/content/collections", None, None).await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!([]));
 }
@@ -210,7 +238,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -220,7 +248,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Home", "tags": [] })),
     )
@@ -230,7 +258,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages",
+        "/api/content/single-pages",
         None,
         None,
     )
@@ -241,7 +269,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages/home",
+        "/api/content/single-pages/home",
         None,
         None,
     )
@@ -251,7 +279,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/home/item/metadata",
+        "/api/models/single_pages/home/item/metadata",
         Some(&token),
         None,
     )
@@ -262,7 +290,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/publish",
+        "/api/models/single_pages/home/publish",
         Some(&token),
         None,
     )
@@ -273,7 +301,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages",
+        "/api/content/single-pages",
         None,
         None,
     )
@@ -284,7 +312,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages/home",
+        "/api/content/single-pages/home",
         None,
         None,
     )
@@ -297,7 +325,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/unpublish",
+        "/api/models/single_pages/home/unpublish",
         Some(&token),
         None,
     )
@@ -307,7 +335,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages/home",
+        "/api/content/single-pages/home",
         None,
         None,
     )
@@ -319,7 +347,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/publish",
+        "/api/models/single_pages/home/publish",
         Some(&token),
         None,
     )
@@ -328,7 +356,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/single_pages/home",
+        "/api/models/single_pages/home",
         Some(&token),
         None,
     )
@@ -338,7 +366,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -347,7 +375,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&token),
         Some(json!({ "title": "Home again", "tags": [] })),
     )
@@ -356,7 +384,7 @@ async fn only_published_single_pages_reach_the_content_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/single-pages",
+        "/api/content/single-pages",
         None,
         None,
     )
@@ -374,7 +402,7 @@ async fn the_content_api_pages_through_published_items() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&app.admin_token),
         Some(json!({ "title": "Draft", "tags": [] })),
     )
@@ -385,7 +413,7 @@ async fn the_content_api_pages_through_published_items() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog?limit=2",
+        "/api/content/collections/blog?limit=2",
         None,
         None,
     )
@@ -403,7 +431,7 @@ async fn the_content_api_pages_through_published_items() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog?limit=2&offset=2",
+        "/api/content/collections/blog?limit=2&offset=2",
         None,
         None,
     )
@@ -426,7 +454,7 @@ async fn the_content_api_pages_through_published_items() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog?limit=2&offset=99",
+        "/api/content/collections/blog?limit=2&offset=99",
         None,
         None,
     )
@@ -441,7 +469,7 @@ async fn the_content_api_pages_through_published_items() {
         let (status, _) = send_raw(
             &app.router,
             Method::GET,
-            &format!("/content/collections/blog?{query}"),
+            &format!("/api/content/collections/blog?{query}"),
             None,
             None,
         )
@@ -463,7 +491,7 @@ async fn the_content_api_returns_a_bounded_page_without_an_explicit_limit() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog",
+        "/api/content/collections/blog",
         None,
         None,
     )
@@ -480,7 +508,7 @@ async fn the_content_api_returns_a_bounded_page_without_an_explicit_limit() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog?offset={DEFAULT_PAGE_LIMIT}"),
+        &format!("/api/content/collections/blog?offset={DEFAULT_PAGE_LIMIT}"),
         None,
         None,
     )
@@ -504,7 +532,7 @@ async fn a_cross_origin_client_can_read_the_total() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -513,7 +541,7 @@ async fn a_cross_origin_client_can_read_the_total() {
 
     let request = Request::builder()
         .method(Method::GET)
-        .uri("/models/collections/blog/items")
+        .uri("/api/models/collections/blog/items")
         .header(header::ORIGIN, "http://localhost:4200")
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
@@ -541,7 +569,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -551,7 +579,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/models/collections/blog/item",
+            "/api/models/collections/blog/item",
             Some(&token),
             Some(json!({ "title": format!("Item {index}"), "tags": [] })),
         )
@@ -564,7 +592,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let (status, headers, bytes) = send_with_headers(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items",
+        "/api/models/collections/blog/items",
         Some(&token),
     )
     .await;
@@ -577,7 +605,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let (status, headers, bytes) = send_with_headers(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items?limit=2&offset=1",
+        "/api/models/collections/blog/items?limit=2&offset=1",
         Some(&token),
     )
     .await;
@@ -592,7 +620,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let (status, _, _) = send_with_headers(
         &app.router,
         Method::GET,
-        "/models/collections/blog/items?limit=2",
+        "/api/models/collections/blog/items?limit=2",
         None,
     )
     .await;
@@ -623,7 +651,7 @@ async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/{collection}/schema"),
+        &format!("/api/models/collections/{collection}/schema"),
         Some(&app.admin_token),
         Some(json!([
             { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
@@ -634,12 +662,12 @@ async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
 
     // Three items, each big enough that one page cannot carry all of them.
     let mut published = Vec::new();
-    for index in 0..3 {
+    for _ in 0..3 {
         let title = "x".repeat(120);
         let (status, body) = send(
             &app.router,
             Method::POST,
-            &format!("/models/collections/{collection}/item"),
+            &format!("/api/models/collections/{collection}/item"),
             Some(&app.admin_token),
             Some(json!({ "title": title })),
         )
@@ -649,7 +677,7 @@ async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            &format!("/models/collections/{collection}/items/{id}/publish"),
+            &format!("/api/models/collections/{collection}/items/{id}/publish"),
             Some(&app.admin_token),
             None,
         )
@@ -666,7 +694,7 @@ async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
         let (status, body) = send(
             &app.router,
             Method::GET,
-            &format!("/content/collections/{collection}?limit=3&offset={from}"),
+            &format!("/api/content/collections/{collection}?limit=3&offset={from}"),
             None,
             None,
         )

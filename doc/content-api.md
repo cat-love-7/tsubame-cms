@@ -1,19 +1,25 @@
 # 公開コンテンツ API と下書き / 公開
 
+**すべての API は `/api` の下にある**(`sl_cms_core::API_PREFIX`)。管理画面・サイトビルド・
+プレビュー・画像のどれも同じで、経路の先頭を剥がす作業はどこにも無い(dev プロキシも nginx も
+CloudFront もそのまま通す)。例外は liveness の `GET /` だけで、これはストレージにも
+トークンにも触れない。API が返すパス(プレビューリンク、画像の URL)は**この接頭辞込み**なので、
+そのまま開ける。
+
 Gatsby などの静的サイトビルドが CMS の内容を読むための契約。
-管理画面が使う `/models/*` とは別に、**認証不要・公開済みのみ**を返す `/content/*` を用意している。
+管理画面が使う `/api/models/*` とは別に、**認証不要・公開済みのみ**を返す `/api/content/*` を用意している。
 
-## 1. なぜ `/models/*` と分けているか
+## 1. なぜ `/api/models/*` と分けているか
 
-| | `/models/*` | `/content/*` |
+| | `/api/models/*` | `/api/content/*` |
 |---|---|---|
 | 認証 | Bearer トークン必須 | 不要 |
 | 返す内容 | 下書きを含む全件 | 公開済みのみ |
 | 主な利用者 | 管理画面 | サイトビルド・配信 |
 | スキーマ | 別リクエストで取得 | レスポンスに同梱 |
 
-`/models/*` はスキーマも下書きも含むため公開できない。そこで読み取り専用の入口を分けた。
-値は型タグを持たない(スキーマが唯一の型情報)ので、`/content/*` はスキーマを同時に返す。
+`/api/models/*` はスキーマも下書きも含むため公開できない。そこで読み取り専用の入口を分けた。
+値は型タグを持たない(スキーマが唯一の型情報)ので、`/api/content/*` はスキーマを同時に返す。
 これにより、値の解釈のためだけに認証付き API を叩く必要がない。
 
 ## 2. 下書き / 公開のモデル
@@ -24,8 +30,8 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 | 保存先 | 中身 | 誰が見るか |
 |---|---|---|
-| アイテムストア | 公開コピー | `/content/*`(サイト) |
-| 作業コピー用ストア | 作業コピー(未公開の変更) | `/models/*` の読み書き(管理画面・プレビュー) |
+| アイテムストア | 公開コピー | `/api/content/*`(サイト) |
+| 作業コピー用ストア | 作業コピー(未公開の変更) | `/api/models/*` の読み書き(管理画面・プレビュー) |
 
 - **保存はライブサイトを変えない。** 公開コピーが置き換わるのは `publish` のときだけ。
   これが「編集はできるが公開はできない」ロールを安全にしている。
@@ -34,7 +40,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 - 状態・日時は値とは**別のストア**(`item_metadata`)に入る。スキーマに `status` や
   `published_at` というフィールドがあっても衝突しない。
 - コレクション / 単一ページ / アイテムを削除すると、作業コピーとメタデータも一緒に消える。
-- 未公開の内容への `/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
+- 未公開の内容への `/api/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
 - `published_at` は**最初に公開した日時**。再公開では動かさず、unpublish しても保持する
   (「この記事を公開した日」は現在の状態ではなくアイテムの事実のため)。**更新を公開した日時**は
   `updated_at` が持つ。
@@ -54,30 +60,30 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 | メソッド | パス | 返すもの |
 |---|---|---|
-| GET | `/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
-| GET | `/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
-| GET | `/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
-| GET | `/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
-| GET | `/content/single-pages` | 公開済み単一ページ名の配列 |
-| GET | `/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
+| GET | `/api/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
+| GET | `/api/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
+| GET | `/api/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
+| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
+| GET | `/api/content/single-pages` | 公開済み単一ページ名の配列 |
+| GET | `/api/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
 
 ### 管理(要トークン。`publish` / `unpublish` は編集権限が必要)
 
 | メソッド | パス | 返すもの |
 |---|---|---|
-| GET | `/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ |
-| GET | `/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
-| GET | `/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
-| POST | `/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
-| POST | `/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
-| GET | `/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
-| GET | `/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
-| POST | `/models/single_pages/{name}/publish` | 更新後のメタデータ |
-| POST | `/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
-| GET | `/models/collections/{name}/items/{id}/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
-| GET | `/models/single_pages/{name}/preview` | `{ "schema": [...], "values": {...} }`(作業コピー。要トークン) |
-| GET | `/models/images` | `[{ "id": 1, "url": "/images/...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順) |
-| DELETE | `/models/images/{id}` | 画像と実体を削除(存在しない id は 404) |
+| GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ |
+| GET | `/api/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
+| GET | `/api/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
+| POST | `/api/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
+| POST | `/api/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
+| GET | `/api/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
+| GET | `/api/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
+| POST | `/api/models/single_pages/{name}/publish` | 更新後のメタデータ |
+| POST | `/api/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
+| GET | `/api/models/collections/{name}/items/{id}/api/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
+| GET | `/api/models/single_pages/{name}/api/preview` | `{ "schema": [...], "values": {...} }`(作業コピー。要トークン) |
+| GET | `/api/models/images` | `[{ "id": 1, "url": "/api/images/...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順) |
+| DELETE | `/api/models/images/{id}` | 画像と実体を削除(存在しない id は 404) |
 
 `items/metadata` は**全アイテム分**を返す。保存されたことのないアイテムも `draft` として現れるので、
 管理画面の一覧はこれだけで状態の列を描ける。
@@ -92,16 +98,16 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 | メソッド | パス | 返すもの |
 |---|---|---|
-| POST | `/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/images/<file>?key=..." }`(要トークン) |
-| PUT | `/images/{file_name}?key=...` | 実体を保存(要トークン。`key` は一度きりで、発行時のファイル名に紐づく) |
-| GET | `/images/{file_name}` | 実体の配信。**認証不要**(`<img>` はヘッダを付けられないため) |
-| PUT | `/models/images/{id}` | 表示名の変更(`{ "original_filename": "..." }`)、差し替えの確定(`{ "file_name": "..." }`) |
-| DELETE | `/models/images/{id}` | 画像と実体の削除 |
-| POST | `/models/images/{id}/replace` | 差し替え用のアップロード先(`{ "ext": "png" }` → `{ "file_name", "upload_url" }`) |
-| GET | `/images/by-id/{id}` | **id で引く実体**(認証不要)。差し替えても壊れないリンク |
+| POST | `/api/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/api/images/<file>?key=..." }`(要トークン) |
+| PUT | `/api/images/{file_name}?key=...` | 実体を保存(要トークン。`key` は一度きりで、発行時のファイル名に紐づく) |
+| GET | `/api/images/{file_name}` | 実体の配信。**認証不要**(`<img>` はヘッダを付けられないため) |
+| PUT | `/api/models/images/{id}` | 表示名の変更(`{ "original_filename": "..." }`)、差し替えの確定(`{ "file_name": "..." }`) |
+| DELETE | `/api/models/images/{id}` | 画像と実体の削除 |
+| POST | `/api/models/images/{id}/replace` | 差し替え用のアップロード先(`{ "ext": "png" }` → `{ "file_name", "upload_url" }`) |
+| GET | `/api/images/by-id/{id}` | **id で引く実体**(認証不要)。差し替えても壊れないリンク |
 
 アップロードは 2 段階(場所を貰う → 送る)。AWS では同じ契約を S3 の presigned URL が担う。
-管理画面の「Images」(`/images`。ドキュメント側にある)が `GET /models/images` を一覧し、
+管理画面の「Images」(`/api/images`。ドキュメント側にある)が `GET /api/models/images` を一覧し、
 アップロード・名前の変更・差し替え・削除を行う。コンテンツ編集の画像フィールドからは、同じ一覧を開いて**既存の画像を選び直せる**。
 
 **`original_filename` は表示名**であって、保存先のパスではない。保存先のファイル名はサーバーが
@@ -115,9 +121,9 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 変えず、実体だけを入れ替える**。
 
 ```
-POST /models/images/3/replace  { "ext": "png" }   → { "file_name": "...", "upload_url": "..." }
+POST /api/models/images/3/replace  { "ext": "png" }   → { "file_name": "...", "upload_url": "..." }
 PUT  <upload_url>                                  ← 新しい実体
-PUT  /models/images/3          { "file_name": "..." }  ← 差し替えの確定
+PUT  /api/models/images/3          { "file_name": "..." }  ← 差し替えの確定
 ```
 
 - **新しいファイル名に上げる**(同じキーに上書きしない)。ブラウザも CDN も URL 単位で
@@ -131,7 +137,7 @@ PUT  /models/images/3          { "file_name": "..." }  ← 差し替えの確定
 
 #### 差し替えても壊れないリンク(id リンク)
 
-`GET /images/by-id/{id}` は**その画像がいま配信されている場所**へ解決する。**認証不要**。
+`GET /api/images/by-id/{id}` は**その画像がいま配信されている場所**へ解決する。**認証不要**。
 
 - オンプレでは実体をそのまま返す(`Cache-Control: no-cache`。指す先が変わるため)。
 - AWS では現在のオブジェクト URL へ 302 で送る(同じく `no-cache`。オブジェクト自体は
@@ -180,8 +186,8 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
 
 | メソッド | パス | 返すもの |
 |---|---|---|
-| GET | `/models/collections/{name}/items/by/{field}/{value}` | `{ "id": 1, "values": {...} }`(要トークン、一意でないフィールドは 400) |
-| GET | `/content/collections/{name}/items/by/{field}/{value}` | 公開アイテム(上記と同じ形) |
+| GET | `/api/models/collections/{name}/items/by/{field}/{value}` | `{ "id": 1, "values": {...} }`(要トークン、一意でないフィールドは 400) |
+| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 公開アイテム(上記と同じ形) |
 
 - **管理側は索引が答える**。下書きが値を変更中のアイテムも、公開コピーが使っている値と
   これから使う値の**どちらでも引ける**(保存が衝突する値と同じ答えになる)。
@@ -275,7 +281,7 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
 アイテム一覧は `?limit=&offset=` を受け付ける。並び順は**アイテム id の昇順**で固定なので、
 `offset` を進めれば重複も抜けもなく全件を辿れる。
 
-| | 公開 API (`/content/collections/{name}`) | 管理 API (`/models/collections/{name}/items`) |
+| | 公開 API (`/api/content/collections/{name}`) | 管理 API (`/api/models/collections/{name}/items`) |
 |---|---|---|
 | `limit` 未指定 | `50` 件(`total` と `next_offset` で続きが分かる) | **全件**(API の既定。管理画面は常に `25` 件ずつ要求する) |
 | `limit` の上限 | `200` | `200` |
@@ -370,10 +376,10 @@ curl http://127.0.0.1:8000/content/collections/blog
 ## 4. Gatsby からの使い方
 
 ```text
-GET /content/collections                → 公開コレクションの一覧
-GET /content/collections/{name}         → スキーマ + 公開アイテム(1 ページ分)
-GET /content/collections/{name}?offset= → next_offset が null になるまで繰り返す
-GET /content/single-pages/{name}        → スキーマ + 単一ページの値
+GET /api/content/collections                → 公開コレクションの一覧
+GET /api/content/collections/{name}         → スキーマ + 公開アイテム(1 ページ分)
+GET /api/content/collections/{name}?offset= → next_offset が null になるまで繰り返す
+GET /api/content/single-pages/{name}        → スキーマ + 単一ページの値
 ```
 
 ビルド時にこれらを取得し、Gatsby のノードとして `createPages` する薄い source plugin を
@@ -385,8 +391,8 @@ GET /content/single-pages/{name}        → スキーマ + 単一ページの値
 一度きりなので、`updated_at` を保持しておけば次回以降は「前回より新しいアイテムだけ」を
 処理する差分ビルドにも広げられる。
 
-`/content/collections` を起点にすると「公開アイテムが1つも無いコレクション」は列挙されない。
-空のコレクションもページにしたい場合は `/models/collections` (要トークン)を使うか、
+`/api/content/collections` を起点にすると「公開アイテムが1つも無いコレクション」は列挙されない。
+空のコレクションもページにしたい場合は `/api/models/collections` (要トークン)を使うか、
 サイト側で一覧を固定する。
 
 ## 5. Webhook(公開・非公開の通知)
@@ -426,7 +432,7 @@ X-CMS-Signature: sha256=...
 | `collection_item.published` / `collection_item.unpublished` | アイテムの公開状態が変わった(`collection` と `id`) |
 | `single_page.published` / `single_page.unpublished` | 単一ページの公開状態が変わった(`page`) |
 
-- 本文に**値は含まない**。受け取った側が必要な `/content/*` を取りに行く(全件を送ると本文が
+- 本文に**値は含まない**。受け取った側が必要な `/api/content/*` を取りに行く(全件を送ると本文が
   肥大し、直後の再取得と二重管理になるため)。
 - `published_at` は publish の時刻、unpublish では `null`。`occurred_at` はイベント発生時刻。
 - `X-CMS-Delivery` は配信ごとの UUID で、受信側の重複排除に使える。
@@ -468,8 +474,8 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 | 値の作成・編集(作業コピー) | `can_edit` |
 | 公開 / 非公開、コンテンツの削除 | `can_publish` |
 | スキーマ・コレクション・単一ページ・複合フィールドの変更 | `is_admin` |
-| アカウント管理(`/auth/users`) | `is_admin` |
-| 画像のアップロード(`/models/images/get_upload_url`) | **どこか 1 つでも `can_edit`** |
+| アカウント管理(`/api/auth/users`) | `is_admin` |
+| 画像のアップロード(`/api/models/images/get_upload_url`) | **どこか 1 つでも `can_edit`** |
 | 画像の変更・差し替え・削除 | `can_edit`(アカウント全体) |
 
 ロールはこのフラグの組み合わせとして扱う。
@@ -508,11 +514,11 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/auth/users` | 一覧 |
-| POST | `/auth/users` | 作成(`username` / 任意の `email` / `is_admin` / `permission`。**パスワードは取らない**) |
-| PATCH | `/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
-| DELETE | `/auth/users/{id}` | 削除 |
-| POST | `/auth/me/password` | 自分のパスワード変更(現在のパスワードが必要) |
+| GET | `/api/auth/users` | 一覧 |
+| POST | `/api/auth/users` | 作成(`username` / 任意の `email` / `is_admin` / `permission`。**パスワードは取らない**) |
+| PATCH | `/api/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
+| DELETE | `/api/auth/users/{id}` | 削除 |
+| POST | `/api/auth/me/password` | 自分のパスワード変更(現在のパスワードが必要) |
 
 **パスワードを選べるのは本人だけ**。作成したアカウントは資格情報を持たず、本人がリセットリンクで
 設定するまでサインインできない(本文に `password` を入れても**無視される** — 作成で他人の
@@ -522,7 +528,7 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 リンクを発行する人がいないため、ここだけは代わりに選ぶ。この作成と資格情報の保存は 1 組で、
 保存に失敗したらアカウントも消す(残すと次の起動が bootstrap を飛ばし、誰も入れない配備になる)。
 
-`/auth/users*` は管理者のみ。`/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
+`/api/auth/users*` は管理者のみ。`/api/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
 アカウントでも使える**(閲覧のみの人がパスワードを変えられない、という状態を避けるため)。
 
 #### アカウントの識別子
@@ -547,10 +553,10 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 - **パスワード変更は既存のトークンをすべて失効させる**。アカウントはトークン世代
   (`token_version`)を持ち、トークンは発行時の世代を運ぶ。認証は毎回アカウントを読むので、
   世代が古いトークンは残りの有効期限によらず 401 になる(クロックの一致も要らない)。
-  - `POST /auth/me/password` は**新しい世代のトークン**を返す。変更した本人のセッションも
+  - `POST /api/auth/me/password` は**新しい世代のトークン**を返す。変更した本人のセッションも
     切れるため、画面はこれを保存して続行する(他の端末のセッションは終了したまま)。
     応答: `{"token":"...","expires_at":"..."}`
-  - リセットリンクの完了(`POST /auth/password-reset`)も同じく、そのアカウントのトークンだけを
+  - リセットリンクの完了(`POST /api/auth/password-reset`)も同じく、そのアカウントのトークンだけを
     失効させる。管理者がリンクを発行しただけでは何も失効しない。
 
 ### ログイン試行の制限
@@ -572,7 +578,7 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   ミスの連発で組織全体が止まることもない(カウンタはアドレスごと)。
 - カウンタは**プロセスのメモリ**にある。再起動で消え、複数のプロセスでは共有されない
   (Lambda のようにインスタンスが入れ替わる環境では共有ストレージが要る)。
-- 同じカウンタを `POST /auth/me/password` の現在のパスワード確認にも使う。
+- 同じカウンタを `POST /api/auth/me/password` の現在のパスワード確認にも使う。
 
 ### パスワードリセット(管理者がリンクを発行)
 
@@ -582,8 +588,8 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/auth/users/{id}/password-reset-link` | リンクを発行(要 `is_admin`)。応答は `{ token, expires_at }` |
-| POST | `/auth/password-reset` | **公開**。`{ token, new_password }` で新しいパスワードを設定し、新しいトークンを返す |
+| POST | `/api/auth/users/{id}/password-reset-link` | リンクを発行(要 `is_admin`)。応答は `{ token, expires_at }` |
+| POST | `/api/auth/password-reset` | **公開**。`{ token, new_password }` で新しいパスワードを設定し、新しいトークンを返す |
 
 - 画面の URL はフロント側が組み立てる: `/reset-password?token=<token>`(API はトークンだけ返す。
   UI の経路は API が知るべきものではないため)。
@@ -595,7 +601,7 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
   トークン・存在しないアカウントは **401**(公開エンドポイントなので存在を漏らさない)。
 - ログインと同じカウンタで試行を制限する。
 - **パスワードを選べるのは本人だけ**。管理者ができるのはリンクの発行までで、他人のパスワードを
-  直接設定する経路は API にも画面にも無い(以前は `POST /auth/users/{id}/password` があったが、
+  直接設定する経路は API にも画面にも無い(以前は `POST /api/auth/users/{id}/password` があったが、
   削除した)。アカウント作成時も同じで、画面はパスワードを聞かず、作成した直後にこのリンクを
   発行して渡す。
 
@@ -610,11 +616,11 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
 | `blog` だけ編集できる | viewer | `{ "blog": editor }` |
 | `legal` だけ触らせない | editor | `{ "legal": すべて false }` |
 
-- `PATCH /auth/users/{id}` の `collection_permissions` / `single_page_permissions` に
+- `PATCH /api/auth/users/{id}` の `collection_permissions` / `single_page_permissions` に
   **マップ全体**を送る(部分マージではない)。`{}` を送れば上書きは全部消える。
 - 判定は「そのリソースの実効権限」で行う。読み取りは `can_view`、書き込みは `can_edit`、
   公開・非公開・削除は `can_publish`。**管理者は常にすべて可**(上書きで締め出せない)。
-- `/models/collections` と `/models/single_pages` の一覧は**読めるものだけ**返すので、拒否した
+- `/api/models/collections` と `/api/models/single_pages` の一覧は**読めるものだけ**返すので、拒否した
   リソースはナビにも出ない(直接開けば 403)。
 - 存在しない名前への付与は 400。綴り間違いが「どこにも出てこない効かない許可」として残らない。
 - 対象はコレクションと単一ページだけ。画像ライブラリと複合フィールド定義はアカウント共通
@@ -629,7 +635,7 @@ URL。相手はトークンもアカウントも要らない。
 # 管理側がリンクを発行する(要 can_edit)
 curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/preview-link \
   -H "Authorization: Bearer $TOKEN"
-# => {"path":"/preview/collections/blog/items/1?token=1758000000.3f9c...","expires_at":"..."}
+# => {"path":"/api/preview/collections/blog/items/1?token=1758000000.3f9c...","expires_at":"..."}
 
 # 受け取った人はトークン無しで開ける(作業コピーが見える)
 curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9c...
@@ -637,10 +643,10 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit`) |
-| POST | `/models/single_pages/{name}/preview-link` | 同上 |
-| GET | `/preview/collections/{name}/items/{id}?token=...` | 作業コピーを返す(認証不要) |
-| GET | `/preview/single_pages/{name}?token=...` | 同上 |
+| POST | `/api/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit`) |
+| POST | `/api/models/single_pages/{name}/preview-link` | 同上 |
+| GET | `/api/preview/collections/{name}/items/{id}?token=...` | 作業コピーを返す(認証不要) |
+| GET | `/api/preview/single_pages/{name}?token=...` | 同上 |
 
 - 期限は `PREVIEW_LINK_TTL_MINUTES`(既定 60 分)。トークンは `有効期限.署名` の形で、
   署名は**行き先と有効期限そのもの**に対する HMAC-SHA256(`JWT_SECRET` を使用、メッセージには
@@ -655,7 +661,7 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
 
 ### 差し替えの適用は「この画像に与えたアップロード」だけ
 
-`PUT /models/images/{id}`(`file_name` を指定して差し替えを適用)は、**id で引いたレコード**で
+`PUT /api/models/images/{id}`(`file_name` を指定して差し替えを適用)は、**id で引いたレコード**で
 判定する。ファイル名を選ぶのはサーバーで、`POST .../replace` の時点で**その画像の待ち行列に
 記録**される。適用できるのはそれだけ:
 
@@ -697,7 +703,7 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 - 署名モードが向くのは**ビルド時に画像を取得して自前で配信するサイト**(SSG が変換して自分の
   コピーを配る)。ページに CMS の URL をそのまま載せるサイトでは、**キャッシュした URL が
   期限切れで死ぬ**ため既定は `public`。
-- 手書きの Markdown には **`/images/by-id/{id}`** を使う。CMS が現在の実体へ転送するので、
+- 手書きの Markdown には **`/api/images/by-id/{id}`** を使う。CMS が現在の実体へ転送するので、
   モードにかかわらず・差し替え後も動く(転送先はその時点の署名付き URL になる)。
 
 ## 5.9 画像のゴミ箱
@@ -706,14 +712,14 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/models/images` | ライブラリ(ゴミ箱の中身は含まない) |
-| GET | `/models/images/trash` | ゴミ箱(削除した時刻の新しい順) |
-| POST | `/models/images/{id}/trash` | ゴミ箱へ移動(要 `can_edit`) |
-| POST | `/models/images/{id}/restore` | ライブラリへ戻す(要 `can_edit`) |
-| DELETE | `/models/images/{id}` | **完全削除**(レコードと実体。要 `can_edit`)。**ゴミ箱にある画像だけ** |
+| GET | `/api/models/images` | ライブラリ(ゴミ箱の中身は含まない) |
+| GET | `/api/models/images/trash` | ゴミ箱(削除した時刻の新しい順) |
+| POST | `/api/models/images/{id}/trash` | ゴミ箱へ移動(要 `can_edit`) |
+| POST | `/api/models/images/{id}/restore` | ライブラリへ戻す(要 `can_edit`) |
+| DELETE | `/api/models/images/{id}` | **完全削除**(レコードと実体。要 `can_edit`)。**ゴミ箱にある画像だけ** |
 
 - ゴミ箱への移動は**レコードも実体も残す**ので、その画像を参照しているコンテンツは**そのまま
-  表示され続ける**(`/images/by-id/{id}` の実体も配信も生きている)。「消したつもりが消えている」
+  表示され続ける**(`/api/images/by-id/{id}` の実体も配信も生きている)。「消したつもりが消えている」
   を避けるための段階。
 - ゴミ箱にある画像は**ライブラリの一覧とピッカーに出ない**ので、新しいコンテンツはそれを選べない。
 - 完全削除だけが実体を消す。以降、その id を参照していたコンテンツの画像は解決しなくなる。
@@ -726,7 +732,7 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/models/images/{id}/references` | その画像を使っているコンテンツの一覧 |
+| GET | `/api/models/images/{id}/references` | その画像を使っているコンテンツの一覧 |
 
 応答は `[{"kind":"collection_item","name":"blog","item":7}, {"kind":"single_page","name":"about"}]`。
 画面はゴミ箱へ移動・完全削除の**確認文にこの一覧を入れる**(使用中なら「N 件で使われています
@@ -735,7 +741,7 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 索引が数えるもの:
 
 - **`Image` フィールド**(配列の中、複合フィールドの中も含む)。値は id なので正確。
-- **Markdown の `/images/by-id/<id>` リンク**(ライブラリの「リンクをコピー」が作る形)。
+- **Markdown の `/api/images/by-id/<id>` リンク**(ライブラリの「リンクをコピー」が作る形)。
   **手書きの URL(S3 や CDN の直リンク)は追えない** — 普通のリンクと区別が付かず、差し替えで
   変わる URL を使ってしまうため。本文に直リンクを書く運用なら、この限りではない。
 - **公開コピーと作業コピーの両方**。ただし**公開コピーは公開中のときだけ**数える(下書きは
@@ -748,8 +754,8 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/models/collections/{name}/items/{id}/duplicate` | 複製(201 + 新しい id。要 `can_edit`) |
-| POST | `/models/collections/{name}/items/status` | `{ "ids": [...], "status": "published"\|"draft" }`(要 `can_publish`) |
+| POST | `/api/models/collections/{name}/items/{id}/duplicate` | 複製(201 + 新しい id。要 `can_edit`) |
+| POST | `/api/models/collections/{name}/items/status` | `{ "ids": [...], "status": "published"\|"draft" }`(要 `can_publish`) |
 
 **複製**:
 
@@ -771,24 +777,24 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 ## 5.12 外部プロバイダでのサインイン(Cognito)
 
 パスワードを CMS が扱わない配備では、サインインは**プロバイダのページ**で行われ、CMS は
-**トークンを検証するだけ**。`GET /auth/capabilities` の `login_url` がそのページの住所で、
+**トークンを検証するだけ**。`GET /api/auth/capabilities` の `login_url` がそのページの住所で、
 `password_login: false` が「ここではパスワードを受け取らない」の合図。
 
 流れ:
 
 1. 画面が `login_url` に **PKCE の challenge(S256)・`state`・`redirect_uri`** を足して
    ブラウザを送る(verifier と state はそのタブの `sessionStorage` に残す)。
-2. プロバイダが `redirect_uri`(`<app_url>/auth/callback`)へ `code` と `state` を返す。
+2. プロバイダが `redirect_uri`(`<app_url>/api/auth/callback`)へ `code` と `state` を返す。
 3. 画面が state を照合し、**サーバーに交換を依頼**する:
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/auth/cognito/exchange` | **公開**。`{ code, code_verifier, redirect_uri }` → `{ token, expires_at }` |
+| POST | `/api/auth/cognito/exchange` | **公開**。`{ code, code_verifier, redirect_uri }` → `{ token, expires_at }` |
 
 4. サーバーがプロバイダのトークンエンドポイント(`login_url` と同じドメインの
    `/oauth2/token`)へフォーム POST し、`id_token` を返す。**ブラウザから直接交換しない**のは、
    トークンエンドポイントが CORS ヘッダを返さないため。
-5. 画面はそのトークンをセッションとして採用し、`GET /auth/me` で権限レコードを読む
+5. 画面はそのトークンをセッションとして採用し、`GET /api/auth/me` で権限レコードを読む
    (初回は `BOOTSTRAP_ADMIN_USERNAMES` の誰かなら管理者として作られ、リスト外は 403)。
 
 - **公開クライアントなので secret は無い**。コードが同じ呼び出し元に戻ったことの証明は PKCE
@@ -796,7 +802,7 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
 - 署名・issuer・audience・期限・`token_use` の検証は `CognitoVerifier`(RS256 + JWKS、
   キャッシュ 10 分)が行う。
 - 交換ルートは**プロバイダを使う配備だけ**が合成する(on-prem にはコードが無い)。
-- Terraform 側はクライアントに `callback_urls = ["<app_url>/auth/callback"]`、
+- Terraform 側はクライアントに `callback_urls = ["<app_url>/api/auth/callback"]`、
   `allowed_oauth_flows = ["code"]`、`allowed_oauth_scopes = ["openid","email"]` を設定する
   (`app_url` 変数)。これが無いとプロバイダは `redirect_uri is not registered` を返す。
 - CMS のサインアウトは**ローカルのセッションだけ**を消す。プロバイダ側のセッションは残るので、
@@ -829,7 +835,7 @@ Gatsby の GraphQL は**ビルド時のデータ層**であり、CMS が GraphQL
 `gatsby-source-graphql` は事実上非推奨で、Gatsby 自体も活発ではない。
 そのため、まずは REST の公開 API を整え、必要になったら次の順で進める。
 
-1. `/content/*`(本ドキュメント。実装済み)
+1. `/api/content/*`(本ドキュメント。実装済み)
 2. publish / unpublish を契機にした Webhook(本ドキュメント。実装済み)
 3. Gatsby の source plugin(REST → GraphQL ノード)
 4. 消費側が増えて GraphQL が本当に必要になったときだけ、GraphQL 層を検討する

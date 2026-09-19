@@ -33,15 +33,23 @@ pub enum PreviewTarget {
 
 impl PreviewTarget {
     /// The public route that serves this target, without the token.
+    ///
+    /// The whole path, [`crate::API_PREFIX`] included: a link that is copied and opened has to be
+    /// an address that works, not one a client has to know to prefix.
     pub fn path(&self) -> String {
         match self {
             PreviewTarget::CollectionItem {
                 collection,
                 item_id,
             } => {
-                format!("/preview/collections/{collection}/items/{item_id}")
+                format!(
+                    "{}/preview/collections/{collection}/items/{item_id}",
+                    crate::API_PREFIX
+                )
             }
-            PreviewTarget::SinglePage { page } => format!("/preview/single_pages/{page}"),
+            PreviewTarget::SinglePage { page } => {
+                format!("{}/preview/single_pages/{page}", crate::API_PREFIX)
+            }
         }
     }
 
@@ -193,7 +201,7 @@ mod tests {
         assert_eq!(
             link.path,
             format!(
-                "/preview/collections/blog/items/7?token={}",
+                "/api/preview/collections/blog/items/7?token={}",
                 token_of(&link)
             )
         );
@@ -316,7 +324,8 @@ mod tests {
     fn a_single_page_link_has_its_own_path() {
         let link = issuer().issue(&page_link(), Utc::now());
         assert!(
-            link.path.starts_with("/preview/single_pages/home?token="),
+            link.path
+                .starts_with("/api/preview/single_pages/home?token="),
             "{}",
             link.path
         );

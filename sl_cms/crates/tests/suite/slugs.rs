@@ -20,7 +20,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/posts/schema",
+        "/api/models/collections/posts/schema",
         Some(&token),
         Some(schema),
     )
@@ -31,7 +31,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "Hello World", "address": "  Hello, World!  " })),
     )
@@ -41,7 +41,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, stored) = send(
         &app.router,
         Method::GET,
-        &format!("/models/collections/posts/items/{id}"),
+        &format!("/api/models/collections/posts/items/{id}"),
         Some(&token),
         None,
     )
@@ -54,7 +54,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "Another", "address": "hello world" })),
     )
@@ -67,7 +67,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "No address" })),
     )
@@ -78,7 +78,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "日本語のタイトル", "address": "日本語" })),
     )
@@ -92,7 +92,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/posts/items/{id}/publish"),
+        &format!("/api/models/collections/posts/items/{id}/publish"),
         Some(&token),
         None,
     )
@@ -108,7 +108,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
         let (status, found) = send(
             &app.router,
             Method::GET,
-            &format!("/models/collections/posts/items/by/address/{asked}"),
+            &format!("/api/models/collections/posts/items/by/address/{asked}"),
             Some(&token),
             None,
         )
@@ -125,7 +125,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, page) = send(
         &app.router,
         Method::GET,
-        "/content/collections/posts/items/by/address/Hello%20World",
+        "/api/content/collections/posts/items/by/address/Hello%20World",
         None,
         None,
     )
@@ -138,7 +138,7 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "title": "Too long", "address": long })),
     )
@@ -162,7 +162,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/posts/schema",
+        "/api/models/collections/posts/schema",
         Some(&token),
         Some(text_field),
     )
@@ -172,7 +172,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/posts/item",
+        "/api/models/collections/posts/item",
         Some(&token),
         Some(json!({ "address": "Hello World" })),
     )
@@ -183,7 +183,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/posts/schema",
+        "/api/models/collections/posts/schema",
         Some(&token),
         Some(json!([
             { "name": "address", "field_type": { "Slug": {} }, "required": false, "width": 12, "height": 1 }
@@ -200,7 +200,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/collections/posts/items/1",
+        "/api/models/collections/posts/items/1",
         Some(&token),
         Some(json!({ "address": "hello-world" })),
     )
@@ -209,7 +209,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/posts/schema",
+        "/api/models/collections/posts/schema",
         Some(&token),
         Some(json!([
             { "name": "address", "field_type": { "Slug": {} }, "required": false, "width": 12, "height": 1 }
@@ -222,7 +222,7 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     let (status, found) = send(
         &app.router,
         Method::GET,
-        "/models/collections/posts/items/by/address/hello-world",
+        "/api/models/collections/posts/items/by/address/hello-world",
         Some(&token),
         None,
     )

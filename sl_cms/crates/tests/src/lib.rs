@@ -185,7 +185,7 @@ pub async fn login(router: &Router, email: &str, password: &str) -> (StatusCode,
     let (status, body) = send(
         router,
         Method::POST,
-        "/auth/login",
+        "/api/auth/login",
         None,
         Some(json!({ "username": email, "password": password })),
     )

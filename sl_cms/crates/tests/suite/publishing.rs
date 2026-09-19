@@ -26,7 +26,7 @@ async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/moving/schema",
+        "/api/models/collections/moving/schema",
         Some(&token),
         Some(json!([
             { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
@@ -38,7 +38,7 @@ async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
     let (status, created) = send(
         &app.router,
         Method::POST,
-        "/models/collections/moving/item",
+        "/api/models/collections/moving/item",
         Some(&token),
         Some(json!({ "title": "first" })),
     )
@@ -54,7 +54,7 @@ async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/moving/items/{}", *id),
+        &format!("/api/models/collections/moving/items/{}", *id),
         Some(&token),
         Some(json!({ "title": "second" })),
     )
@@ -140,7 +140,7 @@ async fn publishing_a_page_working_copy_that_changed_under_it_is_refused() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/single_pages/about/schema",
+        "/api/models/single_pages/about/schema",
         Some(&token),
         Some(json!([
             { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
@@ -156,7 +156,7 @@ async fn publishing_a_page_working_copy_that_changed_under_it_is_refused() {
             send(
                 &router,
                 Method::PUT,
-                "/models/single_pages/about/item",
+                "/api/models/single_pages/about/item",
                 Some(&token),
                 Some(body),
             )
@@ -233,7 +233,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(json!([
             { "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
@@ -246,7 +246,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/models/collections/blog/item",
+            "/api/models/collections/blog/item",
             Some(&token),
             Some(json!({ "title": title })),
         )
@@ -258,7 +258,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, outcomes) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/status",
+        "/api/models/collections/blog/items/status",
         Some(&token),
         Some(json!({ "ids": [1, 999, 2], "status": "published" })),
     )
@@ -276,7 +276,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
         let (status, _) = send_raw(
             &app.router,
             Method::GET,
-            &format!("/content/collections/blog/items/{id}"),
+            &format!("/api/content/collections/blog/items/{id}"),
             None,
             None,
         )
@@ -288,7 +288,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, outcomes) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/status",
+        "/api/models/collections/blog/items/status",
         Some(&token),
         Some(json!({ "ids": [1, 2], "status": "draft" })),
     )
@@ -304,7 +304,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, _) = send_raw(
         &app.router,
         Method::GET,
-        "/content/collections/blog/items/1",
+        "/api/content/collections/blog/items/1",
         None,
         None,
     )
@@ -316,7 +316,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/status",
+        "/api/models/collections/blog/items/status",
         Some(&token),
         Some(json!({ "ids": too_many, "status": "published" })),
     )
@@ -325,7 +325,7 @@ async fn a_batch_publishes_what_it_can_and_says_what_it_could_not() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/status",
+        "/api/models/collections/blog/items/status",
         Some(&token),
         Some(json!({ "ids": [], "status": "published" })),
     )
@@ -342,7 +342,7 @@ async fn publishing_requires_edit_permission() {
     send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&token),
         Some(sample_schema()),
     )
@@ -350,7 +350,7 @@ async fn publishing_requires_edit_permission() {
     send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/item",
+        "/api/models/collections/blog/item",
         Some(&token),
         Some(json!({ "title": "Hello", "tags": [] })),
     )
@@ -367,7 +367,7 @@ async fn publishing_requires_edit_permission() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/1/publish",
+        "/api/models/collections/blog/items/1/publish",
         Some(&viewer_token),
         None,
     )
@@ -378,7 +378,7 @@ async fn publishing_requires_edit_permission() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog",
+        "/api/content/collections/blog",
         None,
         None,
     )
@@ -408,7 +408,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let (_, body) = login(&app, "publisher@example.com", "publisher-password").await;
     let publisher = body["token"].as_str().unwrap().to_string();
 
-    let publish = format!("/models/collections/blog/items/{item_id}/publish");
+    let publish = format!("/api/models/collections/blog/items/{item_id}/publish");
     let (status, body) = send(&app.router, Method::POST, &publish, Some(&publisher), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["published_by"]["username"], "publisher@example.com");
@@ -421,7 +421,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        &format!("/models/collections/blog/items/{item_id}/metadata"),
+        &format!("/api/models/collections/blog/items/{item_id}/metadata"),
         Some(&app.admin_token),
         None,
     )
@@ -434,7 +434,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        &format!("/content/collections/blog/items/{item_id}"),
+        &format!("/api/content/collections/blog/items/{item_id}"),
         None,
         None,
     )
@@ -451,7 +451,7 @@ async fn publishing_records_who_did_it_and_keeps_that_off_the_public_api() {
     let (status, body) = send(
         &app.router,
         Method::POST,
-        &format!("/models/collections/blog/items/{item_id}/unpublish"),
+        &format!("/api/models/collections/blog/items/{item_id}/unpublish"),
         Some(&publisher),
         None,
     )
@@ -471,14 +471,14 @@ async fn edits_wait_in_the_working_copy_until_they_are_published() {
     let app = test_app().await;
     let token = app.admin_token.clone();
     let item_id = create_sample_item(&app, "blog").await;
-    let item_url = format!("/models/collections/blog/items/{item_id}");
-    let content_url = format!("/content/collections/blog/items/{item_id}");
+    let item_url = format!("/api/models/collections/blog/items/{item_id}");
+    let content_url = format!("/api/content/collections/blog/items/{item_id}");
 
     // A new item starts unpublished, even though its values are already stored.
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/blog",
+        "/api/content/collections/blog",
         None,
         None,
     )

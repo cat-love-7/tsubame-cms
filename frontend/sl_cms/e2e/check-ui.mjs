@@ -704,7 +704,8 @@ try {
     '画像配列がまとめて保存される',
     Array.isArray(saved?.gallery) &&
       saved.gallery.length === 3 &&
-      saved.gallery.every((image) => image?.url?.startsWith('/images/')),
+      // The stored URL carries the API prefix: the CMS serves its images under `/api`.
+      saved.gallery.every((image) => image?.url?.startsWith('/api/images/')),
     JSON.stringify(saved?.gallery),
   );
 

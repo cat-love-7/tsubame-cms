@@ -22,7 +22,7 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections",
+        "/api/models/collections",
         Some(&viewer_token),
         None,
     )
@@ -33,7 +33,7 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&viewer_token),
         Some(sample_schema()),
     )
@@ -44,7 +44,7 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/users",
+        "/api/auth/users",
         Some(&viewer_token),
         None,
     )
@@ -54,7 +54,7 @@ async fn viewer_can_read_but_not_write_and_cannot_manage_users() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/users",
+        "/api/auth/users",
         Some(&app.admin_token),
         None,
     )
@@ -75,7 +75,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/single_pages/home/schema",
+        "/api/models/single_pages/home/schema",
         Some(&admin),
         Some(sample_schema()),
     )
@@ -101,7 +101,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, updated) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{scoped_id}"),
+        &format!("/api/auth/users/{scoped_id}"),
         Some(&admin),
         Some(json!({
             "collection_permissions": {
@@ -132,7 +132,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/collections/blog/items/1",
+        "/api/models/collections/blog/items/1",
         Some(&scoped),
         Some(edit.clone()),
     )
@@ -141,7 +141,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/items/1/publish",
+        "/api/models/collections/blog/items/1/publish",
         Some(&scoped),
         None,
     )
@@ -152,7 +152,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/collections/news/items/1",
+        "/api/models/collections/news/items/1",
         Some(&scoped),
         Some(edit.clone()),
     )
@@ -161,7 +161,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/news/items/1/publish",
+        "/api/models/collections/news/items/1/publish",
         Some(&scoped),
         None,
     )
@@ -173,7 +173,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections/docs/items/1",
+        "/api/models/collections/docs/items/1",
         Some(&scoped),
         None,
     )
@@ -182,7 +182,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::PUT,
-        "/models/collections/docs/items/1",
+        "/api/models/collections/docs/items/1",
         Some(&scoped),
         Some(edit),
     )
@@ -197,7 +197,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&scoped),
         None,
     )
@@ -207,7 +207,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, pages) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages",
+        "/api/models/single_pages",
         Some(&scoped),
         None,
     )
@@ -218,7 +218,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, collections) = send(
         &app.router,
         Method::GET,
-        "/models/collections",
+        "/api/models/collections",
         Some(&scoped),
         None,
     )
@@ -236,7 +236,7 @@ async fn a_collection_grant_applies_to_that_collection_only() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/single_pages/home/item",
+        "/api/models/single_pages/home/item",
         Some(&admin),
         None,
     )
@@ -268,7 +268,7 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
     let (status, body) = send_raw(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "collection_permissions": { "blgo": Permission::editor() } })),
     )
@@ -284,7 +284,7 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "single_page_permissions": { "nope": Permission::viewer() } })),
     )
@@ -293,7 +293,7 @@ async fn a_grant_for_an_unknown_resource_is_refused() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "collection_permissions": { "blog": Permission::editor() } })),
     )
@@ -323,7 +323,7 @@ async fn a_role_change_takes_effect_on_the_next_request() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/blog/schema",
+        "/api/models/collections/blog/schema",
         Some(&admin),
         Some(sample_schema()),
     )
@@ -332,7 +332,7 @@ async fn a_role_change_takes_effect_on_the_next_request() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/news/schema",
+        "/api/models/collections/news/schema",
         Some(&admin),
         Some(sample_schema()),
     )
@@ -346,7 +346,7 @@ async fn a_role_change_takes_effect_on_the_next_request() {
             send(
                 &router,
                 Method::POST,
-                &format!("/models/collections/{collection}/item"),
+                &format!("/api/models/collections/{collection}/item"),
                 Some(&token),
                 Some(json!({ "title": "Hello", "tags": [] })),
             )
@@ -359,7 +359,7 @@ async fn a_role_change_takes_effect_on_the_next_request() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "permission": Permission::editor() })),
     )
@@ -376,7 +376,7 @@ async fn a_role_change_takes_effect_on_the_next_request() {
     let (status, _) = send(
         &app.router,
         Method::PATCH,
-        &format!("/auth/users/{id}"),
+        &format!("/api/auth/users/{id}"),
         Some(&admin),
         Some(json!({ "collection_permissions": { "blog": deny } })),
     )
@@ -450,7 +450,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
         let (status, _) = send(
             &app.router,
             Method::GET,
-            "/models/collections",
+            "/api/models/collections",
             Some(&tokens[email]),
             None,
         )
@@ -460,7 +460,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections",
+        "/api/models/collections",
         Some(&tokens["nobody@example.com"]),
         None,
     )
@@ -480,7 +480,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/models/collections/blog/item",
+            "/api/models/collections/blog/item",
             Some(&tokens[email]),
             Some(json!({ "title": "draft", "tags": [] })),
         )
@@ -497,7 +497,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            &format!("/models/collections/blog/items/{item_id}/publish"),
+            &format!("/api/models/collections/blog/items/{item_id}/publish"),
             Some(&tokens[email]),
             None,
         )
@@ -510,7 +510,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
         let (status, _) = send(
             &app.router,
             Method::POST,
-            "/models/collections/another/schema",
+            "/api/models/collections/another/schema",
             Some(&tokens[email]),
             Some(sample_schema()),
         )
@@ -522,7 +522,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/models/collections/blog/items/{item_id}"),
+        &format!("/api/models/collections/blog/items/{item_id}"),
         Some(&tokens["editor@example.com"]),
         None,
     )
@@ -536,7 +536,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        &format!("/models/collections/blog/items/{item_id}"),
+        &format!("/api/models/collections/blog/items/{item_id}"),
         Some(&tokens["publisher@example.com"]),
         None,
     )
@@ -546,7 +546,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     let (status, _) = send(
         &app.router,
         Method::DELETE,
-        "/models/collections/blog",
+        "/api/models/collections/blog",
         Some(&tokens["publisher@example.com"]),
         None,
     )
@@ -561,7 +561,7 @@ async fn each_role_can_do_exactly_what_it_is_granted() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/auth/users",
+        "/api/auth/users",
         Some(&tokens["publisher@example.com"]),
         None,
     )

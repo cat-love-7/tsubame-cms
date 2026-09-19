@@ -23,7 +23,7 @@ async fn a_unique_field_refuses_a_value_another_item_holds() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema.clone()),
     )
@@ -37,7 +37,7 @@ async fn a_unique_field_refuses_a_value_another_item_holds() {
             send_raw(
                 &router,
                 Method::POST,
-                "/models/collections/pages/item",
+                "/api/models/collections/pages/item",
                 Some(&token),
                 Some(json!({ "slug": slug })),
             )
@@ -74,7 +74,7 @@ async fn a_unique_field_refuses_a_value_another_item_holds() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         Some(json!({ "slug": "intro" })),
     )
@@ -85,7 +85,7 @@ async fn a_unique_field_refuses_a_value_another_item_holds() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         Some(json!({ "slug": "welcome" })),
     )
@@ -103,7 +103,7 @@ async fn a_unique_field_refuses_a_value_another_item_holds() {
     let (status, _) = send_raw(
         &app.router,
         Method::DELETE,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         None,
     )
@@ -136,7 +136,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema),
     )
@@ -146,7 +146,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/item",
+        "/api/models/collections/pages/item",
         Some(&token),
         Some(json!({ "slug": "intro" })),
     )
@@ -155,7 +155,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/publish",
+        "/api/models/collections/pages/items/1/publish",
         Some(&token),
         None,
     )
@@ -166,7 +166,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         Some(json!({ "slug": "welcome" })),
     )
@@ -177,7 +177,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
         let (status, _) = send_raw(
             &app.router,
             Method::POST,
-            "/models/collections/pages/item",
+            "/api/models/collections/pages/item",
             Some(&token),
             Some(json!({ "slug": taken })),
         )
@@ -193,7 +193,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/publish",
+        "/api/models/collections/pages/items/1/publish",
         Some(&token),
         None,
     )
@@ -202,7 +202,7 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/item",
+        "/api/models/collections/pages/item",
         Some(&token),
         Some(json!({ "slug": "intro" })),
     )
@@ -230,7 +230,7 @@ async fn unpublishing_frees_the_published_value_but_not_the_working_one() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(unique),
     )
@@ -244,7 +244,7 @@ async fn unpublishing_frees_the_published_value_but_not_the_working_one() {
             send_raw(
                 &router,
                 Method::POST,
-                "/models/collections/pages/item",
+                "/api/models/collections/pages/item",
                 Some(&token),
                 Some(json!({ "slug": slug })),
             )
@@ -255,7 +255,7 @@ async fn unpublishing_frees_the_published_value_but_not_the_working_one() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/publish",
+        "/api/models/collections/pages/items/1/publish",
         Some(&token),
         None,
     )
@@ -264,7 +264,7 @@ async fn unpublishing_frees_the_published_value_but_not_the_working_one() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         Some(json!({ "slug": "welcome" })),
     )
@@ -274,7 +274,7 @@ async fn unpublishing_frees_the_published_value_but_not_the_working_one() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/unpublish",
+        "/api/models/collections/pages/items/1/unpublish",
         Some(&token),
         None,
     )
@@ -313,7 +313,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema),
     )
@@ -322,7 +322,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/item",
+        "/api/models/collections/pages/item",
         Some(&token),
         Some(json!({ "slug": "intro", "title": "Hello" })),
     )
@@ -333,7 +333,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/models/collections/pages/items/by/slug/intro",
+        "/api/models/collections/pages/items/by/slug/intro",
         Some(&token),
         None,
     )
@@ -347,7 +347,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections/pages/items/by/slug/missing",
+        "/api/models/collections/pages/items/by/slug/missing",
         Some(&token),
         None,
     )
@@ -356,7 +356,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/models/collections/pages/items/by/title/Hello",
+        "/api/models/collections/pages/items/by/title/Hello",
         Some(&token),
         None,
     )
@@ -368,7 +368,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/intro",
+        "/api/content/collections/pages/items/by/slug/intro",
         None,
         None,
     )
@@ -378,7 +378,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/publish",
+        "/api/models/collections/pages/items/1/publish",
         Some(&token),
         None,
     )
@@ -387,7 +387,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/intro",
+        "/api/content/collections/pages/items/by/slug/intro",
         None,
         None,
     )
@@ -402,7 +402,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/items/1",
+        "/api/models/collections/pages/items/1",
         Some(&token),
         Some(json!({ "slug": "welcome", "title": "Hello" })),
     )
@@ -411,7 +411,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, body) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/intro",
+        "/api/content/collections/pages/items/by/slug/intro",
         None,
         None,
     )
@@ -424,7 +424,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/welcome",
+        "/api/content/collections/pages/items/by/slug/welcome",
         None,
         None,
     )
@@ -439,7 +439,7 @@ async fn a_unique_value_resolves_to_its_item() {
         let (status, body) = send(
             &app.router,
             Method::GET,
-            &format!("/models/collections/pages/items/by/slug/{value}"),
+            &format!("/api/models/collections/pages/items/by/slug/{value}"),
             Some(&token),
             None,
         )
@@ -452,7 +452,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::POST,
-        "/models/collections/pages/items/1/publish",
+        "/api/models/collections/pages/items/1/publish",
         Some(&token),
         None,
     )
@@ -461,7 +461,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/intro",
+        "/api/content/collections/pages/items/by/slug/intro",
         None,
         None,
     )
@@ -470,7 +470,7 @@ async fn a_unique_value_resolves_to_its_item() {
     let (status, _) = send(
         &app.router,
         Method::GET,
-        "/content/collections/pages/items/by/slug/welcome",
+        "/api/content/collections/pages/items/by/slug/welcome",
         None,
         None,
     )
@@ -495,7 +495,7 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
     let (status, _) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(plain.clone()),
     )
@@ -509,7 +509,7 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
             send_raw(
                 &router,
                 Method::POST,
-                "/models/collections/pages/item",
+                "/api/models/collections/pages/item",
                 Some(&token),
                 Some(json!({ "slug": slug })),
             )
@@ -523,7 +523,7 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(unique.clone()),
     )
@@ -542,7 +542,7 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
     let (status, _) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(plain),
     )
@@ -552,7 +552,7 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(unique),
     )
@@ -589,7 +589,7 @@ async fn a_field_that_stops_being_unique_gives_its_values_back() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema(true)),
     )
@@ -603,7 +603,7 @@ async fn a_field_that_stops_being_unique_gives_its_values_back() {
             send(
                 &router,
                 Method::POST,
-                "/models/collections/pages/item",
+                "/api/models/collections/pages/item",
                 Some(&token),
                 Some(body),
             )
@@ -621,7 +621,7 @@ async fn a_field_that_stops_being_unique_gives_its_values_back() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema(false)),
     )
@@ -637,7 +637,7 @@ async fn a_field_that_stops_being_unique_gives_its_values_back() {
             send_raw(
                 &router,
                 Method::PUT,
-                &format!("/models/collections/pages/items/{id}"),
+                &format!("/api/models/collections/pages/items/{id}"),
                 Some(&token),
                 Some(json!({ "code": code })),
             )
@@ -653,7 +653,7 @@ async fn a_field_that_stops_being_unique_gives_its_values_back() {
     let (status, body) = send_raw(
         &app.router,
         Method::PUT,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema(true)),
     )
@@ -678,7 +678,7 @@ async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
     let (status, body) = send_raw(
         &app.router,
         Method::POST,
-        "/models/collections/pages/schema",
+        "/api/models/collections/pages/schema",
         Some(&token),
         Some(schema),
     )
@@ -692,7 +692,7 @@ async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
             send(
                 &router,
                 Method::POST,
-                "/models/collections/pages/item",
+                "/api/models/collections/pages/item",
                 Some(&token),
                 Some(body),
             )
@@ -722,7 +722,7 @@ async fn a_collision_on_one_unique_field_does_not_keep_the_other_reserved() {
     let (status, body) = send(
         &app.router,
         Method::PUT,
-        &format!("/models/collections/pages/items/{second}"),
+        &format!("/api/models/collections/pages/items/{second}"),
         Some(&token),
         Some(json!({ "title": "third", "code": "one" })),
     )
