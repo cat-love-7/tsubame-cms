@@ -68,6 +68,8 @@ export class EditSchema {
   @Input() schema: FieldSchema[] = [];
   /** Passed on to each field: see [`Field.uniqueAllowed`]. */
   @Input() uniqueAllowed = true;
+  /** Passed on to each field: see [`Field.listAllowed`]. */
+  @Input() listAllowed = false;
   @Output() schemaChange = new EventEmitter<FieldSchema[]>();
   /**
    * Emitted when the user asks to persist. The parent performs the HTTP call because it

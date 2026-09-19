@@ -133,12 +133,30 @@ export type FieldSchema = {
    * set it: the check compares the stored value, and a slug's normalisation is a separate job.
    */
   unique?: boolean;
+  /**
+   * Whether the collection's list shows this field as a column.
+   *
+   * Omitted by the server when false, so treat a missing value as false. A schema that marks no
+   * field shows them all, which is what the list did before this existed - see the list screen's
+   * `listColumns`. Only a collection has a list, so a page's or a composite's schema never sets it.
+   */
+  show_in_list?: boolean;
   width: number;
   height: number;
 };
 
-/** The layout a newly added field starts with: full width, single row. */
-export const DefaultFieldLayout = { width: 12, height: 1, unique: false } as const;
+/**
+ * The layout a newly added field starts with: full width, single row.
+ *
+ * `show_in_list` is false, so a field the author has just added stays out of the collection's list
+ * until they say otherwise - adding a field is not the same act as deciding what identifies an item.
+ */
+export const DefaultFieldLayout = {
+  width: 12,
+  height: 1,
+  unique: false,
+  show_in_list: false,
+} as const;
 
 /**
  * A fresh copy of a default field type.

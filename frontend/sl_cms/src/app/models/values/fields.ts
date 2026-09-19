@@ -67,8 +67,16 @@ export function formatFieldValue(value: FieldValue | undefined): string {
     return value.length > 0 ? value.map((item) => formatFieldValue(item)).join(', ') : '—';
   }
   if (typeof value === 'object') {
-    const url = (value as { url?: unknown }).url;
-    return typeof url === 'string' ? url : JSON.stringify(value);
+    const entry = value as { url?: unknown; target?: unknown; item?: unknown };
+    if (typeof entry.url === 'string') {
+      return entry.url;
+    }
+    // A relation reference: what it points at, and which item. Expanding the referenced content
+    // itself is the delivery API's job (`?populate=`), not a cell's.
+    if (typeof entry.target === 'string') {
+      return typeof entry.item === 'number' ? `${entry.target} #${entry.item}` : entry.target;
+    }
+    return JSON.stringify(value);
   }
   if (typeof value === 'boolean') {
     return value ? '✓' : '✗';

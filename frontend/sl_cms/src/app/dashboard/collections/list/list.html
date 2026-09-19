@@ -67,7 +67,7 @@
         }
       </th>
       <th>{{ 'common.id' | transloco }}</th>
-      @for (field of schema(); track field.name) {
+      @for (field of listColumns(); track field.name) {
         <th>{{ field.name }}</th>
       }
       <th>{{ 'common.status' | transloco }}</th>
@@ -89,8 +89,12 @@
           }
         </td>
         <td>{{ item[0] }}</td>
-        @for (field of schema(); track field.name) {
-          <td>{{ format(item[1][field.name]) }}</td>
+        @for (field of listColumns(); track field.name) {
+          <!-- The cell is one line, so a long value is cut rather than wrapped; the whole of it is
+               on the title, which is where a reader goes when the column is not enough. -->
+          <td class="value" [title]="format(item[1][field.name])">
+            {{ format(item[1][field.name]) }}
+          </td>
         }
         <td>
           <app-item-status [status]="statusOf(item[0])" />
@@ -171,7 +175,7 @@
       </tr>
     } @empty {
       <tr>
-        <td [attr.colspan]="schema().length + 5" class="empty">
+        <td [attr.colspan]="listColumns().length + 5" class="empty">
           {{ 'content.noItems' | transloco }}
         </td>
       </tr>

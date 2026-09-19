@@ -9,4 +9,9 @@
   <p class="error">{{ problem | message }}</p>
 }
 
-<app-edit-schema [schema]="collectionSchema()" (save)="save($event)"></app-edit-schema>
+<!-- A collection has a list, so its schema is the one screen that offers "show in list". -->
+<app-edit-schema
+  [schema]="collectionSchema()"
+  [listAllowed]="true"
+  (save)="save($event)"
+></app-edit-schema>

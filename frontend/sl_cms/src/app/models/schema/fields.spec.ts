@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DefaultFieldLayout,
   FieldDefaults,
   FieldTypeStringPipe,
   isRelationFieldSchema,
@@ -112,6 +113,14 @@ describe('newFieldType', () => {
     expect(
       (FieldDefaults.Relation as { Relation: { target: { name: string } } }).Relation.target.name,
     ).toBe('');
+  });
+});
+
+describe('what a new field starts as', () => {
+  // Adding a field is not the same act as deciding what identifies an item, so a field the author
+  // has just added stays out of the collection's list until they say otherwise.
+  it('leaves a new field out of the list', () => {
+    expect(DefaultFieldLayout.show_in_list).toBe(false);
   });
 });
 

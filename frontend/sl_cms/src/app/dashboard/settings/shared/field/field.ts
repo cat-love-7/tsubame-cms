@@ -92,6 +92,13 @@ export class Field implements OnInit, OnChanges {
    */
   @Input() uniqueAllowed = true;
   /**
+   * Whether this screen may offer `show_in_list` at all.
+   *
+   * Only a collection has a list of its items; a single page holds one item and a composite
+   * definition's values live inside whatever item uses them, so there is nothing to list.
+   */
+  @Input() listAllowed = false;
+  /**
    * Every field of the schema this one belongs to.
    *
    * A slug may name one of them as the source its value is generated from, and the picker can only

@@ -344,6 +344,8 @@
     "arrayNoCompositeTypes": "まだ複合フィールドが定義されていません。",
     "unique": "コレクション内で一意にする",
     "uniqueHint": "スキーマの保存時に、既存のアイテムと重複していないか確認します。",
+    "showInList": "一覧に表示",
+    "showInListHint": "この項目をコレクションの一覧に列として並べます。一覧でアイテムを見分けやすくするための設定です。",
     "slugGenerateFrom": "生成元",
     "slugNoSource": "指定しない",
     "slugGenerateHint": "内容編集で「〜から生成」に使う項目です(自動では動きません)。"

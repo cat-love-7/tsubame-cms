@@ -24,6 +24,16 @@ td.select {
   white-space: nowrap;
 }
 
+/// A value cell is one line: a Markdown body or a long title would otherwise make the row as tall
+/// as the text, and a table nobody can scan is what choosing columns is for. The whole value is on
+/// the cell's title.
+td.value {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .refusals {
   margin: 0 0 12px;
   padding-inline-start: 20px;

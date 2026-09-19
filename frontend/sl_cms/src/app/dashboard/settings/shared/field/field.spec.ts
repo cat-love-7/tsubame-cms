@@ -191,6 +191,29 @@ describe('Field', () => {
     expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
   });
 
+  // Only a collection has a list of its items, so only its schema is offered the column setting.
+  it('offers the list column only where there is a list', async () => {
+    const text = field({ name: 'title', show_in_list: false });
+    fixture.componentRef.setInput('field', text);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="fieldInList"]')).toBeNull();
+
+    fixture.componentRef.setInput('listAllowed', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const box = fixture.nativeElement.querySelector(
+      'input[name="fieldInList"]',
+    ) as HTMLInputElement;
+    expect(box).toBeTruthy();
+    expect(box.checked).toBe(false);
+
+    // Ticking it is what puts the field in the list, and it travels with the field.
+    box.click();
+    fixture.detectChanges();
+    expect(text.show_in_list).toBe(true);
+  });
+
   // A slug's only option is where an editor may take the value from; the rule and the length cap
   // belong to the type, so there is nothing else to configure.
   it('offers the sibling text fields as a slug\u2019s source', async () => {

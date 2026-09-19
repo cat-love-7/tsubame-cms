@@ -68,6 +68,21 @@ export class CollectionItemList {
   /** Draft/published state per item id; the server sends drafts for untouched items. */
   public metadata = signal<ItemMetadataMap>({});
 
+  /**
+   * The columns the schema asks for, in schema order.
+   *
+   * A list is what an editor scans to find one item, and a schema of a dozen fields makes a table
+   * nobody can read - so the schema says which fields identify an item, and those are the columns.
+   * A schema that marks **no** field shows them all, which is what this screen did before the
+   * setting existed: an unconfigured collection reads as it always did rather than as a table of
+   * nothing but ids.
+   */
+  public listColumns = computed(() => {
+    const schema = this.schema();
+    const marked = schema.filter((field) => field.show_in_list);
+    return marked.length > 0 ? marked : schema;
+  });
+
   /** What this account may do *with this collection*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName()));
   public canPublish = computed(() => this.auth.canPublishIn('collections', this.collectionName()));

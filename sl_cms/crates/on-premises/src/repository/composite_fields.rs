@@ -143,6 +143,7 @@ mod tests {
         let repository = setup_repository();
         let id1 = "schema1".into();
         let schema1 = vec![FieldSchema {
+            show_in_list: false,
             name: "field1".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -152,6 +153,7 @@ mod tests {
         }];
         let id2 = "schema2".into();
         let schema2 = vec![FieldSchema {
+            show_in_list: false,
             name: "field2".to_string(),
             field_type: FieldType::Number,
             required: false,

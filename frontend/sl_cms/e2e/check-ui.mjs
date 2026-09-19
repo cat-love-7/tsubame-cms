@@ -1386,6 +1386,14 @@ try {
   await summaryField.locator('input[name=maxLength]').fill('8');
   await summaryField.locator('input[name=minLength]').fill('5');
 
+  // The one field the collection's list should show: an editor scanning the list needs what
+  // identifies an item, not every field the content holds.
+  await summaryField.locator('input[name=fieldInList]').check();
+  check(
+    '一覧に出す項目をスキーマで選べる',
+    await summaryField.locator('input[name=fieldInList]').isChecked(),
+  );
+
   // A slug: the type owns the rule, and the schema says which field the editor may fill it from.
   await page.click('button:has-text("Add field")');
   const slugField = page.locator('.schema-field').nth(4);
@@ -1458,6 +1466,19 @@ try {
       builtRelation?.field_type?.Relation?.has_many === true &&
       builtRelation?.field_type?.Relation?.inverse_name === 'posts',
     JSON.stringify(builtSchema),
+  );
+
+  // The columns follow the schema: the marked field is there, and the rest are not.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}`, { waitUntil: 'networkidle' });
+  const listedHeaders = (await page.locator('table.items thead th').allTextContents()).map((cell) =>
+    cell.trim(),
+  );
+  check(
+    '一覧には「一覧に表示」の項目だけが並ぶ',
+    listedHeaders.includes('summary') &&
+      !listedHeaders.includes('title') &&
+      !listedHeaders.includes('blocks'),
+    listedHeaders.join(','),
   );
 
   await page.goto(`${BASE}/settings/schemas/collections`, { waitUntil: 'networkidle' });

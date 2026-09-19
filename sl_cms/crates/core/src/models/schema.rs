@@ -24,6 +24,19 @@ pub struct FieldSchema {
     /// it did before this existed.
     #[serde(default, skip_serializing_if = "is_false")]
     pub unique: bool,
+    /// Whether the collection's list shows this field as a column.
+    ///
+    /// A list is the screen an editor scans to find one item, and a schema of a dozen fields makes a
+    /// table nobody can read. Which fields identify an item is the schema author's business, so it
+    /// is a property of the field - like its width, which is about the other screen.
+    ///
+    /// A schema that marks **no** field is not a table of nothing: the list then shows every field,
+    /// which is what it did before this existed (see the frontend's `listColumns`). Only collections
+    /// have a list, so the pages' and composites' schemas never set it.
+    ///
+    /// Omitted from the wire when false, like `unique`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub show_in_list: bool,
     /// in colspan units (1-12)
     pub width: u32,
     /// in rowspan units (1-)
@@ -628,6 +641,7 @@ mod tests {
 
     fn field(name: &str, field_type: FieldType) -> FieldSchema {
         FieldSchema {
+            show_in_list: false,
             name: name.to_string(),
             field_type,
             required: false,
@@ -635,6 +649,36 @@ mod tests {
             height: 1,
             unique: false,
         }
+    }
+
+    /// The list setting travels with the field, and a schema that does not mention it reads as
+    /// "not in the list" - which is what every schema stored before it existed says.
+    #[test]
+    fn the_list_setting_travels_with_the_field() {
+        let mut marked = field("title", FieldType::Text(TextFieldOptions::default()));
+        marked.show_in_list = true;
+        let json = serde_json::to_value(&marked).expect("a field");
+        assert_eq!(json["show_in_list"], serde_json::json!(true));
+        assert_eq!(
+            serde_json::from_value::<FieldSchema>(json)
+                .expect("the field back")
+                .show_in_list,
+            true
+        );
+
+        // Omitted when false, like `unique`, so a schema that uses neither is unchanged on the wire.
+        let plain = field("title", FieldType::Text(TextFieldOptions::default()));
+        let json = serde_json::to_value(&plain).expect("a field");
+        assert!(json.get("show_in_list").is_none());
+        let without_the_key: FieldSchema = serde_json::from_value(serde_json::json!({
+            "name": "title",
+            "field_type": { "Text": {} },
+            "required": false,
+            "width": 12,
+            "height": 1
+        }))
+        .expect("a field written before this existed");
+        assert!(!without_the_key.show_in_list);
     }
 
     /// The limits are characters, not bytes: a twenty-character Japanese title fits a schema

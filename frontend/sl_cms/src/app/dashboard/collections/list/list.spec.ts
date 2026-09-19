@@ -32,8 +32,13 @@ class StubCollectionsService {
   /** The windows the component asked for, in order. */
   public requested: { limit: number; offset: number }[] = [];
 
+  /** What the schema editor saved for this collection. A test shapes it where it matters. */
+  public schema: unknown = [
+    { name: 'title', field_type: 'Text', required: false, width: 12, height: 1 },
+  ];
+
   getCollectionSchema(): Observable<unknown> {
-    return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
+    return of(this.schema);
   }
 
   listCollectionItemsPage(
@@ -169,6 +174,68 @@ describe('CollectionItemList', () => {
     fixture = TestBed.createComponent(CollectionItemList);
     component = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  // The columns are the fields the schema marks, in schema order - which is how an editor chooses
+  // what identifies an item, rather than reading every field a collection happens to have.
+  it('shows the columns the schema asks for', async () => {
+    stub.schema = [
+      {
+        name: 'title',
+        field_type: 'Text',
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+      { name: 'body', field_type: { Markdown: {} }, required: false, width: 12, height: 1 },
+      {
+        name: 'count',
+        field_type: 'Number',
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
+    stub.all = [[1, { title: 'Hello', body: '# long', count: 3 }]];
+    // Another collection, so the schema above is what this screen loads.
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const headers = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('thead th'),
+      (cell: HTMLElement) => cell.textContent?.trim(),
+    );
+    expect(headers).toEqual(['', 'ID', 'title', 'count', 'Status', 'Updated', '']);
+
+    // The values of the columns it does show, and not the one it does not.
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('tbody tr td'),
+      (cell: HTMLElement) => cell.textContent?.trim(),
+    );
+    expect(cells).toContain('Hello');
+    expect(cells).toContain('3');
+    expect(cells).not.toContain('# long');
+  });
+
+  // Nothing marked is "not configured yet", not "show nothing": a collection whose schema predates
+  // the setting keeps the table it always had.
+  it('shows every field when the schema marks none', async () => {
+    stub.schema = [
+      { name: 'title', field_type: 'Text', required: false, width: 12, height: 1 },
+      { name: 'count', field_type: 'Number', required: false, width: 12, height: 1 },
+    ];
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const headers = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('thead th'),
+      (cell: HTMLElement) => cell.textContent?.trim(),
+    );
+    expect(headers).toEqual(['', 'ID', 'title', 'count', 'Status', 'Updated', '']);
   });
 
   // The sidebar switches collections without leaving this route, so the rows and the pager have

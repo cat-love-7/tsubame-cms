@@ -13,6 +13,14 @@
     <span class="unique-hint">{{ 'schema.uniqueHint' | transloco }}</span>
   </div>
 }
+@if (listAllowed) {
+  <div class="list-field">
+    <mat-checkbox [(ngModel)]="field.show_in_list" name="fieldInList">
+      {{ 'schema.showInList' | transloco }}
+    </mat-checkbox>
+    <span class="list-hint">{{ 'schema.showInListHint' | transloco }}</span>
+  </div>
+}
 <mat-form-field appearance="fill" class="full-width">
   <mat-label>{{ 'schema.fieldType' | transloco }}</mat-label>
   <mat-select

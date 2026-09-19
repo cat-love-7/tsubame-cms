@@ -466,6 +466,52 @@ async fn composite_values_round_trip_and_references_are_validated() {
     assert!(String::from_utf8_lossy(&body).contains("cannot reference itself"));
 }
 
+/// Which fields a collection's list shows is part of the field, so it has to survive the round trip
+/// through storage on both adapters - and a schema that does not mention it has to read as "no".
+#[tokio::test]
+async fn the_list_columns_of_a_schema_round_trip() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/listed/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1, "show_in_list": true },
+            { "name": "body", "field_type": { "Markdown": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/listed/schema",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["name"], "title");
+    assert_eq!(body[0]["show_in_list"], true);
+    // The one that did not ask for it is not in the list, and says so by saying nothing.
+    assert!(body[1].get("show_in_list").is_none(), "{body}");
+
+    // The value still travels: a schema that shows a field is still a schema that holds it.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/listed/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+}
+
 /// An array whose items are composites.
 ///
 /// The element types are tried in the declared order and the first that accepts the JSON wins,

@@ -1070,6 +1070,7 @@ mod tests {
     fn create_test_schema() -> SinglePageSchema {
         vec![
             FieldSchema {
+                show_in_list: false,
                 name: "title".to_string(),
                 field_type: FieldType::Text(TextFieldOptions::default()),
                 required: true,
@@ -1078,6 +1079,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                show_in_list: false,
                 name: "count".to_string(),
                 field_type: FieldType::Number,
                 required: false,
@@ -1135,6 +1137,7 @@ mod tests {
     async fn add_single_page_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1166,6 +1169,7 @@ mod tests {
 
         let related_to = |target: RelationTarget| {
             vec![FieldSchema {
+                show_in_list: false,
                 name: "author".to_string(),
                 field_type: FieldType::Relation(RelationOptions {
                     target,
@@ -1208,6 +1212,7 @@ mod tests {
     async fn update_single_page_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1221,6 +1226,7 @@ mod tests {
             .unwrap();
 
         let updated_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title2".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1244,6 +1250,7 @@ mod tests {
     async fn add_single_page_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1257,6 +1264,7 @@ mod tests {
             .unwrap();
 
         let duplicate_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "other".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1284,6 +1292,7 @@ mod tests {
     async fn delete_single_page_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1306,6 +1315,7 @@ mod tests {
     async fn delete_non_exists_single_page() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -1338,6 +1348,7 @@ mod tests {
             .update_single_page_schema(
                 &"non_existent".into(),
                 &vec![FieldSchema {
+                    show_in_list: false,
                     name: "title".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),
                     required: true,

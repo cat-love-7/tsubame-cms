@@ -233,6 +233,7 @@ mod tests {
     async fn add_composite_field_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -262,6 +263,7 @@ mod tests {
     async fn update_composite_field_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -275,6 +277,7 @@ mod tests {
             .unwrap();
 
         let updated_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title2".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -298,6 +301,7 @@ mod tests {
     async fn add_composite_field_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -311,6 +315,7 @@ mod tests {
             .unwrap();
 
         let duplicate_schema = vec![FieldSchema {
+            show_in_list: false,
             name: "other".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -338,6 +343,7 @@ mod tests {
     async fn delete_composite_field_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
             required: true,
@@ -366,6 +372,7 @@ mod tests {
             .update_composite_field_schema(
                 &"non_existent".into(),
                 &vec![FieldSchema {
+                    show_in_list: false,
                     name: "title".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),
                     required: true,
