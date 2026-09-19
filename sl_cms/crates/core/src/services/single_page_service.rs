@@ -6,6 +6,7 @@ use chrono::Utc;
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::owner::ItemOwner;
 use crate::models::schema::{
     CompositeFieldId, RelationTarget, SchemaScope, referenced_relation_targets,
     validate_composite_references, validate_relation_targets, validate_schema,
@@ -16,6 +17,7 @@ use crate::models::single_page::{
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::webhook::{ContentEvent, Notifier};
@@ -30,6 +32,8 @@ pub struct SinglePageService<
     image_repository: Arc<IR>,
     /// What a relation field may point at, which only the schema save asks for.
     relation_targets: Arc<dyn RelationTargetSource>,
+    /// The relation index, which answers who references a page.
+    relations: Arc<dyn RelationRepository>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -42,6 +46,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         composite_field_repository: Arc<CFR>,
         image_repository: Arc<IR>,
         relation_targets: Arc<dyn RelationTargetSource>,
+        relations: Arc<dyn RelationRepository>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         SinglePageService {
@@ -49,6 +54,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             composite_field_repository,
             image_repository,
             relation_targets,
+            relations,
             notifier,
         }
     }
@@ -214,7 +220,31 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         }
     }
 
-    pub async fn delete_single_page(&self, name: &SinglePageName) -> Result<(), HttpError> {
+    /// The content that references this single page.
+    ///
+    /// A page that is not there has no references to report, so the answer is a 404 rather than an
+    /// empty list: the caller asked about something that does not exist.
+    pub async fn get_page_references(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<Vec<ItemOwner>, HttpError> {
+        self.get_single_page_schema(name).await?;
+        self.relations
+            .get_relation_references(&ItemOwner::single_page(name.as_str()))
+            .await
+            .map_err(map_internal_error)
+    }
+
+    /// Delete a page, refusing while other content still points at it.
+    ///
+    /// `detach` is the caller saying "remove those references and go ahead" (`?detach=true`); see
+    /// [`CollectionService::delete_collection_item`](crate::services::collection_service::CollectionService::delete_collection_item)
+    /// for why all of them go first.
+    pub async fn delete_single_page(
+        &self,
+        name: &SinglePageName,
+        detach: bool,
+    ) -> Result<(), HttpError> {
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -227,16 +257,27 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 name
             )));
         }
+        let owner = ItemOwner::single_page(name.as_str());
+        let references = self
+            .relations
+            .get_relation_references(&owner)
+            .await
+            .map_err(map_internal_error)?;
+        if !references.is_empty() {
+            if !detach {
+                return Err(HttpError::still_referenced(&references));
+            }
+            self.relations
+                .detach_references(&owner)
+                .await
+                .map_err(map_internal_error)?;
+        }
         self.single_page_repository
             .delete_single_page(name)
             .await
             .map_err(map_internal_error)?;
         // Nothing uses this page's images any more.
-        self.set_image_references(
-            &crate::models::owner::ItemOwner::single_page(name.as_str()),
-            &[],
-        )
-        .await;
+        self.set_image_references(&owner, &[]).await;
         Ok(())
     }
     /// The page's working copy, falling back to the published one.
@@ -592,6 +633,7 @@ mod tests {
     use crate::repositories::image_repository::Replacement;
 
     use super::*;
+    use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
@@ -945,6 +987,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::new(targets)),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         )
     }
@@ -983,6 +1026,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             notifier.clone(),
         );
 
@@ -1252,7 +1296,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = service.delete_single_page(&"test_page".into()).await;
+        let result = service.delete_single_page(&"test_page".into(), false).await;
         assert!(result.is_ok());
 
         let page_names = service.list_page_names().await.unwrap();
@@ -1274,7 +1318,9 @@ mod tests {
             .await
             .unwrap();
 
-        let result = service.delete_single_page(&"non_existent".into()).await;
+        let result = service
+            .delete_single_page(&"non_existent".into(), false)
+            .await;
         assert!(result.is_err());
 
         assert_eq!(
@@ -1323,6 +1369,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1365,6 +1412,7 @@ mod tests {
             }),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1434,6 +1482,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1473,6 +1522,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1503,6 +1553,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
         let result = service.get_single_page_item(&"test_schema".into()).await;
@@ -1551,6 +1602,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1588,6 +1640,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
         let result = service
@@ -1642,6 +1695,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -1680,6 +1734,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 

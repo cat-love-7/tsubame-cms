@@ -302,7 +302,8 @@
     "nested_arrays": "'{{field}}' holds an array inside an array, which is not supported.",
     "invalid_slug": "'{{field}}' has nothing a URL could use: a slug is made of letters, digits and hyphens.",
     "draft_changed": "This item was saved again while it was being published. What you see is not what is stored: open it again and publish once more.",
-    "image_not_trashed": "Put the image in the trash first, then delete it for good."
+    "image_not_trashed": "Put the image in the trash first, then delete it for good.",
+    "still_referenced": "Other content references this, so it was not deleted. Remove those references first."
   },
   "nav": {
     "documents": "Documents",

@@ -1,13 +1,65 @@
+use crate::repository::relations;
 use crate::repository::{
     DRAFT_STORE, METADATA_STORE, RkvRepository, SINGLE_PAGE_ITEM_STORE, SINGLE_PAGE_SCHEMA_STORE,
     page_draft_key, page_metadata_key,
 };
 use rkv::{StoreOptions, Value};
 use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
+use sl_cms_core::models::owner::ItemOwner;
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
+use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
+use sl_cms_core::repositories::relation_repository::{RelationIndexChanges, Written};
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
 use std::error::Error;
+
+impl RkvRepository {
+    /// What one write changes in the relation index for a page.
+    ///
+    /// The same rule as a collection item (see `CollectionRepository`'s helper): the index is the
+    /// union of the page's published copy and its working copy. `written` says which copy this is
+    /// and what it will hold; the other one is read here, inside the caller's lock.
+    fn page_index_changes(
+        &self,
+        relation_store: &relations::RelationStore,
+        reader: &rkv::Reader<rkv::backend::SafeModeRoTransaction<'_>>,
+        item_store: &rkv::SingleStore<rkv::backend::SafeModeDatabase>,
+        draft_store: &rkv::SingleStore<rkv::backend::SafeModeDatabase>,
+        page_name: &SinglePageName,
+        written: Written<'_, SinglePageItem>,
+    ) -> Result<RelationIndexChanges, Box<dyn Error + Send + Sync + 'static>> {
+        let owner = ItemOwner::single_page(page_name.as_str());
+        let read_draft = |reader| -> Result<Option<SinglePageItem>, Box<dyn Error + Send + Sync>> {
+            let key = page_draft_key(page_name.as_str());
+            match draft_store.get(reader, key.as_bytes())? {
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                _ => Ok(None),
+            }
+        };
+        let read_item = |reader| -> Result<Option<SinglePageItem>, Box<dyn Error + Send + Sync>> {
+            match item_store.get(reader, page_name.as_bytes())? {
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                _ => Ok(None),
+            }
+        };
+        let published = match written {
+            Written::Published(copy) => copy.cloned(),
+            Written::Draft(_) => read_item(reader)?,
+        };
+        let draft = match written {
+            Written::Published(_) => read_draft(reader)?,
+            Written::Draft(copy) => copy.cloned(),
+        };
+        let mut now = published.as_ref().map(referenced_items).unwrap_or_default();
+        if let Some(draft) = &draft {
+            now.extend(referenced_items(draft));
+        }
+        now.sort();
+        now.dedup();
+        let current = relations::entries_of(relation_store, reader, &owner)?;
+        Ok(RelationIndexChanges::between(&current, &now))
+    }
+}
 
 impl SinglePageRepository for RkvRepository {
     async fn get_single_page_schema(
@@ -67,9 +119,18 @@ impl SinglePageRepository for RkvRepository {
         // the transaction that uses it began.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transactions, for the reason given in the page's own delete.
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         let reader = env.read()?;
         store.delete(&mut writer, page_name.as_bytes())?;
+        relations::forget(
+            &relation_store,
+            &reader,
+            &mut writer,
+            &ItemOwner::single_page(page_name.as_str()),
+        )?;
         // A page that was never published has no published copy, and rkv reports deleting
         // an absent key as an error, which would turn DELETE into a 500.
         if item_store.get(&reader, page_name.as_bytes())?.is_some() {
@@ -108,6 +169,8 @@ impl SinglePageRepository for RkvRepository {
         // Opened before the transaction begins (see `delete_single_page`).
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
 
         let metadata_key = page_metadata_key(page_name.as_str());
         // One write transaction, as for collection items, and the promotion is conditional on the
@@ -125,6 +188,23 @@ impl SinglePageRepository for RkvRepository {
                 return Err(Box::new(ApplyStatusError::DraftChanged));
             }
         }
+        // What the index has to hold afterwards: a publish promotes the working copy, and there is
+        // no working copy left to add to it. Unpublishing writes the status only, so nothing about
+        // the index changes.
+        let changes = match draft {
+            Some(draft) => {
+                let reader = env.read()?;
+                self.page_index_changes(
+                    &relation_store,
+                    &reader,
+                    &item_store,
+                    &draft_store,
+                    page_name,
+                    Written::Published(Some(draft)),
+                )?
+            }
+            None => RelationIndexChanges::default(),
+        };
         let mut writer = env.write()?;
         if let Some(draft) = draft {
             item_store.put(
@@ -138,6 +218,12 @@ impl SinglePageRepository for RkvRepository {
             &mut writer,
             metadata_key.as_bytes(),
             &Value::Str(&serde_json::to_string(metadata)?),
+        )?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::single_page(page_name.as_str()),
+            &changes,
         )?;
         writer.commit()?;
         Ok(())
@@ -252,9 +338,28 @@ impl SinglePageRepository for RkvRepository {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let collection_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transaction begins (see `delete_single_page`).
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
+        let reader = env.read()?;
+        let changes = self.page_index_changes(
+            &relation_store,
+            &reader,
+            &collection_store,
+            &draft_store,
+            page_name,
+            Written::Published(Some(item_data)),
+        )?;
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, page_name.as_bytes(), &Value::Str(&item_str))?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::single_page(page_name.as_str()),
+            &changes,
+        )?;
         writer.commit()?;
         Ok(())
     }
@@ -283,13 +388,32 @@ impl SinglePageRepository for RkvRepository {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         let key = page_draft_key(page_name.as_str());
+        // Opened before the transaction begins (see `delete_single_page`).
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
+        let item_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
+        let reader = env.read()?;
+        let changes = self.page_index_changes(
+            &relation_store,
+            &reader,
+            &item_store,
+            &store,
+            page_name,
+            Written::Draft(Some(item_data)),
+        )?;
         // Stored in the canonical rendering, so a promotion can compare it with what the publisher
         // read (see `apply_page_status`).
         store.put(
             &mut writer,
             key.as_bytes(),
             &Value::Str(&canonical_draft(item_data)),
+        )?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::single_page(page_name.as_str()),
+            &changes,
         )?;
         writer.commit()?;
         Ok(())
@@ -302,11 +426,29 @@ impl SinglePageRepository for RkvRepository {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transaction begins: LMDB rejects a handle created after it.
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
+        let item_store = env.open_single(SINGLE_PAGE_ITEM_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let key = page_draft_key(page_name.as_str());
         if store.get(&reader, key.as_bytes())?.is_some() {
+            let changes = self.page_index_changes(
+                &relation_store,
+                &reader,
+                &item_store,
+                &store,
+                page_name,
+                Written::Draft(None),
+            )?;
             let mut writer = env.write()?;
             store.delete(&mut writer, key.as_bytes())?;
+            relations::apply(
+                &relation_store,
+                &mut writer,
+                &ItemOwner::single_page(page_name.as_str()),
+                &changes,
+            )?;
             writer.commit()?;
         }
         Ok(())

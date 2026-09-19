@@ -22,6 +22,7 @@ use sl_cms_core::repositories::image_repository::BoxError;
 mod collections;
 mod composite_fields;
 mod images;
+mod relations;
 mod single_pages;
 mod users;
 

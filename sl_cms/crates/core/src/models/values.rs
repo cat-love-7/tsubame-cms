@@ -8,6 +8,7 @@ use strum_macros::EnumIter;
 use crate::models::{
     error::FieldRefusal,
     image::{Image, ImageId, ImageResponse},
+    owner::ItemOwner,
     schema::CompositeFieldId,
 };
 
@@ -777,6 +778,78 @@ mod untyped_parsing_tests {
         );
     }
 
+    /// The index's view of a value: which pieces of content it names, and what is left when one of
+    /// them is detached.
+    #[test]
+    fn the_index_sees_what_the_values_reference() {
+        let schema = vec![
+            relation_field("author", author_target(), false),
+            relation_field("also", author_target(), true),
+            field("title", FieldType::Text(TextFieldOptions::default()), false),
+        ];
+        let parsed = FieldValueMap::from_untyped(
+            &json!({
+                "title": "Hello",
+                "author": [{ "target": "authors", "item": 1 }],
+                "also": [
+                    { "target": "authors", "item": 2 },
+                    { "target": "authors", "item": 1 },
+                ],
+            }),
+            &HashMap::new(),
+            &schema,
+        )
+        .unwrap();
+
+        // One entry per referenced piece of content, whichever field named it and however often.
+        assert_eq!(
+            referenced_items(&parsed),
+            vec![
+                ItemOwner::collection_item("authors", 1),
+                ItemOwner::collection_item("authors", 2),
+            ]
+        );
+
+        // Detaching one is dropping that reference and leaving everything else alone.
+        let stripped = parsed.without_reference(&ItemOwner::collection_item("authors", 1));
+        assert_eq!(
+            referenced_items(&stripped),
+            vec![ItemOwner::collection_item("authors", 2)]
+        );
+        assert_eq!(stripped.0["title"], FieldValue::Text("Hello".to_string()));
+        assert_eq!(stripped.0["author"], FieldValue::Relation(vec![]));
+        assert_eq!(
+            stripped.0["also"],
+            FieldValue::Relation(vec![RelationRef {
+                target: "authors".to_string(),
+                item: Some(2),
+            }])
+        );
+
+        // A value that does not name the target is not rewritten at all.
+        assert_eq!(
+            stripped
+                .without_reference(&ItemOwner::single_page("home"))
+                .0,
+            stripped.0
+        );
+
+        // A page reference is a different target from a collection of the same name.
+        let page = FieldValueMap::from_untyped(
+            &json!({ "author": [{ "target": "authors", "item": 1 }] }),
+            &HashMap::new(),
+            &schema,
+        )
+        .unwrap();
+        assert_eq!(
+            page.without_reference(&ItemOwner::single_page("authors")).0,
+            page.0
+        );
+
+        // And nothing at all references nothing at all.
+        assert!(referenced_items(&FieldValueMap::<Vec<FieldSchema>>::default()).is_empty());
+    }
+
     #[test]
     fn a_required_relation_needs_at_least_one_reference() {
         let required = |has_many| {
@@ -954,6 +1027,54 @@ pub struct RelationRef {
     /// The item's id. Absent for a single page, which has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<u64>,
+}
+
+impl RelationRef {
+    /// What this reference points at, named the way an index names content.
+    ///
+    /// An absent id is what says "a single page": the schema has to agree (the value is checked
+    /// against it when it is read), and the two shapes are exactly the two kinds of content.
+    pub fn target_owner(&self) -> ItemOwner {
+        match self.item {
+            Some(item) => ItemOwner::collection_item(&self.target, item),
+            None => ItemOwner::single_page(&self.target),
+        }
+    }
+}
+
+impl<T> FieldValueMap<T> {
+    /// The same values with one reference dropped from every relation field.
+    ///
+    /// What detaching does to the content on the other side: the reference goes and everything else
+    /// is left as it was. A relation that ends up empty stays an empty set, which is what "no
+    /// references" is, and a field that does not hold the target is not rewritten at all.
+    pub fn without_reference(&self, target: &ItemOwner) -> Self {
+        let mut values = self.0.clone();
+        for value in values.values_mut() {
+            if let FieldValue::Relation(references) = value {
+                references.retain(|reference| &reference.target_owner() != target);
+            }
+        }
+        FieldValueMap(values, PhantomData)
+    }
+}
+
+/// Every piece of content a set of values references.
+///
+/// Only the top level is walked, and deliberately so: a relation is never inside an array or a
+/// composite definition (the schema refuses both), and what is stored is what the index has to
+/// agree with - so a value left behind by a field the schema no longer declares is still found
+/// here, and is still a reason not to delete what it points at.
+pub fn referenced_items<T>(item: &FieldValueMap<T>) -> Vec<ItemOwner> {
+    let mut found = std::collections::BTreeSet::new();
+    for value in item.0.values() {
+        if let FieldValue::Relation(references) = value {
+            for reference in references {
+                found.insert(reference.target_owner());
+            }
+        }
+    }
+    found.into_iter().collect()
 }
 
 // API レスポンス用の型

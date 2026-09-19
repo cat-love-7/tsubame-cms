@@ -73,6 +73,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/collections/{collection_name}/items/{id}/duplicate",
             post(duplicate_collection_item::<R>),
         )
+        // Who points at this item, so a delete can say what it would break.
+        .route(
+            "/models/collections/{collection_name}/items/{id}/references",
+            get(get_collection_item_references::<R>),
+        )
         .route(
             "/models/collections/{collection_name}/items/{id}/publish",
             post(publish_collection_item::<R>),
@@ -502,17 +507,39 @@ async fn update_collection_item<R: Storage>(
     Ok(StatusCode::OK)
 }
 
+/// The content that references this item, so a delete can say what it would break.
+async fn get_collection_item_references<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    Ok(Json(
+        module
+            .collection_service
+            .get_item_references(&name, CollectionItemId::from_u64(id))
+            .await?,
+    ))
+}
+
+/// `?detach=true`: remove the references to this item and delete it anyway.
+#[derive(serde::Deserialize)]
+struct DetachQuery {
+    #[serde(default)]
+    detach: bool,
+}
+
 async fn delete_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path((collection_name, id)): Path<(String, u64)>,
+    Query(query): Query<DetachQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     // Deleting content removes it from the site just as unpublishing does.
     require_publish(&user, Some(Resource::Collection(&collection_name)))?;
     let name = CollectionName::from(collection_name.as_str());
     module
         .collection_service
-        .delete_collection_item(&name, CollectionItemId::from_u64(id))
+        .delete_collection_item(&name, CollectionItemId::from_u64(id), query.detach)
         .await?;
     Ok(StatusCode::OK)
 }

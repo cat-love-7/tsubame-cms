@@ -1,3 +1,4 @@
+use crate::repository::relations;
 use crate::repository::{
     COLLECTION_SCHEMA_STORE, DRAFT_STORE, METADATA_STORE, RkvRepository, UNIQUE_STORE,
     collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
@@ -8,10 +9,64 @@ use sl_cms_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
 use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
+use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
+use sl_cms_core::repositories::relation_repository::{RelationIndexChanges, Written};
 use std::error::Error;
+
+impl RkvRepository {
+    /// What one write changes in the relation index for a collection item.
+    ///
+    /// The index is the union of both copies: the working copy is what an editor is holding and the
+    /// published record is what the site serves, and either is a reason to keep what it points at.
+    /// `written` says which copy this is and what it will hold; the other one is read here, inside
+    /// the caller's lock, so the two cannot drift apart.
+    #[allow(clippy::too_many_arguments)]
+    fn collection_index_changes(
+        &self,
+        relation_store: &relations::RelationStore,
+        reader: &rkv::Reader<rkv::backend::SafeModeRoTransaction<'_>>,
+        item_store: &rkv::SingleStore<rkv::backend::SafeModeDatabase>,
+        draft_store: &rkv::SingleStore<rkv::backend::SafeModeDatabase>,
+        collection_name: &CollectionName,
+        item_id: u64,
+        written: Written<'_, CollectionItem>,
+    ) -> Result<RelationIndexChanges, Box<dyn Error + Send + Sync + 'static>> {
+        let owner = ItemOwner::collection_item(collection_name.as_str(), item_id);
+        let read_draft = |reader| -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync>> {
+            let key = collection_item_draft_key(collection_name.as_str(), item_id);
+            match draft_store.get(reader, key.as_bytes())? {
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                _ => Ok(None),
+            }
+        };
+        let read_item = |reader| -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync>> {
+            match item_store.get(reader, &item_id.to_le_bytes())? {
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                _ => Ok(None),
+            }
+        };
+        let published = match written {
+            Written::Published(copy) => copy.cloned(),
+            Written::Draft(_) => read_item(reader)?,
+        };
+        let draft = match written {
+            Written::Published(_) => read_draft(reader)?,
+            Written::Draft(copy) => copy.cloned(),
+        };
+        let mut now = published.as_ref().map(referenced_items).unwrap_or_default();
+        if let Some(draft) = &draft {
+            now.extend(referenced_items(draft));
+        }
+        now.sort();
+        now.dedup();
+        let current = relations::entries_of(relation_store, reader, &owner)?;
+        Ok(RelationIndexChanges::between(&current, &now))
+    }
+}
 
 impl CollectionRepository for RkvRepository {
     async fn get_collection_schema(
@@ -79,12 +134,23 @@ impl CollectionRepository for RkvRepository {
         // transaction using it began, so opening it later would make DELETE fail.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.delete(&mut writer, collection_name.as_bytes())?;
         let reader = env.read()?;
         for result in item_store.iter_start(&reader)? {
             if let Ok((key, Value::Str(_s))) = result {
                 item_store.delete(&mut writer, &key)?;
+                // An item that is gone holds nothing, so what it referenced has to stop being
+                // indexed against it - in both directions, in this same transaction.
+                let id = *CollectionItemId::from_le_bytes(key.try_into()?);
+                relations::forget(
+                    &relation_store,
+                    &reader,
+                    &mut writer,
+                    &ItemOwner::collection_item(collection_name.as_str(), id),
+                )?;
             }
         }
         // The per-collection item counter only exists once an item has been added, and
@@ -182,6 +248,9 @@ impl CollectionRepository for RkvRepository {
         let store_name = format!("collection_{}", collection_name);
         let collection_store =
             env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        // Opened before the transaction begins: LMDB rejects a handle created after it.
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         // Acquire the write transaction BEFORE the read snapshot used to read the
         // counter. Two concurrent writers would otherwise both read the same counter
         // value and then write the same item id, silently overwriting each other.
@@ -196,8 +265,14 @@ impl CollectionRepository for RkvRepository {
             _ => 0,
         };
         let new_id = current_id + 1;
+        // The index entries for the new item, in the same transaction as the item: what asks the
+        // index (a delete) must never see a reference the item does not hold, or miss one it does.
+        // A new id has no entries yet - ids are never reused - so nothing has to be read first.
+        let owner = ItemOwner::collection_item(collection_name.as_str(), new_id);
+        let changes = RelationIndexChanges::between(&[], &referenced_items(item_data));
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, &new_id.to_le_bytes(), &Value::Str(&item_str))?;
+        relations::apply(&relation_store, &mut writer, &owner, &changes)?;
         self.counter_store
             .put(&mut writer, collection_name.as_bytes(), &Value::U64(new_id))?;
         writer.commit()?;
@@ -215,9 +290,29 @@ impl CollectionRepository for RkvRepository {
         let store_name = format!("collection_{}", collection_name);
         let collection_store =
             env.open_single(Some(store_name.as_str()), StoreOptions::create())?;
+        let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transaction begins (see `add_collection_item`).
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
+        let reader = env.read()?;
+        let changes = self.collection_index_changes(
+            &relation_store,
+            &reader,
+            &collection_store,
+            &draft_store,
+            collection_name,
+            **item_id,
+            Written::Published(Some(item_data)),
+        )?;
         let item_str = serde_json::to_string(item_data)?;
         collection_store.put(&mut writer, &item_id.to_le_bytes(), &Value::Str(&item_str))?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::collection_item(collection_name.as_str(), **item_id),
+            &changes,
+        )?;
         writer.commit()?;
         Ok(())
     }
@@ -235,10 +330,20 @@ impl CollectionRepository for RkvRepository {
         // Opened before the transactions, for the reason given in `delete_collection`.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transactions (see `delete_collection`).
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         // Writer first, then the read snapshot (see `add_collection_item`).
         let mut writer = env.write()?;
         let reader = env.read()?;
         collection_store.delete(&mut writer, &item_id.to_le_bytes())?;
+        // Both copies go, so the index entries go with them.
+        relations::forget(
+            &relation_store,
+            &reader,
+            &mut writer,
+            &ItemOwner::collection_item(collection_name.as_str(), **item_id),
+        )?;
 
         // Most items are never published, so a missing metadata record is normal.
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
@@ -361,6 +466,9 @@ impl CollectionRepository for RkvRepository {
         // Opened before the transaction begins: LMDB rejects a handle created after it.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        // Opened before the transaction begins (see `add_collection_item`).
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
 
         let metadata_key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         // The promotion is conditional on the working copy still being the one the caller read: a
@@ -383,8 +491,24 @@ impl CollectionRepository for RkvRepository {
                 return Err(Box::new(ApplyStatusError::DraftChanged));
             }
         }
-        // One write transaction: the published copy, the working copy it replaces and the
-        // status land together, so no reader can see a half-applied publish.
+        // What the index has to hold afterwards: a publish promotes the working copy, so what it
+        // references is what the item references now, and there is no working copy left to add to
+        // it. Unpublishing writes the status only - both copies stay where they are - so nothing
+        // about the index changes.
+        let changes = match draft {
+            Some(draft) => {
+                let reader = env.read()?;
+                let current = relations::entries_of(
+                    &relation_store,
+                    &reader,
+                    &ItemOwner::collection_item(collection_name.as_str(), **item_id),
+                )?;
+                RelationIndexChanges::between(&current, &referenced_items(draft))
+            }
+            None => RelationIndexChanges::default(),
+        };
+        // One write transaction: the published copy, the working copy it replaces, the status and
+        // the index land together, so no reader can see a half-applied publish.
         let mut writer = env.write()?;
         if let Some(draft) = draft {
             collection_store.put(
@@ -401,6 +525,12 @@ impl CollectionRepository for RkvRepository {
             &mut writer,
             metadata_key.as_bytes(),
             &Value::Str(&serde_json::to_string(metadata)?),
+        )?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::collection_item(collection_name.as_str(), **item_id),
+            &changes,
         )?;
         writer.commit()?;
         Ok(())
@@ -543,13 +673,36 @@ impl CollectionRepository for RkvRepository {
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
         let key = collection_item_draft_key(collection_name.as_str(), **item_id);
+        // Opened before the transaction begins: LMDB rejects a handle created after it.
+        let relation_store =
+            env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
+        let item_store = env.open_single(
+            format!("collection_{collection_name}").as_str(),
+            StoreOptions::create(),
+        )?;
         let mut writer = env.write()?;
+        let reader = env.read()?;
+        let changes = self.collection_index_changes(
+            &relation_store,
+            &reader,
+            &item_store,
+            &store,
+            collection_name,
+            **item_id,
+            Written::Draft(Some(item_data)),
+        )?;
         // Stored in the canonical rendering, so a promotion can compare it with what the publisher
         // read without the two renderings differing only in the order a `HashMap` was walked.
         store.put(
             &mut writer,
             key.as_bytes(),
             &Value::Str(&canonical_draft(item_data)),
+        )?;
+        relations::apply(
+            &relation_store,
+            &mut writer,
+            &ItemOwner::collection_item(collection_name.as_str(), **item_id),
+            &changes,
         )?;
         writer.commit()?;
         Ok(())

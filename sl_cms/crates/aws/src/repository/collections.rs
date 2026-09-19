@@ -5,6 +5,66 @@
 //! grown around a whole trait implementation.
 
 use super::*;
+use crate::repository::relations;
+use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::values::referenced_items;
+use sl_cms_core::repositories::relation_repository::RelationIndexChanges;
+use sl_cms_core::repositories::relation_repository::Written;
+
+impl AwsRepository {
+    /// What one write changes in the relation index for a collection item.
+    ///
+    /// The index is the union of both copies: the working copy is what an editor is holding and the
+    /// published record is what the site serves, and either is a reason to keep what it points at.
+    async fn collection_index_changes(
+        inner: &Inner,
+        collection_name: &CollectionName,
+        item_id: u64,
+        written: Written<'_, CollectionItem>,
+    ) -> Result<RelationIndexChanges, BoxError> {
+        let owner = ItemOwner::collection_item(collection_name.as_str(), item_id);
+        let partition = key::collection(collection_name);
+        let read_copy = |data: Option<String>| -> Result<Option<CollectionItem>, BoxError> {
+            match data {
+                Some(data) => Ok(Some(AwsRepository::decode(&data)?)),
+                None => Ok(None),
+            }
+        };
+        let published = match written {
+            Written::Published(copy) => copy.cloned(),
+            Written::Draft(_) => read_copy(read(inner, &partition, &key::item(item_id)).await?)?,
+        };
+        let draft = match written {
+            Written::Published(_) => {
+                read_copy(read(inner, &partition, &key::draft(item_id)).await?)?
+            }
+            Written::Draft(copy) => copy.cloned(),
+        };
+        let mut now = published.as_ref().map(referenced_items).unwrap_or_default();
+        if let Some(draft) = &draft {
+            now.extend(referenced_items(draft));
+        }
+        now.sort();
+        now.dedup();
+        let current = relations::entries_of(inner, &owner).await?;
+        Ok(RelationIndexChanges::between(&current, &now))
+    }
+
+    /// The writes that record `changes` in the index, with the room the caller has left.
+    fn index_writes(
+        inner: &Inner,
+        owner: &ItemOwner,
+        changes: &RelationIndexChanges,
+        record_writes: usize,
+    ) -> Result<Vec<aws_sdk_dynamodb::types::TransactWriteItem>, BoxError> {
+        relations::index_writes(
+            inner,
+            owner,
+            changes,
+            relations::MAX_TRANSACT_WRITES - record_writes,
+        )
+    }
+}
 
 impl CollectionRepository for AwsRepository {
     async fn get_collection_schema(
@@ -60,6 +120,29 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let partition = key::collection(&name);
         for (sk, _) in list(&inner, &partition, "").await? {
+            // An item that is going takes its index entries with it, in both directions. One write
+            // each rather than a transaction: deleting a collection is already many round trips,
+            // and an entry left behind only ever names content that is gone.
+            if let Some(id) = sk
+                .strip_prefix("item#")
+                .and_then(|id| id.parse::<u64>().ok())
+            {
+                let owner = ItemOwner::collection_item(name.as_str(), id);
+                for target in relations::entries_of(&inner, &owner).await? {
+                    remove(
+                        &inner,
+                        &relations::owner_partition(&owner),
+                        &format!("{}{}", relations::REL, target.storage_key()),
+                    )
+                    .await?;
+                    remove(
+                        &inner,
+                        &relations::target_partition(&target),
+                        &format!("{}{}", relations::REF, owner.storage_key()),
+                    )
+                    .await?;
+                }
+            }
             remove(&inner, &partition, &sk).await?;
         }
         remove(&inner, key::COLLECTION_INDEX, name.as_str()).await
@@ -113,7 +196,20 @@ impl CollectionRepository for AwsRepository {
         let data = AwsRepository::encode(item_data)?;
         let partition = key::collection(&name);
         let id = next_id(&inner, &partition).await?;
-        write(&inner, &partition, &key::item(id), &data).await?;
+        // The item and the index entries for what it references land together: a reference the
+        // index does not know about is one a delete would not refuse. A new id has no entries yet
+        // (ids are never reused), so nothing has to be read first.
+        let owner = ItemOwner::collection_item(name.as_str(), id);
+        let changes = RelationIndexChanges::between(&[], &referenced_items(item_data));
+        let mut writes = vec![put_in_transaction(
+            &inner,
+            &partition,
+            &key::item(id),
+            &data,
+        )?];
+        writes.extend(Self::index_writes(&inner, &owner, &changes, 1)?);
+        let outcome = transact(&inner, writes).await?;
+        relations::expect_applied(outcome, "creating an item")?;
         Ok(id)
     }
 
@@ -127,7 +223,20 @@ impl CollectionRepository for AwsRepository {
         let name = collection_name.clone();
         let id = **item_id;
         let data = AwsRepository::encode(item_data)?;
-        write(&inner, &key::collection(&name), &key::item(id), &data).await
+        let partition = key::collection(&name);
+        let owner = ItemOwner::collection_item(name.as_str(), id);
+        let changes =
+            Self::collection_index_changes(&inner, &name, id, Written::Published(Some(item_data)))
+                .await?;
+        let mut writes = vec![put_in_transaction(
+            &inner,
+            &partition,
+            &key::item(id),
+            &data,
+        )?];
+        writes.extend(Self::index_writes(&inner, &owner, &changes, 1)?);
+        let outcome = transact(&inner, writes).await?;
+        relations::expect_applied(outcome, "updating an item")
     }
 
     async fn delete_collection_item(
@@ -142,15 +251,23 @@ impl CollectionRepository for AwsRepository {
         // The published copy, the working copy and the metadata go together: removing one and
         // leaving the others shows up as a half-deleted item (a draft with nothing published, or a
         // status naming content that is gone). One transaction, so it is all of them or none.
-        let outcome = transact(
-            &inner,
-            vec![
-                delete_in_transaction(&inner, &partition, &key::item(id))?,
-                delete_in_transaction(&inner, &partition, &key::draft(id))?,
-                delete_in_transaction(&inner, &partition, &key::metadata(id))?,
-            ],
-        )
-        .await?;
+        let owner = ItemOwner::collection_item(name.as_str(), id);
+        let mut writes = vec![
+            delete_in_transaction(&inner, &partition, &key::item(id))?,
+            delete_in_transaction(&inner, &partition, &key::draft(id))?,
+            delete_in_transaction(&inner, &partition, &key::metadata(id))?,
+        ];
+        // Both copies go, so the index entries for what they referenced go with them, in the same
+        // transaction: nothing may be left pointing at a piece of content that is gone.
+        writes.extend(
+            relations::forget_writes(
+                &inner,
+                &owner,
+                relations::MAX_TRANSACT_WRITES - writes.len(),
+            )
+            .await?,
+        );
+        let outcome = transact(&inner, writes).await?;
         match outcome {
             TransactOutcome::Applied => Ok(()),
             TransactOutcome::Refused { write } => Err(format!(
@@ -186,7 +303,22 @@ impl CollectionRepository for AwsRepository {
         // The canonical rendering, so a promotion can compare the record with what the publisher
         // read (see `apply_item_status`).
         let data = canonical_draft(item_data);
-        write(&inner, &key::collection(&name), &key::draft(id), &data).await
+        let partition = key::collection(&name);
+        let owner = ItemOwner::collection_item(name.as_str(), id);
+        // The published record is the copy this save does not touch, and the index holds what both
+        // copies reference.
+        let changes =
+            Self::collection_index_changes(&inner, &name, id, Written::Draft(Some(item_data)))
+                .await?;
+        let mut writes = vec![put_in_transaction(
+            &inner,
+            &partition,
+            &key::draft(id),
+            &data,
+        )?];
+        writes.extend(Self::index_writes(&inner, &owner, &changes, 1)?);
+        let outcome = transact(&inner, writes).await?;
+        relations::expect_applied(outcome, "saving an item")
     }
 
     async fn delete_collection_item_draft(
@@ -197,7 +329,16 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
-        remove(&inner, &key::collection(&name), &key::draft(id)).await
+        let partition = key::collection(&name);
+        // The draft goes, so what it referenced stops being indexed - the published record (which
+        // this write does not touch) is what the index keeps.
+        let owner = ItemOwner::collection_item(name.as_str(), id);
+        let changes =
+            Self::collection_index_changes(&inner, &name, id, Written::Draft(None)).await?;
+        let mut writes = vec![delete_in_transaction(&inner, &partition, &key::draft(id))?];
+        writes.extend(Self::index_writes(&inner, &owner, &changes, 1)?);
+        let outcome = transact(&inner, writes).await?;
+        relations::expect_applied(outcome, "discarding a working copy")
     }
 
     async fn list_collection_item_drafts(
@@ -533,15 +674,20 @@ impl CollectionRepository for AwsRepository {
         // read the working copy changed that rendering, and publishing the older content would
         // delete the newer save.
         let expected = canonical_draft(&draft);
-        let outcome = transact(
-            &inner,
-            vec![
-                put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
-                delete_draft_in_transaction(&inner, &partition, &key::draft(*id), &expected)?,
-                put_in_transaction(&inner, &partition, &metadata_key, &data)?,
-            ],
-        )
-        .await?;
+        // Publishing promotes the working copy, so what it references is what the index holds
+        // afterwards - the draft is gone, and the published record it replaces is not read.
+        let owner = ItemOwner::collection_item(name.as_str(), *id);
+        let changes =
+            Self::collection_index_changes(&inner, &name, *id, Written::Published(Some(&draft)))
+                .await?;
+        let mut writes = vec![
+            put_in_transaction(&inner, &partition, &key::item(*id), &draft_data)?,
+            delete_draft_in_transaction(&inner, &partition, &key::draft(*id), &expected)?,
+            put_in_transaction(&inner, &partition, &metadata_key, &data)?,
+        ];
+        // Appended, so the positions the refusals below name do not move.
+        writes.extend(Self::index_writes(&inner, &owner, &changes, 3)?);
+        let outcome = transact(&inner, writes).await?;
         match outcome {
             TransactOutcome::Applied => Ok(()),
             // Position 1 is the draft delete above.

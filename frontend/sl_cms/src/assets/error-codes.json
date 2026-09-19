@@ -20,7 +20,8 @@
     "nested_arrays",
     "invalid_slug",
     "draft_changed",
-    "image_not_trashed"
+    "image_not_trashed",
+    "still_referenced"
   ],
   "status": [
     "bad_request",

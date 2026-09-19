@@ -33,6 +33,9 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     // Deleting an image for good without putting it in the trash first: the second step of the
     // two-step delete, asked for out of order.
     "image_not_trashed",
+    // Deleting content another piece of content points at. The references are what has to go
+    // first - or be detached in the same request (`?detach=true`).
+    "still_referenced",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -83,6 +86,8 @@ pub const ERROR_CODES: &[&str] = &[
     "draft_changed",
     // Deleting an image for good without putting it in the trash first.
     "image_not_trashed",
+    // Deleting content another piece of content points at.
+    "still_referenced",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -249,6 +254,40 @@ pub struct HttpError {
     pub retry_after_seconds: Option<u64>,
 }
 impl HttpError {
+    /// Content that other content points at, refused until the references are removed.
+    ///
+    /// The message names what points at it: a caller has to know what to change, and for an API
+    /// client the names are the whole answer. The way to say "remove them and go ahead" is
+    /// `?detach=true`, which the wording mentions because that is the only way past this.
+    pub fn still_referenced(referrers: &[crate::models::owner::ItemOwner]) -> Self {
+        let named: Vec<String> = referrers
+            .iter()
+            .take(3)
+            .map(|referrer| match referrer.kind {
+                crate::models::owner::ItemOwnerKind::CollectionItem => format!(
+                    "{} item {}",
+                    referrer.name,
+                    referrer.item.unwrap_or_default()
+                ),
+                crate::models::owner::ItemOwnerKind::SinglePage => {
+                    format!("single page {}", referrer.name)
+                }
+            })
+            .collect();
+        let rest = referrers.len().saturating_sub(named.len());
+        let mut list = named.join(", ");
+        if rest > 0 {
+            list.push_str(&format!(" and {rest} more"));
+        }
+        Self::new(
+            STATUS_CONFLICT,
+            &format!(
+                "still referenced by {list}; pass ?detach=true to remove those references first"
+            ),
+        )
+        .with_code("still_referenced")
+    }
+
     /// Say what went wrong more precisely than the status does.
     pub fn with_code(mut self, code: &'static str) -> Self {
         self.code = code;

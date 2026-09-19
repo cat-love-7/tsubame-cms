@@ -8,6 +8,7 @@ use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::repositories::user_repository::UserRepository;
@@ -28,6 +29,7 @@ pub trait Storage:
     + CompositeFieldRepository
     + SinglePageRepository
     + ImageRepository
+    + RelationRepository
     + UserRepository
     + Send
     + Sync
@@ -40,6 +42,7 @@ impl<T> Storage for T where
         + CompositeFieldRepository
         + SinglePageRepository
         + ImageRepository
+        + RelationRepository
         + UserRepository
         + Send
         + Sync
@@ -116,14 +119,17 @@ impl<R: Storage> AppModule<R> {
         limits: Limits,
     ) -> Self {
         // Both services are handed the same storage, which answers what a relation may point at
-        // by being both repositories (see `RelationTargetSource`).
+        // by being both repositories (see `RelationTargetSource`), and reads the index it is
+        // written into (see `RelationRepository`).
         let relation_targets: Arc<dyn RelationTargetSource> = repository.clone();
+        let relations: Arc<dyn RelationRepository> = repository.clone();
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
                 repository.clone(),
                 repository.clone(),
                 relation_targets.clone(),
+                relations.clone(),
                 notifier.clone(),
             ),
             single_page_service: SinglePageService::new(
@@ -131,6 +137,7 @@ impl<R: Storage> AppModule<R> {
                 repository.clone(),
                 repository.clone(),
                 relation_targets,
+                relations,
                 notifier,
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),

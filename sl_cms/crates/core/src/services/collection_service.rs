@@ -11,6 +11,7 @@ use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{
     ItemDates, ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy,
 };
+use crate::models::owner::ItemOwner;
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
     CompositeFieldId, RelationTarget, SchemaScope, has_unique_fields, referenced_relation_targets,
@@ -21,6 +22,7 @@ use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
+use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
 use crate::webhook::{ContentEvent, Notifier};
 
@@ -34,6 +36,8 @@ pub struct CollectionService<
     image_repository: Arc<IR>,
     /// What a relation field may point at, which only the schema save asks for.
     relation_targets: Arc<dyn RelationTargetSource>,
+    /// The relation index, which answers who references what.
+    relations: Arc<dyn RelationRepository>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -46,6 +50,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         composite_field_repository: Arc<CFR>,
         image_repository: Arc<IR>,
         relation_targets: Arc<dyn RelationTargetSource>,
+        relations: Arc<dyn RelationRepository>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         CollectionService {
@@ -53,6 +58,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             composite_field_repository,
             image_repository,
             relation_targets,
+            relations,
             notifier,
         }
     }
@@ -214,6 +220,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await
             .map_err(map_internal_error)
     }
+    /// The content that references one of this collection's items.
+    ///
+    /// An item that is not there has no references to report, so the answer is a 404 rather than an
+    /// empty list: the caller asked about something that does not exist.
+    pub async fn get_item_references(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<Vec<ItemOwner>, HttpError> {
+        self.require_item(collection_name, &item_id).await?;
+        self.relations
+            .get_relation_references(&ItemOwner::collection_item(
+                collection_name.as_str(),
+                *item_id,
+            ))
+            .await
+            .map_err(map_internal_error)
+    }
+
     pub async fn delete_collection(
         &self,
         collection_name: &CollectionName,
@@ -886,10 +911,17 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)
     }
 
+    /// Delete one item, refusing while other content still points at it.
+    ///
+    /// `detach` is the caller saying "remove those references and go ahead" (`?detach=true`): every
+    /// reference to the item is dropped from the content that holds one - both copies of it - and
+    /// then the item goes. All of them first, so a failure part way through leaves the item in place
+    /// with fewer references rather than gone with references to nothing.
     pub async fn delete_collection_item(
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
+        detach: bool,
     ) -> Result<(), HttpError> {
         let schema = self
             .collection_repository
@@ -913,6 +945,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 item_id.to_string(),
                 collection_name
             )));
+        }
+        let owner = ItemOwner::collection_item(collection_name.as_str(), *item_id);
+        let references = self
+            .relations
+            .get_relation_references(&owner)
+            .await
+            .map_err(map_internal_error)?;
+        if !references.is_empty() {
+            if !detach {
+                return Err(HttpError::still_referenced(&references));
+            }
+            self.relations
+                .detach_references(&owner)
+                .await
+                .map_err(map_internal_error)?;
         }
 
         // Read what the item holds before removing it: afterwards there is nothing left to say
@@ -950,11 +997,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.release_unique_values(collection_name, &item_id, &held)
             .await;
         // And nothing uses this item's images any more.
-        self.set_image_references(
-            &crate::models::owner::ItemOwner::collection_item(collection_name.as_str(), *item_id),
-            &[],
-        )
-        .await;
+        self.set_image_references(&owner, &[]).await;
         Ok(())
     }
 
@@ -1646,6 +1689,7 @@ mod tests {
     use super::*;
     use crate::models::user::UserId;
     use crate::repositories::collection_repository::{Reservation, UniqueValue};
+    use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
@@ -2230,6 +2274,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             notifier.clone(),
         );
 
@@ -2315,6 +2360,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         )
     }
@@ -2548,6 +2594,7 @@ mod tests {
             }),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::new(targets)),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         )
     }
@@ -2916,6 +2963,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -2971,6 +3019,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3024,6 +3073,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3063,6 +3113,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3122,6 +3173,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3185,6 +3237,7 @@ mod tests {
             }),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3249,6 +3302,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3316,6 +3370,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3371,6 +3426,7 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
@@ -3432,11 +3488,16 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
         let result = service
-            .delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(1))
+            .delete_collection_item(
+                &"test_composite".into(),
+                CollectionItemId::from_u64(1),
+                false,
+            )
             .await;
         assert!(result.is_ok());
 
@@ -3476,11 +3537,16 @@ mod tests {
             Arc::new(composite_field_repository),
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
+            Arc::new(NoRelations),
             Arc::new(NoopNotifier),
         );
 
         let result = service
-            .delete_collection_item(&"test_composite".into(), CollectionItemId::from_u64(999))
+            .delete_collection_item(
+                &"test_composite".into(),
+                CollectionItemId::from_u64(999),
+                false,
+            )
             .await;
         assert!(result.is_err());
         assert_eq!(
@@ -3493,7 +3559,7 @@ mod tests {
     async fn delete_collection_item_missing_collection() {
         let service = create_test_service();
         let result = service
-            .delete_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1))
+            .delete_collection_item(&"non_existent".into(), CollectionItemId::from_u64(1), false)
             .await;
         assert!(result.is_err());
         assert_eq!(

@@ -35,6 +35,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/single_pages/{page_name}",
             delete(delete_single_page::<R>),
         )
+        // Who points at this page, so a delete can say what it would break.
+        .route(
+            "/models/single_pages/{page_name}/references",
+            get(get_page_references::<R>),
+        )
         .route(
             "/models/single_pages/{page_name}/item",
             get(get_single_page_item::<R>).put(update_single_page_item::<R>),
@@ -312,15 +317,40 @@ async fn update_single_page_schema<R: Storage>(
     Ok(StatusCode::OK)
 }
 
+/// The content that references this page, so a delete can say what it would break.
+async fn get_page_references<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    Ok(Json(
+        module
+            .single_page_service
+            .get_page_references(&name)
+            .await?,
+    ))
+}
+
+/// `?detach=true`: remove the references to this page and delete it anyway.
+#[derive(serde::Deserialize)]
+struct DetachQuery {
+    #[serde(default)]
+    detach: bool,
+}
+
 async fn delete_single_page<R: Storage>(
     State(module): State<AppState<R>>,
     Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
     Path(page_name): Path<String>,
+    Query(query): Query<DetachQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     // The page and its schema go, so this is a structural change.
     require_admin(&user)?;
     let name = SinglePageName::from(page_name.as_str());
-    module.single_page_service.delete_single_page(&name).await?;
+    module
+        .single_page_service
+        .delete_single_page(&name, query.detach)
+        .await?;
     Ok(StatusCode::OK)
 }
 

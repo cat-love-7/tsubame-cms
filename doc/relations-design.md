@@ -1,8 +1,8 @@
 # コンテンツの関係(リレーション)の設計
 
-**状態: 第 1 段階(型と値)を実装済み**。§9 の段階でいう 1 まで入っており、2 以降は未実装。
-最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在リレーションを
-既定で落としている。
+**状態: 第 2 段階(逆引きと安全)まで実装済み**。§9 の段階でいう 1 と 2 が入っており、3 以降は
+未実装。最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在
+リレーションを既定で落としている。
 
 Strapi の relation に相当するもの — コレクションのアイテムが、別のコレクションのアイテムを
 参照する — を、この CMS の設計に合わせて入れる。**画像参照が既にその原型**なので、新しい概念を
@@ -100,14 +100,40 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 画像参照と同じ**両方向**のキー族を、汎用の `ItemOwner` で持つ:
 
+**所有者も対象も同じ形**(`ItemOwner`: `collection:<name>:<id>` / `page:<name>`)で書く。対象とは
+「参照先のコンテンツ」そのものなので、所有者と同じ名前の付け方ができる。
+
 | 問い | on-prem(rkv) | DynamoDB |
 |---|---|---|
-| このアイテムは何を参照しているか | `<owner>|<target>#<id>` | `refs#<owner>` / `rel#<target>#<id>` |
-| このアイテムを誰が参照しているか | `target#<collection>#<id>|<owner>` | `rel#<collection>#<id>` / `ref#<owner>` |
+| このコンテンツは何を参照しているか | `<owner>|rel|<target>` | `refs#<owner>` / `rel#<target>` |
+| このコンテンツを誰が参照しているか | `rel|<target>|<owner>` | `rel#<target>` / `ref#<owner>` |
+
+- 値は所有者の storage key(画像索引と同じ。読むときに使うのはキーだけ)。
+- 画像索引の順方向も `refs#<owner>` を partition に使う(`image#` の並び)ので、AWS では
+  1 つの所有者の「出ていく参照」が同じ partition に並ぶ。
 
 - 保存・公開・削除のすべての書き込み経路で、**保存後の値**から差分を計算して更新する
   (`set_image_references` と同じ。ただし本体と同一トランザクション)。
+  - 差分の計算は**アダプタの中で、書き込みロック/トランザクションの中**で行う。どのコピーを書いて
+    いるか(`Written::Published` / `Written::Draft`)を渡し、もう一方のコピーはその場で読む。
+    サービスは関与しない: 値の書き込みを通る限り、どの経路でも索引が付いてくる。
+  - **スキーマ保存の再索引は要らない**。`referenced_items` はスキーマではなく**保存されている値**を
+    見るので、フィールドを消したスキーマで保存し直せば値と一緒に索引も消え、追加したフィールドは
+    その保存で入る。
 - 逆引きは**両コピー(draft / published)の和**を数える(画像と同じ保守的な規則)。
+
+### 削除(2026-09 実装)
+
+- `DELETE …/items/{id}` / `DELETE …/single_pages/{name}` は、**参照されているなら 409**
+  (`still_referenced`)。メッセージは参照元を最大 3 件名指しする。
+- **`?detach=true`** で参照を全部外してから削除する。外すのは**参照元の両コピー**(配信される
+  公開コピーと、編集中の作業コピー)で、書き込みは通常の保存経路を通るので索引も一緒に動く。
+  全部外してから削除するので、途中で失敗しても「参照が残ったまま消える」方向にはならない。
+- **`DELETE …/collections/{name}`(コレクションごと)は今のところ参照を見ない**。対象の
+  コレクションを丸ごと消すと、参照元の値は消えたアイテムを指したままになる(配信は第 4 段階で
+  それを落とす)。§9 の残りとして扱う。
+- 画像索引は削除の判断には使われない(ゴミ箱→完全削除の 2 段階と参照表示)ので、ここだけ規則が
+  違う: **リレーションは拒否が既定**、画像は「見せるだけ」。
 
 ## 4. 公開との関係(この設計の中心)
 
@@ -213,7 +239,7 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 ## 8. テスト
 
-**第 1 段階で入ったもの**:
+**第 1・2 段階で入ったもの**:
 
 - unit(`core/src/models/{schema,values}.rs`): 対象の検証、単一ページの `has_many` 拒否、複合定義の
   relation 拒否、配列要素の拒否、`validate_relation_targets` の種類違い、値の正準化(整列・重複除去)、
@@ -224,19 +250,22 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
   スキーマ保存の 400 3 種、値の 400 4 種、`required` な relation が空のままの公開は 400
 - spec(`fields.spec` / `field.spec` / `value-field.spec`): 型の分岐、送信前の正規化、
   一覧の遅延取得、値の JSON 欄の検証
+- 索引(`RelationIndexChanges::between` の集合差、`referenced_items` の走査、`without_reference`)。
+  契約スイートでは、保存・公開・削除のそれぞれで索引が追いつくこと、両コピーの和を数えること、
+  `?detach=true` が両コピーから参照を外すこと、参照されている削除の 409 と `still_referenced`。
+  参照される側(アイテム・単一ページ)と参照する側(アイテム・単一ページ)の 4 通り。
 
 **これから要るもの**:
 
-- **契約スイート**(両アダプタ。インデックスの実装が別なので特に重要):
-  - 逆引きが保存・公開・削除のそれぞれで正しい
+- **契約スイート**(両アダプタ):
   - **`required` な relation が公開時に空になるなら公開は 409**、任意なら通って配信から落とす
-  - **参照されているアイテムの削除 → 409**、`?detach=true` で成功(参照が外れる)
   - 公開 API: 既定は対象と id のみ / `?populate=` で 1 段展開 / 未公開の相手は出ない
   - **逆引きのフィルタ**(`?where=category:3`): 公開済みだけが返り、ページングが効き、公開されて
     いない参照元は出ない
   - **逆引きの展開**(`?populate=<inverse_name>`): 1 段、公開済みのみ、件数の上限
-- **unit**: `referenced_items` の走査(配列・複合の中)、インデックスの差分計算
-- **E2E**: スキーマ編集で relation を定義 → ピッカーで選ぶ → 保存 → 公開 → 配信 API で展開
+  - **コレクションごとの削除**が参照を見るかどうか(§4 の残り)
+- **E2E**: スキーマ編集で relation を定義 → ピッカーで選ぶ → 保存 → 公開 → 配信 API で展開。
+  参照されているアイテムの削除が画面でどう見えるか(参照元パネル)も。
 - **移行ツール**: relation のマッピング(片側採用・2 パス・順序の警告)
 - 新しい拒否コード(`detach` が要る / `required` が空になる)は **3 点契約**(Rust ↔
   `error-codes.json` ↔ en/ja カタログ)に追加する。
@@ -248,7 +277,10 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
    — **実装済み**。対象の存在はスキーマ保存で、値の形は `from_untyped` で見る。単一ページの
    `item` と配列要素の relation は拒否。契約スイートは `crates/tests/suite/relations.rs`。
    `required` な relation が空のままの公開は、公開時の required 検査(既存の規則)がそのまま拒否する。
-2. **逆引きと安全**: インデックス(本体と同一トランザクション)+ `references` + 削除の拒否と detach
+2. ✅ **逆引きと安全**: インデックス(本体と同一トランザクション)+ `references` + 削除の拒否と detach
+   — **実装済み**。索引は各アダプタの書き込み経路の中で差分を取って本体と同じトランザクションで
+   書く。`GET …/items/{id}/references` と `GET …/single_pages/{name}/references`、
+   `?detach=true` つきの削除。契約スイートは `crates/tests/suite/relations.rs`。
 3. **公開の整合**: 公開時の検査(`required` が空になるなら 409)+ unpublish の扱い
 4. **配信**: `?populate=` の 1 段展開 + 逆引きのフィルタ(`?where=`)と逆引きの展開(`inverse_name`)
 5. **UI**: スキーマ編集の relation 型 + ピッカー + 参照元パネル(見出しは `inverse_name`。
