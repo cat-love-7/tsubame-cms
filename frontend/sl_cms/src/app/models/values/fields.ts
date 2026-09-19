@@ -58,6 +58,32 @@ export function imageIdOf(value: FieldValue | undefined): number | null {
   return null;
 }
 
+/**
+ * The images a value holds, in order: one image, or the ones an array carries.
+ *
+ * What a list column needs to draw a thumbnail instead of a url. The read shape is `{ id, url }`;
+ * a value that was written but never read back carries a bare id, and has nothing to show, so the
+ * id is kept as the fallback a cell can print.
+ */
+export function imagesOf(
+  value: FieldValue | undefined,
+): { id: number | null; url: string | null }[] {
+  const items = Array.isArray(value) ? value : [value];
+  return items
+    .filter((item) => item !== null && item !== undefined)
+    .map((item) => {
+      const url =
+        typeof item === 'object' && !Array.isArray(item)
+          ? (item as { url?: unknown }).url
+          : undefined;
+      return {
+        id: imageIdOf(item),
+        url: typeof url === 'string' ? url : null,
+      };
+    })
+    .filter((image) => image.id !== null || image.url !== null);
+}
+
 /** Single-line rendering used by tables and summaries. */
 export function formatFieldValue(value: FieldValue | undefined): string {
   if (value === undefined || value === null) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatFieldValue } from './fields';
+import { formatFieldValue, imagesOf } from './fields';
 
 describe('formatFieldValue', () => {
   it('writes the value a table cell can show', () => {
@@ -38,5 +38,24 @@ describe('formatFieldValue', () => {
     expect(formatFieldValue({ id: 'seo', values: { description: 'meta' } })).toBe(
       '{"id":"seo","values":{"description":"meta"}}',
     );
+  });
+});
+
+describe('imagesOf', () => {
+  it('reads one image, or the ones an array carries', () => {
+    expect(imagesOf({ id: 3, url: '/api/images/logo.png' })).toEqual([
+      { id: 3, url: '/api/images/logo.png' },
+    ]);
+    expect(imagesOf([3, { id: 4, url: '/api/images/photo.png' }])).toEqual([
+      { id: 3, url: null },
+      { id: 4, url: '/api/images/photo.png' },
+    ]);
+  });
+
+  it('has nothing to show for a value that holds no image', () => {
+    expect(imagesOf(undefined)).toEqual([]);
+    expect(imagesOf(null)).toEqual([]);
+    expect(imagesOf([])).toEqual([]);
+    expect(imagesOf('not an image')).toEqual([]);
   });
 });

@@ -51,6 +51,17 @@
   </p>
 }
 
+<!-- A collection nobody has configured yet shows no field columns at all, so an author who
+     wonders where the fields went is one link away from the screen that chooses them. -->
+@if (listColumns().length === 0 && auth.isAdmin()) {
+  <p class="note">
+    {{ 'content.noListColumns' | transloco }}
+    <a [routerLink]="['/settings/collections', collectionName(), 'schema']">
+      {{ 'content.chooseListColumns' | transloco }}
+    </a>
+  </p>
+}
+
 <!-- A plain table (rather than mat-table) because the columns are defined by the
      collection schema, which is only known once it has loaded. -->
 <table class="items">
@@ -76,76 +87,96 @@
     </tr>
   </thead>
   <tbody>
-    @for (item of items(); track item[0]) {
+    @for (row of rows(); track row.id) {
       <tr>
         <td class="select">
           @if (canPublish()) {
             <input
               type="checkbox"
-              [checked]="selected().has(item[0])"
-              (change)="toggleSelected(item[0])"
-              [attr.aria-label]="'labels.selectItem' | transloco: { id: item[0] }"
+              [checked]="selected().has(row.id)"
+              (change)="toggleSelected(row.id)"
+              [attr.aria-label]="'labels.selectItem' | transloco: { id: row.id }"
             />
           }
         </td>
-        <td>{{ item[0] }}</td>
-        @for (field of listColumns(); track field.name) {
+        <td>{{ row.id }}</td>
+        @for (cell of row.cells; track cell.name) {
           <!-- The cell is one line, so a long value is cut rather than wrapped; the whole of it is
-               on the title, which is where a reader goes when the column is not enough. -->
-          <td class="value" [title]="format(item[1][field.name])">
-            {{ format(item[1][field.name]) }}
+               on the title, which is where a reader goes when the column is not enough. An image
+               column is the exception: a thumbnail says which item this is better than any url. -->
+          <td class="value" [title]="cell.text">
+            @if (cell.images.length > 0) {
+              <span class="cell-images">
+                @for (image of cell.images.slice(0, maxThumbnails); track $index) {
+                  @if (image.url) {
+                    <img
+                      [src]="imageUrl(image.url)"
+                      [alt]="'labels.imageAlt' | transloco: { id: image.id ?? '?' }"
+                      loading="lazy"
+                    />
+                  } @else {
+                    <span class="image-id">id {{ image.id ?? '?' }}</span>
+                  }
+                }
+                @if (cell.images.length > maxThumbnails) {
+                  <span class="more">+{{ cell.images.length - maxThumbnails }}</span>
+                }
+              </span>
+            } @else {
+              {{ cell.text }}
+            }
           </td>
         }
         <td>
-          <app-item-status [status]="statusOf(item[0])" />
-          @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
+          <app-item-status [status]="statusOf(row.id)" />
+          @if (statusOf(row.id) === 'published' && hasDraft(row.id)) {
             <span class="draft-note" [title]="'content.unsavedHint' | transloco">
               {{ 'content.unsaved' | transloco }}
             </span>
           }
-          @if (publishedBy(item[0]); as publisher) {
+          @if (publishedBy(row.id); as publisher) {
             <span class="publisher" [title]="'content.publishedBy' | transloco">{{
               publisher
             }}</span>
           }
         </td>
-        <td class="updated">{{ updatedAt(item[0]) }}</td>
+        <td class="updated">{{ updatedAt(row.id) }}</td>
         <td class="actions">
           @if (canPublish()) {
             <!-- A published row with pending changes offers to release them; the toggle beside it
                  stays available for taking the row off the site. -->
-            @if (statusOf(item[0]) === 'published' && hasDraft(item[0])) {
+            @if (statusOf(row.id) === 'published' && hasDraft(row.id)) {
               <button
                 matIconButton
-                (click)="publish(item[0])"
-                [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: item[0] }"
-                [matTooltip]="'labels.publishChangesOf' | transloco: { id: item[0] }"
+                (click)="publish(row.id)"
+                [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: row.id }"
+                [matTooltip]="'labels.publishChangesOf' | transloco: { id: row.id }"
               >
                 <mat-icon>publish</mat-icon>
               </button>
             }
             <button
               matIconButton
-              (click)="statusOf(item[0]) === 'published' ? unpublish(item[0]) : publish(item[0])"
+              (click)="statusOf(row.id) === 'published' ? unpublish(row.id) : publish(row.id)"
               [attr.aria-label]="
-                (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
-                  | transloco: { id: item[0] }
+                (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                  | transloco: { id: row.id }
               "
               [matTooltip]="
-                (statusOf(item[0]) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
-                  | transloco: { id: item[0] }
+                (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                  | transloco: { id: row.id }
               "
             >
               <mat-icon>{{
-                statusOf(item[0]) === 'published' ? 'visibility_off' : 'publish'
+                statusOf(row.id) === 'published' ? 'visibility_off' : 'publish'
               }}</mat-icon>
             </button>
           }
           <button
             matIconButton
-            [routerLink]="['/collections', collectionName(), 'edit', item[0]]"
-            [attr.aria-label]="'labels.editItem' | transloco: { id: item[0] }"
-            [matTooltip]="'labels.editItem' | transloco: { id: item[0] }"
+            [routerLink]="['/collections', collectionName(), 'edit', row.id]"
+            [attr.aria-label]="'labels.editItem' | transloco: { id: row.id }"
+            [matTooltip]="'labels.editItem' | transloco: { id: row.id }"
           >
             <mat-icon>edit</mat-icon>
           </button>
@@ -154,9 +185,9 @@
                  editing it. -->
             <button
               matIconButton
-              (click)="duplicate(item[0])"
-              [attr.aria-label]="'labels.duplicateItem' | transloco: { id: item[0] }"
-              [matTooltip]="'labels.duplicateItem' | transloco: { id: item[0] }"
+              (click)="duplicate(row.id)"
+              [attr.aria-label]="'labels.duplicateItem' | transloco: { id: row.id }"
+              [matTooltip]="'labels.duplicateItem' | transloco: { id: row.id }"
             >
               <mat-icon>content_copy</mat-icon>
             </button>
@@ -164,9 +195,9 @@
           @if (canPublish()) {
             <button
               matIconButton
-              (click)="delete(item[0])"
-              [attr.aria-label]="'labels.deleteItem' | transloco: { id: item[0] }"
-              [matTooltip]="'labels.deleteItem' | transloco: { id: item[0] }"
+              (click)="delete(row.id)"
+              [attr.aria-label]="'labels.deleteItem' | transloco: { id: row.id }"
+              [matTooltip]="'labels.deleteItem' | transloco: { id: row.id }"
             >
               <mat-icon>delete</mat-icon>
             </button>

@@ -12,9 +12,11 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
+import { apiUrl } from 'app/core/api-url';
 import { CollectionSchema } from 'app/models/schema/collection';
+import { FieldSchema, isArrayFieldSchema } from 'app/models/schema/fields';
 import { CollectionItemEntry } from 'app/models/values/collection';
-import { formatFieldValue } from 'app/models/values/fields';
+import { formatFieldValue, imagesOf } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 
@@ -73,15 +75,35 @@ export class CollectionItemList {
    *
    * A list is what an editor scans to find one item, and a schema of a dozen fields makes a table
    * nobody can read - so the schema says which fields identify an item, and those are the columns.
-   * A schema that marks **no** field shows them all, which is what this screen did before the
-   * setting existed: an unconfigured collection reads as it always did rather than as a table of
-   * nothing but ids.
+   * A schema that marks none gets none: id, state and when it changed are what every row has, and
+   * showing a field the author did not choose would be answering a question they did not ask.
    */
-  public listColumns = computed(() => {
-    const schema = this.schema();
-    const marked = schema.filter((field) => field.show_in_list);
-    return marked.length > 0 ? marked : schema;
-  });
+  public listColumns = computed(() => this.schema().filter((field) => field.show_in_list));
+
+  /**
+   * The table's rows, with each cell already worked out.
+   *
+   * The cells are built here rather than in the template so a column is read once per row: an image
+   * column needs the value twice over (which images, and how many there were) and calling that per
+   * binding would walk the same value several times per cell.
+   */
+  public rows = computed(() =>
+    this.items().map(([id, values]) => ({
+      id,
+      values,
+      cells: this.listColumns().map((field) => ({
+        name: field.name,
+        text: formatFieldValue(values[field.name]),
+        images: isImageColumn(field) ? imagesOf(values[field.name]) : [],
+      })),
+    })),
+  );
+
+  /** How many thumbnails one cell draws before it says how many more there are. */
+  public readonly maxThumbnails = 3;
+
+  /** Where an uploaded image is served from, for the thumbnails. */
+  public imageUrl = apiUrl;
 
   /** What this account may do *with this collection*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('collections', this.collectionName()));
@@ -371,4 +393,15 @@ export class CollectionItemList {
     }
     this.reload.next();
   }
+}
+
+/**
+ * Whether this column holds images, which a cell shows as thumbnails rather than as urls.
+ *
+ * An image array is the same column with several in it; anything else - a relation, a composite, a
+ * text - is read as its one-line rendering.
+ */
+function isImageColumn(field: FieldSchema): boolean {
+  const type = field.field_type;
+  return type === 'Image' || (isArrayFieldSchema(type) && type.Array.includes('Image'));
 }

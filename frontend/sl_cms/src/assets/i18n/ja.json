@@ -146,6 +146,8 @@
     "newPageName": "新しいページ名",
     "collectionName": "コレクション名",
     "noItems": "まだアイテムがありません。",
+    "noListColumns": "この一覧に表示する項目はまだ選ばれていません。",
+    "chooseListColumns": "表示する項目を選ぶ",
     "noPages": "単一ページはまだありません。",
     "noCompositeFields": "複合フィールドはまだありません。",
     "images": "画像",

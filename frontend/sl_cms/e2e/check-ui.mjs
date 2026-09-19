@@ -57,7 +57,9 @@ const TEXT_SCHEMA = [
 ];
 /** One single image, and one array of them: the two ways an image field is used. */
 const IMAGE_SCHEMA = [
-  { name: 'photo', field_type: 'Image', required: false, width: 12, height: 1 },
+  // Marked for the list: an image column is a column of pictures, which is the one thing a reader
+  // recognises an item by here.
+  { name: 'photo', field_type: 'Image', required: false, width: 12, height: 1, show_in_list: true },
   { name: 'gallery', field_type: { Array: ['Image'] }, required: false, width: 12, height: 1 },
 ];
 const IMAGE_ARRAY_FIELD = {
@@ -445,6 +447,17 @@ try {
   check('1 ページ目は既定の 25 件', firstPageRows === 25, `${firstPageRows} 行`);
 
   // The first cell is the batch checkbox; the id is the one after it.
+  // Nothing is marked in this collection's schema, so it has no field columns at all: id, state and
+  // when it changed are what every row has in common.
+  const unconfiguredHeaders = (await page.locator('table.items thead th').allTextContents()).map(
+    (cell) => cell.trim(),
+  );
+  check(
+    '一覧に表示を選んでいないコレクションは id・状態・更新日時だけ',
+    unconfiguredHeaders.join(',') === ',ID,Status,Updated,',
+    unconfiguredHeaders.join(','),
+  );
+
   const firstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   check('id 昇順で 1 から始まる', firstId === '1', `id=${firstId}`);
 
@@ -730,6 +743,17 @@ try {
       saved.photo !== null &&
       saved.photo.url === expectedPhotoUrl,
     `${JSON.stringify(saved?.photo)} (expected ${expectedPhotoUrl})`,
+  );
+
+  // The list's image column draws the picture rather than the url the value holds.
+  await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}`, { waitUntil: 'networkidle' });
+  await page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
+  const thumbnail = page.locator('table.items tbody tr').first().locator('td.value img').first();
+  const thumbnailSrc = (await thumbnail.getAttribute('src').catch(() => null)) ?? '';
+  check(
+    '一覧の画像列はサムネイルで出る',
+    (await thumbnail.count()) === 1 && thumbnailSrc.includes('/api/images/'),
+    thumbnailSrc || 'no thumbnail',
   );
   check(
     '画像配列がまとめて保存される',
@@ -1386,8 +1410,8 @@ try {
   await summaryField.locator('input[name=maxLength]').fill('8');
   await summaryField.locator('input[name=minLength]').fill('5');
 
-  // The one field the collection's list should show: an editor scanning the list needs what
-  // identifies an item, not every field the content holds.
+  // Which fields the collection's list shows: an editor scanning the list needs what identifies an
+  // item, not every field the content holds.
   await summaryField.locator('input[name=fieldInList]').check();
   check(
     '一覧に出す項目をスキーマで選べる',
@@ -1415,6 +1439,8 @@ try {
   await page.click('button:has-text("Add field")');
   const relationField = page.locator('.schema-field').nth(5);
   await relationField.locator('input[name=fieldName]').fill('related');
+  // A relation is a column too: which author an article points at is exactly what identifies it.
+  await relationField.locator('input[name=fieldInList]').check();
   await relationField.locator('mat-select[name=fieldType]').click();
   await page.locator('mat-option', { hasText: 'Relation' }).click();
   await relationField.locator('mat-select[name=relationTarget]').click();
@@ -1475,9 +1501,11 @@ try {
   );
   check(
     '一覧には「一覧に表示」の項目だけが並ぶ',
-    listedHeaders.includes('summary') &&
-      !listedHeaders.includes('title') &&
-      !listedHeaders.includes('blocks'),
+    listedHeaders.join(',') === ',ID,summary,related,Status,Updated,' ||
+      (listedHeaders.includes('summary') &&
+        listedHeaders.includes('related') &&
+        !listedHeaders.includes('title') &&
+        !listedHeaders.includes('blocks')),
     listedHeaders.join(','),
   );
 
@@ -1612,6 +1640,18 @@ try {
     'リレーションが参照として保存される',
     JSON.stringify(builtItem?.related) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
     JSON.stringify(builtItem?.related),
+  );
+
+  // The list says what the reference points at, which is what an editor reading the row needs.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}`, { waitUntil: 'networkidle' });
+  await page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
+  const referenceCell = (
+    await page.locator('table.items tbody tr').first().locator('td.value').nth(1).textContent()
+  )?.trim();
+  check(
+    '一覧の参照列は参照先を示す',
+    referenceCell === `${COLLECTION} #1`,
+    referenceCell ?? 'none',
   );
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.

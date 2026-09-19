@@ -146,6 +146,8 @@
     "newPageName": "New page name",
     "collectionName": "Collection name",
     "noItems": "No items yet.",
+    "noListColumns": "No fields are shown in this list yet.",
+    "chooseListColumns": "Choose the fields to show",
     "noPages": "No single pages yet.",
     "noCompositeFields": "No composite fields yet.",
     "images": "Images",

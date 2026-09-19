@@ -220,13 +220,14 @@ describe('CollectionItemList', () => {
     expect(cells).not.toContain('# long');
   });
 
-  // Nothing marked is "not configured yet", not "show nothing": a collection whose schema predates
-  // the setting keeps the table it always had.
-  it('shows every field when the schema marks none', async () => {
+  // Nothing marked means no field columns: id, state and when it changed are what every row has,
+  // and a field the author did not choose is not a column anybody asked for.
+  it('shows no field columns when the schema marks none', async () => {
     stub.schema = [
       { name: 'title', field_type: 'Text', required: false, width: 12, height: 1 },
       { name: 'count', field_type: 'Number', required: false, width: 12, height: 1 },
     ];
+    stub.all = [[1, { title: 'Hello', count: 3 }]];
     route.navigate({ name: 'posts' });
     await fixture.whenStable();
     fixture.detectChanges();
@@ -235,7 +236,141 @@ describe('CollectionItemList', () => {
       fixture.nativeElement.querySelectorAll<HTMLElement>('thead th'),
       (cell: HTMLElement) => cell.textContent?.trim(),
     );
-    expect(headers).toEqual(['', 'ID', 'title', 'count', 'Status', 'Updated', '']);
+    expect(headers).toEqual(['', 'ID', 'Status', 'Updated', '']);
+
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('tbody tr td'),
+      (cell: HTMLElement) => cell.textContent?.trim(),
+    );
+    expect(cells).not.toContain('Hello');
+    expect(cells).not.toContain('3');
+  });
+
+  // An author who wonders where the fields went is one link from the screen that chooses them -
+  // and an editor, who cannot open that screen, is not offered a link that would refuse them.
+  it('points at the schema when no column is chosen', async () => {
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector<HTMLAnchorElement>('.note a');
+    expect(link?.getAttribute('href')).toBe(
+      `/settings/collections/${component.collectionName()}/schema`,
+    );
+  });
+
+  // An image column is a column of pictures: a url in a cell says which item this is to nobody.
+  it('draws image columns as thumbnails', async () => {
+    stub.schema = [
+      {
+        name: 'photo',
+        field_type: 'Image',
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+      {
+        name: 'gallery',
+        field_type: { Array: ['Image'] },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
+    stub.all = [
+      [
+        1,
+        {
+          photo: { id: 3, url: '/api/images/logo.png' },
+          gallery: [
+            { id: 3, url: '/api/images/logo.png' },
+            { id: 4, url: '/api/images/photo.png' },
+          ],
+        },
+      ],
+      // A value that was written but never read back carries a bare id, and there is no picture.
+      [2, { photo: 5, gallery: [] }],
+    ];
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const thumbnails = fixture.nativeElement.querySelectorAll<HTMLImageElement>(
+      'tbody tr:first-child td.value img',
+    );
+    expect(Array.from(thumbnails, (image: HTMLImageElement) => image.getAttribute('src'))).toEqual([
+      '/api/images/logo.png',
+      '/api/images/logo.png',
+      '/api/images/photo.png',
+    ]);
+
+    const secondRow = fixture.nativeElement.querySelectorAll<HTMLElement>('tbody tr')[1];
+    expect(secondRow.textContent).toContain('id 5');
+  });
+
+  // More images than a cell can show: the ones it draws, and how many are not drawn.
+  it('counts the images a cell has no room for', async () => {
+    stub.schema = [
+      {
+        name: 'gallery',
+        field_type: { Array: ['Image'] },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
+    stub.all = [
+      [
+        1,
+        {
+          gallery: [1, 2, 3, 4, 5].map((id) => ({ id, url: `/api/images/${id}.png` })),
+        },
+      ],
+    ];
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const images = fixture.nativeElement.querySelectorAll('tbody td.value img');
+    expect(images.length).toBe(3);
+    expect(fixture.nativeElement.querySelector('tbody td.value .more')?.textContent?.trim()).toBe(
+      '+2',
+    );
+  });
+
+  // A relation column names what it points at: the content itself is the delivery API's business.
+  it('names the content a relation column points at', async () => {
+    stub.schema = [
+      {
+        name: 'author',
+        field_type: { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+      {
+        name: 'landing',
+        field_type: { Relation: { target: { kind: 'single_page', name: 'home' } } },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
+    stub.all = [[1, { author: [{ target: 'authors', item: 7 }], landing: [{ target: 'home' }] }]];
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('tbody td.value'),
+      (cell: HTMLElement) => cell.textContent?.trim(),
+    );
+    expect(cells).toEqual(['authors #7', 'home']);
   });
 
   // The sidebar switches collections without leaving this route, so the rows and the pager have
@@ -558,6 +693,7 @@ describe('CollectionItemList (read-only account)', () => {
     fresh.detectChanges();
 
     expect(fresh.nativeElement.querySelector('button[aria-label^="publish item"]')).toBeNull();
+    expect(fresh.nativeElement.querySelector('.note')).toBeNull();
     expect(fresh.nativeElement.querySelector('button[aria-label^="delete item"]')).toBeNull();
     expect(fresh.nativeElement.textContent).not.toContain('New item');
     // The rows themselves are still readable.

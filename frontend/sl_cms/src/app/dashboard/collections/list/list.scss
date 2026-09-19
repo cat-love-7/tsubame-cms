@@ -34,6 +34,26 @@ td.value {
   white-space: nowrap;
 }
 
+/// An image column: thumbnails rather than urls, and small enough that the row stays a row.
+td.value .cell-images {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  img {
+    height: 32px;
+    width: auto;
+    border-radius: 4px;
+    display: block;
+  }
+
+  .image-id,
+  .more {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+  }
+}
+
 .refusals {
   margin: 0 0 12px;
   padding-inline-start: 20px;
