@@ -113,6 +113,12 @@ has to stay on x86_64 for some reason.
 - **`AWS_REGION` is not among the function's environment variables.** The runtime sets it and the
   key is reserved, so a configuration that names it is rejected outright; the code still reads it
   (`crates/aws/src/settings.rs`), and in Lambda it is simply already there.
+- **Buffered responses, not streaming.** A function URL can stream (`invoke_mode =
+  "RESPONSE_STREAM"`), which raises the reply ceiling from 6MB to 200MB — the first 6MB uncapped,
+  the rest at 2MB/s, billed to the end even if the client leaves. The CMS's answers are JSON built
+  in memory, so streaming would move the ceiling without improving the time to first byte; the
+  delivery API cuts its pages to fit instead (`doc/content-api.md`). Streaming earns its place
+  when an answer is *built* while it is sent (an export), which is a feature, not a setting.
 - **The bucket is publicly readable by default, and that is a choice** (`image_delivery`). Content
   stores an object's own address, which has to keep working long after a signature would have
   expired. CloudFront in front of it is the next step if that is wanted; `AWS_IMAGE_BASE_URL` is

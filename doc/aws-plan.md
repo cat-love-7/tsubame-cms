@@ -250,6 +250,19 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
         すると 1/3 増える。CMS のリクエストは JSON(画像は presigned S3 直行)なので
         **4MB を上限**として `MAX_BODY_BYTES` で先に 413 を返す(理由を本文に書く)。
         テスト: `a_body_over_the_lambda_limit_is_refused_with_a_reason`。
+      - **応答側も同じ計算**: バッファ応答の上限は 6MB(バイナリ扱いなら base64 で 1/3 増)なので、
+        応答が `MAX_RESPONSE_BYTES`(4MB)を超えないよう、配信 API は**バイト数でもページを切る**
+        (`http::content`)。それ以外の経路(全件取得の管理一覧など)は `lambda.rs` のガードが
+        CMS の 413 で答える。件数だけで切っていると 50 件 × 400KB で関数ごと失敗し、
+        クライアントには 502 しか届かない。
+      - **応答ストリーミングは今は採らない(2026-09 決定)**: `InvokeMode: RESPONSE_STREAM` にすると
+        応答上限は 6MB → **200MB** になる(最初の 6MB は無制限、以降 2MB/s、クライアントが
+        切断しても実行時間は最後まで課金、コンソールでは常にバッファ表示)。Rust でも
+        `lambda_http::run_with_streaming_response` で対応できるが、**うちの応答は axum の `Json` で
+        最後まで組み立ててから返す**ので TTFB は改善せず、天井が上がるだけ。大きい応答が要るのは
+        「全件取得の管理一覧」やエクスポートで、**作りながら流す API を作るとき**
+        (NDJSON など)に `invoke_mode` ごと切り替える。`MAX_BODY_BYTES` のリクエスト側は
+        ストリーミングでも変わらない(6MB のまま)。
       - ローカル起動(`AWS_LAMBDA_RUNTIME_API` が無いとき)も同じルーターで提供し、
         `run_local` が無ければテーブルを作る。実機確認: エミュレータに対して
         `cargo run -p sl-cms-aws` → `/` 200、無認証は 401、テーブル自動作成のログ。
