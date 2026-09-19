@@ -112,9 +112,15 @@ resource "aws_lambda_function_url" "cms" {
   cors {
     allow_credentials = false
     allow_origins     = var.cors_allowed_origins
-    allow_methods     = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
-    allow_headers     = ["authorization", "content-type"]
-    max_age           = 3000
+    # No `OPTIONS`: Lambda's own validation caps **each** member of this list at six characters
+    # ("Member must have length less than or equal to 6"), and the one method longer than that is
+    # exactly the preflight method - so the list cannot contain it. A `ValidationException` on
+    # `cors.allowMethods` is what the first real apply answered with. Preflight still works: with
+    # no OPTIONS here the URL forwards it to the function, and the router's own CORS layer answers
+    # it for the origins above.
+    allow_methods = ["GET", "POST", "PATCH", "PUT", "DELETE"]
+    allow_headers = ["authorization", "content-type"]
+    max_age       = 3000
   }
 }
 
