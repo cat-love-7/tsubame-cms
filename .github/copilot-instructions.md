@@ -84,11 +84,12 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
 - **Rust naming**: types UpperCamelCase with `Id` (not `ID`), functions and fields snake_case.
   `cargo build` and `cargo test` must be warning-free; `cargo clippy` has older lints that are
   not yet worth a rewrite - do not add new ones.
-- **Changing `infra/` means changing the deployer policies** (`infra/deployer-policy.json` and
-  `deployer-policy-plan.json`, the read-only half): those files are the permission set a deployment
-  needs, written out for the operator, and a resource the stack gains is a permission it has to
-  gain with it. Run `scripts/check-iam-actions.sh` after touching either - a misspelt action grants
-  nothing and only shows up as an AccessDenied on the real one.
+- **Changing `infra/` means changing the deployer policies** (`infra/deployer-policy-storage.json`,
+  `-compute.json`, `-edge.json`, and `deployer-policy-plan.json` as the read-only half): those files
+  are the permission set a deployment needs, written out for the operator, and a resource the stack
+  gains is a permission it has to gain with it. Run `scripts/check-iam-actions.sh` after touching
+  any of them - a misspelt action grants nothing and only shows up as an AccessDenied on the real
+  one. The applying side is three files because IAM caps one managed policy at 6144 characters.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
   (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
 - **Terraform state is remote** (`infra/` uses the S3 backend with `use_lockfile`, configured

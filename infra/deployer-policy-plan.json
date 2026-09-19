@@ -38,6 +38,11 @@
       "Action": [
         "s3:ListBucket",
         "s3:GetBucket*",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetAnalyticsConfiguration",
+        "s3:GetInventoryConfiguration",
+        "s3:GetMetricsConfiguration",
+        "s3:GetIntelligentTieringConfiguration",
         "s3:GetLifecycleConfiguration",
         "s3:GetEncryptionConfiguration",
         "s3:GetReplicationConfiguration"
@@ -78,11 +83,19 @@
         "logs:ListTagsLogGroup",
         "logs:GetLogEvents",
         "logs:FilterLogEvents",
-        "logs:DescribeLogStreams",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>:*"
+    },
+    {
+      "Sid": "LogsAcrossGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
         "logs:StartQuery",
         "logs:GetQueryResults"
       ],
-      "Resource": "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>:*"
+      "Resource": "*"
     },
     {
       "Sid": "UserPoolRead",

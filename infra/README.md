@@ -91,26 +91,37 @@ but Terraform no longer knows it made it.
 
 ## The identity that deploys
 
-Two files, for the two things one does with this stack:
+Four files, for the two things one does with this stack:
 
-* **`infra/deployer-policy.json`** (132 actions) - the identity that applies it.
-* **`infra/deployer-policy-plan.json`** (56) - the identity that only *reads*: a plan, a review, a
-  CI check. It is a strict subset of the first, and the only things it writes are the state lock
-  (`s3:PutObject` and `s3:DeleteObject` on `<state-key>.tflock`, because a plan takes the lock
-  too) - plus the log reads, which are there for looking at a deployment rather than for planning.
+* **`infra/deployer-policy-storage.json`**, **`-compute.json`**, **`-edge.json`** (140 actions
+  together) - the identity that applies it. Three files rather than one because **IAM caps a
+  managed policy at 6144 characters**, and this policy is 6330 compact (8759 as written here);
+  splitting it is what keeps it attachable at all. Storage is S3, Secrets Manager and DynamoDB;
+  compute is Lambda, its log group and its execution role; edge is CloudFront, Cognito and the
+  service-linked role.
+* **`infra/deployer-policy-plan.json`** (61) - the identity that only *reads*: a plan, a review, a
+  CI check. It is a strict subset of the three above, and the only things it writes are the state
+  lock (`s3:PutObject` and `s3:DeleteObject` on `<state-key>.tflock`, because a plan takes the
+  lock too) - plus the log reads, which are there for looking at a deployment rather than for
+  planning.
 
-Both are checked against AWS's own action list by `scripts/check-iam-actions.sh`, which also
-insists the plan policy stays a subset. Run it after changing either: **a misspelt action is
+All four are checked against AWS's own action list by `scripts/check-iam-actions.sh`, which also
+insists the plan policy stays a subset. Run it after changing any of them: **a misspelt action is
 invisible when the policy is attached** - IAM accepts the name and it grants nothing, so the
 deployment fails later with `AccessDenied` on the real action, which reads like a missing
 permission rather than a misspelt one (`s3:PutBucketLifecycleConfiguration` was one; the action is
 `s3:PutLifecycleConfiguration`).
 
-One S3 detail worth knowing in the same area: the wildcard `s3:GetBucket*` covers most of what a
-refresh reads and *not* the three whose names do not start with it - `GetLifecycleConfiguration`,
-`GetEncryptionConfiguration`, `GetReplicationConfiguration` - so those are listed beside it.
+Two S3 details worth knowing in the same area, both found by the first real `apply`:
 
-Both take the same five placeholders.
+* the wildcard `s3:GetBucket*` covers most of what a refresh reads and *not* the ones whose names
+  do not start with it - `GetLifecycleConfiguration`, `GetEncryptionConfiguration`,
+  `GetReplicationConfiguration` and `GetAccelerateConfiguration` - so those are listed beside it.
+* `DescribeLogGroups` and `DescribeUserPoolDomain` cannot be scoped to a resource: they take an
+  account-level permission (`"Resource": "*"`), and putting them in a statement scoped to a log
+  group or a user pool denies them. Both are in statements of their own now.
+
+All four take the same five placeholders.
 
 | Placeholder | What it is |
 |---|---|
@@ -124,7 +135,7 @@ Both take the same five placeholders.
 
 | Run | What it calls |
 |---|---|
-| `plan` (and the refresh inside every apply) | the 54 reads: `Get*`, `Describe*`, `List*`, the log queries - plus the two writes the state lock takes |
+| `plan` (and the refresh inside every apply) | the 59 reads: `Get*`, `Describe*`, `List*`, the log queries - plus the two writes the state lock takes |
 | `apply`, nothing changed | the same |
 | `apply`, something changed | those, plus the `Put*`/`Update*`/`Set*`/`Tag*` of the resources that changed (38 of them in total) |
 | the first `apply`, or one that adds a resource | those, plus the 17 `Create*`/`Add*`/`Associate*`, and `iam:PassRole` for the function |

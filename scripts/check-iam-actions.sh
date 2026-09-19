@@ -2,6 +2,9 @@
 #
 # Check every action named in `infra/deployer-policy*.json` against AWS's own list of actions.
 #
+# The applying side is split across three files because IAM caps one managed policy at 6144
+# characters; this checks them as one set, and insists the read-only one stays a subset of it.
+#
 # An action name that does not exist is not an error anyone sees when the policy is attached: IAM
 # accepts it and it grants nothing, so the deployment fails later with AccessDenied on the *real*
 # action - which reads like "the permission is missing" rather than "the permission is misspelt".
@@ -63,8 +66,14 @@ for path in sorted((root / "infra").glob("deployer-policy*.json")):
             problems.append(f"{path.name}: {sid}: {action!r} is not an action of {prefix}")
 
 # The read-only policy has to stay a subset: an action there that the applying identity lacks is a
-# plan that cannot run, or a permission nobody reviewed.
-apply_actions = {a for _, a in named(policies["deployer-policy.json"])}
+# plan that cannot run, or a permission nobody reviewed. "Applying" is every other policy here -
+# IAM caps one managed policy at 6144 characters, so the applying side is split in three.
+apply_actions = {
+    action
+    for name, policy in policies.items()
+    if name != "deployer-policy-plan.json"
+    for _, action in named(policy)
+}
 for sid, action in named(policies["deployer-policy-plan.json"]):
     if action not in apply_actions:
         problems.append(f"deployer-policy-plan.json: {sid}: {action!r} is not in the apply policy")
