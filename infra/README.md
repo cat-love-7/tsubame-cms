@@ -93,9 +93,9 @@ but Terraform no longer knows it made it.
 
 Four files, for the two things one does with this stack:
 
-* **`infra/deployer-policy-storage.json`**, **`-compute.json`**, **`-edge.json`** (140 actions
+* **`infra/deployer-policy-storage.json`**, **`-compute.json`**, **`-edge.json`** (133 actions
   together) - the identity that applies it. Three files rather than one because **IAM caps a
-  managed policy at 6144 characters**, and this policy is 6330 compact (8759 as written here);
+  managed policy at 6144 characters**, and this policy was 6330 compact (8759 as written here);
   splitting it is what keeps it attachable at all. Storage is S3, Secrets Manager and DynamoDB;
   compute is Lambda, its log group and its execution role; edge is CloudFront, Cognito and the
   service-linked role.
@@ -116,7 +116,10 @@ Two S3 details worth knowing in the same area, both found by the first real `app
 
 * the wildcard `s3:GetBucket*` covers most of what a refresh reads and *not* the ones whose names
   do not start with it - `GetLifecycleConfiguration`, `GetEncryptionConfiguration`,
-  `GetReplicationConfiguration` and `GetAccelerateConfiguration` - so those are listed beside it.
+  `GetReplicationConfiguration`, `GetAccelerateConfiguration` and the other
+  `Get*Configuration` reads - so those are listed beside it. The state bucket and the deployment
+  buckets both rely on that wildcard rather than naming a dozen reads one at a time, which is what
+  a refresh asks for in an order nobody can predict.
 * `DescribeLogGroups` and `DescribeUserPoolDomain` cannot be scoped to a resource: they take an
   account-level permission (`"Resource": "*"`), and putting them in a statement scoped to a log
   group or a user pool denies them. Both are in statements of their own now.

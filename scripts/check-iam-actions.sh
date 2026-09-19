@@ -67,16 +67,22 @@ for path in sorted((root / "infra").glob("deployer-policy*.json")):
 
 # The read-only policy has to stay a subset: an action there that the applying identity lacks is a
 # plan that cannot run, or a permission nobody reviewed. "Applying" is every other policy here -
-# IAM caps one managed policy at 6144 characters, so the applying side is split in three.
+# IAM caps one managed policy at 6144 characters, so the applying side is split in three. A
+# wildcard in the applying half covers what it matches (`s3:GetBucket*` covers the reads listed in
+# the read-only one), so the comparison is by name *and* by pattern.
 apply_actions = {
     action
     for name, policy in policies.items()
     if name != "deployer-policy-plan.json"
     for _, action in named(policy)
 }
+apply_patterns = {action for action in apply_actions if "*" in action or "?" in action}
 for sid, action in named(policies["deployer-policy-plan.json"]):
-    if action not in apply_actions:
-        problems.append(f"deployer-policy-plan.json: {sid}: {action!r} is not in the apply policy")
+    if action in apply_actions:
+        continue
+    if any(fnmatch.fnmatch(action, pattern) for pattern in apply_patterns):
+        continue
+    problems.append(f"deployer-policy-plan.json: {sid}: {action!r} is not in the apply policy")
 
 if problems:
     print("\n".join(problems))
