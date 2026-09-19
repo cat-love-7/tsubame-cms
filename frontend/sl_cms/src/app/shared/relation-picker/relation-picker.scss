@@ -1,0 +1,54 @@
+/// The chooser: a filter, the candidates, and nothing else. It sits inside the field's cell, so it
+/// is bounded rather than a full-screen dialog (the content form is the screen).
+.picker {
+  display: block;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 4px;
+  background: var(--mat-sys-surface-container-low);
+}
+
+.filter {
+  width: 100%;
+}
+
+.candidates {
+  max-height: 16rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/// A whole row is the target: the checkbox is a state, not the only thing that can be clicked.
+.candidate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}

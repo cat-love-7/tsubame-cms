@@ -14,6 +14,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -28,6 +29,7 @@ import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
+  RelationTarget,
   TextFieldOptions,
   isArrayFieldSchema,
   isCompositeFieldSchema,
@@ -42,6 +44,7 @@ import { ContentValue } from 'app/models/values/single-page';
 
 import {
   FieldValue,
+  RelationRef,
   imageIdOf,
   referenceKey,
   referenceName,
@@ -49,6 +52,7 @@ import {
   withDefaults,
 } from 'app/models/values/fields';
 import { RelationLabelsService } from 'app/services/relations/relation-labels.service';
+import { RelationPicker } from 'app/shared/relation-picker/relation-picker';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { ImagesService } from 'app/services/media/images.service';
@@ -85,6 +89,8 @@ let nextValueFieldId = 0;
 @Component({
   selector: 'app-value-field',
   imports: [
+    RelationPicker,
+    MatChipsModule,
     MatTooltipModule,
     FormsModule,
     MatButtonModule,
@@ -556,6 +562,66 @@ export class ValueField implements OnInit, OnChanges {
    */
   public referenceNames = signal<string[]>([]);
 
+  /** Whether the reference picker is open under this field. */
+  public relationPickerOpen = signal(false);
+
+  /** What this relation points at, as the picker wants it. */
+  public relationTarget(): RelationTarget | null {
+    const type = this.field.field_type;
+    return isRelationFieldSchema(type) ? type.Relation.target : null;
+  }
+
+  /** The labels the target's schema answered, by reference. */
+  private labels = signal<ReadonlyMap<string, string>>(new Map());
+
+  /**
+   * The references this field holds, as a set.
+   *
+   * Read from the value rather than kept beside it: the chips, the picker and the JSON box all edit
+   * the one value, and a second copy is how the two drift apart.
+   */
+  public relationRefs(): RelationRef[] {
+    return relationRefsOf(this.value);
+  }
+
+  /** Whether this field holds one reference, which is what a pick replaces rather than adds to. */
+  public relationIsSingle(): boolean {
+    const type = this.field.field_type;
+    if (!isRelationFieldSchema(type)) {
+      return true;
+    }
+    return type.Relation.target.kind === 'single_page' || !type.Relation.has_many;
+  }
+
+  /**
+   * Add the reference the picker chose, or take it away when it was already there.
+   *
+   * A set: the order does not matter, and clicking what is picked is how it is unpicked. A single
+   * reference replaces what it held rather than refusing the pick - the picker has already said
+   * which one it wants.
+   */
+  public toggleReference(reference: RelationRef) {
+    const refs = this.relationRefs();
+    const key = referenceKey(reference);
+    const without = refs.filter((candidate) => referenceKey(candidate) !== key);
+    const alreadyPicked = refs.length !== without.length;
+    const next = alreadyPicked
+      ? without
+      : this.relationIsSingle()
+        ? [reference]
+        : [...without, reference];
+    this.errorChange.emit(null);
+    this.update(next);
+  }
+
+  /** The key a reference is tracked by, exposed for the template. */
+  public referenceKey = referenceKey;
+
+  /** What to call a reference in a chip: the target's title, or the reference itself. */
+  public referenceLabel(reference: RelationRef): string {
+    return referenceName(reference, this.labels());
+  }
+
   /**
    * Ask what this field's references are called.
    *
@@ -573,14 +639,19 @@ export class ValueField implements OnInit, OnChanges {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (labels: Map<string, string>) => {
+          this.labels.set(labels);
+          // Only what the target's schema names is worth a hint: the box already says the rest (and
+          // a chip says the reference itself when there is no name).
           const named = references
             .map((reference) => referenceName(reference, labels))
-            // Only what the target's schema actually names: the box already says the rest.
             .filter((name, index) => labels.has(referenceKey(references[index])));
           this.referenceNames.set(named);
         },
         // A name that cannot be fetched leaves the box as it was: the references are right there.
-        error: () => this.referenceNames.set([]),
+        error: () => {
+          this.labels.set(new Map());
+          this.referenceNames.set([]);
+        },
       });
   }
 

@@ -1580,16 +1580,59 @@ try {
     .catch(() => false);
   check('複合配列の要素を並べ替えられる', reordered);
 
-  // A relation is a set of references, and until the picker exists it is the JSON the API takes.
-  // The box says what it points at, because "which items?" is the one thing a reader needs.
-  const related = page.locator('app-value-field textarea[name=related]');
-  await related.waitFor({ timeout: 15000 });
+  // A relation is picked, not typed: the picker lists the target's items by the name their schema
+  // gives them, which is the whole reason a collection says which field names an item.
+  await page.locator('button.relation-add').click();
+  await page.locator('app-relation-picker .candidate').first().waitFor({ timeout: 15000 });
+  const candidates = (
+    await page.locator('app-relation-picker .candidate .label').allTextContents()
+  ).map((name) => name.trim());
   check(
-    'リレーションの対象が画面に出る',
-    ((await related.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
-      COLLECTION,
-    ),
+    'ピッカーが参照先をタイトルで並べる',
+    candidates.length > 0 && candidates.every((name) => !name.includes(' #')),
+    candidates.slice(0, 3).join(' / '),
   );
+  // What the target calls its item 1 is a title the checks above have been editing, so ask instead
+  // of assuming it: the name offered here should be that one. The label is matched whole, because
+  // one title being a prefix of another is exactly the mistake this check is here to notice.
+  const referencedItem = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  const referencedTitle = String(referencedItem?.title ?? '');
+  await page
+    .locator('app-relation-picker .candidate .label')
+    .filter({ hasText: new RegExp(`^${referencedTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
+    .first()
+    .click();
+  const pickedChip = (
+    (await page.locator('app-value-field mat-chip-row').first().textContent()) ?? 'none'
+  )
+    .replace('cancel', '')
+    .trim();
+  check(
+    'ピッカーで参照先を選べる',
+    (await page.locator('app-value-field mat-chip-row').count()) === 1 &&
+      pickedChip === referencedTitle,
+    `${pickedChip} (expected ${referencedTitle})`,
+  );
+  // The picker closes the way it opened, from the button beside it (the panel's own Close is the
+  // other way out, and the component's spec is where that one is checked).
+  await page.locator('button.relation-add').click();
+  await page.locator('app-relation-picker').waitFor({ state: 'detached', timeout: 15000 });
+
+  // The JSON box stays for what the picker does not express: a shape the server refuses, or a
+  // value written by a migration.
+  // Scoped to this field's cell: several fields on this form offer a JSON view, and only this one
+  // is the relation.
+  const relationCell = page
+    .locator('.field-cell')
+    .filter({ has: page.locator('button.relation-add') });
+  await relationCell.locator('button:has-text("Edit as JSON")').click();
+  const related = relationCell.locator('textarea[name=related]');
+  await related.waitFor({ timeout: 15000 });
 
   // A reference that names no item is refused before the form is sent, and the input is marked.
   await related.fill(`[{"target":"${COLLECTION}"}]`);
@@ -1644,15 +1687,8 @@ try {
   );
 
   // The list says what the reference points at, by the name the target's schema gives it: an id
-  // says nothing to an editor reading the row. What that name is now is the referenced item's
-  // current title, which the checks above have been editing.
-  const referencedItem = await api(
-    'GET',
-    `/models/collections/${COLLECTION}/items/1`,
-    undefined,
-    token,
-  );
-  const referencedTitle = String(referencedItem?.title ?? '');
+  // says nothing to an editor reading the row. `referencedTitle`, read before the reference was
+  // picked, is that name.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}`, { waitUntil: 'networkidle' });
   await page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
   const referenceCell = (
@@ -1664,37 +1700,41 @@ try {
     `${referenceCell} (expected ${referencedTitle})`,
   );
 
-  // The content editor says the same thing about the references the box holds, so an author who
-  // typed an id can see which item it is.
+  // The picker names what it offers by the title the target has *now*, which the checks above have
+  // been editing, and the chip the form holds reads the same way.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
-  const relationBox = page.locator('app-value-field textarea[name=related]');
-  await relationBox.waitFor({ timeout: 15000 });
-  // The expected name travels as an argument: the function runs in the browser, where the
-  // harness's own constants are not defined.
-  const named = await page
-    .waitForFunction(
-      (expected) =>
-        (
-          document
-            .querySelector('app-value-field textarea[name=related]')
-            ?.closest('mat-form-field')?.textContent ?? ''
-        ).includes(expected),
-      referencedTitle,
-      { timeout: 10000 },
-    )
-    .then(() => true)
-    .catch(() => false);
-  check('編集画面にも参照先のタイトルが出る', named);
+  const heldReference = (await page.locator('app-value-field mat-chip-row').first().textContent())
+    ?.replace('cancel', '')
+    .trim();
+  check(
+    '編集画面の参照は参照先のタイトルで出る',
+    heldReference === referencedTitle,
+    `${heldReference} (expected ${referencedTitle})`,
+  );
+
+  await page.locator('button.relation-add').click();
+  const offeredLabels = page.locator('app-relation-picker .candidate .label');
+  await offeredLabels.first().waitFor({ timeout: 15000 });
+  const offeredNames = (await offeredLabels.allTextContents()).map((name) => name.trim());
+  check(
+    'ピッカーは参照先の現在のタイトルで並べる',
+    offeredNames.includes(referencedTitle),
+    offeredNames.slice(0, 3).join(' / '),
+  );
+  await page.locator('button.relation-add').click();
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('.composite-element').first().waitFor({ timeout: 15000 });
-  // The reference comes back in the box the editor typed it into, so a load-then-save keeps it.
+  // The reference comes back as the item it points at, named the way the target names it, so a
+  // reader sees which item it is without knowing an id.
+  const savedReference = (await page.locator('app-value-field mat-chip-row').first().textContent())
+    ?.replace('cancel', '')
+    .trim();
   check(
-    '保存した参照がフォームに出る',
-    (await page.locator('app-value-field textarea[name=related]').inputValue()) ===
-      `[{"target":"${COLLECTION}","item":1}]`,
-    await page.locator('app-value-field textarea[name=related]').inputValue(),
+    '保存した参照が名前でフォームに出る',
+    savedReference === referencedTitle,
+    `${savedReference} (expected ${referencedTitle})`,
   );
   check(
     '保存した複合配列がフォームに出る',

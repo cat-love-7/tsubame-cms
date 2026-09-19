@@ -1,0 +1,55 @@
+<div class="picker">
+  <mat-form-field appearance="fill" class="filter">
+    <mat-label>{{ 'content.filterReferences' | transloco }}</mat-label>
+    <input
+      matInput
+      name="referenceFilter"
+      [ngModel]="filter()"
+      (ngModelChange)="filter.set($event)"
+      [attr.aria-label]="'content.filterReferences' | transloco"
+    />
+    <mat-icon matPrefix>search</mat-icon>
+  </mat-form-field>
+
+  @if (error(); as problem) {
+    <p class="error" role="alert">{{ problem | message }}</p>
+  }
+
+  @if (loading()) {
+    <p class="note">{{ 'common.loading' | transloco }}</p>
+  } @else {
+    <div class="candidates">
+      @for (
+        candidate of visible();
+        track candidate.reference.target + '#' + candidate.reference.item
+      ) {
+        <button
+          type="button"
+          class="candidate"
+          [class.picked]="isPicked(candidate)"
+          [attr.aria-pressed]="isPicked(candidate)"
+          [title]="candidate.label"
+          (click)="toggle(candidate)"
+        >
+          <mat-checkbox
+            [checked]="isPicked(candidate)"
+            [disabled]="!multiple && !isPicked(candidate) && selected.length > 0"
+            tabindex="-1"
+          />
+          <span class="label">{{ candidate.label }}</span>
+        </button>
+      } @empty {
+        <p class="note">{{ 'content.noReferenceCandidates' | transloco }}</p>
+      }
+    </div>
+    <p class="note">
+      {{ 'content.referenceListLimited' | transloco: { count: candidates().length } }}
+    </p>
+  }
+
+  <div class="picker-actions">
+    <button matButton type="button" (click)="closed.emit()">
+      {{ 'common.close' | transloco }}
+    </button>
+  </div>
+</div>

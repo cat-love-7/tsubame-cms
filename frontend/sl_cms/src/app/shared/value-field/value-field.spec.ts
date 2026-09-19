@@ -538,7 +538,17 @@ describe('ValueField', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Only what the target names: the reference the target cannot name is already in the box.
+    // The chips are the value, and they read as the item: the reference the target cannot name
+    // keeps the reference, which is all that is knowable about it.
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('mat-chip-row'),
+      (chip: HTMLElement) => chip.textContent?.replace('cancel', '').trim(),
+    );
+    expect(chips).toEqual(['技術', 'categories #9']);
+
+    // The JSON box says the names too, for an author working in it.
+    component.jsonMode.set(true);
+    fixture.detectChanges();
     expect(component.referenceNames()).toEqual(['技術']);
     expect(fixture.nativeElement.textContent).toContain('References: 技術');
   });

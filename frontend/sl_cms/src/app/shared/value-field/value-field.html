@@ -350,31 +350,78 @@
     }
   }
   @case ('Relation') {
-    <!-- A relation is its target and the ids of the items it points at. Until the picker lands
-         (see doc/relations-design.md, phase 5) it is edited as the JSON the API takes, with the
-         shape checked as it is typed. -->
-    <mat-form-field appearance="fill" class="full-width">
-      <textarea
-        matInput
-        rows="3"
-        [name]="field.name"
-        [disabled]="disabled"
-        [ngModel]="arrayText"
-        (ngModelChange)="onArrayTextChange($event)"
-        [placeholder]="'content.relationPlaceholder' | transloco"
-        [attr.aria-labelledby]="labelId"
-      ></textarea>
-      @if (relationHint(); as hint) {
-        <mat-hint>{{ hint.key | transloco: hint.params }}</mat-hint>
+    <!-- What the field points at, by name: the chips are the value, and the JSON box (which is
+         what the API takes) stays behind a toggle for a value the picker cannot express. -->
+    <div class="relation-field">
+      <mat-chip-grid #relationChips [disabled]="disabled" [attr.aria-labelledby]="labelId">
+        @for (reference of relationRefs(); track referenceKey(reference)) {
+          <mat-chip-row (removed)="toggleReference(reference)">
+            {{ referenceLabel(reference) }}
+            @if (!disabled) {
+              <button
+                matChipRemove
+                [attr.aria-label]="
+                  'labels.removeReference' | transloco: { name: referenceLabel(reference) }
+                "
+              >
+                <mat-icon>cancel</mat-icon>
+              </button>
+            }
+          </mat-chip-row>
+        }
+      </mat-chip-grid>
+      @if (!disabled) {
+        <div class="relation-actions">
+          <button
+            matButton
+            type="button"
+            class="relation-add"
+            (click)="relationPickerOpen.set(!relationPickerOpen())"
+          >
+            <mat-icon>library_add</mat-icon>
+            {{ 'content.addReference' | transloco }}
+          </button>
+          <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
+            {{ (jsonMode() ? 'content.hideJson' : 'content.editAsJson') | transloco }}
+          </button>
+        </div>
       }
-      <!-- What the references in the box are called: an editor who typed an id should see the item
-           it points at, not only the reference they wrote. -->
-      @if (referenceNames().length > 0) {
-        <mat-hint align="end">
-          {{ 'content.referencesTo' | transloco: { names: referenceNames().join(', ') } }}
-        </mat-hint>
+      @if (relationPickerOpen() && !disabled) {
+        <!-- Opened only when asked for: a form with several relation fields should not fetch
+             candidates nobody looked at. -->
+        <app-relation-picker
+          [target]="relationTarget()!"
+          [selected]="relationRefs()"
+          [multiple]="!relationIsSingle()"
+          (toggled)="toggleReference($event)"
+          (closed)="relationPickerOpen.set(false)"
+        />
       }
-    </mat-form-field>
+      @if (jsonMode()) {
+        <mat-form-field appearance="fill" class="full-width">
+          <textarea
+            matInput
+            rows="3"
+            [name]="field.name"
+            [disabled]="disabled"
+            [ngModel]="arrayText"
+            (ngModelChange)="onArrayTextChange($event)"
+            [placeholder]="'content.relationPlaceholder' | transloco"
+            [attr.aria-labelledby]="labelId"
+          ></textarea>
+          @if (relationHint(); as hint) {
+            <mat-hint>{{ hint.key | transloco: hint.params }}</mat-hint>
+          }
+          <!-- What the references in the box are called: an editor who typed an id should see the
+               item it points at, not only the reference they wrote. -->
+          @if (referenceNames().length > 0) {
+            <mat-hint align="end">
+              {{ 'content.referencesTo' | transloco: { names: referenceNames().join(', ') } }}
+            </mat-hint>
+          }
+        </mat-form-field>
+      }
+    </div>
   }
   @case ('Image') {
     <div class="image-field">

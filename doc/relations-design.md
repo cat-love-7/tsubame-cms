@@ -285,6 +285,12 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 4. **配信**: `?populate=` の 1 段展開 + 逆引きのフィルタ(`?where=`)と逆引きの展開(`inverse_name`)
 5. **UI**: スキーマ編集の relation 型 + ピッカー + 参照元パネル(見出しは `inverse_name`。
    `inverse_name` の一意性もここで見る)
+   — **ピッカーだけ実装済み**(2026-09)。内容編集画面の relation は
+   **選んだ項目をチップで持ち**、`app-relation-picker` が対象のアイテム(コレクションなら
+   `items` + `items/titles`、単一ページなら `single_pages` + `single_pages/titles`)を**タイトルで**
+   並べて選ばせる。JSON 欄は「JSON で編集」の裏に残す(移行や、ピッカーが表せない値のため)。
+   候補は 100 件まで(絞り込みは画面側)で、開いたときだけ取りに行く。参照元パネル(`inverse_name`)は
+   未実装。
 6. **移行**: `--relations=relation`
 
 1〜3 で「移行して壊れない」まで届く。4〜6 が「使える」。
