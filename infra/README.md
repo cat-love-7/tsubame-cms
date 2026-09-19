@@ -83,6 +83,33 @@ shape. `bootstrap/` keeps its own state locally — it is the thing that makes t
 possible, so it cannot use it — and that file is worth keeping: without it the bucket still exists,
 but Terraform no longer knows it made it.
 
+## The identity that deploys
+
+`infra/deployer-policy.json` is the permission set this stack needs, written out: attach it to a
+role (or user) that exists for deploying, and put four values in place of the placeholders.
+
+| Placeholder | What it is |
+|---|---|
+| `<account>` | the account id the stack is applied in |
+| `<region>` | where the resources live, `var.region` (the state bucket may be somewhere else) |
+| `<name>` | `${var.project}-${var.environment}`, the prefix of almost everything the stack creates |
+| `<state-bucket>` | the bucket `backend.hcl` names |
+
+The statements are scoped by that name prefix wherever AWS allows it: the table, the function, the
+role, the log group, the buckets and the WAF rule all carry it. CloudFront, Cognito and the
+`Create*` calls that have no resource to name yet are `*`, which is how those services work.
+
+Two things are deliberately **not** in it:
+
+* **The signing secret's value.** The statement only covers creating the secret (the one-time step
+  in *Using it*); reading it is the function's execution role, which the stack creates for it.
+  Whoever deploys never sees the secret.
+* **The certificate.** It is created outside Terraform like the secret, so nothing here touches ACM.
+
+Verification needs almost none of this: the end-to-end suite talks HTTP to the deployment, so the
+same person can run it without AWS credentials at all. The log reads are in the policy because a
+deployment that answers 500 is otherwise a mystery.
+
 ## What the deployment is told
 
 `terraform output function_environment` prints exactly the variables the function runs with —
