@@ -85,8 +85,15 @@ but Terraform no longer knows it made it.
 
 ## The identity that deploys
 
-`infra/deployer-policy.json` is the permission set this stack needs, written out: attach it to a
-role (or user) that exists for deploying, and put four values in place of the placeholders.
+Two files, for the two things one does with this stack:
+
+* **`infra/deployer-policy.json`** (142 actions) - the identity that applies it.
+* **`infra/deployer-policy-plan.json`** (57) - the identity that only *reads*: a plan, a review, a
+  CI check. It is a strict subset of the first, and the only things it writes are the state lock
+  (`s3:PutObject` and `s3:DeleteObject` on `<state-key>.tflock`, because a plan takes the lock
+  too) - plus the log reads, which are there for looking at a deployment rather than for planning.
+
+Both take the same five placeholders.
 
 | Placeholder | What it is |
 |---|---|
@@ -94,6 +101,23 @@ role (or user) that exists for deploying, and put four values in place of the pl
 | `<region>` | where the resources live, `var.region` (the state bucket may be somewhere else) |
 | `<name>` | `${var.project}-${var.environment}`, the prefix of almost everything the stack creates |
 | `<state-bucket>` | the bucket `backend.hcl` names |
+| `<state-key>` | the key `backend.hcl` names, e.g. `sl-cms/staging/terraform.tfstate` |
+
+### What a run needs, from the same file
+
+| Run | What it calls |
+|---|---|
+| `plan` (and the refresh inside every apply) | the 56 reads: `Get*`, `Describe*`, `List*` |
+| `apply`, nothing changed | the same |
+| `apply`, something changed | those, plus the `Put*`/`Update*`/`Set*`/`Tag*` of the resources that changed (49 of them in total) |
+| the first `apply`, or one that adds a resource | those, plus the 21 `Create*`/`Add*`/`Associate*` |
+| an apply that *replaces* a resource | the same, plus the deletes of what it takes away - `terraform plan` says `# forces replacement`, and that is a delete and a create |
+| `terraform destroy` | the 23 `Delete*`/`Remove*`/`Disassociate*` |
+| `scripts/deploy-frontend.sh`, every time | `<name>-app` objects (`ListBucket`, `GetObject`, `PutObject`, `DeleteObject`) and `cloudfront:CreateInvalidation`/`GetInvalidation` |
+
+The difference between the first deployment and later ones is therefore only the create half - and
+it comes back whenever a resource is replaced, which is why the apply identity keeps it. What a
+`plan` cannot do is written into the plan policy: no `Create*`, no `Put*` outside the lock.
 
 The statements are scoped by that name prefix wherever AWS allows it: the table, the function, the
 role, the log group, the buckets and the WAF rule all carry it. CloudFront, Cognito and the

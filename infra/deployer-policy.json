@@ -34,10 +34,19 @@
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::<state-bucket>/<state-key>"
+    },
+    {
+      "Sid": "TerraformStateLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::<state-bucket>/*"
+      "Resource": "arn:aws:s3:::<state-bucket>/<state-key>.tflock"
     },
     {
       "Sid": "CreateTheSigningSecret",
@@ -115,7 +124,8 @@
         "lambda:DeleteFunctionUrlConfig",
         "lambda:TagResource",
         "lambda:UntagResource",
-        "lambda:ListTags"
+        "lambda:ListTags",
+        "lambda:ListVersionsByFunction"
       ],
       "Resource": "arn:aws:lambda:<region>:<account>:function:<name>"
     },

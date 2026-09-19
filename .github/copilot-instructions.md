@@ -82,9 +82,10 @@ scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS cre
 - **Rust naming**: types UpperCamelCase with `Id` (not `ID`), functions and fields snake_case.
   `cargo build` and `cargo test` must be warning-free; `cargo clippy` has older lints that are
   not yet worth a rewrite - do not add new ones.
-- **Changing `infra/` means changing `infra/deployer-policy.json`**: that file is the permission set
-  a deployment needs, written out for the operator, and a resource the stack gains is a permission
-  it has to gain with it.
+- **Changing `infra/` means changing the deployer policies** (`infra/deployer-policy.json` and
+  `deployer-policy-plan.json`, the read-only half): those files are the permission set a deployment
+  needs, written out for the operator, and a resource the stack gains is a permission it has to
+  gain with it.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
   (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
 - **Terraform state is remote** (`infra/` uses the S3 backend with `use_lockfile`, configured

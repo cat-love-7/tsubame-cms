@@ -1,0 +1,144 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WhoAmI",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "TerraformState",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::<state-bucket>"
+    },
+    {
+      "Sid": "TerraformStateObjects",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::<state-bucket>/<state-key>"
+    },
+    {
+      "Sid": "TerraformStateLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::<state-bucket>/<state-key>.tflock"
+    },
+    {
+      "Sid": "BucketsRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucket*"
+      ],
+      "Resource": "arn:aws:s3:::<name>-*"
+    },
+    {
+      "Sid": "TableRead",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:<region>:<account>:table/<name>"
+    },
+    {
+      "Sid": "FunctionRead",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetFunctionCodeSigningConfig",
+        "lambda:GetPolicy",
+        "lambda:GetFunctionUrlConfig",
+        "lambda:ListTags",
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": "arn:aws:lambda:<region>:<account>:function:<name>"
+    },
+    {
+      "Sid": "LogGroupRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:ListTagsForResource",
+        "logs:ListTagsLogGroup",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:DescribeLogStreams",
+        "logs:StartQuery",
+        "logs:GetQueryResults"
+      ],
+      "Resource": "arn:aws:logs:<region>:<account>:log-group:/aws/lambda/<name>:*"
+    },
+    {
+      "Sid": "UserPoolRead",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:ListUserPools",
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:DescribeUserPoolDomain",
+        "cognito-idp:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "WebAclRead",
+      "Effect": "Allow",
+      "Action": [
+        "wafv2:GetWebACL",
+        "wafv2:GetWebACLForResource",
+        "wafv2:ListResourcesForWebACL",
+        "wafv2:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:wafv2:<region>:<account>:regional/webacl/<name>-sign-in/*"
+    },
+    {
+      "Sid": "CloudFrontRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:ListTagsForResource",
+        "cloudfront:GetOriginAccessControl",
+        "cloudfront:GetOriginAccessControlConfig",
+        "cloudfront:DescribeFunction",
+        "cloudfront:GetFunction",
+        "cloudfront:ListFunctions",
+        "cloudfront:GetCachePolicy",
+        "cloudfront:GetCachePolicyConfig",
+        "cloudfront:ListCachePolicies",
+        "cloudfront:GetOriginRequestPolicy",
+        "cloudfront:ListOriginRequestPolicies",
+        "cloudfront:GetInvalidation",
+        "cloudfront:ListInvalidations"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "FunctionRoleRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRoleTags"
+      ],
+      "Resource": "arn:aws:iam::<account>:role/<name>-*"
+    }
+  ]
+}
