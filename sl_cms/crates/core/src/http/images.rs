@@ -47,7 +47,7 @@ async fn list_images<R: Storage>(
     Ok(Json(module.image_service.list_images().await?))
 }
 
-/// Change an image's record: the name it is shown under, or the bytes it serves.
+/// Change an image's record: the name it is shown under, the bytes it serves, or when it arrived.
 ///
 /// Answers with an empty body like the other mutations.
 async fn update_image<R: Storage>(
@@ -63,6 +63,12 @@ async fn update_image<R: Storage>(
         module
             .image_service
             .replace_image(image_id, file_name)
+            .await?;
+    }
+    if let Some(uploaded_at) = request.uploaded_at {
+        module
+            .image_service
+            .set_image_uploaded_at(image_id, uploaded_at)
             .await?;
     }
     Ok(StatusCode::OK)

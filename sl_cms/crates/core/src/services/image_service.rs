@@ -183,6 +183,36 @@ impl<R: ImageRepository> ImageService<R> {
             .map_err(map_internal_error)
     }
 
+    /// State when an image arrived, for a library that came from another CMS.
+    ///
+    /// Nothing else on the record moves with it: the library is listed by id and the delivery API
+    /// never sees this, so unlike a content timestamp it cannot make a build believe anything.
+    pub async fn set_image_uploaded_at(
+        &self,
+        id: ImageId,
+        uploaded_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), HttpError> {
+        if crate::models::item_status::is_ahead_of_the_clock(uploaded_at, chrono::Utc::now()) {
+            return Err(HttpError::BadRequest("uploaded_at is in the future"));
+        }
+        if self
+            .repository
+            .get_image(&id)
+            .await
+            .map_err(map_internal_error)?
+            .is_none()
+        {
+            return Err(HttpError::NotFound(&format!(
+                "Image with id '{}' does not exist",
+                id
+            )));
+        }
+        self.repository
+            .set_image_uploaded_at(&id, uploaded_at)
+            .await
+            .map_err(map_internal_error)
+    }
+
     /// Hand out a place to upload bytes that will replace what an image shows.
     ///
     /// The record is not touched: [`ImageService::replace_image`] applies the replacement once the

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::models::collection::CollectionItemId;
 use crate::models::user::{User, UserId};
@@ -96,6 +96,97 @@ pub struct ItemMetadata {
     pub published_by: Option<PublishedBy>,
 }
 
+/// The dates of a record, as a **patch**: a field left out is one this does not touch.
+///
+/// What a migration from another CMS needs, and what [`ItemMetadata`] is not: the whole record
+/// also carries the status, the publisher and the published copy, so writing it back from a read
+/// would undo a publish that landed while the caller was deciding - the same reason
+/// [`CollectionRepository::touch_item_metadata`](crate::repositories::collection_repository::CollectionRepository::touch_item_metadata)
+/// exists. The API therefore takes the dates alone, and storage writes the fields it was given.
+///
+/// A field is never *cleared* here. Setting one to nothing is a repair nobody has needed, and
+/// letting an absent field mean "leave it" and a null mean "forget it" is a distinction every
+/// caller would have to know about.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemDates {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_published_at: Option<DateTime<Utc>>,
+}
+
+/// How far ahead of this CMS's clock a date may be and still be believed.
+///
+/// The machine running an import has its own clock, and one that says "now" a few seconds ahead of
+/// this one is not wrong about anything that matters. A date further out than this is a mistake -
+/// a timezone applied twice, a year typed - and storing it would leave it invisible until somebody
+/// sorted by the column.
+const CLOCK_SKEW_SECONDS: i64 = 60;
+
+/// Whether `at` is further ahead of this CMS's clock than a client's honestly could be.
+///
+/// The one rule every date a caller may state is judged by, whether it is a content timestamp or
+/// when an image arrived: a timezone applied twice, or a year typed wrong, is otherwise invisible
+/// until somebody sorts by the column.
+pub fn is_ahead_of_the_clock(at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    at > now + Duration::seconds(CLOCK_SKEW_SECONDS)
+}
+
+impl ItemDates {
+    /// Whether there is anything to write.
+    pub fn is_empty(&self) -> bool {
+        self.created_at.is_none()
+            && self.updated_at.is_none()
+            && self.published_at.is_none()
+            && self.last_published_at.is_none()
+    }
+
+    /// Whether this says anything about when the content went live.
+    ///
+    /// That is publish permission rather than edit: the dates are what a build compares to decide
+    /// whether its copy is out of date, so they are part of releasing content, not of editing it.
+    pub fn touches_publication(&self) -> bool {
+        self.published_at.is_some() || self.last_published_at.is_some()
+    }
+
+    /// Refuse dates that cannot be true, against `now` and against the record they apply to.
+    ///
+    /// `existing` is what the record says today, so a patch that sets one field is still judged
+    /// with the others in view: setting `last_published_at` before the publication date that is
+    /// already stored is as wrong as setting both.
+    pub fn check(&self, existing: &ItemMetadata, now: DateTime<Utc>) -> Result<(), String> {
+        for (name, at) in [
+            ("created_at", self.created_at),
+            ("updated_at", self.updated_at),
+            ("published_at", self.published_at),
+            ("last_published_at", self.last_published_at),
+        ] {
+            if let Some(at) = at
+                && is_ahead_of_the_clock(at, now)
+            {
+                return Err(format!("{name} is in the future"));
+            }
+        }
+
+        let merged = existing.with_dates(self);
+        if let (Some(created), Some(updated)) = (merged.created_at, merged.updated_at)
+            && updated < created
+        {
+            return Err("updated_at is before created_at".to_string());
+        }
+        if let (Some(first), Some(last)) = (merged.published_at, merged.last_published_at)
+            && last < first
+        {
+            return Err("last_published_at is before published_at".to_string());
+        }
+        Ok(())
+    }
+}
+
 impl ItemMetadata {
     /// Change the published state, leaving the content timestamps alone.
     ///
@@ -136,6 +227,18 @@ impl ItemMetadata {
         ItemMetadata {
             created_at: self.created_at.or(Some(now)),
             updated_at: Some(now),
+            ..self.clone()
+        }
+    }
+
+    /// The record with the dates a migration states applied, leaving everything else - the status,
+    /// the publisher, the published copy - exactly as it is.
+    pub fn with_dates(&self, dates: &ItemDates) -> Self {
+        ItemMetadata {
+            created_at: dates.created_at.or(self.created_at),
+            updated_at: dates.updated_at.or(self.updated_at),
+            published_at: dates.published_at.or(self.published_at),
+            last_published_at: dates.last_published_at.or(self.last_published_at),
             ..self.clone()
         }
     }
@@ -312,5 +415,102 @@ mod tests {
         assert!(legacy.is_published());
         assert!(legacy.created_at.is_none());
         assert!(legacy.updated_at.is_none());
+    }
+
+    /// A patch states some dates and leaves the rest of the record - status, publisher, the dates
+    /// it did not mention - exactly as they were.
+    #[test]
+    fn a_patch_moves_only_the_dates_it_names() {
+        let imported = Utc::now() - chrono::Duration::days(400);
+        let published = ItemMetadata::default()
+            .with_status(ItemStatus::Published, None)
+            .released(Utc::now());
+        let patched = published.with_dates(&ItemDates {
+            created_at: Some(imported),
+            ..ItemDates::default()
+        });
+
+        assert_eq!(patched.created_at, Some(imported));
+        assert_eq!(
+            patched.updated_at, published.updated_at,
+            "a date that was not named stays as it was"
+        );
+        assert_eq!(patched.published_at, published.published_at);
+        assert_eq!(patched.status, ItemStatus::Published);
+    }
+
+    /// Dates that cannot be true are refused rather than stored, because a wrong one is invisible
+    /// until somebody sorts by it.
+    #[test]
+    fn impossible_dates_are_refused() {
+        let now = Utc::now();
+        let existing = ItemMetadata::default().touched(now);
+
+        let future = ItemDates {
+            created_at: Some(now + chrono::Duration::days(1)),
+            ..ItemDates::default()
+        };
+        assert_eq!(
+            future.check(&existing, now).unwrap_err(),
+            "created_at is in the future"
+        );
+
+        // A clock a little ahead of this one is not a mistake: the machine running an import has
+        // its own, and five seconds of skew is not wrong about anything that matters.
+        let now_ish = ItemDates {
+            updated_at: Some(now + chrono::Duration::seconds(5)),
+            ..ItemDates::default()
+        };
+        assert!(now_ish.check(&existing, now).is_ok());
+
+        let backwards = ItemDates {
+            updated_at: Some(now - chrono::Duration::days(1)),
+            ..ItemDates::default()
+        };
+        assert_eq!(
+            backwards.check(&existing, now).unwrap_err(),
+            "updated_at is before created_at"
+        );
+
+        // Judged against the record, not only against the patch: this states one date and is
+        // still wrong because of the one already stored.
+        let after_the_publication = ItemMetadata {
+            published_at: Some(now - chrono::Duration::days(1)),
+            ..ItemMetadata::default()
+        };
+        let earlier_release = ItemDates {
+            last_published_at: Some(now - chrono::Duration::days(2)),
+            ..ItemDates::default()
+        };
+        assert_eq!(
+            earlier_release
+                .check(&after_the_publication, now)
+                .unwrap_err(),
+            "last_published_at is before published_at"
+        );
+    }
+
+    /// The publication dates are what a build compares, so stating them is publish permission.
+    #[test]
+    fn a_patch_knows_whether_it_touches_publication() {
+        assert!(!ItemDates {
+            created_at: Some(Utc::now()),
+            ..ItemDates::default()
+        }
+        .touches_publication());
+        assert!(
+            ItemDates {
+                published_at: Some(Utc::now()),
+                ..ItemDates::default()
+            }
+            .touches_publication()
+        );
+        assert!(
+            ItemDates {
+                last_published_at: Some(Utc::now()),
+                ..ItemDates::default()
+            }
+            .touches_publication()
+        );
     }
 }

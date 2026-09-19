@@ -290,6 +290,12 @@ pub struct UpdateImageRequest {
     pub original_filename: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
+    /// State when the image arrived, for a library migrated from another CMS.
+    ///
+    /// Display only - the library is listed by id - so it is the one date on an image that can be
+    /// stated after the fact without anything else having to move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uploaded_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Asking to replace the bytes of an existing image.

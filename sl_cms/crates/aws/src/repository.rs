@@ -13,7 +13,7 @@ use crate::settings::AwsSettings;
 use sl_cms_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
-use sl_cms_core::models::item_status::ItemMetadata;
+use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };

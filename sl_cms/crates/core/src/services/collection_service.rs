@@ -8,7 +8,7 @@ use crate::models::collection::{
 };
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
-use crate::models::item_status::{ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy};
+use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, ItemStatusOutcome, PublishedBy};
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
     CompositeFieldId, SchemaScope, has_unique_fields, unique_values, validate_composite_references,
@@ -1112,6 +1112,34 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default())
     }
 
+    /// State when the content was created, changed or published - which is what a migration from
+    /// another CMS has to be able to say.
+    ///
+    /// The record is read first, for two reasons: a patch that states one date has to be judged
+    /// against the ones already there, and the caller is answered with what the record now says
+    /// rather than with what it asked for. The write is a patch, so a publish landing while this
+    /// runs keeps its publication time.
+    pub async fn set_collection_item_dates(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+        dates: &ItemDates,
+    ) -> Result<ItemMetadata, HttpError> {
+        // 404s for an item that is not there, which is also what stops a stray id from leaving a
+        // metadata record behind with no item under it.
+        let existing = self.get_item_metadata(collection_name, item_id).await?;
+        dates.check(&existing, Utc::now()).map_err(|reason| {
+            HttpError::BadRequest(&format!("those dates cannot be right: {reason}"))
+        })?;
+        if !dates.is_empty() {
+            self.collection_repository
+                .set_item_dates(collection_name, &item_id, dates)
+                .await
+                .map_err(map_internal_error)?;
+        }
+        self.get_item_metadata(collection_name, item_id).await
+    }
+
     /// Record which images this item uses, so a delete can say what it would break.
     ///
     /// The **published** copy counts only while the item is published, which is the same rule the
@@ -1756,6 +1784,22 @@ mod tests {
             all.insert((collection_name.clone(), item_id.clone()), metadata);
             Ok(())
         }
+        async fn set_item_dates(
+            &self,
+            collection_name: &CollectionName,
+            item_id: &CollectionItemId,
+            dates: &ItemDates,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // A patch applied under the one lock, like the adapters.
+            let mut all = self.item_metadata.write().unwrap();
+            let metadata = all
+                .get(&(collection_name.clone(), item_id.clone()))
+                .cloned()
+                .unwrap_or_default()
+                .with_dates(dates);
+            all.insert((collection_name.clone(), item_id.clone()), metadata);
+            Ok(())
+        }
         async fn set_item_metadata(
             &self,
             collection_name: &CollectionName,
@@ -2067,6 +2111,13 @@ mod tests {
             &self,
             _id: &ImageId,
             _original_filename: &str,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
+        async fn set_image_uploaded_at(
+            &self,
+            _id: &ImageId,
+            _uploaded_at: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }

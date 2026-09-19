@@ -194,6 +194,32 @@ impl ImageRepository for RkvRepository {
         Ok(())
     }
 
+    async fn set_image_uploaded_at(
+        &self,
+        id: &ImageId,
+        uploaded_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
+        // Under the same lock as every other change to a record: an import stating when an image
+        // arrived must not write back a rename it read before somebody made it.
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let mut data = match store.get(&reader, id.to_le_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            _ => return Err("Image not found".into()),
+        };
+        data.uploaded_at = uploaded_at;
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&data)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
     async fn generate_replacement_upload_url(
         &self,
         id: &ImageId,

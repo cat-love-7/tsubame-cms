@@ -5,7 +5,7 @@ use std::future::Future;
 use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
-use crate::models::item_status::ItemMetadata;
+use crate::models::item_status::{ItemDates, ItemMetadata};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
@@ -279,6 +279,17 @@ pub trait CollectionRepository: Send + Sync + 'static {
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
         now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// Write the dates a caller stated, and nothing else about the record.
+    ///
+    /// A patch rather than a record, for the reason above: an import stating when content was
+    /// created must not undo a publish that landed while it was running.
+    fn set_item_dates(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        dates: &ItemDates,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     fn list_item_metadata(
         &self,

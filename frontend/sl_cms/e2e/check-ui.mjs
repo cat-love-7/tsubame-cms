@@ -374,9 +374,13 @@ try {
   // The icons are ligatures, so a font that never loads draws their *names* as text - and every
   // assertion about text and aria labels still passes. `mat-icon` sets the box and leaves the
   // family to the application, so this is the check that notices `styles.scss` no longer naming it.
-  const iconFont = await page.evaluate(() => {
+  const iconFont = await page.evaluate(async () => {
     const icon = document.querySelector('mat-icon');
     if (!icon) return null;
+    // Asking for the face is what makes a lazily-loaded font load at all; `check` on its own can
+    // answer "not loaded" for a font that nothing has needed yet, which is a race this check lost
+    // once. A face that cannot be fetched leaves `check` false, which is the failure it is for.
+    await document.fonts.load("24px 'Material Icons'").catch(() => {});
     return {
       family: getComputedStyle(icon).fontFamily,
       loaded: document.fonts.check("24px 'Material Icons'"),

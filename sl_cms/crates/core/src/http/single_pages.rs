@@ -12,7 +12,7 @@ use crate::http::{
     require_publish,
 };
 use crate::models::error::HttpError;
-use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::single_page::{SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::preview_link::PreviewTarget;
 
@@ -41,7 +41,7 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         )
         .route(
             "/models/single_pages/{page_name}/item/metadata",
-            get(get_single_page_item_metadata::<R>),
+            get(get_single_page_item_metadata::<R>).put(set_single_page_item_metadata::<R>),
         )
         .route(
             "/models/single_pages/{page_name}/preview",
@@ -113,6 +113,24 @@ struct PageStatusResponse {
     #[serde(flatten)]
     metadata: ItemMetadata,
     has_draft: bool,
+}
+
+/// State when the page was created, changed or published (see the collection equivalent, including
+/// why the publication dates are judged by publish permission).
+async fn set_single_page_item_metadata<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(page_name): Path<String>,
+    Json(dates): Json<ItemDates>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    if dates.touches_publication() {
+        require_publish(&user, Some(Resource::SinglePage(&name)))?;
+    }
+    Ok(Json(PageStatusResponse {
+        metadata: module.single_page_service.set_page_dates(&name, &dates).await?,
+        has_draft: module.single_page_service.page_has_draft(&name).await?,
+    }))
 }
 
 /// What the page would look like if it were published now: the working copy, with the

@@ -74,9 +74,11 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ |
 | GET | `/api/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
 | GET | `/api/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
+| PUT | `/api/models/collections/{name}/items/{id}/metadata` | 日時を設定(下記「移行のための日時」)。返すのは更新後のメタデータ |
 | POST | `/api/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
 | POST | `/api/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
 | GET | `/api/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
+| PUT | `/api/models/single_pages/{name}/item/metadata` | 日時を設定(下記「移行のための日時」) |
 | GET | `/api/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
 | POST | `/api/models/single_pages/{name}/publish` | 更新後のメタデータ |
 | POST | `/api/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
@@ -101,7 +103,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | POST | `/api/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/api/images/<file>?key=..." }`(要トークン) |
 | PUT | `/api/images/{file_name}?key=...` | 実体を保存(要トークン。`key` は一度きりで、発行時のファイル名に紐づく) |
 | GET | `/api/images/{file_name}` | 実体の配信。**認証不要**(`<img>` はヘッダを付けられないため) |
-| PUT | `/api/models/images/{id}` | 表示名の変更(`{ "original_filename": "..." }`)、差し替えの確定(`{ "file_name": "..." }`) |
+| PUT | `/api/models/images/{id}` | 表示名の変更(`{ "original_filename": "..." }`)、差し替えの確定(`{ "file_name": "..." }`)、アップロード日時の設定(`{ "uploaded_at": "..." }`。下記「移行のための日時」) |
 | DELETE | `/api/models/images/{id}` | 画像と実体の削除 |
 | POST | `/api/models/images/{id}/replace` | 差し替え用のアップロード先(`{ "ext": "png" }` → `{ "file_name", "upload_url" }`) |
 | GET | `/api/images/by-id/{id}` | **id で引く実体**(認証不要)。差し替えても壊れないリンク |
@@ -353,6 +355,31 @@ curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Auth
 - `published_by` は**監査用**: 公開した時点の識別子(username)と id を記録する。名前はその時の
   値なので、アカウントが後で改名・削除されても記録は読める。`published_at` と同じく unpublish で消える
   (サイトから下りたものに「誰が公開したか」は残らない)。**公開 API には出しません**。
+
+#### 移行のための日時(他の CMS から取り込む)
+
+他の CMS からコンテンツを移すとき、**元の日付をそのまま持ち込みたい**。作成日が「移行した日」に
+なると、一覧もサイトの並びも意味を失うため。そこで管理 API は日時の**設定**も受け付ける:
+
+| メソッド | パス | 本文 |
+|---|---|---|
+| PUT | `/api/models/collections/{name}/items/{id}/metadata` | `{ "created_at"?, "updated_at"?, "published_at"?, "last_published_at"? }` |
+| PUT | `/api/models/single_pages/{name}/item/metadata` | 同上 |
+| PUT | `/api/models/images/{id}` | `{ "uploaded_at" }`(画像は 1 つだけ。表示専用の値) |
+
+- **パッチ**: 書いたフィールドだけが変わる。指定しなかった日時・`status`・`published_by` はそのまま
+  なので、**編集中・公開中のコンテンツに並行して走らせても壊れない**(保存や公開と同じく、読みと
+  書きはアダプタ側で 1 手順)。
+- **`null` で消すことはできない**。「書かなければ触らない」と「null なら忘れる」の 2 通りを
+  呼び出し側に区別させる価値が無いため。
+- **公開日時(`published_at` / `last_published_at`)は公開権限が要る**。ビルドが差分を取る値なので、
+  編集権限とは別。作成日・更新日は編集権限で足りる。
+- **ありえない日時は拒否**: 未来(この CMS の時計 + 60 秒を超えるもの)、`updated_at < created_at`、
+  `last_published_at < published_at` は 400。タイムゾーンを二重に適用した、年を打ち間違えた、が
+  典型で、保存してしまうと並べ替えるまで気づけない。
+- **存在しないアイテム/ページ/画像は 404**。メタデータだけの孤立レコードを作らないため。
+- 典型的な移行の順序: **作成 → 公開 → 日時を設定**(公開は `published_at` を「今」にするので、
+  最後に本来の日付で上書きする)。単一ページは `PUT …/item` の後 `PUT …/item/metadata`。
 
 
 #### 例

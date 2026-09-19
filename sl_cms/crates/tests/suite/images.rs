@@ -422,6 +422,45 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
         "trimmed, and otherwise as given"
     );
 
+    // When it arrived can be stated, for a library migrated from another CMS: it is display only,
+    // so nothing else about the image moves.
+    let imported = chrono::Utc::now() - chrono::Duration::days(500);
+    let (status, bytes) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/api/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "uploaded_at": imported })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let (_, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/images",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(timestamp(&body[0]["uploaded_at"]), imported);
+    assert_eq!(body[0]["url"], url, "and the bytes are still where they were");
+
+    // A date that cannot be true is refused, as a content date is.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::PUT,
+        &format!("/api/models/images/{id}"),
+        Some(&token),
+        Some(json!({ "uploaded_at": chrono::Utc::now() + chrono::Duration::days(1) })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
     // A name the library could not show, or one that is a path, is refused.
     let (status, _) = send_raw(
         &app.router,

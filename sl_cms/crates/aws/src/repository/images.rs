@@ -320,6 +320,15 @@ impl ImageRepository for AwsRepository {
         .await
     }
 
+    async fn set_image_uploaded_at(
+        &self,
+        id: &ImageId,
+        uploaded_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        change_image(&inner, **id, |data| data.uploaded_at = uploaded_at).await
+    }
+
     async fn image_file_name(&self, id: &ImageId) -> Result<Option<String>, BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
@@ -1112,6 +1121,58 @@ mod tests {
                 .image_bytes_exist("nothing-here.png")
                 .await
                 .unwrap()
+        );
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// Stating when an image arrived rewrites that one field of the record and leaves the rest -
+    /// including where the bytes are - exactly as it was.
+    #[tokio::test]
+    async fn an_images_uploaded_at_can_be_stated() {
+        let dynamo = crate::test_endpoint();
+        if !emulator_reachable(&dynamo) {
+            eprintln!("skipped: no DynamoDB at {dynamo} (start it with `docker compose up -d`)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_image_dates")
+            .await
+            .expect("a table for this test");
+        let info = repository
+            .generate_image_upload_url(&NewImageRequest {
+                original_filename: "logo.png".to_string(),
+                ext: "png".to_string(),
+                size: 3,
+            })
+            .await
+            .unwrap();
+        let before = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
+
+        let imported = chrono::Utc::now() - chrono::Duration::days(500);
+        repository
+            .set_image_uploaded_at(&info.id, imported)
+            .await
+            .unwrap();
+
+        let after = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .expect("the record");
+        assert_eq!(after.uploaded_at, imported);
+        assert_eq!(after.url, before.url, "the bytes are where they were");
+        assert_eq!(after.original_filename, before.original_filename);
+
+        // An id that is not there is refused, rather than the write creating a record of its own.
+        assert!(
+            repository
+                .set_image_uploaded_at(&ImageId::from_u64(999_999), imported)
+                .await
+                .is_err()
         );
 
         repository.delete_table().await.unwrap();

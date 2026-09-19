@@ -3,7 +3,7 @@ use crate::repository::{
     page_draft_key, page_metadata_key,
 };
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::item_status::ItemMetadata;
+use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
@@ -192,6 +192,32 @@ impl SinglePageRepository for RkvRepository {
             _ => ItemMetadata::default(),
         }
         .touched(now);
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            key.as_bytes(),
+            &Value::Str(&serde_json::to_string(&metadata)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
+    async fn set_page_dates(
+        &self,
+        page_name: &SinglePageName,
+        dates: &ItemDates,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        // See `CollectionRepository::set_item_dates`.
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let key = page_metadata_key(page_name.as_str());
+        let reader = env.read()?;
+        let metadata = match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            _ => ItemMetadata::default(),
+        }
+        .with_dates(dates);
         let mut writer = env.write()?;
         store.put(
             &mut writer,

@@ -6,7 +6,7 @@
 //! handful of deletes.
 
 use super::*;
-use sl_cms_core::models::item_status::ItemMetadata;
+use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
 
@@ -155,6 +155,26 @@ impl SinglePageRepository for AwsRepository {
         .await?;
         if changed.is_none() {
             let fresh = AwsRepository::encode(&ItemMetadata::default().touched(now))?;
+            write(&inner, &partition, key::META, &fresh).await?;
+        }
+        Ok(())
+    }
+
+    async fn set_page_dates(
+        &self,
+        page_name: &SinglePageName,
+        dates: &ItemDates,
+    ) -> Result<(), BoxError> {
+        // See `CollectionRepository::set_item_dates`.
+        let inner = self.inner.clone();
+        let name = page_name.clone();
+        let partition = key::page(&name);
+        let changed = change_record::<ItemMetadata>(&inner, &partition, key::META, |metadata| {
+            *metadata = metadata.with_dates(dates)
+        })
+        .await?;
+        if changed.is_none() {
+            let fresh = AwsRepository::encode(&ItemMetadata::default().with_dates(dates))?;
             write(&inner, &partition, key::META, &fresh).await?;
         }
         Ok(())

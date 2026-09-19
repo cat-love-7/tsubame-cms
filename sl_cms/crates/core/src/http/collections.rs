@@ -12,7 +12,7 @@ use crate::http::{
 };
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
-use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{PageQuery, Pagination};
 use crate::preview_link::PreviewTarget;
 
@@ -54,7 +54,7 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         )
         .route(
             "/models/collections/{collection_name}/items/{id}/metadata",
-            get(get_collection_item_metadata::<R>),
+            get(get_collection_item_metadata::<R>).put(set_collection_item_metadata::<R>),
         )
         .route(
             "/models/collections/{collection_name}/items/{id}/preview",
@@ -128,6 +128,33 @@ struct ItemStatusResponse {
     #[serde(flatten)]
     metadata: ItemMetadata,
     has_draft: bool,
+}
+
+/// State when the content was created, changed or published, which is what migrating it from
+/// another CMS needs to be able to do.
+///
+/// A patch: only the dates that were sent change, so this is safe to run against content that is
+/// being edited or published at the same time. When the content went live is publish permission
+/// rather than edit, because those are the dates a build compares to decide whether its copy of
+/// the site is out of date.
+async fn set_collection_item_metadata<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path((collection_name, id)): Path<(String, u64)>,
+    Json(dates): Json<ItemDates>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let item_id = CollectionItemId::from_u64(id);
+    if dates.touches_publication() {
+        require_publish(&user, Some(Resource::Collection(&name)))?;
+    }
+    Ok(Json(ItemStatusResponse {
+        metadata: module
+            .collection_service
+            .set_collection_item_dates(&name, item_id, &dates)
+            .await?,
+        has_draft: module.collection_service.has_draft(&name, item_id).await?,
+    }))
 }
 
 /// What the item would look like if it were published now: the working copy, with the

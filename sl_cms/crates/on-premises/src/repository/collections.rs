@@ -7,7 +7,7 @@ use rkv::{StoreOptions, Value};
 use sl_cms_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
-use sl_cms_core::models::item_status::ItemMetadata;
+use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
@@ -424,6 +424,34 @@ impl CollectionRepository for RkvRepository {
             _ => ItemMetadata::default(),
         }
         .touched(now);
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            key.as_bytes(),
+            &Value::Str(&serde_json::to_string(&metadata)?),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
+
+    async fn set_item_dates(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        dates: &ItemDates,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        // The same one lock as a touch, for the same reason: what this writes is a patch, and the
+        // record it is applied to must not be one a publish has since replaced.
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(METADATA_STORE, StoreOptions::create())?;
+        let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
+        let reader = env.read()?;
+        let metadata = match store.get(&reader, key.as_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            _ => ItemMetadata::default(),
+        }
+        .with_dates(dates);
         let mut writer = env.write()?;
         store.put(
             &mut writer,

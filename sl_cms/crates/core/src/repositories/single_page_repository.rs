@@ -2,7 +2,7 @@ use std::error::Error;
 
 use std::future::Future;
 
-use crate::models::item_status::ItemMetadata;
+use crate::models::item_status::{ItemDates, ItemMetadata};
 use crate::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -65,6 +65,13 @@ pub trait SinglePageRepository: Send + Sync + 'static {
         &self,
         page_name: &SinglePageName,
         now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+    /// Write the dates a caller stated, and nothing else about the record (see
+    /// [`CollectionRepository::set_item_dates`](crate::repositories::collection_repository::CollectionRepository::set_item_dates)).
+    fn set_page_dates(
+        &self,
+        page_name: &SinglePageName,
+        dates: &ItemDates,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Publish or unpublish a page as a single step; see
     /// [`CollectionRepository::apply_item_status`](crate::repositories::collection_repository::CollectionRepository::apply_item_status)

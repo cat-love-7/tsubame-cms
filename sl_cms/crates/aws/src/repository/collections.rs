@@ -277,6 +277,31 @@ impl CollectionRepository for AwsRepository {
         Ok(())
     }
 
+    async fn set_item_dates(
+        &self,
+        collection_name: &CollectionName,
+        item_id: &CollectionItemId,
+        dates: &ItemDates,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        let id = **item_id;
+        let partition = key::collection(&name);
+        let sort = key::metadata(id);
+        // The patch is applied to the record as it is by the time this lands, for the same reason
+        // a touch is: a publish that happened in between keeps its publication time.
+        let changed = change_record::<ItemMetadata>(&inner, &partition, &sort, |metadata| {
+            *metadata = metadata.with_dates(dates)
+        })
+        .await?;
+        if changed.is_none() {
+            // Nothing recorded yet, so there is nothing to leave alone.
+            let fresh = AwsRepository::encode(&ItemMetadata::default().with_dates(dates))?;
+            write(&inner, &partition, &sort, &fresh).await?;
+        }
+        Ok(())
+    }
+
     async fn list_published_items_page(
         &self,
         collection_name: &CollectionName,

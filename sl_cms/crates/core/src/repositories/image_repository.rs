@@ -80,6 +80,16 @@ pub trait ImageRepository: Send + Sync {
         id: &ImageId,
         original_filename: &str,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// Record when the image arrived, for a library that came from somewhere else.
+    ///
+    /// Nothing else has to move with it: the library is listed by id and the delivery API never
+    /// sees this, so it is the one field an import can state freely.
+    fn set_image_uploaded_at(
+        &self,
+        id: &ImageId,
+        uploaded_at: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
     /// Hand out a place to upload replacement bytes, under a file name of the adapter's choosing,
     /// and record that file as this image's pending one.
     ///

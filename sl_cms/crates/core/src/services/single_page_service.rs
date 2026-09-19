@@ -5,7 +5,7 @@ use chrono::Utc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
-use crate::models::item_status::{ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::schema::{
     CompositeFieldId, SchemaScope, validate_composite_references, validate_schema,
 };
@@ -407,6 +407,26 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .unwrap_or_default())
     }
 
+    /// State when the page was created, changed or published (see
+    /// [`CollectionService::set_collection_item_dates`](crate::services::collection_service::CollectionService::set_collection_item_dates)).
+    pub async fn set_page_dates(
+        &self,
+        name: &SinglePageName,
+        dates: &ItemDates,
+    ) -> Result<ItemMetadata, HttpError> {
+        let existing = self.get_page_metadata(name).await?;
+        dates.check(&existing, Utc::now()).map_err(|reason| {
+            HttpError::BadRequest(&format!("those dates cannot be right: {reason}"))
+        })?;
+        if !dates.is_empty() {
+            self.single_page_repository
+                .set_page_dates(name, dates)
+                .await
+                .map_err(map_internal_error)?;
+        }
+        self.get_page_metadata(name).await
+    }
+
     /// Whether the page has an unpublished working copy.
     pub async fn page_has_draft(&self, name: &SinglePageName) -> Result<bool, HttpError> {
         self.get_single_page_schema(name).await?;
@@ -658,6 +678,17 @@ mod tests {
             all.insert(page_name.clone(), metadata);
             Ok(())
         }
+        async fn set_page_dates(
+            &self,
+            page_name: &SinglePageName,
+            dates: &ItemDates,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // A patch applied under the one lock, like the adapters.
+            let mut all = self.page_metadata.write().unwrap();
+            let metadata = all.get(page_name).cloned().unwrap_or_default().with_dates(dates);
+            all.insert(page_name.clone(), metadata);
+            Ok(())
+        }
         async fn set_page_metadata(
             &self,
             page_name: &SinglePageName,
@@ -800,6 +831,13 @@ mod tests {
             &self,
             _id: &ImageId,
             _original_filename: &str,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
+        }
+        async fn set_image_uploaded_at(
+            &self,
+            _id: &ImageId,
+            _uploaded_at: chrono::DateTime<chrono::Utc>,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
         }
