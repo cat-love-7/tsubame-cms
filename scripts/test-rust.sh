@@ -13,6 +13,17 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root/sl_cms"
 
+# Four tests at a time, not one per core.
+#
+# Every contract test builds a whole CMS and the password ones also hash a password with
+# Argon2id, which is memory-hard on purpose (19 MiB a hash, and the allocator holds on to what
+# it used): about 35 MiB of resident memory per test that is running, so the default of one
+# thread per core reached 1.2 GiB on a 32-core machine for a suite that takes 4 seconds. Four
+# threads hold it at about 230 MiB, with the suite going from 4 seconds to 15 - a fair trade
+# for a suite that is not what anyone waits on. `RUST_TEST_THREADS=16 scripts/test-rust.sh`
+# (or any other number) overrides it, and the build keeps its own parallelism either way.
+export RUST_TEST_THREADS="${RUST_TEST_THREADS:-4}"
+
 echo "== core, the local adapter, and the contract suite against it =="
 cargo test -p sl-cms-core -p sl-cms-on-premises
 cargo test -p sl-cms-tests --test on_premises

@@ -63,6 +63,11 @@ occasionally overshoot Vitest's 5s timeout and be reported as a failure. One sha
 is faster and stable; `ng test` keeps the isolated default. The end-to-end check
 (`e2e/README.md`) is not part of either number.
 
+The pool is capped at four workers (`vitest.config.ts`): each worker is a whole jsdom and Angular
+environment, about 250 MiB resident, so one per core cost 8.5 GiB on a 32-core machine for a suite
+that finishes in the same six seconds. Four measured about 2.7 GiB. Raise `maxWorkers` there on a
+bigger machine, or for a suite that has grown past the point where four are enough.
+
 ## Running end-to-end tests
 
 The e2e check drives a real browser against a running backend (`npm run e2e`, which is
