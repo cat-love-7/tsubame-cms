@@ -12,7 +12,8 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use super::*;
 use crate::ImageDelivery;
 use sl_cms_core::models::image::{
-    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo, sanitize_ext,
+    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplaceImageRequest,
+    ReplacementInfo, sanitize_ext,
 };
 use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
 
@@ -129,6 +130,7 @@ impl ImageRepository for AwsRepository {
         let upload_info = NewImageRequest {
             original_filename: upload_info.original_filename.clone(),
             ext: upload_info.ext.clone(),
+            size: upload_info.size,
         };
         // The id comes from the same atomic counter the collections use, so two uploads at
         // once cannot write the same record.
@@ -160,6 +162,10 @@ impl ImageRepository for AwsRepository {
             .put_object()
             .bucket(&inner.settings.bucket)
             .key(&file_name)
+            // The length the client announced is part of the signature, so object storage refuses
+            // an upload that sends anything else: the limit the CMS reported is the limit that
+            // holds, even though the bytes never pass through the CMS.
+            .content_length(upload_info.size as i64)
             .presigned(config)
             .await
             .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
@@ -177,9 +183,10 @@ impl ImageRepository for AwsRepository {
     async fn generate_replacement_upload_url(
         &self,
         id: &ImageId,
-        ext: &str,
+        request: &ReplaceImageRequest,
     ) -> Result<ReplacementInfo, BoxError> {
         let inner = self.inner.clone();
+        let ext = request.ext.as_str();
         // A fresh object key rather than an overwrite of the existing one: a browser or a CDN
         // caches by URL, so bytes that change under one key keep showing the old image.
         let file_name = match sanitize_ext(ext) {
@@ -197,6 +204,8 @@ impl ImageRepository for AwsRepository {
             .put_object()
             .bucket(&inner.settings.bucket)
             .key(&file_name)
+            // As for a new image: the length is signed, so only an upload of that size lands.
+            .content_length(request.size as i64)
             .presigned(config)
             .await
             .map_err(|e| format!("could not sign the upload URL: {}", describe(&e)))?;
@@ -455,6 +464,7 @@ mod tests {
         let request = NewImageRequest {
             original_filename: "cat.png".to_string(),
             ext: "png".to_string(),
+            size: 3,
         };
         let info = repository
             .generate_image_upload_url(&request)
@@ -558,11 +568,26 @@ mod tests {
         // A replacement signs a file name and records it on the image, so the apply can be
         // answered by id; only the newest request stays waiting.
         let first = repository
-            .generate_replacement_upload_url(&info.id, "png")
+            .generate_replacement_upload_url(
+                &info.id,
+                &ReplaceImageRequest {
+                    ext: "png".to_string(),
+                    // Nothing is put against this one: it is signed, and then replaced by the
+                    // next request before anything arrives.
+                    size: 1,
+                },
+            )
             .await
             .expect("a signed replacement");
         let second = repository
-            .generate_replacement_upload_url(&info.id, "png")
+            .generate_replacement_upload_url(
+                &info.id,
+                &ReplaceImageRequest {
+                    ext: "png".to_string(),
+                    // The single byte this test puts below.
+                    size: 1,
+                },
+            )
             .await
             .expect("a second signed replacement");
         assert_ne!(first.file_name, second.file_name, "two uploads share a key");
@@ -612,7 +637,14 @@ mod tests {
         // what is waiting waiting, so a re-clicked replacement cannot cancel the upload that was
         // just signed for.
         let third = repository
-            .generate_replacement_upload_url(&info.id, "png")
+            .generate_replacement_upload_url(
+                &info.id,
+                &ReplaceImageRequest {
+                    ext: "png".to_string(),
+                    // The single byte this test puts below.
+                    size: 1,
+                },
+            )
             .await
             .expect("a third signed replacement");
         assert_eq!(
@@ -655,6 +687,67 @@ mod tests {
     /// not list the bucket is refused for a key that is not there, while MinIO answers 404 either
     /// way. `infra/lambda.tf` carries that reason, and the last part of this test states what the
     /// emulator does instead of pretending to check it.
+    /// The length a client announces is part of the signature, so object storage takes only an
+    /// upload of that size. That is what makes the CMS's limit real even though the bytes never
+    /// pass through the CMS: a client that announced one size and sent another is refused by the
+    /// store, not by a check that runs after the bytes have landed.
+    #[tokio::test]
+    async fn a_signed_upload_takes_only_the_length_it_was_signed_for() {
+        let (repository, _table) = crate::open_test_repository("cms_signed_length")
+            .await
+            .expect("a repository");
+        // The bucket the URL names has to exist: object storage answers a signed PUT to a bucket
+        // that does not with a 404, which would read as "the signature was fine".
+        repository
+            .inner
+            .s3
+            .create_bucket()
+            .bucket(&repository.inner.settings.bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "could not create {}: {}",
+                    repository.inner.settings.bucket,
+                    describe(&e)
+                )
+            });
+
+        let info = repository
+            .generate_image_upload_url(&NewImageRequest {
+                original_filename: "one.png".to_string(),
+                ext: "png".to_string(),
+                size: 3,
+            })
+            .await
+            .expect("a signed upload");
+
+        sl_cms_core::webhook::install_crypto_provider();
+        let client = reqwest::Client::new();
+
+        // Four bytes against a signature for three: refused, and the URL is still good - nothing
+        // was stored, so the client that made a mistake can still use it.
+        let wrong = client
+            .put(&info.upload_url)
+            .body(vec![1u8, 2, 3, 4])
+            .send()
+            .await
+            .expect("the presigned PUT should be reachable");
+        assert_eq!(
+            wrong.status(),
+            403,
+            "a body of another size should be refused"
+        );
+
+        let right = client
+            .put(&info.upload_url)
+            .body(vec![1u8, 2, 3])
+            .send()
+            .await
+            .expect("the presigned PUT should be reachable");
+        assert_eq!(right.status(), 200, "the signed size should be accepted");
+    }
+
     #[tokio::test]
     async fn finding_an_upload_needs_the_permissions_the_deployment_grants() {
         use sl_cms_core::repositories::image_repository::ImageRepository;
@@ -699,6 +792,7 @@ mod tests {
         let request = NewImageRequest {
             original_filename: "there.png".to_string(),
             ext: "png".to_string(),
+            size: 3,
         };
         let info = repository
             .generate_image_upload_url(&request)
@@ -801,6 +895,7 @@ mod tests {
         let request = NewImageRequest {
             original_filename: "cat.png".to_string(),
             ext: "PNG".to_string(),
+            size: 3,
         };
         let info = repository
             .generate_image_upload_url(&request)
@@ -921,6 +1016,7 @@ mod tests {
             .generate_image_upload_url(&NewImageRequest {
                 original_filename: "logo.png".to_string(),
                 ext: "png".to_string(),
+                size: 3,
             })
             .await
             .unwrap();
@@ -938,7 +1034,13 @@ mod tests {
 
         // Where to put the replacement, and what it will be called.
         let replacement = repository
-            .generate_replacement_upload_url(&info.id, "PNG")
+            .generate_replacement_upload_url(
+                &info.id,
+                &ReplaceImageRequest {
+                    ext: "PNG".to_string(),
+                    size: 3,
+                },
+            )
             .await
             .unwrap();
         assert!(

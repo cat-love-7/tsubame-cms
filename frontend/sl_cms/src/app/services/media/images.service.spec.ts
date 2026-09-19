@@ -50,9 +50,15 @@ describe('ImagesService', () => {
 
     service.uploadImage(file(2048)).subscribe((info) => uploaded.push(info));
 
-    httpMock
-      .expectOne('/api/models/images/get_upload_url')
-      .flush({ id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' });
+    // The size travels with the request: the server refuses an image over the limit with it, and
+    // on a deployment that signs the upload it is part of the signature.
+    const request = httpMock.expectOne('/api/models/images/get_upload_url');
+    expect(request.request.body).toEqual({
+      original_filename: 'photograph.png',
+      ext: 'png',
+      size: 2048,
+    });
+    request.flush({ id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' });
     httpMock.expectOne('/api/images/one.png?key=k').flush(null);
 
     expect(uploaded).toEqual([

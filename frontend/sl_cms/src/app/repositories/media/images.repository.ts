@@ -7,6 +7,14 @@ import { apiUrl } from 'app/core/api-url';
 export interface NewImageRequest {
   original_filename: string;
   ext: string;
+  /**
+   * How many bytes will be uploaded.
+   *
+   * The server needs it before the bytes: it refuses an image over the deployment's limit, and on
+   * a deployment that signs the upload it is part of the signature, so storage takes only an
+   * upload of that size.
+   */
+  size: number;
 }
 
 export interface NewImageInfo {
@@ -85,8 +93,8 @@ export class ImageRepository {
    * The image keeps its id and its name; the record is not touched until the bytes are in place,
    * so an upload that fails changes nothing (see {@link applyReplacement}).
    */
-  requestReplacement(id: number, ext: string): Observable<ReplacementInfo> {
-    return this.http.post<ReplacementInfo>(apiUrl(`/models/images/${id}/replace`), { ext });
+  requestReplacement(id: number, ext: string, size: number): Observable<ReplacementInfo> {
+    return this.http.post<ReplacementInfo>(apiUrl(`/models/images/${id}/replace`), { ext, size });
   }
 
   /** Finish a replacement: the record now points at the bytes that were uploaded for it. */

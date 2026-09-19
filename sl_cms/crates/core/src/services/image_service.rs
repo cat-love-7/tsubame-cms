@@ -9,11 +9,33 @@ use crate::repositories::image_repository::{ImageRepository, Replacement};
 
 pub struct ImageService<R: ImageRepository> {
     repository: Arc<R>,
+    /// The largest image this deployment accepts (`config::Limits::max_image_bytes`). Checked
+    /// against the size a client announces, so an image that is too large is refused before its
+    /// bytes travel.
+    max_image_bytes: usize,
 }
 
 impl<R: ImageRepository> ImageService<R> {
-    pub fn new(repository: Arc<R>) -> Self {
-        ImageService { repository }
+    pub fn new(repository: Arc<R>, max_image_bytes: usize) -> Self {
+        ImageService {
+            repository,
+            max_image_bytes,
+        }
+    }
+
+    /// Refuse an announced size this deployment will not take.
+    ///
+    /// The announced size is not a promise about what arrives - on-premises the route's own limit
+    /// is what decides that - but it is what a client knows, and a refusal here costs one sentence
+    /// instead of a slow upload that ends in one anyway.
+    fn refuse_if_too_large(&self, size: u64) -> Result<(), HttpError> {
+        if size > self.max_image_bytes as u64 {
+            return Err(HttpError::PayloadTooLarge(&format!(
+                "the image is {size} bytes; this deployment accepts at most {}",
+                self.max_image_bytes
+            )));
+        }
+        Ok(())
     }
 
     /// The image library: what an editor can pick from, newest first.
@@ -169,11 +191,13 @@ impl<R: ImageRepository> ImageService<R> {
     pub async fn request_replacement(
         &self,
         id: ImageId,
-        ext: &str,
+        request: &crate::models::image::ReplaceImageRequest,
     ) -> Result<ReplacementInfo, HttpError> {
+        let ext = request.ext.as_str();
         if !is_safe_image_ext(ext) {
             return Err(HttpError::BadRequest("Invalid image extension"));
         }
+        self.refuse_if_too_large(request.size)?;
         if self
             .repository
             .get_image(&id)
@@ -187,7 +211,7 @@ impl<R: ImageRepository> ImageService<R> {
             )));
         }
         self.repository
-            .generate_replacement_upload_url(&id, ext)
+            .generate_replacement_upload_url(&id, request)
             .await
             .map_err(map_internal_error)
     }
@@ -272,6 +296,7 @@ impl<R: ImageRepository> ImageService<R> {
         &self,
         upload_info: NewImageRequest,
     ) -> Result<NewImageInfo, HttpError> {
+        self.refuse_if_too_large(upload_info.size)?;
         self.repository
             .generate_image_upload_url(&upload_info)
             .await

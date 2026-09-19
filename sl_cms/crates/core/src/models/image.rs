@@ -296,6 +296,12 @@ pub struct UpdateImageRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ReplaceImageRequest {
     pub ext: String,
+    /// How many bytes are about to be uploaded.
+    ///
+    /// The client knows before it sends them, and saying so is what lets the CMS refuse an image
+    /// over its limit before the bytes travel, and what lets a signed upload pin the size it was
+    /// signed for (see `ImageRepository::generate_image_upload_url`).
+    pub size: u64,
 }
 
 /// Where to put replacement bytes, and what they will be called once they are there.
@@ -328,6 +334,8 @@ pub fn is_safe_display_name(name: &str) -> bool {
 pub struct NewImageRequest {
     pub original_filename: String,
     pub ext: String,
+    /// How many bytes are about to be uploaded, as in [`ReplaceImageRequest::size`].
+    pub size: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct NewImageInfo {

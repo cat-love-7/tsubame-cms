@@ -2040,8 +2040,9 @@ mod tests {
         async fn generate_replacement_upload_url(
             &self,
             _id: &ImageId,
-            ext: &str,
+            request: &crate::models::image::ReplaceImageRequest,
         ) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            let ext = request.ext.as_str();
             Ok(ReplacementInfo {
                 file_name: format!("replacement.{ext}"),
                 upload_url: "/upload/replacement".to_string(),

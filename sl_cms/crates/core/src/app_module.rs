@@ -115,7 +115,7 @@ impl<R: Storage> AppModule<R> {
                 notifier,
             ),
             composite_field_service: CompositeFieldService::new(repository.clone()),
-            image_service: ImageService::new(repository.clone()),
+            image_service: ImageService::new(repository.clone(), limits.max_image_bytes),
             auth_service,
             preview_links,
             limits,

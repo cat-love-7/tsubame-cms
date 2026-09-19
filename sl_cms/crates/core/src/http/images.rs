@@ -80,7 +80,7 @@ async fn request_replacement<R: Storage>(
     Ok(Json(
         module
             .image_service
-            .request_replacement(ImageId::from_u64(id), &request.ext)
+            .request_replacement(ImageId::from_u64(id), &request)
             .await?,
     ))
 }

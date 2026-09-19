@@ -188,8 +188,12 @@ impl ImageRepository for RkvRepository {
     async fn generate_replacement_upload_url(
         &self,
         id: &ImageId,
-        ext: &str,
+        request: &sl_cms_core::models::image::ReplaceImageRequest,
     ) -> Result<ReplacementInfo, BoxError> {
+        // The size is the client's announcement, and the service has already refused one over the
+        // limit. What enforces it here is the upload route's own limit
+        // (`config::Limits::max_image_bytes`), so nothing is done with it.
+        let ext = request.ext.as_str();
         // Read-modify-write of the image record, and the whole of it is under the one lock: an
         // apply that landed in between would otherwise be written back over from the record read
         // before it, naming bytes that apply had already deleted.

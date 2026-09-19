@@ -94,7 +94,7 @@ pub trait ImageRepository: Send + Sync {
     fn generate_replacement_upload_url(
         &self,
         id: &ImageId,
-        ext: &str,
+        request: &crate::models::image::ReplaceImageRequest,
     ) -> impl Future<Output = Result<ReplacementInfo, BoxError>> + Send;
     /// Whether bytes are stored under `file_name`.
     fn image_bytes_exist(

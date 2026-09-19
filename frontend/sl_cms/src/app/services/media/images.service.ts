@@ -31,7 +31,7 @@ export class ImagesService {
       return throwError(() => refusal);
     }
     return this.images
-      .requestUploadUrl({ original_filename: file.name, ext: extension })
+      .requestUploadUrl({ original_filename: file.name, ext: extension, size: file.size })
       .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
   }
 
@@ -49,7 +49,7 @@ export class ImagesService {
       return throwError(() => refusal);
     }
     return this.images
-      .requestReplacement(id, extension)
+      .requestReplacement(id, extension, file.size)
       .pipe(
         switchMap((info) =>
           this.images

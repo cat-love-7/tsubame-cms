@@ -259,7 +259,7 @@ async fn image_arrays_work_but_number_and_image_together_are_rejected() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "a.png", "ext": "png" })),
+        Some(json!({ "original_filename": "a.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     let image_id = upload["id"].as_u64().expect("image id");

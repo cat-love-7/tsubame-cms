@@ -172,9 +172,14 @@ async fn login(app: &TestApp, username: &str, password: &str) -> (StatusCode, Va
     )
 }
 
-/// Put some bytes where the upload URL says, the way the browser does.
+/// The bytes a test uploads when it has no opinion about them. Twelve characters, so a test that
+/// announces a size and one that sends bytes can be kept in step by saying `PNG_BYTES.len()`.
+const PNG_BYTES: &[u8] = b"PNG-BYTES";
+
+/// Put some bytes where the upload URL says, the way the browser does - announcing them first,
+/// because that is what the upload URL is signed for on a deployment whose bytes go to S3.
 async fn put_bytes(app: &TestApp, token: &str, upload_url: &str) {
-    put_bytes_of(app, token, upload_url, b"PNG-BYTES").await;
+    put_bytes_of(app, token, upload_url, PNG_BYTES).await;
 }
 
 /// The same, with the bytes a test chooses - a size test is about the size.

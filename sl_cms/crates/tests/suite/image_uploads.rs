@@ -31,7 +31,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
             Method::POST,
             "/models/images/get_upload_url",
             Some(token),
-            Some(json!({ "original_filename": what, "ext": "png" })),
+            Some(json!({ "original_filename": what, "ext": "png", "size": PNG_BYTES.len() })),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -67,7 +67,7 @@ async fn an_image_only_takes_the_upload_it_was_given() {
         Method::POST,
         "/models/images/1/replace",
         Some(&token),
-        Some(json!({ "ext": "png" })),
+        Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -136,7 +136,7 @@ async fn image_upload_requires_auth_but_downloads_are_public() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "logo.png", "ext": "png" })),
+        Some(json!({ "original_filename": "logo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -234,7 +234,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
         Method::POST,
         "/models/images/get_upload_url",
         Some(&editor),
-        Some(json!({ "original_filename": "from-editor.png", "ext": "png" })),
+        Some(json!({ "original_filename": "from-editor.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{info}");
@@ -251,7 +251,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
         (
             Method::POST,
             format!("/models/images/{id}/replace"),
-            Some(json!({ "ext": "png" })),
+            Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
         ),
     ] {
         let (status, _) = send_raw(&app.router, method.clone(), &path, Some(&editor), body).await;
@@ -271,7 +271,7 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
         Method::POST,
         "/models/images/get_upload_url",
         Some(&viewer),
-        Some(json!({ "original_filename": "nope.png", "ext": "png" })),
+        Some(json!({ "original_filename": "nope.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -282,7 +282,9 @@ async fn uploading_an_image_needs_edit_somewhere_but_changing_one_needs_it_every
         Method::POST,
         "/models/images/get_upload_url",
         Some(&admin),
-        Some(json!({ "original_filename": "from-admin.png", "ext": "png" })),
+        Some(
+            json!({ "original_filename": "from-admin.png", "ext": "png", "size": PNG_BYTES.len() }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -312,7 +314,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
             Method::POST,
             "/models/images/get_upload_url",
             Some(token),
-            Some(json!({ "original_filename": name, "ext": "png" })),
+            Some(json!({ "original_filename": name, "ext": "png", "size": bytes.len() })),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -349,7 +351,7 @@ async fn an_image_can_be_replaced_keeping_its_id() {
         Method::POST,
         &format!("/models/images/{id}/replace"),
         Some(&token),
-        Some(json!({ "ext": "png" })),
+        Some(json!({ "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{replacement}");
@@ -493,18 +495,17 @@ async fn an_image_larger_than_two_megabytes_is_accepted() {
     let app = test_app().await;
     let token = app.admin_token.clone();
 
+    // Three megabytes: over axum's 2MB default and over the JSON limit, under the image one.
+    let bytes = vec![0x89u8; 3 * 1024 * 1024];
     let (status, info) = send(
         &app.router,
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "photograph.png", "ext": "png" })),
+        Some(json!({ "original_filename": "photograph.png", "ext": "png", "size": bytes.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{info}");
-
-    // Three megabytes: over axum's 2MB default and over the JSON limit, under the image one.
-    let bytes = vec![0x89u8; 3 * 1024 * 1024];
     put_bytes_of(
         &app,
         &token,
@@ -525,4 +526,55 @@ async fn an_image_larger_than_two_megabytes_is_accepted() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.len(), bytes.len());
+}
+
+/// An image the client already knows is too large is refused before its bytes travel.
+///
+/// The size a client announces is what the upload URL is signed for on a deployment whose bytes go
+/// to object storage, and what the CMS checks here on either kind: one sentence now, instead of an
+/// upload that ends in one anyway.
+#[tokio::test]
+async fn an_image_over_the_limit_is_refused_before_its_bytes_travel() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let over = sl_cms_core::config::DEFAULT_MAX_IMAGE_BYTES + 1;
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "huge.png", "ext": "png", "size": over })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["code"], "payload_too_large");
+    let message = body["message"].as_str().expect("a message");
+    assert!(
+        message.contains(&over.to_string()),
+        "the message should name the size announced: {message}"
+    );
+
+    // The replacement route asks the same question of the same number.
+    let (status, info) = send(
+        &app.router,
+        Method::POST,
+        "/models/images/get_upload_url",
+        Some(&token),
+        Some(json!({ "original_filename": "small.png", "ext": "png", "size": 9 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{info}");
+    let id = info["id"].as_u64().expect("the image id");
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        &format!("/models/images/{id}/replace"),
+        Some(&token),
+        Some(json!({ "ext": "png", "size": over })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["code"], "payload_too_large");
 }

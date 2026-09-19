@@ -22,7 +22,7 @@ async fn an_image_can_be_trashed_and_restored_before_it_is_deleted_for_good() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "kept.png", "ext": "png" })),
+        Some(json!({ "original_filename": "kept.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -211,7 +211,7 @@ async fn the_things_that_use_an_image_can_be_listed() {
             Method::POST,
             "/models/images/get_upload_url",
             Some(&token),
-            Some(json!({ "original_filename": name, "ext": "png" })),
+            Some(json!({ "original_filename": name, "ext": "png", "size": PNG_BYTES.len() })),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -382,7 +382,7 @@ async fn an_image_can_be_renamed_without_touching_its_bytes() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "photo.png", "ext": "png" })),
+        Some(json!({ "original_filename": "photo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -511,7 +511,7 @@ async fn images_can_be_listed_and_deleted() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "photo.png", "ext": "png" })),
+        Some(json!({ "original_filename": "photo.png", "ext": "png", "size": PNG_BYTES.len() })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -624,7 +624,9 @@ async fn rejects_unsafe_image_file_names_and_extensions() {
         Method::POST,
         "/models/images/get_upload_url",
         Some(&token),
-        Some(json!({ "original_filename": "x", "ext": "../../etc/passwd" })),
+        Some(
+            json!({ "original_filename": "x", "ext": "../../etc/passwd", "size": PNG_BYTES.len() }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
