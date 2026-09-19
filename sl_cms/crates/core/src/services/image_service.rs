@@ -125,7 +125,7 @@ impl<R: ImageRepository> ImageService<R> {
     pub async fn references(
         &self,
         id: ImageId,
-    ) -> Result<Vec<crate::models::image::ImageOwner>, HttpError> {
+    ) -> Result<Vec<crate::models::owner::ItemOwner>, HttpError> {
         self.require_image(&id).await?;
         self.repository
             .get_image_references(&id)

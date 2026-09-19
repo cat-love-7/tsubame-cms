@@ -12,9 +12,10 @@ use aws_sdk_s3::presigning::PresigningConfig;
 use super::*;
 use crate::ImageDelivery;
 use sl_cms_core::models::image::{
-    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplaceImageRequest,
-    ReplacementInfo, sanitize_ext,
+    Image, ImageId, NewImageInfo, NewImageRequest, ReplaceImageRequest, ReplacementInfo,
+    sanitize_ext,
 };
+use sl_cms_core::models::owner::ItemOwner;
 use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
 
 /// How long an upload URL is good for. Long enough for a slow phone on a train, short enough
@@ -340,7 +341,7 @@ impl ImageRepository for AwsRepository {
 
     async fn set_image_references(
         &self,
-        owner: &ImageOwner,
+        owner: &ItemOwner,
         images: &[ImageId],
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
@@ -380,13 +381,13 @@ impl ImageRepository for AwsRepository {
         Ok(())
     }
 
-    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ImageOwner>, BoxError> {
+    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ItemOwner>, BoxError> {
         let inner = self.inner.clone();
         let image_pk = format!("image#{}", id);
-        let mut owners: Vec<ImageOwner> = list(&inner, &image_pk, "ref#")
+        let mut owners: Vec<ItemOwner> = list(&inner, &image_pk, "ref#")
             .await?
             .into_iter()
-            .filter_map(|(sk, _)| ImageOwner::from_storage_key(sk.trim_start_matches("ref#")))
+            .filter_map(|(sk, _)| ItemOwner::from_storage_key(sk.trim_start_matches("ref#")))
             .collect();
         owners.sort();
         Ok(owners)

@@ -1,8 +1,7 @@
 use std::future::Future;
 
-use crate::models::image::{
-    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo,
-};
+use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
+use crate::models::owner::ItemOwner;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -54,7 +53,7 @@ pub trait ImageRepository: Send + Sync {
     /// [`ImageRepository::get_image_references`].
     fn set_image_references(
         &self,
-        owner: &ImageOwner,
+        owner: &ItemOwner,
         images: &[ImageId],
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
 
@@ -62,7 +61,7 @@ pub trait ImageRepository: Send + Sync {
     fn get_image_references(
         &self,
         id: &ImageId,
-    ) -> impl Future<Output = Result<Vec<ImageOwner>, BoxError>> + Send;
+    ) -> impl Future<Output = Result<Vec<ItemOwner>, BoxError>> + Send;
 
     /// Move an image in or out of the trash.
     ///

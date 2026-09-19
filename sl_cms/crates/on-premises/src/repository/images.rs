@@ -5,9 +5,9 @@ use rkv::{StoreOptions, Value};
 
 use crate::repository::{IMAGE_STORE, RkvRepository};
 use sl_cms_core::models::image::{
-    Image, ImageId, ImageOwner, NewImageInfo, NewImageRequest, ReplacementInfo, is_safe_file_name,
-    sanitize_ext,
+    Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo, is_safe_file_name, sanitize_ext,
 };
+use sl_cms_core::models::owner::ItemOwner;
 use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
 use sl_cms_core::repositories::local_image_bytes::LocalImageBytes;
 
@@ -28,7 +28,7 @@ pub struct ImageData {
 const IMAGE_REFS_STORE: &str = "image_refs";
 
 /// The entries one owner has: `<owner>|image|<id>`.
-fn owner_prefix(owner: &ImageOwner) -> String {
+fn owner_prefix(owner: &ItemOwner) -> String {
     format!("{}|", owner.storage_key())
 }
 
@@ -37,7 +37,7 @@ fn image_prefix(id: &ImageId) -> String {
     format!("image|{}|", **id)
 }
 
-fn image_owner_key(id: &ImageId, owner: &ImageOwner) -> String {
+fn image_owner_key(id: &ImageId, owner: &ItemOwner) -> String {
     format!("{}{}", image_prefix(id), owner.storage_key())
 }
 
@@ -342,7 +342,7 @@ impl ImageRepository for RkvRepository {
 
     async fn set_image_references(
         &self,
-        owner: &ImageOwner,
+        owner: &ItemOwner,
         images: &[ImageId],
     ) -> Result<(), BoxError> {
         let _guard = self.begin();
@@ -394,7 +394,7 @@ impl ImageRepository for RkvRepository {
         Ok(())
     }
 
-    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ImageOwner>, BoxError> {
+    async fn get_image_references(&self, id: &ImageId) -> Result<Vec<ItemOwner>, BoxError> {
         let _guard = self.begin();
         let env = self.rkv.read().map_err(|e| e.to_string())?;
         let store = env.open_single(IMAGE_REFS_STORE, StoreOptions::create())?;
@@ -407,7 +407,7 @@ impl ImageRepository for RkvRepository {
             let Some(rest) = key.strip_prefix(&prefix) else {
                 break;
             };
-            if let Some(owner) = ImageOwner::from_storage_key(rest) {
+            if let Some(owner) = ItemOwner::from_storage_key(rest) {
                 owners.push(owner);
             }
         }

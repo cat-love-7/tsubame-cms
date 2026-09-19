@@ -194,7 +194,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         images.sort();
         images.dedup();
         self.set_image_references(
-            &crate::models::image::ImageOwner::single_page(name.as_str()),
+            &crate::models::owner::ItemOwner::single_page(name.as_str()),
             &images,
         )
         .await;
@@ -202,7 +202,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     async fn set_image_references(
         &self,
-        owner: &crate::models::image::ImageOwner,
+        owner: &crate::models::owner::ItemOwner,
         images: &[crate::models::image::ImageId],
     ) {
         if let Err(e) = self
@@ -233,7 +233,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?;
         // Nothing uses this page's images any more.
         self.set_image_references(
-            &crate::models::image::ImageOwner::single_page(name.as_str()),
+            &crate::models::owner::ItemOwner::single_page(name.as_str()),
             &[],
         )
         .await;
@@ -889,7 +889,7 @@ mod tests {
 
         async fn set_image_references(
             &self,
-            _owner: &crate::models::image::ImageOwner,
+            _owner: &crate::models::owner::ItemOwner,
             _images: &[ImageId],
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
@@ -898,7 +898,7 @@ mod tests {
             &self,
             _id: &ImageId,
         ) -> Result<
-            Vec<crate::models::image::ImageOwner>,
+            Vec<crate::models::owner::ItemOwner>,
             Box<dyn std::error::Error + Send + Sync + 'static>,
         > {
             Ok(Vec::new())

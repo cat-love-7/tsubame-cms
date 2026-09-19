@@ -951,7 +951,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await;
         // And nothing uses this item's images any more.
         self.set_image_references(
-            &crate::models::image::ImageOwner::collection_item(collection_name.as_str(), *item_id),
+            &crate::models::owner::ItemOwner::collection_item(collection_name.as_str(), *item_id),
             &[],
         )
         .await;
@@ -1190,7 +1190,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             images.dedup();
         }
         self.set_image_references(
-            &crate::models::image::ImageOwner::collection_item(collection_name.as_str(), **item_id),
+            &crate::models::owner::ItemOwner::collection_item(collection_name.as_str(), **item_id),
             &images,
         )
         .await;
@@ -1199,7 +1199,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// Write the reference index, and say so in the log when it cannot be written.
     async fn set_image_references(
         &self,
-        owner: &crate::models::image::ImageOwner,
+        owner: &crate::models::owner::ItemOwner,
         images: &[crate::models::image::ImageId],
     ) {
         if let Err(e) = self
@@ -1450,7 +1450,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             }
             None => {
                 self.set_image_references(
-                    &crate::models::image::ImageOwner::collection_item(
+                    &crate::models::owner::ItemOwner::collection_item(
                         collection_name.as_str(),
                         *item_id,
                     ),
@@ -2166,7 +2166,7 @@ mod tests {
 
         async fn set_image_references(
             &self,
-            _owner: &crate::models::image::ImageOwner,
+            _owner: &crate::models::owner::ItemOwner,
             _images: &[ImageId],
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
             Ok(())
@@ -2175,7 +2175,7 @@ mod tests {
             &self,
             _id: &ImageId,
         ) -> Result<
-            Vec<crate::models::image::ImageOwner>,
+            Vec<crate::models::owner::ItemOwner>,
             Box<dyn std::error::Error + Send + Sync + 'static>,
         > {
             Ok(Vec::new())

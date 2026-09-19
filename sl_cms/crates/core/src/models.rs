@@ -4,6 +4,7 @@ pub mod error;
 pub mod identity;
 pub mod image;
 pub mod item_status;
+pub mod owner;
 pub mod pagination;
 pub mod schema;
 pub mod single_page;
