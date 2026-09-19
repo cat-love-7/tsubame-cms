@@ -13,8 +13,10 @@
 //! **This is the on-premises deployment's policy.** Where sign-in is Cognito's (the AWS
 //! backend), the CMS never sees an attempt — the browser signs in against Cognito and the CMS
 //! only verifies the token it gets back — so there is nothing here to count and nothing that
-//! could count it: Cognito does not expose a failure count, only its own lockout state, and
-//! its documented answer to volume is AWS WAF rather than a per-account limiter. The local
+//! could count it: Cognito does not expose a failure count, and locking an account after
+//! repeated failures is its threat protection, which the Plus plan has and Essentials does not.
+//! Its documented answer to volume is AWS WAF, which this deployment deliberately leaves out
+//! (`doc/aws-plan.md`, P5). The local
 //! password endpoints answer 501 on AWS for that reason, which is what keeps this module
 //! unreachable there rather than merely unused.
 //!

@@ -2,7 +2,7 @@
 
 `terraform apply` here creates everything the CMS needs on AWS: one DynamoDB table, two S3
 buckets (the images, and the built app), a Cognito pool and app client with its hosted sign-in
-page, a WAF rule in front of that page, a CloudFront distribution in front of the app *and* the
+page, a CloudFront distribution in front of the app *and* the
 API, and the Lambda function the API runs as.
 
 ## What is verified, and what is not
@@ -131,7 +131,7 @@ it comes back whenever a resource is replaced, which is why the apply identity k
 `plan` cannot do is written into the plan policy: no `Create*`, no `Put*` outside the lock.
 
 The statements are scoped by that name prefix wherever AWS allows it: the table, the function, the
-role, the log group, the buckets and the WAF rule all carry it. CloudFront, Cognito and the
+role, the log group and the buckets all carry it. CloudFront, Cognito and the
 `Create*` calls that have no resource to name yet are `*`, which is how those services work.
 
 Two things are deliberately **not** in it:
@@ -236,9 +236,12 @@ has to stay on x86_64 for some reason.
 - **The API is served under `/api`.** `sl_cms_core::API_PREFIX` nests the whole surface there, so
   a CloudFront distribution in front of the admin app can send `/api/*` to this function URL
   without rewriting anything, and nothing has to strip a prefix on the way in.
-- **WAF, not threat protection.** Cognito's threat protection is risk scoring (Plus plan) and its
-  documentation points at WAF for volume. This rule is the volume case; the per-account lockout
-  is Cognito's own.
+- **No WAF.** Nothing rate-limits sign-in per address. The pool's own per-category quotas bound
+  what a flood can spend (e.g. `UserAuthentication`, 120 requests/second across the account and
+  region), and per-account lockout after repeated failures is threat protection, which is the
+  Plus plan's rather than a web ACL's (`doc/aws-plan.md`, P5). So a busy address can still spend
+  the pool's share; a regional rate-based rule is what fixes that, and it was left out on purpose
+  rather than forgotten - a handful of resources and roughly $5/month plus $1 per rule.
 - **No account recovery by email for accounts without one.** Recovery uses a verified address;
   an account an operator created without one is reset by an administrator
   (`AdminSetUserPassword`, still to be wired into the account screen).

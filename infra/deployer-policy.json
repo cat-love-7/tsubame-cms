@@ -189,31 +189,6 @@
       "Resource": "arn:aws:cognito-idp:<region>:<account>:userpool/*"
     },
     {
-      "Sid": "CreateWebAcl",
-      "Effect": "Allow",
-      "Action": [
-        "wafv2:CreateWebACL"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "WebAcl",
-      "Effect": "Allow",
-      "Action": [
-        "wafv2:GetWebACL",
-        "wafv2:UpdateWebACL",
-        "wafv2:DeleteWebACL",
-        "wafv2:AssociateWebACL",
-        "wafv2:DisassociateWebACL",
-        "wafv2:GetWebACLForResource",
-        "wafv2:ListResourcesForWebACL",
-        "wafv2:TagResource",
-        "wafv2:UntagResource",
-        "wafv2:ListTagsForResource"
-      ],
-      "Resource": "arn:aws:wafv2:<region>:<account>:regional/webacl/<name>-sign-in/*"
-    },
-    {
       "Sid": "CloudFront",
       "Effect": "Allow",
       "Action": [
@@ -293,8 +268,7 @@
       "Condition": {
         "StringEquals": {
           "iam:AWSServiceName": [
-            "cloudfront.amazonaws.com",
-            "wafv2.amazonaws.com"
+            "cloudfront.amazonaws.com"
           ]
         }
       }

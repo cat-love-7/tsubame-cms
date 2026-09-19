@@ -302,17 +302,26 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
 
 **AWS では回数制限を持たない。** サインインはブラウザと Cognito の間で完結し、CMS は
 JWT を検証するだけなので、CMS は試行そのものを見ない。Cognito も**失敗回数を返す API を
-持たない**(返すのは `TooManyFailedAttemptsException` という状態だけで、回数・期間は
-設定できない)。threat protection は Plus プランのリスクスコアリングで、ドキュメントが
+持たない**(`InitiateAuth` の失敗は `NotAuthorizedException` で、回数を問い合わせる手段は無い)。
+threat protection は Plus プランのリスクスコアリングで、ドキュメントが
 「流量は見ていない、DDoS には AWS WAF を付けろ」と明言している。失敗で発火するトリガも無い
 (`PreAuthentication` は試行時に呼ばれるが成否は渡されず、既定では存在しないユーザーでは
 呼ばれない)。
 
+**ただし WAF は付けない(2026-09 決定)。** 上の引用に従えば大量アクセス対策は WAF の
+レートベースルールだが、守れるのは**サインインの試行だけ**で、CloudFront も `/api` も画像配信も
+守れない。その一方でプール側のカテゴリ別クォータ(例: `UserAuthentication` はアカウント・
+リージョン全体で 120 RPS)が既に被害の上限を作っている。web ACL はリソースと月額
+(約 $5 + ルール $1 + リクエスト $0.60/100 万)を足す割に、今の規模で得るものが無いと判断した。
+アカウント単位の防御(リスクスコアリングとロックアウト)は Plus プランの threat protection で、
+これは WAF では代替できない。必要になったら CloudFront 側(CLOUDFRONT スコープ、us-east-1)に
+足す — そちらは API とアプリの両方を守れる — という別の判断になる。
+
 | | on-premises | AWS |
 |---|---|---|
-| 失敗回数のカウンタ | **`auth/throttle.rs`**(5 回/15 分、429 + `Retry-After`、識別子の存在を隠す) | **持たない**(Cognito のロックアウトに委ねる) |
+| 失敗回数のカウンタ | **`auth/throttle.rs`**(5 回/15 分、429 + `Retry-After`、識別子の存在を隠す) | **持たない**(Cognito は回数を返さない。Plus の threat protection のみ) |
 | 存在しない識別子の隠蔽 | 同一メッセージ + 全識別子を数える | `PreventUserExistenceErrors: ENABLED`(アプリクライアント設定) |
-| 大量アクセス | プロセス内カウンタ | **AWS WAF のレートベースルール**(P5 の Terraform) |
+| 大量アクセス | プロセス内カウンタ | **持たない**(Cognito のカテゴリ別クォータに委ねる) |
 | パスワード系 API | 使える | `/api/auth/login` など **501** + capabilities で表明 |
 
 したがって **DynamoDB のカウンタも、Cognito からの回数取得も作らない。** 二重に持つと

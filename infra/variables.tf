@@ -250,17 +250,6 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
-
-variable "waf_rate_limit" {
-  description = <<-EOT
-    Requests per five minutes from one address to the sign-in endpoint before it is blocked.
-    A per-account lockout is Cognito's; this is the volume case, which Cognito's documentation
-    points at WAF for.
-  EOT
-  type        = number
-  default     = 2000
-}
-
 variable "webhook_urls" {
   description = "Where content events are delivered. Empty means webhooks are off."
   type        = list(string)

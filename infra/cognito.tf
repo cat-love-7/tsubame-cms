@@ -92,47 +92,6 @@ resource "aws_cognito_user_pool_domain" "cms" {
   user_pool_id = aws_cognito_user_pool.cms.id
 }
 
-# Brute force is handled in two places, and neither is a per-account counter of ours: Cognito
-# locks an account after repeated failures, and this is the volume case that its documentation
-# points at WAF for.
-resource "aws_wafv2_web_acl" "sign_in" {
-  name  = "${local.name}-sign-in"
-  scope = "REGIONAL"
-
-  default_action {
-    allow {}
-  }
-
-  rule {
-    name     = "rate-limit-sign-in"
-    priority = 1
-
-    action {
-      block {}
-    }
-
-    statement {
-      rate_based_statement {
-        limit              = var.waf_rate_limit
-        aggregate_key_type = "IP"
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "${local.name}-rate-limit"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "${local.name}-waf"
-    sampled_requests_enabled   = true
-  }
-}
-
-resource "aws_wafv2_web_acl_association" "sign_in" {
-  resource_arn = aws_cognito_user_pool.cms.arn
-  web_acl_arn  = aws_wafv2_web_acl.sign_in.arn
-}
+# No WAF on this pool. A rate-based rule would be the volume answer, but the pool's own
+# per-category quotas already bound what a flood can spend, and threat protection - the
+# per-account half - is the Plus plan's, not a web ACL (doc/aws-plan.md, P5).
