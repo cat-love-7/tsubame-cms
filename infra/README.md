@@ -13,7 +13,7 @@ API, and the Lambda function the API runs as.
 | `terraform init -backend=false` + `terraform validate` | here, against the real providers, for `infra/` and `infra/bootstrap/` |
 | `terraform plan` / `apply` | **nowhere yet** — they need AWS credentials |
 | The built app served by CloudFront | **nothing yet** — `scripts/deploy-frontend.sh` needs AWS credentials |
-| The function actually answering an invocation | **nothing yet**; that is staging |
+| The function actually answering an invocation | **nowhere yet** — `scripts/smoke-test.sh <app-url>` is the first thing to run after the two above, and it needs no AWS credentials |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`) |
 
 So this is a configuration that Terraform agrees is well-formed, not one that has been applied.
@@ -74,7 +74,13 @@ The app itself is deployed last, because it is a build artifact rather than infr
 
 ```bash
 scripts/deploy-frontend.sh              # ng build, aws s3 sync --delete, invalidate index.html
+scripts/smoke-test.sh                   # the app and its /api, over HTTP
 ```
+
+The smoke test is the first thing that asks the deployment a question rather than describing it:
+the shell and its fallback, the two cache lifetimes, `/api/*` reaching the function, the refusal
+shapes, and the sign-in page the deployment advertises. It takes the app URL as an argument, so
+anyone can run it against a deployment without credentials of their own.
 
 `backend.hcl` is what makes the state shared: `terraform init` writes it to the bucket under the
 key the file names, so two operators who run `plan` at once share one state and one lock instead of
@@ -87,8 +93,8 @@ but Terraform no longer knows it made it.
 
 Two files, for the two things one does with this stack:
 
-* **`infra/deployer-policy.json`** (143 actions) - the identity that applies it.
-* **`infra/deployer-policy-plan.json`** (60) - the identity that only *reads*: a plan, a review, a
+* **`infra/deployer-policy.json`** (132 actions) - the identity that applies it.
+* **`infra/deployer-policy-plan.json`** (56) - the identity that only *reads*: a plan, a review, a
   CI check. It is a strict subset of the first, and the only things it writes are the state lock
   (`s3:PutObject` and `s3:DeleteObject` on `<state-key>.tflock`, because a plan takes the lock
   too) - plus the log reads, which are there for looking at a deployment rather than for planning.
@@ -118,12 +124,12 @@ Both take the same five placeholders.
 
 | Run | What it calls |
 |---|---|
-| `plan` (and the refresh inside every apply) | the 59 reads: `Get*`, `Describe*`, `List*` |
+| `plan` (and the refresh inside every apply) | the 54 reads: `Get*`, `Describe*`, `List*`, the log queries - plus the two writes the state lock takes |
 | `apply`, nothing changed | the same |
-| `apply`, something changed | those, plus the `Put*`/`Update*`/`Set*`/`Tag*` of the resources that changed (49 of them in total) |
-| the first `apply`, or one that adds a resource | those, plus the 21 `Create*`/`Add*`/`Associate*` |
+| `apply`, something changed | those, plus the `Put*`/`Update*`/`Set*`/`Tag*` of the resources that changed (38 of them in total) |
+| the first `apply`, or one that adds a resource | those, plus the 17 `Create*`/`Add*`/`Associate*`, and `iam:PassRole` for the function |
 | an apply that *replaces* a resource | the same, plus the deletes of what it takes away - `terraform plan` says `# forces replacement`, and that is a delete and a create |
-| `terraform destroy` | the 23 `Delete*`/`Remove*`/`Disassociate*` |
+| `terraform destroy` | the 18 `Delete*`/`Remove*`/`Disassociate*` |
 | `scripts/deploy-frontend.sh`, every time | `<name>-app` objects (`ListBucket`, `GetObject`, `PutObject`, `DeleteObject`) and `cloudfront:CreateInvalidation`/`GetInvalidation` |
 
 The difference between the first deployment and later ones is therefore only the create half - and

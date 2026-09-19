@@ -39,6 +39,7 @@ docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
 (cd infra/bootstrap && terraform init -backend=false && terraform validate)
 scripts/check-iam-actions.sh  # every action in the deployer policies exists, and the plan one is a subset
 scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS credentials
+scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS credentials with a URL
 ```
 
 ## Rules that are easy to get wrong
