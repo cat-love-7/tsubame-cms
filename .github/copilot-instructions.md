@@ -37,6 +37,7 @@ cd frontend/sl_cms && npm run lint && npm run format:check
 docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
 (cd infra && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
 (cd infra/bootstrap && terraform init -backend=false && terraform validate)
+scripts/check-iam-actions.sh  # every action in the deployer policies exists, and the plan one is a subset
 scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS credentials
 ```
 
@@ -85,7 +86,8 @@ scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS cre
 - **Changing `infra/` means changing the deployer policies** (`infra/deployer-policy.json` and
   `deployer-policy-plan.json`, the read-only half): those files are the permission set a deployment
   needs, written out for the operator, and a resource the stack gains is a permission it has to
-  gain with it.
+  gain with it. Run `scripts/check-iam-actions.sh` after touching either - a misspelt action grants
+  nothing and only shows up as an AccessDenied on the real one.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
   (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
 - **Terraform state is remote** (`infra/` uses the S3 backend with `use_lockfile`, configured

@@ -87,11 +87,22 @@ but Terraform no longer knows it made it.
 
 Two files, for the two things one does with this stack:
 
-* **`infra/deployer-policy.json`** (142 actions) - the identity that applies it.
-* **`infra/deployer-policy-plan.json`** (57) - the identity that only *reads*: a plan, a review, a
+* **`infra/deployer-policy.json`** (143 actions) - the identity that applies it.
+* **`infra/deployer-policy-plan.json`** (60) - the identity that only *reads*: a plan, a review, a
   CI check. It is a strict subset of the first, and the only things it writes are the state lock
   (`s3:PutObject` and `s3:DeleteObject` on `<state-key>.tflock`, because a plan takes the lock
   too) - plus the log reads, which are there for looking at a deployment rather than for planning.
+
+Both are checked against AWS's own action list by `scripts/check-iam-actions.sh`, which also
+insists the plan policy stays a subset. Run it after changing either: **a misspelt action is
+invisible when the policy is attached** - IAM accepts the name and it grants nothing, so the
+deployment fails later with `AccessDenied` on the real action, which reads like a missing
+permission rather than a misspelt one (`s3:PutBucketLifecycleConfiguration` was one; the action is
+`s3:PutLifecycleConfiguration`).
+
+One S3 detail worth knowing in the same area: the wildcard `s3:GetBucket*` covers most of what a
+refresh reads and *not* the three whose names do not start with it - `GetLifecycleConfiguration`,
+`GetEncryptionConfiguration`, `GetReplicationConfiguration` - so those are listed beside it.
 
 Both take the same five placeholders.
 
@@ -107,7 +118,7 @@ Both take the same five placeholders.
 
 | Run | What it calls |
 |---|---|
-| `plan` (and the refresh inside every apply) | the 56 reads: `Get*`, `Describe*`, `List*` |
+| `plan` (and the refresh inside every apply) | the 59 reads: `Get*`, `Describe*`, `List*` |
 | `apply`, nothing changed | the same |
 | `apply`, something changed | those, plus the `Put*`/`Update*`/`Set*`/`Tag*` of the resources that changed (49 of them in total) |
 | the first `apply`, or one that adds a resource | those, plus the 21 `Create*`/`Add*`/`Associate*` |

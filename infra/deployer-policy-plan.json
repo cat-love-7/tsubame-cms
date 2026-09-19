@@ -37,7 +37,10 @@
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket",
-        "s3:GetBucket*"
+        "s3:GetBucket*",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetReplicationConfiguration"
       ],
       "Resource": "arn:aws:s3:::<name>-*"
     },

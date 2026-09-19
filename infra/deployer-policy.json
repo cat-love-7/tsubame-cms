@@ -4,7 +4,9 @@
     {
       "Sid": "WhoAmI",
       "Effect": "Allow",
-      "Action": "sts:GetCallerIdentity",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
       "Resource": "*"
     },
     {
@@ -16,7 +18,7 @@
         "s3:GetBucketVersioning",
         "s3:GetBucketPolicy",
         "s3:GetBucketPublicAccessBlock",
-        "s3:GetBucketLifecycleConfiguration",
+        "s3:GetLifecycleConfiguration",
         "s3:GetEncryptionConfiguration",
         "s3:CreateBucket",
         "s3:DeleteBucket",
@@ -24,7 +26,7 @@
         "s3:PutBucketPolicy",
         "s3:DeleteBucketPolicy",
         "s3:PutBucketPublicAccessBlock",
-        "s3:PutBucketLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration",
         "s3:PutEncryptionConfiguration"
       ],
       "Resource": "arn:aws:s3:::<state-bucket>"
@@ -70,10 +72,13 @@
         "s3:DeleteBucketPolicy",
         "s3:PutBucketCORS",
         "s3:PutBucketPublicAccessBlock",
-        "s3:PutBucketLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration",
         "s3:PutEncryptionConfiguration",
         "s3:PutBucketVersioning",
-        "s3:PutBucketTagging"
+        "s3:PutBucketTagging",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetReplicationConfiguration"
       ],
       "Resource": "arn:aws:s3:::<name>-*"
     },
@@ -186,7 +191,9 @@
     {
       "Sid": "CreateWebAcl",
       "Effect": "Allow",
-      "Action": "wafv2:CreateWebACL",
+      "Action": [
+        "wafv2:CreateWebACL"
+      ],
       "Resource": "*"
     },
     {
@@ -266,7 +273,9 @@
     {
       "Sid": "PassTheFunctionRole",
       "Effect": "Allow",
-      "Action": "iam:PassRole",
+      "Action": [
+        "iam:PassRole"
+      ],
       "Resource": "arn:aws:iam::<account>:role/<name>-*",
       "Condition": {
         "StringEquals": {
@@ -277,7 +286,9 @@
     {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
-      "Action": "iam:CreateServiceLinkedRole",
+      "Action": [
+        "iam:CreateServiceLinkedRole"
+      ],
       "Resource": "arn:aws:iam::<account>:role/aws-service-role/*",
       "Condition": {
         "StringEquals": {
