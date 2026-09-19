@@ -318,13 +318,17 @@ async function openAs(username, password) {
  * The tree is collapsed by default, so its links are not in the DOM until it is expanded —
  * a count of zero would otherwise prove nothing.
  */
+async function expandBranch(rolePage, label) {
+  await rolePage
+    .locator(`button[aria-label="toggle ${label}"]`)
+    .click({ force: true })
+    .catch(() => {});
+  await rolePage.waitForTimeout(250);
+}
+
 async function expandSettings(rolePage) {
-  for (const label of ['toggle Settings', 'toggle Schemas']) {
-    await rolePage
-      .locator(`button[aria-label="${label}"]`)
-      .click({ force: true })
-      .catch(() => {});
-    await rolePage.waitForTimeout(250);
+  for (const label of ['Settings', 'Schemas']) {
+    await expandBranch(rolePage, label);
   }
 }
 
@@ -1073,11 +1077,14 @@ try {
     await createAccount(account.username, 'role-password', account, token);
   }
 
-  await expandSettings(page);
+  // Accounts are beside the schema branch, not inside it, so opening Settings is enough to reach
+  // them: a link that needed "Schemas" opened first would be one the reader has to know is there.
+  await expandBranch(page, 'Settings');
   check(
     '管理者にはアカウント管理が見える',
     (await page.locator('a[href="/settings/users"]').count()) === 1,
   );
+  await expandBranch(page, 'Schemas');
 
   const editor = await openAs('e2e-editor@example.com', 'role-password');
   await editor.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });

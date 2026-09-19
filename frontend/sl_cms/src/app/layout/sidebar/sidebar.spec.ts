@@ -38,6 +38,23 @@ function hasLink(nodes: ReturnType<Sidebar['toTreeNodes']>, path: string): boole
   );
 }
 
+/** The node a label names, wherever the tree keeps it. */
+function nodeNamed(
+  nodes: ReturnType<Sidebar['toTreeNodes']>,
+  name: string,
+): ReturnType<Sidebar['toTreeNodes']>[number] | null {
+  for (const node of nodes) {
+    if (node.name === name) {
+      return node;
+    }
+    const under = node.children ? nodeNamed(node.children, name) : null;
+    if (under) {
+      return under;
+    }
+  }
+  return null;
+}
+
 describe('Sidebar', () => {
   let component: Sidebar;
   let fixture: ComponentFixture<Sidebar>;
@@ -75,6 +92,30 @@ describe('Sidebar', () => {
   it('keeps the schema and account screens out of an editor’s navigation', () => {
     TestBed.inject(AuthService);
     expect(hasLink(component.toTreeNodes([[], []]), '/settings/users')).toBe(false);
+  });
+
+  // Accounts are not a schema: what a schema describes is content, and an account is not content.
+  // They were a fourth item inside the Schemas branch, which made "Schemas" and "Accounts" look
+  // like the same kind of thing.
+  it('keeps accounts beside the schema branch, not inside it', async () => {
+    signIn(ADMIN);
+    await create();
+    localStorage.removeItem('sl_cms.token');
+    localStorage.removeItem('sl_cms.user');
+
+    const tree = component.toTreeNodes([[], []]);
+    const schemas = nodeNamed(tree, 'Schemas');
+    const settings = nodeNamed(tree, 'Settings');
+
+    expect(schemas?.children?.map((child) => child.name)).toEqual([
+      'Collections',
+      'Single pages',
+      'Composite fields',
+    ]);
+    expect(hasLink(schemas?.children ?? [], '/settings/users')).toBe(false);
+    // A sibling of the schema branch, so Settings names both.
+    expect(settings?.children?.map((child) => child.name)).toEqual(['Schemas', 'Accounts']);
+    expect(hasLink(settings?.children ?? [], '/settings/users')).toBe(true);
   });
 
   it('offers the account screen to an administrator', async () => {

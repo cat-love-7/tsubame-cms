@@ -54,8 +54,10 @@ export class Sidebar implements OnInit {
   }
   toTreeNodes(obs: [string[], string[]]): SidebarItem[] {
     const [collectionNames, singlePageNames] = obs;
-    // Only administrators may change schemas or accounts, so the links are not offered to
-    // anyone else (the server refuses them regardless).
+    // The account screen is for administrators, so its link is not offered to anyone else (the
+    // server refuses them regardless). The schema screens are offered to every signed-in account:
+    // a schema is what the content editor is drawn from, so an editor reading one is the point -
+    // and changing one is what the server refuses.
     const isAdmin = this.auth.isAdmin();
     // An empty "Single Documents" has no children, so point it at the screen where one
     // can be created rather than rendering a dead link.
@@ -112,17 +114,21 @@ export class Sidebar implements OnInit {
                 nameKey: 'content.compositeFields',
                 link: '/settings/composite-fields',
               },
-              ...(isAdmin
-                ? [
-                    {
-                      name: 'Accounts',
-                      nameKey: 'accounts.title',
-                      link: '/settings/users',
-                    },
-                  ]
-                : []),
             ],
           },
+          // Accounts are not a schema: what a schema describes is content, and an account is not
+          // content. They are one screen under Settings, so they are one item there - a sibling of
+          // the schema branch, not a fourth thing inside it. Only an administrator is offered the
+          // link (the server refuses everyone else anyway).
+          ...(isAdmin
+            ? [
+                {
+                  name: 'Accounts',
+                  nameKey: 'accounts.title',
+                  link: '/settings/users',
+                },
+              ]
+            : []),
         ],
       },
     ];
