@@ -84,6 +84,54 @@ export function imagesOf(
     .filter((image) => image.id !== null || image.url !== null);
 }
 
+/**
+ * One line of a relation's value: what it points at.
+ *
+ * An absent `item` is a single page, whose identity is its name.
+ */
+export type RelationRef = { target: string; item?: number | null };
+
+/** The references inside a value, when the field holds relation references at all. */
+export function relationRefsOf(value: FieldValue | undefined): RelationRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (entry): entry is RelationRef =>
+      entry !== null &&
+      typeof entry === 'object' &&
+      !Array.isArray(entry) &&
+      typeof (entry as { target?: unknown }).target === 'string',
+  );
+}
+
+/**
+ * The key a reference is looked up by.
+ *
+ * The same shape the owner of a piece of content has on the server (`collection:<name>:<id>` and
+ * `page:<name>`), so two references cannot be confused: a collection named `home` is not the page
+ * named `home`.
+ */
+export function referenceKey(reference: RelationRef): string {
+  return typeof reference.item === 'number'
+    ? `collection:${reference.target}:${reference.item}`
+    : `page:${reference.target}`;
+}
+
+/**
+ * What a reference is called: the title the target's schema names, and the reference itself when
+ * there is none - `categories #3` says which item, which is what is left when nothing names it.
+ */
+export function referenceName(reference: RelationRef, labels: ReadonlyMap<string, string>): string {
+  const label = labels.get(referenceKey(reference));
+  if (label !== undefined && label !== '') {
+    return label;
+  }
+  return typeof reference.item === 'number'
+    ? `${reference.target} #${reference.item}`
+    : reference.target;
+}
+
 /** Single-line rendering used by tables and summaries. */
 export function formatFieldValue(value: FieldValue | undefined): string {
   if (value === undefined || value === null) {

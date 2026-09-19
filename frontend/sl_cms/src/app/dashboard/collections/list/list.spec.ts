@@ -37,8 +37,21 @@ class StubCollectionsService {
     { name: 'title', field_type: 'Text', required: false, width: 12, height: 1 },
   ];
 
+  /** Titles the fake server knows, keyed by id written as a string. */
+  public titles: Record<string, unknown> = {};
+
   getCollectionSchema(): Observable<unknown> {
     return of(this.schema);
+  }
+
+  getItemTitles(_name: string, ids: number[]): Observable<Record<string, unknown>> {
+    const wanted: Record<string, unknown> = {};
+    for (const id of ids) {
+      if (String(id) in this.titles) {
+        wanted[String(id)] = this.titles[String(id)];
+      }
+    }
+    return of(wanted);
   }
 
   listCollectionItemsPage(
@@ -338,6 +351,49 @@ describe('CollectionItemList', () => {
     expect(images.length).toBe(3);
     expect(fixture.nativeElement.querySelector('tbody td.value .more')?.textContent?.trim()).toBe(
       '+2',
+    );
+  });
+
+  // A reference reads as the item it points at: the target's schema says which field names an
+  // item, and an id says nothing to a reader.
+  it('names a referenced item by its title', async () => {
+    stub.schema = [
+      {
+        name: 'category',
+        field_type: { Relation: { target: { kind: 'collection', name: 'categories' } } },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
+    stub.all = [[1, { category: [{ target: 'categories', item: 3 }] }]];
+    stub.titles = { 3: '技術' };
+    route.navigate({ name: 'posts' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('tbody td.value')?.textContent?.trim()).toBe('技術');
+
+    // An item the target cannot name is the reference itself, and a reference to several items
+    // reads as the names it has.
+    stub.all = [
+      [
+        2,
+        {
+          category: [
+            { target: 'categories', item: 3 },
+            { target: 'categories', item: 9 },
+          ],
+        },
+      ],
+    ];
+    route.navigate({ name: 'more' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('tbody td.value')?.textContent?.trim()).toBe(
+      '技術, categories #9',
     );
   });
 

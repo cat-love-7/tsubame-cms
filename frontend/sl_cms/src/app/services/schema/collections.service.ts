@@ -9,6 +9,7 @@ import { PreviewLink } from 'app/models/links';
 
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
+import { FieldValue } from 'app/models/values/fields';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
 import { Observable } from 'rxjs';
 
@@ -22,6 +23,10 @@ export class CollectionsService {
   }
   getCollectionSchema(name: string): Observable<CollectionSchema> {
     return this.collectionRepository.getCollectionSchema(name);
+  }
+  /** The titles of the named items, keyed by id written as a string. */
+  getItemTitles(name: string, ids: number[]): Observable<Record<string, FieldValue>> {
+    return this.collectionRepository.getCollectionItemTitles(name, ids);
   }
   createCollection(name: string, schema: CollectionSchema): Observable<void> {
     return this.collectionRepository.createCollection(name, schema);

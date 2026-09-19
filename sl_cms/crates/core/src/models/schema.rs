@@ -37,6 +37,16 @@ pub struct FieldSchema {
     /// Omitted from the wire when false, like `unique`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub show_in_list: bool,
+    /// Whether this is the field a reference to this item shows as its name.
+    ///
+    /// A reference is stored as which item it points at, and an id says nothing to a reader - so a
+    /// collection says which of its fields names an item ("the category's name", "the article's
+    /// title"), and the screens that show a reference show that. At most **one** field per schema
+    /// may be the title, and only a field that reads as one line (a body or an image is not a name).
+    ///
+    /// Omitted from the wire when false, like `unique`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_title: bool,
     /// in colspan units (1-12)
     pub width: u32,
     /// in rowspan units (1-)
@@ -263,6 +273,8 @@ pub enum SchemaScope {
 /// to write content against it (or, worse, cannot interpret what is already stored).
 pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(), String> {
     let mut seen = std::collections::HashSet::new();
+    // The title seen so far, so a second one can name the first.
+    let mut title_so_far: Option<String> = None;
     for field in fields {
         let name = field.name.trim();
         if name.is_empty() {
@@ -326,6 +338,20 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
         }
         validate_field_type(name, &field.field_type)?;
         validate_relation_options(name, &field.field_type)?;
+        if field.is_title {
+            if !readable_as_a_title(&field.field_type) {
+                return Err(format!(
+                    "field '{name}': a reference to this item would show this field as its name,                      and a {} cannot be read as one line",
+                    field_type_name(&field.field_type)
+                ));
+            }
+            if let Some(other) = title_so_far {
+                return Err(format!(
+                    "field '{name}': '{other}' is already the title of this schema, and an item has                      one name"
+                ));
+            }
+            title_so_far = Some(name.to_string());
+        }
         // A composite definition is reused inside other schemas, so a relation in one would have
         // to be checked against the collections of whichever item embeds it. Refusing it here is
         // the honest answer: the relation belongs to the collection or page that owns the values.
@@ -379,6 +405,43 @@ fn validate_relation_options(name: &str, field_type: &FieldType) -> Result<(), S
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+/// Whether a value of this type reads as a name: one line, in a list or next to a reference.
+///
+/// A Markdown body is allowed because a short one is a name and the rendering takes the text as it
+/// is; an image, a composite, a relation and an array are not, because there is no one line that
+/// stands for them.
+fn readable_as_a_title(field_type: &FieldType) -> bool {
+    matches!(
+        field_type,
+        FieldType::Text(_)
+            | FieldType::Slug(_)
+            | FieldType::Markdown(_)
+            | FieldType::Number
+            | FieldType::Boolean
+            | FieldType::Date
+            | FieldType::DateTime
+            | FieldType::TextEnum(_)
+    )
+}
+
+/// What a field's type is called when a refusal has to name it.
+fn field_type_name(field_type: &FieldType) -> &'static str {
+    match field_type {
+        FieldType::Text(_) => "text field",
+        FieldType::Slug(_) => "slug",
+        FieldType::Markdown(_) => "Markdown field",
+        FieldType::Number => "number",
+        FieldType::Boolean => "boolean",
+        FieldType::Date => "date",
+        FieldType::DateTime => "date and time",
+        FieldType::Image => "image",
+        FieldType::CompositeField(_) => "composite field",
+        FieldType::Relation(_) => "relation",
+        FieldType::Array(_) => "array",
+        FieldType::TextEnum(_) => "enum",
     }
 }
 
@@ -641,6 +704,7 @@ mod tests {
 
     fn field(name: &str, field_type: FieldType) -> FieldSchema {
         FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: name.to_string(),
             field_type,
@@ -679,6 +743,69 @@ mod tests {
         }))
         .expect("a field written before this existed");
         assert!(!without_the_key.show_in_list);
+    }
+
+    /// One name per item, and it has to be something that reads as one.
+    #[test]
+    fn a_schema_has_at_most_one_title_and_it_has_to_be_readable() {
+        let named = |name: &str, field_type: FieldType| {
+            let mut field = field(name, field_type);
+            field.is_title = true;
+            field
+        };
+
+        assert!(
+            validate_schema(
+                &[named("name", FieldType::Text(TextFieldOptions::default()))],
+                SchemaScope::Collection
+            )
+            .is_ok()
+        );
+        // A short Markdown field is a name too: the text is taken as it is.
+        assert!(
+            validate_schema(
+                &[named(
+                    "name",
+                    FieldType::Markdown(TextFieldOptions::default())
+                )],
+                SchemaScope::Collection
+            )
+            .is_ok()
+        );
+
+        // Two titles is two names for one item, and the second one names the first.
+        let error = validate_schema(
+            &[
+                named("name", FieldType::Text(TextFieldOptions::default())),
+                named("also", FieldType::Text(TextFieldOptions::default())),
+            ],
+            SchemaScope::Collection,
+        )
+        .unwrap_err();
+        assert!(error.contains("'name' is already the title"), "{error}");
+
+        // A reference shows the title as the name of an item, so it has to be one line.
+        for (field_type, kind) in [
+            (FieldType::Image, "image"),
+            (
+                FieldType::Array(vec![FieldType::Text(TextFieldOptions::default())]),
+                "array",
+            ),
+            (
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: CompositeFieldId::from("seo"),
+                }),
+                "composite field",
+            ),
+            (relation(collection_target("authors"), true), "relation"),
+        ] {
+            let error =
+                validate_schema(&[named("bad", field_type)], SchemaScope::Collection).unwrap_err();
+            assert!(
+                error.contains(&format!("a {kind} cannot be read as one line")),
+                "{error}"
+            );
+        }
     }
 
     /// The limits are characters, not bytes: a twenty-character Japanese title fits a schema

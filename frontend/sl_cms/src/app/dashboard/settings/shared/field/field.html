@@ -13,6 +13,14 @@
     <span class="unique-hint">{{ 'schema.uniqueHint' | transloco }}</span>
   </div>
 }
+@if (titleAllowed) {
+  <div class="title-field">
+    <mat-checkbox [(ngModel)]="field.is_title" name="fieldIsTitle">
+      {{ 'schema.isTitle' | transloco }}
+    </mat-checkbox>
+    <span class="title-hint">{{ 'schema.isTitleHint' | transloco }}</span>
+  </div>
+}
 @if (listAllowed) {
   <div class="list-field">
     <mat-checkbox [(ngModel)]="field.show_in_list" name="fieldInList">

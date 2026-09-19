@@ -141,6 +141,14 @@ export type FieldSchema = {
    * `listColumns`. Only a collection has a list, so a page's or a composite's schema never sets it.
    */
   show_in_list?: boolean;
+  /**
+   * Whether this field is what a **reference** to this item shows as its name.
+   *
+   * Omitted by the server when false, so treat a missing value as false. One field per schema may
+   * set it, and only a field that reads as one line (the server refuses the rest): a reference is
+   * stored as which item it points at, and an id says nothing to a reader.
+   */
+  is_title?: boolean;
   width: number;
   height: number;
 };

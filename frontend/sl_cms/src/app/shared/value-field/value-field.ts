@@ -1,6 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
+  DestroyRef,
   EventEmitter,
   Input,
   OnChanges,
@@ -19,6 +20,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
@@ -38,7 +40,15 @@ import {
 import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
 import { ContentValue } from 'app/models/values/single-page';
 
-import { FieldValue, imageIdOf, withDefaults } from 'app/models/values/fields';
+import {
+  FieldValue,
+  imageIdOf,
+  referenceKey,
+  referenceName,
+  relationRefsOf,
+  withDefaults,
+} from 'app/models/values/fields';
+import { RelationLabelsService } from 'app/services/relations/relation-labels.service';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { ImagesService } from 'app/services/media/images.service';
@@ -123,6 +133,8 @@ export class ValueField implements OnInit, OnChanges {
 
   private images = inject(ImagesService);
   private compositeFields = inject(CompositeFieldsService);
+  private relationLabels = inject(RelationLabelsService);
+  private destroyRef = inject(DestroyRef);
 
   public uploading = signal(false);
   /** JSON buffer for Array fields, which are edited as raw JSON. */
@@ -170,6 +182,7 @@ export class ValueField implements OnInit, OnChanges {
   private subErrors: { [field: string]: Message } = {};
 
   ngOnInit() {
+    this.loadReferenceNames(this.value);
     this.syncArrayBuffer();
     this.loadDefinitions();
     this.syncElements();
@@ -183,6 +196,7 @@ export class ValueField implements OnInit, OnChanges {
       this.syncElements();
     } else if (changes['value']) {
       this.reportTextLength(this.value);
+      this.loadReferenceNames(this.value);
       this.syncArrayBuffer();
       this.syncCompositeValues();
       this.syncElements();
@@ -404,6 +418,7 @@ export class ValueField implements OnInit, OnChanges {
     this.lastEmitted = value;
     this.valueChange.emit(value);
     this.reportTextLength(value);
+    this.loadReferenceNames(value);
   }
 
   /**
@@ -531,6 +546,42 @@ export class ValueField implements OnInit, OnChanges {
     }
     this.errorChange.emit(null);
     this.update(parsed as FieldValue);
+  }
+
+  /**
+   * The names of the references this field holds, when the target's schema names them.
+   *
+   * The box edits the references themselves, so this is what tells an editor what they just wrote:
+   * `categories #3` is a reference, and `技術` is the item it points at.
+   */
+  public referenceNames = signal<string[]>([]);
+
+  /**
+   * Ask what this field's references are called.
+   *
+   * Of the value as it is now, not of what was loaded: an editor who has just typed a reference
+   * should see it named, not wait for the next save.
+   */
+  private loadReferenceNames(value: FieldValue) {
+    const references = relationRefsOf(value);
+    if (references.length === 0) {
+      this.referenceNames.set([]);
+      return;
+    }
+    this.relationLabels
+      .labelsFor(references)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (labels: Map<string, string>) => {
+          const named = references
+            .map((reference) => referenceName(reference, labels))
+            // Only what the target's schema actually names: the box already says the rest.
+            .filter((name, index) => labels.has(referenceKey(references[index])));
+          this.referenceNames.set(named);
+        },
+        // A name that cannot be fetched leaves the box as it was: the references are right there.
+        error: () => this.referenceNames.set([]),
+      });
   }
 
   /**

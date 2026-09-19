@@ -14,6 +14,7 @@ use crate::models::schema::{
 use crate::models::single_page::{
     SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema,
 };
+use crate::models::values::FieldValueResponse;
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::ImageRepository;
@@ -218,6 +219,36 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         {
             tracing::warn!("could not record image references for {owner:?}: {e}");
         }
+    }
+
+    /// The title of every page, keyed by the page's name.
+    ///
+    /// A page is named by its name, so a reference to one already reads; this is what a page whose
+    /// schema has a title field says instead, under the same rule as a collection's items (see
+    /// [`CollectionService::item_titles`](crate::services::collection_service::CollectionService::item_titles)).
+    pub async fn page_titles(&self) -> Result<HashMap<String, FieldValueResponse>, HttpError> {
+        let mut titles = HashMap::new();
+        for name in self.list_page_names().await? {
+            let Some(schema) = self
+                .single_page_repository
+                .get_single_page_schema(&name)
+                .await
+                .map_err(map_internal_error)?
+            else {
+                continue;
+            };
+            let Some(title) = schema.iter().find(|field| field.is_title) else {
+                continue;
+            };
+            let Some(item) = self.working_page_item(&name).await? else {
+                continue;
+            };
+            if let Some(value) = item.get(&title.name) {
+                // No images to resolve: a title is one of the types that cannot be an image.
+                titles.insert(name.to_string(), value.to_response(&HashMap::new()));
+            }
+        }
+        Ok(titles)
     }
 
     /// The content that references this single page.
@@ -1070,6 +1101,7 @@ mod tests {
     fn create_test_schema() -> SinglePageSchema {
         vec![
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "title".to_string(),
                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1079,6 +1111,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "count".to_string(),
                 field_type: FieldType::Number,
@@ -1137,6 +1170,7 @@ mod tests {
     async fn add_single_page_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1169,6 +1203,7 @@ mod tests {
 
         let related_to = |target: RelationTarget| {
             vec![FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "author".to_string(),
                 field_type: FieldType::Relation(RelationOptions {
@@ -1212,6 +1247,7 @@ mod tests {
     async fn update_single_page_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1226,6 +1262,7 @@ mod tests {
             .unwrap();
 
         let updated_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title2".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1250,6 +1287,7 @@ mod tests {
     async fn add_single_page_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1264,6 +1302,7 @@ mod tests {
             .unwrap();
 
         let duplicate_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "other".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1292,6 +1331,7 @@ mod tests {
     async fn delete_single_page_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1315,6 +1355,7 @@ mod tests {
     async fn delete_non_exists_single_page() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1348,6 +1389,7 @@ mod tests {
             .update_single_page_schema(
                 &"non_existent".into(),
                 &vec![FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "title".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),

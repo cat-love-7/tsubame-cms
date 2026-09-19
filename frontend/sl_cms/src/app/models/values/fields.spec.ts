@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatFieldValue, imagesOf } from './fields';
+import { formatFieldValue, imagesOf, referenceKey, referenceName, relationRefsOf } from './fields';
 
 describe('formatFieldValue', () => {
   it('writes the value a table cell can show', () => {
@@ -57,5 +57,36 @@ describe('imagesOf', () => {
     expect(imagesOf(null)).toEqual([]);
     expect(imagesOf([])).toEqual([]);
     expect(imagesOf('not an image')).toEqual([]);
+  });
+});
+
+describe('references', () => {
+  it('reads the references out of a relation value', () => {
+    expect(relationRefsOf([{ target: 'authors', item: 1 }, { target: 'home' }])).toEqual([
+      { target: 'authors', item: 1 },
+      { target: 'home' },
+    ]);
+    expect(relationRefsOf([])).toEqual([]);
+    expect(relationRefsOf('not a relation')).toEqual([]);
+    expect(relationRefsOf([{ item: 1 }, 'x'])).toEqual([]);
+  });
+
+  // A collection and a page of the same name are different things, and the key says which.
+  it('keys a reference the way the server names an item', () => {
+    expect(referenceKey({ target: 'authors', item: 7 })).toBe('collection:authors:7');
+    expect(referenceKey({ target: 'home' })).toBe('page:home');
+  });
+
+  it('calls a reference by its title, and by the reference when there is none', () => {
+    const labels = new Map([['collection:authors:7', 'Ada']]);
+
+    expect(referenceName({ target: 'authors', item: 7 }, labels)).toBe('Ada');
+    expect(referenceName({ target: 'authors', item: 9 }, labels)).toBe('authors #9');
+    // A page's identity is its name.
+    expect(referenceName({ target: 'home' }, labels)).toBe('home');
+    // A title that is there but empty says nothing, so the reference does the talking.
+    expect(
+      referenceName({ target: 'authors', item: 7 }, new Map([['collection:authors:7', '']])),
+    ).toBe('authors #7');
   });
 });

@@ -5,6 +5,7 @@ import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
 
 import { CollectionSchema } from 'app/models/schema/collection';
+import { FieldValue } from 'app/models/values/fields';
 import { ContentValue } from 'app/models/values/single-page';
 
 import { SinglePageRepository } from 'app/repositories/schema/single-pages.repository';
@@ -17,6 +18,11 @@ export class SinglePagesService {
 
   listPageNames(): Observable<string[]> {
     return this.pages.listPageNames();
+  }
+
+  /** The title of every page that has one, keyed by page name. */
+  getPageTitles(): Observable<Record<string, FieldValue>> {
+    return this.pages.getPageTitles();
   }
 
   getPageSchema(name: string): Observable<CollectionSchema> {

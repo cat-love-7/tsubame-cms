@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
@@ -517,6 +517,30 @@ describe('ValueField', () => {
       { target: 'authors', item: 1 },
       { target: 'authors', item: 2 },
     ]);
+  });
+
+  // The box edits the references, and the screen says which items they are: an id says nothing to
+  // a reader, and the target's schema is what names an item.
+  it('says what the references it holds are called', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const component = create(
+      field('category', { Relation: { target: { kind: 'collection', name: 'categories' } } }),
+      [
+        { target: 'categories', item: 3 },
+        { target: 'categories', item: 9 },
+      ],
+    );
+    await fixture.whenStable();
+
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
+      .flush({ 3: '技術' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Only what the target names: the reference the target cannot name is already in the box.
+    expect(component.referenceNames()).toEqual(['技術']);
+    expect(fixture.nativeElement.textContent).toContain('References: 技術');
   });
 
   it('names a page reference without an item id', () => {

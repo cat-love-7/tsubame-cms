@@ -14,9 +14,15 @@ import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
 import { apiUrl } from 'app/core/api-url';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { FieldSchema, isArrayFieldSchema } from 'app/models/schema/fields';
+import { FieldSchema, isArrayFieldSchema, isRelationFieldSchema } from 'app/models/schema/fields';
 import { CollectionItemEntry } from 'app/models/values/collection';
-import { formatFieldValue, imagesOf } from 'app/models/values/fields';
+import {
+  formatFieldValue,
+  imagesOf,
+  referenceName,
+  relationRefsOf,
+} from 'app/models/values/fields';
+import { RelationLabelsService } from 'app/services/relations/relation-labels.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 
@@ -44,6 +50,7 @@ export class CollectionItemList {
   /** When this screen goes away, so does everything it still has in flight. */
   private destroyRef = inject(DestroyRef);
   private collectionsService = inject(CollectionsService);
+  private labelsService = inject(RelationLabelsService);
   private i18n = inject(TranslocoService);
   private dates = inject(DateTimeFormat);
   /** What the signed-in account may do; the server enforces the same rules. */
@@ -93,11 +100,19 @@ export class CollectionItemList {
       values,
       cells: this.listColumns().map((field) => ({
         name: field.name,
-        text: formatFieldValue(values[field.name]),
+        text: cellText(field, values[field.name], this.labels()),
         images: isImageColumn(field) ? imagesOf(values[field.name]) : [],
       })),
     })),
   );
+
+  /**
+   * What the referenced items are called, by reference.
+   *
+   * A relation column shows the title its target's schema names rather than `categories #3`: the
+   * point of a reference in a list is which item it is, and an id is not that.
+   */
+  public labels = signal<ReadonlyMap<string, string>>(new Map());
 
   /** How many thumbnails one cell draws before it says how many more there are. */
   public readonly maxThumbnails = 3;
@@ -171,6 +186,7 @@ export class CollectionItemList {
         this.items.set(loaded.page.items);
         this.total.set(loaded.page.total);
         this.metadata.set(loaded.metadata);
+        this.loadLabels(loaded.page.items);
       });
 
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -179,6 +195,36 @@ export class CollectionItemList {
         this.load(name);
       }
     });
+  }
+
+  /**
+   * Ask what the rows' references are called.
+   *
+   * Only the relation columns, and only what is on screen: a list page asks about the items it
+   * shows, not about a collection.
+   */
+  private loadLabels(items: CollectionItemEntry[]) {
+    const relations = this.listColumns().filter((field) => isRelationFieldSchema(field.field_type));
+    if (relations.length === 0) {
+      this.labels.set(new Map());
+      return;
+    }
+    const references = items.flatMap(([, values]) =>
+      relations.flatMap((field) => relationRefsOf(values[field.name])),
+    );
+    if (references.length === 0) {
+      this.labels.set(new Map());
+      return;
+    }
+    this.labelsService
+      .labelsFor(references)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (labels) => this.labels.set(labels),
+        // A name that cannot be fetched is a name the row shows as the reference itself; the list
+        // is still readable, so this is not worth an error banner.
+        error: () => this.labels.set(new Map()),
+      });
   }
 
   /** Everything on screen belongs to one collection, so a switch starts from nothing. */
@@ -404,4 +450,20 @@ export class CollectionItemList {
 function isImageColumn(field: FieldSchema): boolean {
   const type = field.field_type;
   return type === 'Image' || (isArrayFieldSchema(type) && type.Array.includes('Image'));
+}
+
+/**
+ * What one cell says.
+ *
+ * A relation column is the item it points at, named the way the target's schema names it; anything
+ * else is its one-line rendering.
+ */
+function cellText(field: FieldSchema, value: unknown, labels: ReadonlyMap<string, string>): string {
+  if (!isRelationFieldSchema(field.field_type)) {
+    return formatFieldValue(value as never);
+  }
+  const references = relationRefsOf(value as never);
+  return references.length > 0
+    ? references.map((reference) => referenceName(reference, labels)).join(', ')
+    : '—';
 }

@@ -191,6 +191,29 @@ describe('Field', () => {
     expect(fixture.nativeElement.querySelector('input[name="fieldUnique"]')).toBeNull();
   });
 
+  // A reference names the item it points at, and which field does the naming is the schema's call -
+  // but only where a reference can point: a collection's items and a page, not an embedded block.
+  it('offers the title only where a reference can point', async () => {
+    const text = field({ name: 'name', is_title: false });
+    fixture.componentRef.setInput('field', text);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('input[name="fieldIsTitle"]')).toBeNull();
+
+    fixture.componentRef.setInput('titleAllowed', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const box = fixture.nativeElement.querySelector(
+      'input[name="fieldIsTitle"]',
+    ) as HTMLInputElement;
+    expect(box).toBeTruthy();
+    expect(box.checked).toBe(false);
+
+    box.click();
+    fixture.detectChanges();
+    expect(text.is_title).toBe(true);
+  });
+
   // Only a collection has a list of its items, so only its schema is offered the column setting.
   it('offers the list column only where there is a list', async () => {
     const text = field({ name: 'title', show_in_list: false });

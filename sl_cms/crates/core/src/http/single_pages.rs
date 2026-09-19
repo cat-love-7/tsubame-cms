@@ -35,6 +35,8 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/single_pages/{page_name}",
             delete(delete_single_page::<R>),
         )
+        // The name of every page, for the screens that show a reference.
+        .route("/models/single_pages/titles", get(get_page_titles::<R>))
         // Who points at this page, so a delete can say what it would break.
         .route(
             "/models/single_pages/{page_name}/references",
@@ -315,6 +317,16 @@ async fn update_single_page_schema<R: Storage>(
         .update_single_page_schema(&name, &schema)
         .await?;
     Ok(StatusCode::OK)
+}
+
+/// The title of every page, which is what a reference to one shows.
+///
+/// All of them at once: a site has few pages, and a reference names the page, so the caller does not
+/// have to ask one at a time for a list of rows.
+async fn get_page_titles<R: Storage>(
+    State(module): State<AppState<R>>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(module.single_page_service.page_titles().await?))
 }
 
 /// The content that references this page, so a delete can say what it would break.

@@ -59,9 +59,11 @@
         <app-value-field [field]="field" [value]="previewValue(field)" [disabled]="true" />
       } @else {
         <app-field
-          [(field)]="schema[$index]"
+          [field]="schema[$index]"
+          (fieldChange)="onFieldChanged($index, $event)"
           [uniqueAllowed]="uniqueAllowed"
           [listAllowed]="listAllowed"
+          [titleAllowed]="titleAllowed"
           [siblingFields]="schema"
         />
       }

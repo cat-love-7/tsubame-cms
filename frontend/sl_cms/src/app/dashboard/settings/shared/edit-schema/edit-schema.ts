@@ -70,6 +70,8 @@ export class EditSchema {
   @Input() uniqueAllowed = true;
   /** Passed on to each field: see [`Field.listAllowed`]. */
   @Input() listAllowed = false;
+  /** Passed on to each field: see [`Field.titleAllowed`]. */
+  @Input() titleAllowed = false;
   @Output() schemaChange = new EventEmitter<FieldSchema[]>();
   /**
    * Emitted when the user asks to persist. The parent performs the HTTP call because it
@@ -105,6 +107,24 @@ export class EditSchema {
 
   previewValue(field: FieldSchema): FieldValue {
     return this.previewValues.get(field.name) ?? null;
+  }
+
+  /**
+   * A field was edited: take the change, and keep the one thing that may only be said once.
+   *
+   * One field names an item, so marking this one as the title clears the others here rather than
+   * letting the server refuse the save with a message about a field the author already forgot.
+   */
+  onFieldChanged(index: number, field: FieldSchema) {
+    this.schema[index] = field;
+    if (field.is_title) {
+      for (const [other, candidate] of this.schema.entries()) {
+        if (other !== index) {
+          candidate.is_title = false;
+        }
+      }
+    }
+    this.schemaChange.emit(this.schema);
   }
 
   addField() {

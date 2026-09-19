@@ -20,6 +20,7 @@ mod tests {
     fn create_test_schema() -> CollectionSchema {
         vec![
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "title".to_string(),
                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -29,6 +30,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "tags".to_string(),
                 field_type: FieldType::TextEnum(vec![

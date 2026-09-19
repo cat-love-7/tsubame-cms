@@ -73,6 +73,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/collections/{collection_name}/items/{id}/duplicate",
             post(duplicate_collection_item::<R>),
         )
+        // The names of items a reference may point at, for the screens that show a reference.
+        .route(
+            "/models/collections/{collection_name}/items/titles",
+            get(get_collection_item_titles::<R>),
+        )
         // Who points at this item, so a delete can say what it would break.
         .route(
             "/models/collections/{collection_name}/items/{id}/references",
@@ -505,6 +510,52 @@ async fn update_collection_item<R: Storage>(
         .update_collection_item_from_json(&name, CollectionItemId::from_u64(id), &body)
         .await?;
     Ok(StatusCode::OK)
+}
+
+/// `?ids=1,2,3`: the titles of the named items, which is what a reference to one shows.
+///
+/// Its own route rather than part of the list, because a list of items and the names of the items
+/// *those* items point at are different questions - and the answers are wanted by the screens that
+/// show a reference, which are not always the list.
+#[derive(serde::Deserialize)]
+struct TitleIdsQuery {
+    #[serde(default)]
+    ids: String,
+}
+
+async fn get_collection_item_titles<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(collection_name): Path<String>,
+    Query(query): Query<TitleIdsQuery>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    let ids = parse_item_ids(&query.ids)?;
+    Ok(Json(
+        module.collection_service.item_titles(&name, &ids).await?,
+    ))
+}
+
+/// The ids a caller asked about, refusing anything that is not a list of them.
+///
+/// Bounded, because one request is one read per id: a page of a list asks about the items its rows
+/// point at, not about a collection.
+fn parse_item_ids(raw: &str) -> Result<Vec<CollectionItemId>, HttpError> {
+    const MAX_IDS: usize = 200;
+    let mut ids = Vec::new();
+    for part in raw.split(',').filter(|part| !part.trim().is_empty()) {
+        let id = part
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| HttpError::BadRequest(&format!("'{part}' is not an item id")))?;
+        ids.push(CollectionItemId::from_u64(id));
+    }
+    if ids.len() > MAX_IDS {
+        return Err(HttpError::BadRequest(&format!(
+            "at most {MAX_IDS} ids can be asked about at once (got {})",
+            ids.len()
+        )));
+    }
+    Ok(ids)
 }
 
 /// The content that references this item, so a delete can say what it would break.

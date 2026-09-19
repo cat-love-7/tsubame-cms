@@ -3,6 +3,7 @@ import { apiUrl } from 'app/core/api-url';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
+import { FieldValue } from 'app/models/values/fields';
 import {
   ItemMetadata,
   ItemMetadataMap,
@@ -35,6 +36,20 @@ export class CollectionRepository {
   updateCollectionSchema(name: string, schema: CollectionSchema): Observable<void> {
     return this.http.put<void>(apiUrl(`/models/collections/${name}/schema`), schema);
   }
+  /**
+   * The titles of the named items: what a reference to one shows as its name.
+   *
+   * Keyed by id written as a string, and an id the server has no title for is left out.
+   */
+  getCollectionItemTitles(name: string, ids: number[]): Observable<Record<string, FieldValue>> {
+    return this.http.get<Record<string, FieldValue>>(
+      apiUrl(`/models/collections/${name}/items/titles`),
+      {
+        params: { ids: ids.join(',') },
+      },
+    );
+  }
+
   createCollection(name: string, schema: CollectionSchema): Observable<void> {
     return this.http.post<void>(apiUrl(`/models/collections/${name}/schema`), schema);
   }

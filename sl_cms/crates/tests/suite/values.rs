@@ -762,3 +762,216 @@ async fn composite_arrays_round_trip() {
         String::from_utf8_lossy(&body)
     );
 }
+
+/// A reference shows the title of what it points at, so a collection has to say which field names
+/// an item - one field, and one that reads as a name.
+#[tokio::test]
+async fn a_collection_says_which_field_names_an_item() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/categories/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "name", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1, "is_title": true },
+            { "name": "note", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/categories/schema",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["is_title"], true);
+    assert!(body[1].get("is_title").is_none(), "{body}");
+
+    // The named items answer with the field's value, as stored - the screens know how to draw it.
+    for name in ["技術", "ニュース"] {
+        let (status, body) = send(
+            &app.router,
+            Method::POST,
+            "/api/models/collections/categories/item",
+            Some(&token),
+            Some(json!({ "name": name, "note": "x" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/categories/items/titles?ids=1,2,99",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({ "1": "技術", "2": "ニュース" }),
+        "an id that is not there is left out"
+    );
+
+    // A working copy is what an editor is holding, so a title that has been edited but not
+    // published answers with the edit.
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/collections/categories/items/1",
+        Some(&token),
+        Some(json!({ "name": "技術 (改)", "note": "x" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/categories/items/titles?ids=1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "1": "技術 (改)" }));
+
+    // A collection with no title field names nothing, and says so by answering nothing: the screens
+    // then show the reference itself.
+    send(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/plain/schema",
+        Some(&token),
+        Some(json!([{ "name": "title", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }])),
+    )
+    .await;
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/plain/items/titles?ids=1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({}));
+
+    // Two names for one item, and a field that cannot be read as a name, are refused when saved.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/greedy/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "one", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "is_title": true },
+            { "name": "two", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "is_title": true }
+        ])),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(
+        String::from_utf8_lossy(&body).contains("already the title"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/illustrated/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "cover", "field_type": "Image", "required": false, "width": 12, "height": 1, "is_title": true }
+        ])),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(
+        String::from_utf8_lossy(&body).contains("cannot be read as one line"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // Ids that are not ids are refused rather than guessed at.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/categories/items/titles?ids=1,nope",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+/// A page can name itself too: a reference to one shows the page's title field if it has one.
+#[tokio::test]
+async fn a_page_can_say_which_field_names_it() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "heading", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1, "is_title": true }
+        ])),
+    )
+    .await;
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "heading": "ホーム" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A page with no title field is not in the answer: its name already names it.
+    send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/about/schema",
+        Some(&token),
+        Some(json!([])),
+    )
+    .await;
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/single_pages/titles",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "home": "ホーム" }));
+}

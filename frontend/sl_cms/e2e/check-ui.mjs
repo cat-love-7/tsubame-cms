@@ -51,7 +51,8 @@ const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const TEXT_SCHEMA = [
-  { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1 },
+  // The field a reference to one of these items shows as its name.
+  { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1, is_title: true },
   // A plain array: the JSON box is its whole editor, so the box has to say what it accepts.
   { name: 'scores', field_type: { Array: ['Number'] }, required: false, width: 12, height: 1 },
 ];
@@ -1642,17 +1643,48 @@ try {
     JSON.stringify(builtItem?.related),
   );
 
-  // The list says what the reference points at, which is what an editor reading the row needs.
+  // The list says what the reference points at, by the name the target's schema gives it: an id
+  // says nothing to an editor reading the row. What that name is now is the referenced item's
+  // current title, which the checks above have been editing.
+  const referencedItem = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  const referencedTitle = String(referencedItem?.title ?? '');
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}`, { waitUntil: 'networkidle' });
   await page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
   const referenceCell = (
     await page.locator('table.items tbody tr').first().locator('td.value').nth(1).textContent()
   )?.trim();
   check(
-    '一覧の参照列は参照先を示す',
-    referenceCell === `${COLLECTION} #1`,
-    referenceCell ?? 'none',
+    '一覧の参照列は参照先のタイトルで出る',
+    referenceCell === referencedTitle,
+    `${referenceCell} (expected ${referencedTitle})`,
   );
+
+  // The content editor says the same thing about the references the box holds, so an author who
+  // typed an id can see which item it is.
+  await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  const relationBox = page.locator('app-value-field textarea[name=related]');
+  await relationBox.waitFor({ timeout: 15000 });
+  // The expected name travels as an argument: the function runs in the browser, where the
+  // harness's own constants are not defined.
+  const named = await page
+    .waitForFunction(
+      (expected) =>
+        (
+          document
+            .querySelector('app-value-field textarea[name=related]')
+            ?.closest('mat-form-field')?.textContent ?? ''
+        ).includes(expected),
+      referencedTitle,
+      { timeout: 10000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('編集画面にも参照先のタイトルが出る', named);
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });

@@ -367,6 +367,13 @@
       @if (relationHint(); as hint) {
         <mat-hint>{{ hint.key | transloco: hint.params }}</mat-hint>
       }
+      <!-- What the references in the box are called: an editor who typed an id should see the item
+           it points at, not only the reference they wrote. -->
+      @if (referenceNames().length > 0) {
+        <mat-hint align="end">
+          {{ 'content.referencesTo' | transloco: { names: referenceNames().join(', ') } }}
+        </mat-hint>
+      }
     </mat-form-field>
   }
   @case ('Image') {

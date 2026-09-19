@@ -7,6 +7,7 @@ import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
 
 import { CollectionSchema } from 'app/models/schema/collection';
+import { FieldValue } from 'app/models/values/fields';
 import { ContentValue } from 'app/models/values/single-page';
 
 /**
@@ -18,6 +19,16 @@ import { ContentValue } from 'app/models/values/single-page';
 })
 export class SinglePageRepository {
   private http = inject(HttpClient);
+
+  /**
+   * The title of every page that has one, keyed by page name.
+   *
+   * A page is named by its name already, so this is only what a page whose schema names a title
+   * field says instead of it.
+   */
+  getPageTitles(): Observable<Record<string, FieldValue>> {
+    return this.http.get<Record<string, FieldValue>>(apiUrl('/models/single_pages/titles'));
+  }
 
   listPageNames(): Observable<string[]> {
     return this.http.get<string[]>(apiUrl('/models/single_pages'));

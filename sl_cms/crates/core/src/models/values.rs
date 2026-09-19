@@ -381,6 +381,7 @@ fn parse_array_element(
             }
         }
         let probe = FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: format!("{}[{index}]", field.name),
             field_type: candidate.clone(),
@@ -411,6 +412,7 @@ mod untyped_parsing_tests {
 
     fn field(name: &str, field_type: FieldType, required: bool) -> FieldSchema {
         FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: name.to_string(),
             field_type,
@@ -1547,6 +1549,7 @@ mod tests {
     // Test helper functions
     fn create_composite_schema(field_name: &str, required: bool) -> CompositeFieldSchema {
         vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: field_name.to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1578,6 +1581,7 @@ mod tests {
     fn field_schema_array_validation() {
         let composite_schemas = HashMap::new();
         let field_schema = FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "test_array".to_string(),
             field_type: FieldType::Array(vec![
@@ -1618,6 +1622,7 @@ mod tests {
         let composite_schemas = create_composite_schemas_map();
 
         let composite_field_schema = FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "test_array".to_string(),
             field_type: FieldType::Array(vec![
@@ -1666,6 +1671,7 @@ mod tests {
     fn reads_an_array_of_composites() {
         let composite_schemas = create_composite_schemas_map();
         let field = FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "blocks".to_string(),
             field_type: FieldType::Array(vec![
@@ -1744,6 +1750,7 @@ mod tests {
                     (
                         "comp_1".into(),
                         vec![FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field".to_string(),
                             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1757,6 +1764,7 @@ mod tests {
                         "comp_2".into(),
                         vec![
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "sub_field2".to_string(),
                                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -1766,6 +1774,7 @@ mod tests {
                                 unique: false,
                             },
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "sub_field3".to_string(),
                                 field_type: FieldType::Number,
@@ -1903,6 +1912,7 @@ mod tests {
         ];
         for (fields, composite_schema, field_value, expected_formatted_value) in pattern {
             let scheme = FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "test_array".to_string(),
                 field_type: fields,
@@ -1925,6 +1935,7 @@ mod tests {
             let (field_schema, json_schema) = match field_type {
                 FieldType::Text(options) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(options),
@@ -1938,6 +1949,7 @@ mod tests {
                 }
                 FieldType::Markdown(options) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "description".to_string(),
                         field_type: FieldType::Markdown(options),
@@ -1951,6 +1963,7 @@ mod tests {
                 }
                 FieldType::Slug(ref options) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "address".to_string(),
                         field_type: FieldType::Slug(options.clone()),
@@ -1966,6 +1979,7 @@ mod tests {
                 }
                 FieldType::Number => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -1979,6 +1993,7 @@ mod tests {
                 }
                 FieldType::Boolean => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "is_active".to_string(),
                         field_type: FieldType::Boolean,
@@ -1992,6 +2007,7 @@ mod tests {
                 }
                 FieldType::Date => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "create_date".to_string(),
                         field_type: FieldType::Date,
@@ -2005,6 +2021,7 @@ mod tests {
                 }
                 FieldType::DateTime => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "update_time".to_string(),
                         field_type: FieldType::DateTime,
@@ -2018,6 +2035,7 @@ mod tests {
                 }
                 FieldType::Image => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "profile_image".to_string(),
                         field_type: FieldType::Image,
@@ -2031,6 +2049,7 @@ mod tests {
                 }
                 FieldType::CompositeField(_) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "address".to_string(),
                         field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -2046,6 +2065,7 @@ mod tests {
                 }
                 FieldType::Relation(_) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "author".to_string(),
                         field_type: FieldType::Relation(RelationOptions {
@@ -2065,6 +2085,7 @@ mod tests {
                 }
                 FieldType::Array(_) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "tags".to_string(),
                         field_type: FieldType::Array(vec![
@@ -2081,6 +2102,7 @@ mod tests {
                 }
                 FieldType::TextEnum(_) => {
                     let field_schema = FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "status".to_string(),
                         field_type: FieldType::TextEnum(vec![
@@ -2223,6 +2245,7 @@ mod tests {
     fn default_values() {
         for field_type in FieldType::iter() {
             let test_schema = FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "test".to_string(),
                 field_type: field_type.clone(),
@@ -2264,6 +2287,7 @@ mod tests {
             let (field_schema, composite_schemas, field_value) = match field_type {
                 FieldType::Text(options) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(options),
@@ -2277,6 +2301,7 @@ mod tests {
                 ),
                 FieldType::Markdown(options) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "description".to_string(),
                         field_type: FieldType::Markdown(options),
@@ -2290,6 +2315,7 @@ mod tests {
                 ),
                 FieldType::Slug(ref options) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "address".to_string(),
                         field_type: FieldType::Slug(options.clone()),
@@ -2303,6 +2329,7 @@ mod tests {
                 ),
                 FieldType::Number => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -2316,6 +2343,7 @@ mod tests {
                 ),
                 FieldType::Boolean => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "is_active".to_string(),
                         field_type: FieldType::Boolean,
@@ -2329,6 +2357,7 @@ mod tests {
                 ),
                 FieldType::Date => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "create_date".to_string(),
                         field_type: FieldType::Date,
@@ -2342,6 +2371,7 @@ mod tests {
                 ),
                 FieldType::DateTime => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "update_time".to_string(),
                         field_type: FieldType::DateTime,
@@ -2357,6 +2387,7 @@ mod tests {
                 ),
                 FieldType::Image => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "profile_image".to_string(),
                         field_type: FieldType::Image,
@@ -2370,6 +2401,7 @@ mod tests {
                 ),
                 FieldType::CompositeField(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "address".to_string(),
                         field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -2384,6 +2416,7 @@ mod tests {
                         "address_1".into(),
                         vec![
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "street".to_string(),
                                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2393,6 +2426,7 @@ mod tests {
                                 unique: false,
                             },
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "city".to_string(),
                                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2402,6 +2436,7 @@ mod tests {
                                 unique: false,
                             },
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "zip".to_string(),
                                 field_type: FieldType::Number,
@@ -2429,6 +2464,7 @@ mod tests {
                 ),
                 FieldType::Array(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "tags".to_string(),
                         field_type: FieldType::Array(vec![
@@ -2448,6 +2484,7 @@ mod tests {
                 ),
                 FieldType::TextEnum(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "status".to_string(),
                         field_type: FieldType::TextEnum(vec![
@@ -2464,6 +2501,7 @@ mod tests {
                 ),
                 FieldType::Relation(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "author".to_string(),
                         field_type: FieldType::Relation(RelationOptions {
@@ -2533,6 +2571,7 @@ mod tests {
             let (field_schema, field_value) = match field_type {
                 FieldType::Text(options) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(options),
@@ -2545,6 +2584,7 @@ mod tests {
                 ),
                 FieldType::Number => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -2557,6 +2597,7 @@ mod tests {
                 ),
                 FieldType::Date => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "create_date".to_string(),
                         field_type: FieldType::Date,
@@ -2569,6 +2610,7 @@ mod tests {
                 ),
                 FieldType::DateTime => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "update_time".to_string(),
                         field_type: FieldType::DateTime,
@@ -2581,6 +2623,7 @@ mod tests {
                 ),
                 FieldType::Image => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "profile_image".to_string(),
                         field_type: FieldType::Image,
@@ -2593,6 +2636,7 @@ mod tests {
                 ),
                 FieldType::Array(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "tags".to_string(),
                         field_type: FieldType::Array(vec![
@@ -2608,6 +2652,7 @@ mod tests {
                 ),
                 FieldType::TextEnum(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "status".to_string(),
                         field_type: FieldType::TextEnum(vec![
@@ -2634,6 +2679,7 @@ mod tests {
             let (field_schema, field_value) = match field_type {
                 FieldType::Text(options) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(options),
@@ -2646,6 +2692,7 @@ mod tests {
                 ),
                 FieldType::Number => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -2658,6 +2705,7 @@ mod tests {
                 ),
                 FieldType::Date => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "create_date".to_string(),
                         field_type: FieldType::Date,
@@ -2670,6 +2718,7 @@ mod tests {
                 ),
                 FieldType::DateTime => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "update_time".to_string(),
                         field_type: FieldType::DateTime,
@@ -2682,6 +2731,7 @@ mod tests {
                 ),
                 FieldType::Image => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "profile_image".to_string(),
                         field_type: FieldType::Image,
@@ -2694,6 +2744,7 @@ mod tests {
                 ),
                 FieldType::Array(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "tags".to_string(),
                         field_type: FieldType::Array(vec![
@@ -2709,6 +2760,7 @@ mod tests {
                 ),
                 FieldType::TextEnum(_) => (
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "status".to_string(),
                         field_type: FieldType::TextEnum(vec![
@@ -2734,6 +2786,7 @@ mod tests {
         let pattern = vec![
             (
                 FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "composite_field".to_string(),
                     field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -2747,6 +2800,7 @@ mod tests {
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
                     vec![FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "sub_field".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2761,6 +2815,7 @@ mod tests {
             ),
             (
                 FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "composite_field".to_string(),
                     field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -2774,6 +2829,7 @@ mod tests {
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
                     vec![FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "sub_field".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2797,6 +2853,7 @@ mod tests {
             ),
             (
                 FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "composite_field".to_string(),
                     field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -2810,6 +2867,7 @@ mod tests {
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
                     vec![FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "sub_field".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2873,6 +2931,7 @@ mod tests {
                 }
             };
             let test_schema = FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "test".to_string(),
                 field_type: field_type.clone(),
@@ -2949,6 +3008,7 @@ mod tests {
                     "comp_1".into(),
                     vec![
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field".to_string(),
                             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2958,6 +3018,7 @@ mod tests {
                             unique: false,
                         },
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "extra_field".to_string(),
                             field_type: FieldType::Number,
@@ -2990,6 +3051,7 @@ mod tests {
                     "comp_1".into(),
                     vec![
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field".to_string(),
                             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2999,6 +3061,7 @@ mod tests {
                             unique: false,
                         },
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field2".to_string(),
                             field_type: FieldType::Number,
@@ -3036,6 +3099,7 @@ mod tests {
                     "comp_1".into(),
                     vec![
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field".to_string(),
                             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3045,6 +3109,7 @@ mod tests {
                             unique: false,
                         },
                         FieldSchema {
+                            is_title: false,
                             show_in_list: false,
                             name: "sub_field2".to_string(),
                             field_type: FieldType::Number,
@@ -3294,6 +3359,7 @@ mod tests {
                 HashMap::from_iter(vec![(
                     "comp_1".into(),
                     vec![FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "sub_field".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3395,6 +3461,7 @@ mod tests {
         ];
         for (field, composite_schemas, value, required, expected_validity) in patterns {
             let schema = FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "test_field".to_string(),
                 field_type: field,
@@ -3478,6 +3545,7 @@ mod tests {
                         "comp_1".into(),
                         vec![
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "sub_field".to_string(),
                                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3487,6 +3555,7 @@ mod tests {
                                 unique: false,
                             },
                             FieldSchema {
+                                is_title: false,
                                 show_in_list: false,
                                 name: "extra_field".to_string(),
                                 field_type: FieldType::Number,
@@ -3554,6 +3623,7 @@ mod tests {
                 ),
             };
             let scheme = FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "test".to_string(),
                 field_type: field,
@@ -3606,6 +3676,7 @@ mod tests {
     fn format_to_schema() {
         let schema = vec![
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "title".to_string(),
                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3615,6 +3686,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "age".to_string(),
                 field_type: FieldType::Number,
@@ -3624,6 +3696,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "profile".to_string(),
                 field_type: FieldType::CompositeField(CompositeFieldReference {
@@ -3635,6 +3708,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "tags".to_string(),
                 field_type: FieldType::Array(vec![
@@ -3652,6 +3726,7 @@ mod tests {
                 "profile_1".into(),
                 vec![
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "bio".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3661,6 +3736,7 @@ mod tests {
                         unique: false,
                     },
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "avatar".to_string(),
                         field_type: FieldType::Image,
@@ -3674,6 +3750,7 @@ mod tests {
             (
                 "tag_1".into(),
                 vec![FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "name".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3764,6 +3841,7 @@ mod tests {
             (
                 vec![
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3773,6 +3851,7 @@ mod tests {
                         unique: false,
                     },
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -3794,6 +3873,7 @@ mod tests {
             (
                 vec![
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3803,6 +3883,7 @@ mod tests {
                         unique: false,
                     },
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -3821,6 +3902,7 @@ mod tests {
             (
                 vec![
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "title".to_string(),
                         field_type: FieldType::Text(TextFieldOptions::default()),
@@ -3830,6 +3912,7 @@ mod tests {
                         unique: false,
                     },
                     FieldSchema {
+                        is_title: false,
                         show_in_list: false,
                         name: "age".to_string(),
                         field_type: FieldType::Number,
@@ -3861,6 +3944,7 @@ mod tests {
     fn field_type_enum_validation() {
         let field_type = FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]);
         let schema = FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "status".to_string(),
             field_type: field_type.clone(),

@@ -17,7 +17,7 @@ use crate::models::schema::{
     CompositeFieldId, RelationTarget, SchemaScope, has_unique_fields, referenced_relation_targets,
     unique_values, validate_composite_references, validate_relation_targets, validate_schema,
 };
-use crate::models::values::{FieldValue, FieldValueMap};
+use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -220,6 +220,48 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await
             .map_err(map_internal_error)
     }
+    /// The title of each named item: what a reference to it shows as its name.
+    ///
+    /// The answer is keyed by the id written as a string, because that is how a JSON map is keyed
+    /// and how the caller looks one up. An id that is not there is left out, and a schema that has
+    /// no title field answers nothing: the caller shows the reference itself then, which is what it
+    /// did before any of this existed.
+    ///
+    /// The values the title field holds are answered **as they are stored**, not rendered: the
+    /// screens already know how to draw a value of a field, and doing it twice is how two renderings
+    /// drift apart.
+    pub async fn item_titles(
+        &self,
+        collection_name: &CollectionName,
+        ids: &[CollectionItemId],
+    ) -> Result<HashMap<String, FieldValueResponse>, HttpError> {
+        let schema = self
+            .collection_repository
+            .get_collection_schema(collection_name)
+            .await
+            .map_err(map_internal_error)?
+            .ok_or_else(|| {
+                HttpError::NotFound(&format!(
+                    "Collection with id '{}' does not exist",
+                    collection_name
+                ))
+            })?;
+        let Some(title) = schema.iter().find(|field| field.is_title) else {
+            return Ok(HashMap::new());
+        };
+        let mut titles = HashMap::new();
+        for id in ids {
+            let Some(item) = self.working_item(collection_name, id).await? else {
+                continue;
+            };
+            if let Some(value) = item.get(&title.name) {
+                // No images to resolve: a title is one of the types that cannot be an image.
+                titles.insert(id.to_string(), value.to_response(&HashMap::new()));
+            }
+        }
+        Ok(titles)
+    }
+
     /// The content that references one of this collection's items.
     ///
     /// An item that is not there has no references to report, so the answer is a 404 rather than an
@@ -2368,6 +2410,7 @@ mod tests {
     fn create_test_schema() -> CollectionSchema {
         vec![
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "title".to_string(),
                 field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2377,6 +2420,7 @@ mod tests {
                 unique: false,
             },
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "count".to_string(),
                 field_type: FieldType::Number,
@@ -2435,6 +2479,7 @@ mod tests {
     async fn add_collection_schema_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2478,6 +2523,7 @@ mod tests {
 
         let related_to = |target: RelationTarget| {
             vec![FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "author".to_string(),
                 field_type: FieldType::Relation(RelationOptions {
@@ -2605,6 +2651,7 @@ mod tests {
 
     fn text_field(name: &str, unique: bool) -> FieldSchema {
         FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: name.to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2772,6 +2819,7 @@ mod tests {
         let adding_slug = vec![
             text_field("title", true),
             FieldSchema {
+                is_title: false,
                 show_in_list: false,
                 name: "address".to_string(),
                 field_type: FieldType::Slug(Default::default()),
@@ -2830,6 +2878,7 @@ mod tests {
     async fn update_collection_schema_success() {
         let service = create_test_service();
         let initial_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2844,6 +2893,7 @@ mod tests {
             .unwrap();
 
         let updated_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title2".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2868,6 +2918,7 @@ mod tests {
     async fn add_collection_schema_already_exists() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2882,6 +2933,7 @@ mod tests {
             .unwrap();
 
         let duplicate_schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "other".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2910,6 +2962,7 @@ mod tests {
     async fn delete_collection_success() {
         let service = create_test_service();
         let schema = vec![FieldSchema {
+            is_title: false,
             show_in_list: false,
             name: "title".to_string(),
             field_type: FieldType::Text(TextFieldOptions::default()),
@@ -2937,6 +2990,7 @@ mod tests {
             .update_collection_schema(
                 &"non_existent".into(),
                 &vec![FieldSchema {
+                    is_title: false,
                     show_in_list: false,
                     name: "title".to_string(),
                     field_type: FieldType::Text(TextFieldOptions::default()),

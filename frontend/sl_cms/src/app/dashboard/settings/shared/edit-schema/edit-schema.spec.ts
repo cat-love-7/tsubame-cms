@@ -219,4 +219,22 @@ describe('EditSchema', () => {
     expect(fresh.nativeElement.querySelector('app-value-field')).toBeTruthy();
     expect(fresh.nativeElement.querySelector('app-field')).toBeFalsy();
   });
+
+  // An item has one name, so marking a field as the title takes it off the others here rather than
+  // letting the save fail with a message about a field the author has already forgotten.
+  it('keeps the title on one field', () => {
+    const first = field('name');
+    const second = field('title');
+    fixture.componentInstance.schema = [first, second];
+
+    fixture.componentInstance.onFieldChanged(1, { ...second, is_title: true });
+
+    expect(fixture.componentInstance.schema[1].is_title).toBe(true);
+    expect(fixture.componentInstance.schema[0].is_title).toBe(false);
+
+    // And the other way round: the newest choice wins.
+    fixture.componentInstance.onFieldChanged(0, { ...first, is_title: true });
+    expect(fixture.componentInstance.schema[0].is_title).toBe(true);
+    expect(fixture.componentInstance.schema[1].is_title).toBe(false);
+  });
 });

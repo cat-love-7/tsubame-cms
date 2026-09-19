@@ -27,7 +27,6 @@ import {
   IsCompositeFieldSchemaPipe,
   IsEnumFieldSchemaPipe,
   IsMarkdownFieldSchema,
-  IsRelationFieldSchemaPipe,
   IsTextFieldSchema,
   isArrayFieldSchema,
   isCompositeFieldSchema,
@@ -62,7 +61,6 @@ import { SinglePagesService } from 'app/services/schema/single-pages.service';
     IsCompositeFieldSchemaPipe,
     IsArrayFieldSchemaPipe,
     IsEnumFieldSchemaPipe,
-    IsRelationFieldSchemaPipe,
     FieldTypeStringPipe,
     EnumField,
     CompositeField,
@@ -98,6 +96,14 @@ export class Field implements OnInit, OnChanges {
    * definition's values live inside whatever item uses them, so there is nothing to list.
    */
   @Input() listAllowed = false;
+  /**
+   * Whether this screen may offer `is_title` at all.
+   *
+   * A collection's items and a page are the things a relation can point at, so those are the
+   * schemas that can name one; a composite definition is embedded in whatever item uses it, so a
+   * reference never names it on its own.
+   */
+  @Input() titleAllowed = false;
   /**
    * Every field of the schema this one belongs to.
    *
