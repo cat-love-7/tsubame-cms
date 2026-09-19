@@ -11,14 +11,30 @@ API, and the Lambda function the API runs as.
 |---|---|
 | `terraform fmt -check -recursive` | here |
 | `terraform init -backend=false` + `terraform validate` | here, against the real providers, for `infra/` and `infra/bootstrap/` |
-| `terraform plan` / `apply` | **nowhere yet** — they need AWS credentials |
-| The built app served by CloudFront | **nothing yet** — `scripts/deploy-frontend.sh` needs AWS credentials |
-| The function actually answering an invocation | **nowhere yet** — `scripts/smoke-test.sh <app-url>` is the first thing to run after the two above, and it needs no AWS credentials |
-| The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`) |
+| `terraform plan` / `apply` | **staging, 2026-09-19** — account `<account-id>`, `ap-northeast-1`, applied from this tree with the three deployer policies; `plan` after it says *No changes* |
+| The built app served by CloudFront | **staging** — `scripts/deploy-frontend.sh`, on `https://cms.example.com` (distribution `<distribution-id>`) |
+| The function actually answering an invocation | **staging** — `scripts/smoke-test.sh https://cms.example.com <function-url>` passes, and `/api/content/collections` answers `200 []` from the DynamoDB table, which is the execution role working rather than just the function being reachable |
+| The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`), and `scripts/build-lambda.sh --zig` here |
+| Someone actually signing in | **staging** — `frontend/sl_cms/e2e/hosted-signin.mjs` (a real browser: PKCE handoff, the registered callback, the code exchange, the admin screen, no console errors) |
 
-So this is a configuration that Terraform agrees is well-formed, not one that has been applied.
-The first `apply` is where IAM semantics, service quotas, the Cognito domain's global uniqueness
-and the bucket policy meet reality.
+The first deployment is done, and it is the first deployment that found things a `validate` cannot.
+In the order they surfaced:
+
+* **IAM gaps, five rounds of them.** `s3:GetBucketTagging` and `s3:GetBucketCORS` (the wildcard
+  `s3:GetBucket*` does not reach every bucket read, and the ones it misses are the
+  `Get*Configuration` family); `s3:GetAccelerateConfiguration`, whose IAM name does not contain
+  "Bucket" at all; `logs:DescribeLogGroups` and `cognito-idp:DescribeUserPoolDomain`, which cannot
+  be scoped to a log group or a pool; `logs:ListTagsForResource`, which arrives with the log
+  group's ARN *without* the `:*` suffix the statement was scoped to. The three applying policies
+  carry all of them now, which is also why they are three: the document outgrew IAM's 6144
+  characters for one managed policy.
+* **`OPTIONS` cannot be in a function URL's CORS methods.** Lambda validates each member of that
+  list against a six-character limit, and the preflight method is seven characters long. A
+  preflight still works: the URL forwards it and the router answers it.
+* **The advertised `login_url` is a base, not a link.** Asked for on its own, Cognito answers
+  "Required parameters missing" - the browser adds `redirect_uri`, the PKCE challenge and the
+  state. `scripts/smoke-test.sh` adds the registered callback, so the check covers the callback
+  URL as well.
 
 ## Before two people apply it
 

@@ -143,12 +143,16 @@ if printf '%s' "$capabilities" | grep -Eq '"password_login"[[:space:]]*:[[:space
   if [ -z "$login_url" ]; then
     bad "the deployment advertises a sign-in page (capabilities has no login_url)"
   else
-    status="$(fetch "$login_url")"
+    # The advertised address is a base: the browser adds `redirect_uri`, the PKCE challenge and the
+    # state (`core/auth/hosted-login.ts`). Asked for bare, Cognito answers "Required parameters
+    # missing" - so this adds the one parameter the *deployment* has to have registered, which
+    # makes it a check of the callback URL too: an origin the pool does not know is refused.
+    status="$(fetch "$login_url" --get --data-urlencode "redirect_uri=$app_url/auth/callback")"
     content_type="$(header content-type)"
     if [ "$status" = 200 ] && printf '%s' "$content_type" | grep -qi 'text/html'; then
-      ok "the advertised sign-in page answers ($login_url)"
+      ok "the advertised sign-in page answers, with $app_url/auth/callback registered"
     else
-      bad "the advertised sign-in page answers ($login_url) (status $status, content-type ${content_type:-none})"
+      bad "the advertised sign-in page answers, with $app_url/auth/callback registered (status $status, content-type ${content_type:-none})"
     fi
   fi
 elif printf '%s' "$capabilities" | grep -Eq '"password_login"[[:space:]]*:[[:space:]]*true'; then

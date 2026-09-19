@@ -106,6 +106,28 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
   正しいパスワードでも通らず、他のアカウントは影響を受けない
 - その間ブラウザのコンソールエラーが出ない
 
+## デプロイ先のサインイン(AWS)
+
+`check-ui.mjs` はローカルのパスワードフォームと `/api/auth/login` を叩く。Cognito がサインインを
+持つデプロイには**そのどちらも無い**(エンドポイントは 501、画面にはホステッドページへのボタン)ので、
+あちらの suite ではどうしても届かない。`hosted-signin.mjs` がそこだけを見る。
+
+```bash
+cd frontend/sl_cms
+APP_URL=https://cms.example.com \
+ADMIN_USERNAME=cat ADMIN_PASSWORD=... \
+PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-signin.mjs
+```
+
+確認するのは、PKCE の受け渡し(`login_url` に `code_challenge` と `redirect_uri` が付く)、
+**登録済みコールバック**へ戻ってくること、`/api/auth/callback` でのコード交換、CMS 自身のトークンが
+保存されること、管理画面が出ること、その間コンソールエラーが出ないこと。`curl` で見る
+`scripts/smoke-test.sh` はここまで届かない —— 画面は正しく描かれているのにサインインだけが
+壊れている、という状態は起こりうる。
+
+前提: サインインするアカウントが先に存在すること(管理者が `AdminCreateUser` +
+`AdminSetUserPassword` で作り、その名前が `BOOTSTRAP_ADMIN_USERNAMES` に入っている)。
+
 ## データ
 
 実行のたびに `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` と複合フィールド定義
