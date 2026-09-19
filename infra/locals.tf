@@ -15,6 +15,13 @@ locals {
     : "${path.module}/build/sl-cms-aws-${var.function_architecture}.zip"
   )
 
+  # Where the app is served from, as a browser sees it. An input rather than something derived
+  # from the distribution: the pool's client has to register the callback before the distribution
+  # exists, and deriving it here would be a cycle (distribution → function URL → function →
+  # client → callback → distribution).
+  app_origin  = var.app_url
+  app_aliases = [replace(var.app_url, "https://", "")]
+
   # Where the browser signs in. `GET /auth/capabilities` reports it, so the client can send
   # someone there instead of describing where to go.
   # The hosted sign-in page. The screen does not link here as it stands: it builds the address from

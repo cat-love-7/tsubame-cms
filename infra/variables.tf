@@ -52,20 +52,44 @@ variable "cors_allowed_origins" {
 
 variable "app_url" {
   description = <<-EOT
-    Where the CMS screen is served from, as a browser sees it.
+    Where the CMS screen is served from, as a browser sees it: the origin, without a trailing
+    slash, for example `https://cms.example.com`.
 
-    The identity provider sends the browser back here after a sign-in, and it has to be an address
-    it was told about in advance, so this is not something that can be derived from the API's own
-    URL. It is also the origin the CMS API is called from, so it normally appears in
-    `cors_allowed_origins` as well.
+    It cannot be derived from anything here. The identity provider sends the browser back to
+    `<app_url>/auth/callback`, which has to be an address the pool's client was told about in
+    advance - and the CloudFront distribution answers on that name, so the address has to be
+    known before either exists. The DNS record pointing it here is the operator's, like the
+    secret below: `terraform output frontend_url` is the distribution to point it at.
   EOT
   type        = string
-  default     = "http://localhost:4200"
 
   validation {
-    condition     = can(regex("^https?://[^/]+$", var.app_url))
-    error_message = "app_url is an origin without a trailing slash, for example https://cms.example.com."
+    condition     = can(regex("^https://[^/]+$", var.app_url))
+    error_message = "app_url is an https origin without a trailing slash, for example https://cms.example.com."
   }
+}
+
+variable "frontend_certificate_arn" {
+  description = <<-EOT
+    An ACM certificate covering `app_url`. CloudFront certificates live in **us-east-1** whatever
+    region the rest of the deployment is in, and there is no default: a distribution cannot be
+    reached on a name no certificate covers.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:acm:us-east-1:", var.frontend_certificate_arn))
+    error_message = "CloudFront reads certificates from us-east-1, so the ARN has to name that region."
+  }
+}
+
+variable "frontend_bucket" {
+  description = <<-EOT
+    Name of the bucket the built app is synced to. Empty means `<project>-<environment>-app`, which
+    is what the deployment creates; set it only when that name is taken in the account.
+  EOT
+  type        = string
+  default     = ""
 }
 
 variable "image_delivery" {

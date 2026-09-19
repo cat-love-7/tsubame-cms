@@ -37,6 +37,7 @@ cd frontend/sl_cms && npm run lint && npm run format:check
 docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
 (cd infra && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
 (cd infra/bootstrap && terraform init -backend=false && terraform validate)
+scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS credentials
 ```
 
 ## Rules that are easy to get wrong

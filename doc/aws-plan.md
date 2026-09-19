@@ -423,6 +423,37 @@ JWT を検証するだけなので、CMS は試行そのものを見ない。Cog
 
 ### P5. デプロイと運用
 
+#### 画面の配信(S3 + CloudFront、2026-09)
+
+管理画面は**同じ CloudFront の 1 オリジン**から配る。アプリは S3(非公開 + OAC)、API は
+Function URL で、ビヘイビアは 2 つだけ:
+
+| リクエスト | オリジン | キャッシュ |
+|---|---|---|
+| `/api/*` | Function URL | しない(すべてトークン次第の答え)。`Authorization` は転送する |
+| 拡張子のあるパス | S3 | オブジェクトの指定どおり(バンドルは 1 年、`index.html` はしない) |
+| それ以外のパス | S3(`/index.html` として) | 画面のルート。アプリは 1 ドキュメント |
+
+- **同一オリジン**なのでアプリから API への CORS は不要で、`apiUrl()` の `/api` を剥がす
+  作業も無い(`API_PREFIX` をサーバーが持っている)。プリサインド PUT だけはブラウザから
+  S3 へのクロスオリジンなので、画像バケットの CORS には `app_url` のオリジンを常に足す。
+- **SPA のディープリンク**はバケットにオブジェクトが無い。写すのは **CloudFront Function
+  (default behavior のみ)** で、`/api/*` には付かない。distribution 全体の custom error
+  response にすると、**API 自身の 403/404**(公開権限の無い利用者、存在しないアイテム)まで
+  `index.html` の 200 に化ける — これは実際に踏むところだったので Function 側に置いた。
+- **キャッシュはオブジェクトに決めさせる**: アプリ用のキャッシュポリシーを `min_ttl = 0` で
+  作り、`scripts/deploy-frontend.sh` が「内容ハッシュ付きのバンドルは 1 年 immutable、
+  名前が変わらないもの(`index.html` / `favicon.ico` / 通知類)は毎回再検証」と指定する。
+  マネージドの CachingOptimized は `min_ttl` が 1 時間なので、`index.html` の `no-cache` が
+  1 時間に切り上げられてしまう。
+- **`app_url` は入力**。配布ドメインから導くと
+  `distribution → function URL → function → Cognito client → callback_urls → distribution` の
+  循環になる。証明書(us-east-1 の ACM)と DNS レコードも運用者が用意する — JWT secret と
+  同じ流儀で、Terraform は「何を指すか」(`terraform output frontend_url`)だけを出す。
+- デプロイは `scripts/deploy-frontend.sh`(`ng build` → `aws s3 sync --delete` →
+  `/` と `/index.html` を invalidate)。Terraform が持つのはバケット・distribution・
+  ポリシーまでで、**中身はビルド成果物**なので IaC に持たせない。
+
 - [ ] IaC でスタック定義(Lambda + Function URL/API Gateway、DynamoDB、S3、CORS、環境変数、
       シークレットは Secrets Manager)。テスト用の使い捨てスタックも同じ IaC で
       → **完了条件**: 新規アカウント領域に 1 コマンドで作成・削除できる。

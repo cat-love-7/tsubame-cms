@@ -31,3 +31,18 @@ output "function_environment" {
   value       = local.function_environment
   sensitive   = true
 }
+
+output "frontend_url" {
+  description = "The distribution the app's DNS record should point at (a CNAME/alias target)."
+  value       = "https://${aws_cloudfront_distribution.app.domain_name}"
+}
+
+output "frontend_bucket" {
+  description = "The bucket `scripts/deploy-frontend.sh` syncs the build into."
+  value       = aws_s3_bucket.app.id
+}
+
+output "frontend_distribution_id" {
+  description = "The distribution to invalidate after a deployment."
+  value       = aws_cloudfront_distribution.app.id
+}

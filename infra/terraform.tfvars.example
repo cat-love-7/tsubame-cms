@@ -15,8 +15,12 @@ bootstrap_admin_usernames = ["ops@example.com"]
 
 cors_allowed_origins = ["https://cms.example.com"]
 # Where the screen is served from: the provider sends the browser back to <app_url>/auth/callback,
-# which is registered on the pool's client.
+# which is registered on the pool's client, and CloudFront answers on this name.
 app_url = "https://cms.example.com"
+# The certificate for that name. CloudFront reads certificates from us-east-1 whatever region the
+# rest of the deployment is in; create it (with DNS validation) and paste its ARN. Pointing the
+# name at `terraform output frontend_url` is the operator's, like the secret above.
+frontend_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
 # "public" (a stable URL in content) or "presigned" (a private bucket, signed URLs: for a site that
 # fetches images at build time and serves its own copies).
 image_delivery = "public"

@@ -1,8 +1,9 @@
 # Deploying the AWS backend
 
-`terraform apply` here creates everything the CMS needs on AWS: one DynamoDB table, one S3
-bucket, a Cognito pool and app client with its hosted sign-in page, a WAF rule in front of that
-page, and the Lambda function the API runs as.
+`terraform apply` here creates everything the CMS needs on AWS: one DynamoDB table, two S3
+buckets (the images, and the built app), a Cognito pool and app client with its hosted sign-in
+page, a WAF rule in front of that page, a CloudFront distribution in front of the app *and* the
+API, and the Lambda function the API runs as.
 
 ## What is verified, and what is not
 
@@ -11,6 +12,7 @@ page, and the Lambda function the API runs as.
 | `terraform fmt -check -recursive` | here |
 | `terraform init -backend=false` + `terraform validate` | here, against the real providers, for `infra/` and `infra/bootstrap/` |
 | `terraform plan` / `apply` | **nowhere yet** — they need AWS credentials |
+| The built app served by CloudFront | **nothing yet** — `scripts/deploy-frontend.sh` needs AWS credentials |
 | The function actually answering an invocation | **nothing yet**; that is staging |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`) |
 
@@ -55,9 +57,23 @@ scripts/build-lambda.sh                 # writes infra/build/sl-cms-aws-arm64.zi
 cd infra
 #   aws secretsmanager create-secret --name sl-cms/jwt-secret \
 #     --secret-string "$(openssl rand -base64 48)"
-cp terraform.tfvars.example terraform.tfvars   # fill in jwt_secret_arn and who may administer
+cp terraform.tfvars.example terraform.tfvars   # fill in jwt_secret_arn, who may administer, the domain
 terraform plan
 terraform apply
+```
+
+Three of the things in that file are the operator's to make, because Terraform cannot: the
+**secret** (above), the **domain**, and its **certificate** (an ACM certificate in `us-east-1`,
+whatever region the rest of the deployment is in). The domain has to be known in advance rather
+than read from the distribution: the pool's client registers `<app_url>/auth/callback`, the
+distribution answers on that name, and the distribution needs the function URL - which needs the
+function, which needs the client's id. That circle is why `app_url` is an input, and why the
+order is: create the certificate, apply, then point the name at `terraform output frontend_url`.
+
+The app itself is deployed last, because it is a build artifact rather than infrastructure:
+
+```bash
+scripts/deploy-frontend.sh              # ng build, aws s3 sync --delete, invalidate index.html
 ```
 
 `backend.hcl` is what makes the state shared: `terraform init` writes it to the bucket under the
@@ -73,6 +89,30 @@ but Terraform no longer knows it made it.
 `sensitive`, so it also prints the secret. The code reads those names in
 `sl_cms/crates/aws/src/settings.rs`, and `AWS_IMAGE_BASE_URL` is what makes the URL stored in
 content match the bucket.
+
+## How the app and the API are reached
+
+One CloudFront distribution serves both, which is what makes the frontend simple: `apiUrl()` asks
+for `/api/...`, and the browser sees one origin, so nothing needs CORS and nothing strips a prefix.
+
+| Request | Origin | What is cached |
+|---|---|---|
+| `/api/*` | the function URL | nothing: every answer is a token's answer, and the viewer's headers (`Authorization`) are forwarded |
+| a path with a file extension | the app bucket | as the object says (the bundles ask for a year, `index.html` for nothing) |
+| any other path | the app bucket, as `/index.html` | a route, not a file: the app is one document with a router |
+
+Two details are worth knowing before changing either:
+
+* **The SPA fallback is a CloudFront Function on the default behavior**, not a distribution-wide
+  custom error response. A custom error response cannot tell one origin from another, and would
+  rewrite the API's own 403s and 404s (a viewer who may not publish, an item that is not there) into
+  `index.html` with a 200.
+* **The app's cache policy is the one that lets objects decide their own age** (`min_ttl = 0`), and
+  `scripts/deploy-frontend.sh` is what tells them: a year for the content-hashed bundles, and
+  revalidation for everything whose name survives a deployment.
+
+The bucket is private and read through an origin access control; the policy grants `s3:GetObject`
+only, because nothing here lists the bucket.
 
 ## Architecture
 

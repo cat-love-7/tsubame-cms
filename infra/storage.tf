@@ -92,7 +92,9 @@ resource "aws_s3_bucket_cors_configuration" "images" {
   # The browser PUTs the bytes here directly, so this is where the upload's CORS is decided.
   cors_rule {
     allowed_methods = ["PUT"]
-    allowed_origins = var.cors_allowed_origins
+    # The app's own origin is always allowed: the browser PUTs to the presigned URL from there, and
+    # that is cross-origin whatever the API's origin is.
+    allowed_origins = distinct(concat(var.cors_allowed_origins, [local.app_origin]))
     allowed_headers = ["*"]
     max_age_seconds = 3000
   }

@@ -65,10 +65,10 @@ resource "aws_cognito_user_pool_client" "browser" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email"]
   allowed_oauth_flows_user_pool_client = true
-  callback_urls                        = ["${var.app_url}/auth/callback"]
+  callback_urls                        = ["${local.app_origin}/auth/callback"]
   # Signing out of the CMS does not end the provider's session; this is where the provider sends
   # the browser when it is asked to end it.
-  logout_urls = ["${var.app_url}/login"]
+  logout_urls = ["${local.app_origin}/login"]
 
   # Whether an account exists is none of a stranger's business: the same reason the CMS answers
   # "invalid username or password" for both cases.
