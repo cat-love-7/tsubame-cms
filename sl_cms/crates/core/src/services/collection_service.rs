@@ -6,6 +6,7 @@ use chrono::Utc;
 use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
+use crate::models::delivery::{DeliveredItem, DeliveryMaps, Populate};
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{
@@ -1612,11 +1613,46 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     /// Items visible to the public delivery API, with the metadata it reports.
     ///
     /// Ordered by id, which is the order the pages have to be walked in.
+    /// The site's shape and images, read once for a delivery request.
+    async fn delivery_maps(&self) -> Result<DeliveryMaps, HttpError> {
+        Ok(DeliveryMaps {
+            composites: self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?,
+            images: self
+                .image_repository
+                .list_images()
+                .await
+                .map_err(map_internal_error)?
+                .into_iter()
+                .collect(),
+        })
+    }
+
+    /// One item as the delivery API serves it: the published copy, rendered the way the screens
+    /// render it, with unpublished references dropped and the named fields expanded.
+    async fn deliver_item(
+        &self,
+        schema: &CollectionSchema,
+        maps: &DeliveryMaps,
+        item: &CollectionItem,
+        populate: &Populate,
+    ) -> Result<DeliveredItem, HttpError> {
+        let formatted = item
+            .format_to_schema(&maps.composites, schema)
+            .to_response(&maps.images);
+        maps.deliver(schema, &formatted, &*self.content, populate)
+            .await
+    }
+
     pub async fn list_published_items(
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
-    ) -> Result<Page<(CollectionItemId, ItemMetadata, CollectionItemResponse)>, HttpError> {
+        populate: &Populate,
+    ) -> Result<Page<(CollectionItemId, ItemMetadata, DeliveredItem)>, HttpError> {
         // The window goes to the storage, which can read a page of the *published* set
         // without materialising it (see `CollectionRepository::list_published_items_page`).
         // The delivery API is the one caller that walks a list it did not bound itself, so
@@ -1629,19 +1665,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)?;
 
         let schema = self.get_collection_schema(collection_name).await?;
-        let mut stored = Vec::with_capacity(page.len());
-        let mut metadata = Vec::with_capacity(page.len());
-        for (id, item, item_metadata) in page {
-            stored.push((id, item));
-            metadata.push(item_metadata);
+        let maps = self.delivery_maps().await?;
+        let mut items = Vec::with_capacity(page.len());
+        for (id, item, metadata) in page {
+            // The published copy, never the working one: edits must not leak to a site.
+            let values = self.deliver_item(&schema, &maps, &item, populate).await?;
+            items.push((id, metadata, values));
         }
-        // The published copy, never the working one: edits must not leak to a site.
-        let items = self.format_items(&schema, stored).await?;
-        let items: Vec<(CollectionItemId, ItemMetadata, CollectionItemResponse)> = items
-            .into_iter()
-            .zip(metadata)
-            .map(|((id, values), metadata)| (id, metadata, values))
-            .collect();
         Ok(pagination.wrap(items, total))
     }
 
@@ -1653,7 +1683,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
-    ) -> Result<(ItemMetadata, CollectionItemResponse), HttpError> {
+        populate: &Populate,
+    ) -> Result<(ItemMetadata, DeliveredItem), HttpError> {
         let metadata = self.get_item_metadata(collection_name, item_id).await?;
         if !metadata.is_published() {
             return Err(HttpError::NotFound(&format!(
@@ -1672,7 +1703,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     item_id, collection_name
                 ))
             })?;
-        Ok((metadata, self.format_item(collection_name, &item).await?))
+        let schema = self.get_collection_schema(collection_name).await?;
+        let maps = self.delivery_maps().await?;
+        Ok((
+            metadata,
+            self.deliver_item(&schema, &maps, &item, populate).await?,
+        ))
     }
 
     /// The published item whose published copy holds `value`, for a site resolving a URL.
@@ -1686,11 +1722,14 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         field: &str,
         value: &str,
-    ) -> Result<(CollectionItemId, ItemMetadata, CollectionItemResponse), HttpError> {
+        populate: &Populate,
+    ) -> Result<(CollectionItemId, ItemMetadata, DeliveredItem), HttpError> {
         let (item_id, _) = self
             .get_item_by_unique_value(collection_name, field, value)
             .await?;
-        let (metadata, values) = self.get_published_item(collection_name, item_id).await?;
+        let (metadata, values) = self
+            .get_published_item(collection_name, item_id, populate)
+            .await?;
         // Asked in the same form the index holds: for a slug that is the canonical spelling, so
         // `Hello World` and `hello-world` are one question rather than two.
         let value = Self::lookup_value(

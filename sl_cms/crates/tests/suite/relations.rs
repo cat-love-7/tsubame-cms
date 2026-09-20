@@ -1533,3 +1533,272 @@ async fn only_a_required_relation_that_would_be_left_empty_holds_a_target() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+/// What a site is served: a reference to something unpublished is gone (an editor still sees it,
+/// because the reference is what they are working on), and `?populate=` carries the published
+/// values of what a field points at, one level deep.
+#[tokio::test]
+async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_asked_for() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let posts = "/api/models/collections/posts";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    // One author on the site, one still a draft.
+    for (index, title) in ["Ada", "Grace"].iter().enumerate() {
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            "/api/models/collections/authors/item",
+            json!({ "title": title }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if index == 0 {
+            let (status, body) = send_json(
+                &app,
+                &token,
+                Method::POST,
+                "/api/models/collections/authors/items/1/publish",
+                json!(null),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+    }
+
+    save_schema(
+        &app,
+        &token,
+        &format!("{posts}/schema"),
+        json!([
+            text_field("title", true),
+            {
+                "name": "author",
+                "field_type": { "Relation": {
+                    "target": { "kind": "collection", "name": "authors" },
+                    "has_many": false,
+                }},
+                "required": false, "width": 12, "height": 1,
+            },
+        ]),
+    )
+    .await;
+
+    // A post pointing at the draft: publishing it is fine (the relation is optional), and the
+    // site is served no reference at all.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/item"),
+        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 2 }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, delivered) = send(
+        &app.router,
+        Method::GET,
+        &format!("/api/content/collections/posts/items/1"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        delivered["values"]["author"],
+        json!([]),
+        "a site cannot follow it"
+    );
+
+    // The editor still sees what they picked: it is the reference they are working on.
+    let (_, managed) = send(
+        &app.router,
+        Method::GET,
+        &format!("{posts}/items/1"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        managed["author"],
+        json!([{ "target": "authors", "item": 2 }])
+    );
+
+    // Pointed at the author that is on the site, the reference is served - bare by default.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::PUT,
+        &format!("{posts}/items/1"),
+        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 1 }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, delivered) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        delivered["values"]["author"],
+        json!([{ "target": "authors", "item": 1 }]),
+        "the reference, without the values behind it"
+    );
+
+    // `?populate=` is what asks for the values, and one level is all it gives.
+    let (_, populated) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=author",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        populated["values"]["author"],
+        json!([{
+            "target": "authors",
+            "item": 1,
+            "values": { "title": "Ada" },
+        }])
+    );
+
+    // The list route expands the same way, so a site does not need a request per row.
+    let (_, listed) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts?populate=author",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        listed["items"][0]["values"]["author"][0]["values"]["title"],
+        "Ada"
+    );
+
+    // A name that is not a relation field is refused rather than answered with nothing: the
+    // caller is a build, and a typo it never hears about is the expensive kind.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=nope",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// A page is served the same way, through the same rules.
+#[tokio::test]
+async fn a_page_is_served_the_references_it_can_follow() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/item",
+        json!({ "title": "Ada" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/1/publish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/schema",
+        Some(&token),
+        Some(json!([
+            text_field("title", true),
+            {
+                "name": "author",
+                "field_type": { "Relation": {
+                    "target": { "kind": "collection", "name": "authors" },
+                    "has_many": false,
+                }},
+                "required": false, "width": 12, "height": 1,
+            },
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "title": "Home", "author": [{ "target": "authors", "item": 1 }] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, page) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/single-pages/home?populate=author",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        page["values"]["author"],
+        json!([{ "target": "authors", "item": 1, "values": { "title": "Ada" } }])
+    );
+}

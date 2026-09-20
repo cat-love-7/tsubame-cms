@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::models::delivery::{DeliveredItem, DeliveryMaps, Populate};
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
@@ -657,7 +658,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     pub async fn get_published_page_item(
         &self,
         name: &SinglePageName,
-    ) -> Result<(ItemMetadata, SinglePageItemResponse), HttpError> {
+        populate: &Populate,
+    ) -> Result<(ItemMetadata, DeliveredItem), HttpError> {
         let metadata = self.get_page_metadata(name).await?;
         if !metadata.is_published() {
             return Err(HttpError::NotFound(&format!(
@@ -670,8 +672,32 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .single_page_repository
             .get_single_page_item(name)
             .await
-            .map_err(map_internal_error)?;
-        Ok((metadata, self.format_page_item(name, published).await?))
+            .map_err(map_internal_error)?
+            .unwrap_or_default();
+        let schema = self.get_single_page_schema(name).await?;
+        // The site's shape and its images, read once for the request (see
+        // `CollectionService::delivery_maps`).
+        let maps = DeliveryMaps {
+            composites: self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?,
+            images: self
+                .image_repository
+                .list_images()
+                .await
+                .map_err(map_internal_error)?
+                .into_iter()
+                .collect(),
+        };
+        let formatted = published
+            .format_to_schema(&maps.composites, &schema)
+            .to_response(&maps.images);
+        let values = maps
+            .deliver(&schema, &formatted, &*self.content, populate)
+            .await?;
+        Ok((metadata, values))
     }
 
     /// Pages visible to the public delivery API.

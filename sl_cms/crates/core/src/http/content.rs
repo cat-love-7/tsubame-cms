@@ -22,12 +22,11 @@ use chrono::{DateTime, Utc};
 
 use crate::app_module::Storage;
 use crate::http::AppState;
-use crate::models::collection::{
-    CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
-};
+use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
+use crate::models::delivery::{DeliveredItem, Populate};
 use crate::models::error::HttpError;
 use crate::models::pagination::{PageQuery, Pagination};
-use crate::models::single_page::{SinglePageItemResponse, SinglePageName, SinglePageSchema};
+use crate::models::single_page::{SinglePageName, SinglePageSchema};
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()
@@ -50,6 +49,49 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             get(get_single_page::<R>),
         )
         .route("/content/composite-fields", get(list_composite_fields::<R>))
+}
+
+/// What a delivery request may ask for: a page of items, and the fields to expand.
+///
+/// Spelled out rather than reusing `PageQuery`, because `?populate=` belongs to this API and not
+/// to the management one, and the two are read by different routers.
+#[derive(serde::Deserialize)]
+struct ContentQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+    /// Comma-separated field names: each one carries the published values of what it points at,
+    /// one level deep (see `doc/relations-design.md` §5).
+    populate: Option<String>,
+}
+
+impl ContentQuery {
+    fn pagination(&self) -> Result<Pagination, HttpError> {
+        Pagination::limited(PageQuery {
+            limit: self.limit,
+            offset: self.offset,
+        })
+    }
+
+    fn populate(&self) -> Populate {
+        Populate::parse(self.populate.as_deref())
+    }
+}
+
+/// Refuse a name that does not exist, rather than answering without it.
+///
+/// The delivery API is read by site builds, where a silently ignored field means an afternoon
+/// spent on why the data is not there.
+fn check_populate(
+    populate: &Populate,
+    schema: &[crate::models::schema::FieldSchema],
+) -> Result<(), HttpError> {
+    match populate.unknown_in(schema) {
+        Some(unknown) => Err(HttpError::BadRequest(&format!(
+            "no relation field named '{unknown}' to populate"
+        ))
+        .with_field(unknown)),
+        None => Ok(()),
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -108,7 +150,7 @@ struct PublishedItem {
     /// When this copy went live: the published copy only changes when an item is published, so
     /// this is what an incremental build should compare.
     last_published_at: Option<DateTime<Utc>>,
-    values: CollectionItemResponse,
+    values: DeliveredItem,
 }
 
 /// The published item whose published copy holds a unique value: what a site resolves a URL
@@ -119,11 +161,18 @@ struct PublishedItem {
 async fn get_collection_item_by_unique_value<R: Storage>(
     State(module): State<AppState<R>>,
     Path((collection_name, field, value)): Path<(String, String, String)>,
+    Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
+    let populate = query.populate();
+    let schema = module
+        .collection_service
+        .get_collection_schema(&name)
+        .await?;
+    check_populate(&populate, &schema)?;
     let (id, metadata, values) = module
         .collection_service
-        .get_published_item_by_unique_value(&name, &field, &value)
+        .get_published_item_by_unique_value(&name, &field, &value, &populate)
         .await?;
     Ok(Json(PublishedItem {
         id,
@@ -138,7 +187,7 @@ struct SinglePageContent {
     schema: SinglePageSchema,
     published_at: Option<DateTime<Utc>>,
     last_published_at: Option<DateTime<Utc>>,
-    values: SinglePageItemResponse,
+    values: DeliveredItem,
 }
 
 /// Collections that currently have published content.
@@ -156,17 +205,19 @@ async fn list_collections<R: Storage>(
 async fn get_collection<R: Storage>(
     State(module): State<AppState<R>>,
     Path(collection_name): Path<String>,
-    Query(query): Query<PageQuery>,
+    Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
-    let pagination = Pagination::limited(query)?;
+    let pagination = query.pagination()?;
+    let populate = query.populate();
     let name = CollectionName::from(collection_name.as_str());
     let schema = module
         .collection_service
         .get_collection_schema(&name)
         .await?;
+    check_populate(&populate, &schema)?;
     let page = module
         .collection_service
-        .list_published_items(&name, &pagination)
+        .list_published_items(&name, &pagination, &populate)
         .await?;
     let items = page
         .items
@@ -205,11 +256,18 @@ async fn get_collection<R: Storage>(
 async fn get_collection_item<R: Storage>(
     State(module): State<AppState<R>>,
     Path((collection_name, id)): Path<(String, u64)>,
+    Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
+    let populate = query.populate();
+    let schema = module
+        .collection_service
+        .get_collection_schema(&name)
+        .await?;
+    check_populate(&populate, &schema)?;
     let (metadata, values) = module
         .collection_service
-        .get_published_item(&name, CollectionItemId::from_u64(id))
+        .get_published_item(&name, CollectionItemId::from_u64(id), &populate)
         .await?;
 
     Ok(Json(PublishedItem {
@@ -251,15 +309,18 @@ async fn list_composite_fields<R: Storage>(
 async fn get_single_page<R: Storage>(
     State(module): State<AppState<R>>,
     Path(page_name): Path<String>,
+    Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
+    let populate = query.populate();
     let schema = module
         .single_page_service
         .get_single_page_schema(&name)
         .await?;
+    check_populate(&populate, &schema)?;
     let (metadata, values) = module
         .single_page_service
-        .get_published_page_item(&name)
+        .get_published_page_item(&name, &populate)
         .await?;
 
     Ok(Json(SinglePageContent {

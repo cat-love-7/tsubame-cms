@@ -1,5 +1,6 @@
 pub mod capabilities;
 pub mod collection;
+pub mod delivery;
 pub mod error;
 pub mod identity;
 pub mod image;
