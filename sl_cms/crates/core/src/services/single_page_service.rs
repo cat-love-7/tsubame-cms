@@ -18,10 +18,10 @@ use crate::models::schema::{
 use crate::models::single_page::{
     SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema,
 };
-use crate::models::values::FieldValueResponse;
+use crate::models::values::{FieldType, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
-use crate::repositories::content_reader::ContentReader;
+use crate::repositories::content_reader::{ContentReader, SchemaOwner};
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_rules;
@@ -92,6 +92,11 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let composites = self.ensure_composites_exist(schema).await?;
         self.ensure_relation_targets_exist(schema, &composites)
             .await?;
+        self.ensure_inverse_names_are_unique(
+            &SchemaOwner::SinglePage(name.as_str().to_string()),
+            schema,
+        )
+        .await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -134,6 +139,38 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         Ok(composites)
     }
 
+    /// An inverse name is how the other side addresses the relation, so one target cannot have two
+    /// relations answering to the same name (see `CollectionService`).
+    async fn ensure_inverse_names_are_unique(
+        &self,
+        owner: &SchemaOwner,
+        schema: &SinglePageSchema,
+    ) -> Result<(), HttpError> {
+        for field in schema {
+            let FieldType::Relation(options) = &field.field_type else {
+                continue;
+            };
+            let Some(name) = options.inverse_name.as_deref() else {
+                continue;
+            };
+            for declared in self
+                .content
+                .declared_inverses(&options.target)
+                .await
+                .map_err(map_internal_error)?
+            {
+                if declared.name == name && &declared.of != owner {
+                    return Err(HttpError::Conflict(&format!(
+                        "'{name}' is already how {} calls its relation to '{}'",
+                        declared.of.describe(),
+                        options.target.name()
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The same for relations: a target that does not exist is a field that can never hold
     /// anything, so the schema that names it is refused rather than stored.
     ///
@@ -167,6 +204,11 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let composites = self.ensure_composites_exist(schema).await?;
         self.ensure_relation_targets_exist(schema, &composites)
             .await?;
+        self.ensure_inverse_names_are_unique(
+            &SchemaOwner::SinglePage(name.as_str().to_string()),
+            schema,
+        )
+        .await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)

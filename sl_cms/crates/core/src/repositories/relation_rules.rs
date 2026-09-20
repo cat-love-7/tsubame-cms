@@ -170,6 +170,13 @@ mod tests {
             Box::pin(async { Ok(false) })
         }
 
+        fn declared_inverses<'a>(
+            &'a self,
+            _target: &'a RelationTarget,
+        ) -> crate::repositories::content_reader::DeclaredInversesFuture<'a> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
         fn read_content(&self, owner: &ItemOwner) -> ReadContentFuture<'_> {
             let content = self
                 .0

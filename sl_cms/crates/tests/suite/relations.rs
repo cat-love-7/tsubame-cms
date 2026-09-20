@@ -2105,3 +2105,90 @@ async fn a_collection_that_is_pointed_at_is_not_deleted() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "the collection is gone");
 }
+
+/// An inverse name is how the other side addresses a relation, so one target cannot have two
+/// relations answering to it: `?populate=articles` on a category would depend on who asked.
+#[tokio::test]
+async fn an_inverse_name_belongs_to_one_relation() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    for name in ["categories", "sections"] {
+        save_schema(
+            &app,
+            &token,
+            &format!("/api/models/collections/{name}/schema"),
+            json!([text_field("title", true)]),
+        )
+        .await;
+    }
+
+    // The relation the name belongs to.
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/articles/schema",
+        json!([
+            text_field("title", true),
+            relation_field("category", "collection", "categories", false),
+        ]),
+    )
+    .await;
+    // Saving the same schema again is the same declaration, not a second one.
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/collections/articles/schema",
+        Some(&token),
+        Some(json!([
+            text_field("title", true),
+            relation_field("category", "collection", "categories", false),
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Another collection calling the *same target* the same name is refused, and the refusal says
+    // who has it.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/cards/schema",
+        json!([
+            text_field("title", true),
+            relation_field("category", "collection", "categories", false),
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("articles"), "{body}");
+    assert!(body.contains("'articles'"), "{body}");
+
+    // The same name pointing at a *different* target is a different relation, and is fine: the
+    // name is addressed from the target.
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/cards/schema",
+        json!([
+            text_field("title", true),
+            relation_field("section", "collection", "sections", false),
+        ]),
+    )
+    .await;
+
+    // A page can declare one too, and the rule does not care which kind declares it.
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/schema",
+        Some(&token),
+        Some(json!([
+            text_field("title", true),
+            relation_field("category", "collection", "categories", false),
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+}

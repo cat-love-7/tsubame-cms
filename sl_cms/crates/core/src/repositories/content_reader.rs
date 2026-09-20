@@ -15,7 +15,7 @@ use std::pin::Pin;
 
 use crate::models::collection::{CollectionItemId, CollectionName};
 use crate::models::owner::{ItemOwner, ItemOwnerKind};
-use crate::models::schema::FieldSchema;
+use crate::models::schema::{FieldSchema, RelationTarget};
 use crate::models::single_page::SinglePageName;
 use crate::models::values::FieldValueMap;
 use crate::repositories::collection_repository::{BoxError, CollectionRepository};
@@ -47,6 +47,36 @@ pub type ReadContentFuture<'a> =
 pub type DeclaresInverseFuture<'a> =
     Pin<Box<dyn Future<Output = Result<bool, BoxError>> + Send + 'a>>;
 
+pub type DeclaredInversesFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<DeclaredInverse>, BoxError>> + Send + 'a>>;
+
+/// Who declares a relation on the other side: a collection's schema or a page's.
+///
+/// A schema save is about a *schema*, not about one item, so this is the identity the inverse-name
+/// rule compares: the same collection saving again is not a second declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchemaOwner {
+    Collection(String),
+    SinglePage(String),
+}
+
+impl SchemaOwner {
+    /// What to call it in a refusal somebody reads.
+    pub fn describe(&self) -> String {
+        match self {
+            SchemaOwner::Collection(name) => format!("collection '{name}'"),
+            SchemaOwner::SinglePage(name) => format!("single page '{name}'"),
+        }
+    }
+}
+
+/// One inverse name a schema gives a relation to a target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredInverse {
+    pub of: SchemaOwner,
+    pub name: String,
+}
+
 /// Content, by the name a reference index uses for it.
 pub trait ContentReader: Send + Sync + 'static {
     /// What this content declares and holds, or `None` when it is gone.
@@ -61,6 +91,14 @@ pub trait ContentReader: Send + Sync + 'static {
     /// asking for an inverse expansion of an item nothing references has no referrer to read the
     /// name off, and answering "empty" to a typo is worse than reading the schemas.
     fn declares_inverse<'a>(&'a self, name: &'a str) -> DeclaresInverseFuture<'a>;
+
+    /// Who calls a relation to `target` what, so a second schema cannot give the same target the
+    /// same name on the other side.
+    ///
+    /// The whole site again, for the same reason as `declares_inverse`: an inverse name is how a
+    /// relation is addressed from the target, and two names for one relation would make the answer
+    /// depend on who asked.
+    fn declared_inverses<'a>(&'a self, target: &'a RelationTarget) -> DeclaredInversesFuture<'a>;
 }
 
 /// Storage answers both halves, because it is both repositories (see `Storage`).
@@ -82,6 +120,35 @@ impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
                 }
             }
             Ok(false)
+        })
+    }
+
+    fn declared_inverses<'a>(&'a self, target: &'a RelationTarget) -> DeclaredInversesFuture<'a> {
+        Box::pin(async move {
+            let mut declared = Vec::new();
+            for collection in self.list_collection_names().await? {
+                let Some(schema) = self.get_collection_schema(&collection).await? else {
+                    continue;
+                };
+                for name in inverse_names_for(&schema, target) {
+                    declared.push(DeclaredInverse {
+                        of: SchemaOwner::Collection(collection.as_str().to_string()),
+                        name,
+                    });
+                }
+            }
+            for page in self.list_all_page_names().await? {
+                let Some(schema) = self.get_single_page_schema(&page).await? else {
+                    continue;
+                };
+                for name in inverse_names_for(&schema, target) {
+                    declared.push(DeclaredInverse {
+                        of: SchemaOwner::SinglePage(page.as_str().to_string()),
+                        name,
+                    });
+                }
+            }
+            Ok(declared)
         })
     }
 
@@ -128,6 +195,23 @@ impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
     }
 }
 
+/// The inverse names a schema gives a relation to `target`.
+fn inverse_names_for(schema: &[FieldSchema], target: &RelationTarget) -> Vec<String> {
+    schema
+        .iter()
+        .filter_map(|field| match &field.field_type {
+            crate::models::schema::FieldType::Relation(options) => {
+                if &options.target == target {
+                    options.inverse_name.clone()
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Whether a schema gives a relation this name on the other side.
 fn schema_declares_inverse(schema: &[FieldSchema], name: &str) -> bool {
     schema.iter().any(|field| match &field.field_type {
@@ -153,5 +237,9 @@ impl ContentReader for NoContent {
 
     fn declares_inverse<'a>(&'a self, _name: &'a str) -> DeclaresInverseFuture<'a> {
         Box::pin(async { Ok(false) })
+    }
+
+    fn declared_inverses<'a>(&'a self, _target: &'a RelationTarget) -> DeclaredInversesFuture<'a> {
+        Box::pin(async { Ok(Vec::new()) })
     }
 }
