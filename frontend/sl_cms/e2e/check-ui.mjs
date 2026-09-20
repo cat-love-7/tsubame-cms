@@ -537,6 +537,50 @@ try {
   const rowsAtFifty = await dataRows().count();
   check('ページサイズ 50 で 50 行', rowsAtFifty === 50, `${rowsAtFifty} 行`);
 
+  // -------------------------------------------------------------- ordering from the headers
+  // The order belongs to the screen: the id column's header asks for the other way round, and the
+  // header says which way it is (`aria-sort`, and an arrow drawn in CSS).
+  const idHeading = page.locator('thead th').nth(1);
+  const idHeaderButton = idHeading.locator('.sort-header');
+  check(
+    '既定の並び順が見出しに出る',
+    (await idHeading.getAttribute('aria-sort')) === 'descending',
+    (await idHeading.getAttribute('aria-sort')) ?? 'none',
+  );
+
+  const firstIdNow = async () => (await firstRow().locator('td').nth(1).textContent())?.trim();
+  await idHeaderButton.click();
+  await page
+    .waitForFunction(
+      () =>
+        document.querySelector('table.items tbody tr td:nth-child(2)')?.textContent?.trim() === '1',
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  check(
+    '見出しを押すと昇順になる',
+    (await firstIdNow()) === '1' && (await idHeading.getAttribute('aria-sort')) === 'ascending',
+    `id=${await firstIdNow()} / ${(await idHeading.getAttribute('aria-sort')) ?? 'none'}`,
+  );
+
+  await idHeaderButton.click();
+  await page
+    .waitForFunction(
+      (expected) =>
+        document.querySelector('table.items tbody tr td:nth-child(2)')?.textContent?.trim() ===
+        expected,
+      String(TOTAL),
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  check(
+    'もう一度押すと降順に戻る',
+    (await firstIdNow()) === String(TOTAL) &&
+      (await idHeading.getAttribute('aria-sort')) === 'descending',
+    `id=${await firstIdNow()} / ${(await idHeading.getAttribute('aria-sort')) ?? 'none'}`,
+  );
+
   // -------------------------------------------------------------- publish a draft from the list
   // Item 1 is what the rest of the scenario works with (the delivery checks and the relation
   // target), and the list is newest first: the oldest item lives on the last page, so show the
@@ -1031,8 +1075,17 @@ try {
   // The list offers the same release beside the row's state.
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });
-  // The row has to be on screen: the list is newest first and item 1 is the oldest.
-  await showWholeCollection(TOTAL);
+  // The row has to be on screen: the list is newest first and item 1 is the oldest, so order the
+  // list by id ascending - the oldest item is then the first row.
+  await page.locator('thead th').nth(1).locator('.sort-header').click();
+  await page
+    .waitForFunction(
+      () =>
+        document.querySelector('table.items tbody tr td:nth-child(2)')?.textContent?.trim() === '1',
+      null,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
   const releaseInList = page.locator(`button[aria-label="publish the changes of item ${'1'}"]`);
   check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
 
