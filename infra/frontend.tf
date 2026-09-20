@@ -80,6 +80,13 @@ resource "aws_cloudfront_distribution" "app" {
     }
   }
 
+  # Nothing here belongs in a search index: this is the screen an editor signs in to and the API a
+  # site's build reads, not a public site. `robots.txt` is a request and the app's `noindex` meta
+  # only covers what the app renders, so the header is the layer that enforces it - and an SPA
+  # answers 200 for every route it is asked about, which is exactly the case a crawler would
+  # otherwise index under whatever URL it guessed. Applied at the edge, cached responses included,
+  # so a deployment does not wait for an invalidation.
+  #
   # The app itself. Its cache policy lets each object say how long it may be kept
   # (`scripts/deploy-frontend.sh` gives the hashed bundles a year and `index.html` nothing), which
   # is what keeps a deployment from having to wait for a TTL.
@@ -96,6 +103,12 @@ resource "aws_cloudfront_distribution" "app" {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.spa_routing.arn
     }
+
+    # ... and every answer says a crawler should stay away (see `no-index.js`).
+    function_association {
+      event_type   = "viewer-response"
+      function_arn = aws_cloudfront_function.no_index.arn
+    }
   }
 
   # The API. Nothing is cached (every answer is a token's answer), and the viewer's headers -
@@ -108,6 +121,11 @@ resource "aws_cloudfront_distribution" "app" {
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+
+    function_association {
+      event_type   = "viewer-response"
+      function_arn = aws_cloudfront_function.no_index.arn
+    }
   }
 
   restrictions {
@@ -123,6 +141,16 @@ resource "aws_cloudfront_distribution" "app" {
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
+}
+
+# See `no-index.js`: the header is what a crawler has to obey, and this is where it is added (a
+# resource the deploying identity may create, unlike a response headers policy).
+resource "aws_cloudfront_function" "no_index" {
+  name    = "${local.name}-no-index"
+  runtime = "cloudfront-js-2.0"
+  comment = "Send X-Robots-Tag: noindex, nofollow on every response"
+  publish = true
+  code    = file("${path.module}/no-index.js")
 }
 
 resource "aws_cloudfront_function" "spa_routing" {

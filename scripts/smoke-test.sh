@@ -8,7 +8,8 @@
 # can be wrong on its own: the shell coming out of S3 through CloudFront, the fallback that
 # turns an app route into that shell, the two cache lifetimes `deploy-frontend.sh` sets, the
 # `/api/*` behaviour reaching the function, the function answering in JSON rather than letting
-# the fallback swallow it, the definitions the delivery API serves for the schemas it hands out,
+# the fallback swallow it, that nothing here invites a crawler in, the definitions the delivery API
+# serves for the schemas it hands out,
 # and - where sign-in is Cognito's - the hosted page the deployment advertises. The API checks
 # are the ones worth having: a distribution whose `/api/*` behaviour is missing looks perfectly
 # healthy from the outside until something asks it a question.
@@ -180,6 +181,24 @@ if [ "$status" = 200 ] && is_json "$content_type" && grep -q '^{' "$work/body"; 
   ok "the content API serves composite definitions without a token"
 else
   bad "the content API serves composite definitions without a token (status $status, content-type ${content_type:-none})"
+fi
+
+# This is an editor's screen and a site's API, not a public site, and an SPA answers 200 for every
+# route it is asked about: without the header a crawler would index the shell under whatever URL it
+# guessed, and `robots.txt` alone is only a request.
+status="$(fetch "$app_url/robots.txt")"
+if [ "$status" = 200 ] && grep -q '^Disallow: /' "$work/body"; then
+  ok "robots.txt asks crawlers to stay out"
+else
+  bad "robots.txt asks crawlers to stay out (status $status)"
+fi
+
+status="$(fetch "$app_url/login")"
+robots_tag="$(header x-robots-tag)"
+if [ "$status" = 200 ] && printf '%s' "$robots_tag" | grep -qi 'noindex'; then
+  ok "the app is served with X-Robots-Tag: $robots_tag"
+else
+  bad "the app is served with X-Robots-Tag (status $status, header ${robots_tag:-none})"
 fi
 
 # The one a distribution gets wrong: with the fallback applied to `/api/*` as well, an unknown
