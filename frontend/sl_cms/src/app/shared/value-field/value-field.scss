@@ -230,10 +230,11 @@
   --mat-icon-button-touch-target-display: none;
   --mat-icon-button-state-layer-size: 24px;
 
-  /* The name sat a little low beside the controls: the chip's row lays its items out on the
-   * baseline, and the buttons are taller than the text. Ask for the middle instead. */
-  .reference-label {
-    align-self: center;
-    vertical-align: middle;
+  /* One flex row of our own: the controls and the name are centred against each other here, so
+   * the name's place does not depend on how Material's chip row aligns its items. */
+  .reference-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
   }
 }

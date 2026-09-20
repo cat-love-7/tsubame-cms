@@ -356,41 +356,46 @@
       <mat-chip-grid #relationChips [disabled]="disabled" [attr.aria-labelledby]="labelId">
         @for (reference of relationRefs(); track referenceKey(reference)) {
           <mat-chip-row (removed)="toggleReference(reference)">
-            @if (!disabled && !relationIsSingle()) {
-              <button
-                matIconButton
-                type="button"
-                (click)="moveReference($index, -1)"
-                [disabled]="$first"
-                [attr.aria-label]="'labels.moveReferenceEarlier' | transloco: { index: $index }"
-                [matTooltip]="'labels.moveReferenceEarlier' | transloco: { index: $index }"
-              >
-                <mat-icon>chevron_left</mat-icon>
-              </button>
-            }
-            <span class="reference-label">{{ referenceLabel(reference) }}</span>
-            @if (!disabled) {
-              @if (!relationIsSingle()) {
+            <!-- One flex row of our own holds the controls and the name, so the name is centred
+                 against them by construction rather than by whatever Material's own row does with
+                 a baseline. -->
+            <span class="reference-row">
+              @if (!disabled && !relationIsSingle()) {
                 <button
                   matIconButton
                   type="button"
-                  (click)="moveReference($index, 1)"
-                  [disabled]="$last"
-                  [attr.aria-label]="'labels.moveReferenceLater' | transloco: { index: $index }"
-                  [matTooltip]="'labels.moveReferenceLater' | transloco: { index: $index }"
+                  (click)="moveReference($index, -1)"
+                  [disabled]="$first"
+                  [attr.aria-label]="'labels.moveReferenceEarlier' | transloco: { index: $index }"
+                  [matTooltip]="'labels.moveReferenceEarlier' | transloco: { index: $index }"
                 >
-                  <mat-icon>chevron_right</mat-icon>
+                  <mat-icon>chevron_left</mat-icon>
                 </button>
               }
-              <button
-                matChipRemove
-                [attr.aria-label]="
-                  'labels.removeReference' | transloco: { name: referenceLabel(reference) }
-                "
-              >
-                <mat-icon>cancel</mat-icon>
-              </button>
-            }
+              <span class="reference-label">{{ referenceLabel(reference) }}</span>
+              @if (!disabled) {
+                @if (!relationIsSingle()) {
+                  <button
+                    matIconButton
+                    type="button"
+                    (click)="moveReference($index, 1)"
+                    [disabled]="$last"
+                    [attr.aria-label]="'labels.moveReferenceLater' | transloco: { index: $index }"
+                    [matTooltip]="'labels.moveReferenceLater' | transloco: { index: $index }"
+                  >
+                    <mat-icon>chevron_right</mat-icon>
+                  </button>
+                }
+                <button
+                  matChipRemove
+                  [attr.aria-label]="
+                    'labels.removeReference' | transloco: { name: referenceLabel(reference) }
+                  "
+                >
+                  <mat-icon>cancel</mat-icon>
+                </button>
+              }
+            </span>
           </mat-chip-row>
         }
       </mat-chip-grid>
