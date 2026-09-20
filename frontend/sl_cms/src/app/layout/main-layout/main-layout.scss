@@ -34,3 +34,8 @@
   max-width: 1400px;
   margin-inline: auto;
 }
+
+/* The navigation put away: the content keeps the width (see `MainLayout::toggleSidebar`). */
+.main-layout-container.sidebar-hidden .sidebar {
+  display: none;
+}

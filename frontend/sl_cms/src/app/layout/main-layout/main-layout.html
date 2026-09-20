@@ -1,6 +1,6 @@
-<app-header class="header" />
+<app-header class="header" (toggleNavigation)="toggleSidebar()" />
 
-<div class="main-layout-container">
+<div class="main-layout-container" [class.sidebar-hidden]="sidebarHidden()">
   <app-sidebar class="sidebar" />
   <main class="content">
     <router-outlet />

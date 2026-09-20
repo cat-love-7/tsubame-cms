@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { Header } from '../header/header';
 import { Sidebar } from '../sidebar/sidebar';
 import { RouterModule } from '@angular/router';
@@ -12,6 +12,18 @@ import { AuthService } from 'app/core/auth/auth.service';
   imports: [Header, Sidebar, RouterModule],
 })
 export class MainLayout implements OnInit {
+  /**
+   * Whether the navigation is out of the way.
+   *
+   * On a narrow screen the sidebar takes the width a form needs, and an editor reading one screen
+   * should be able to put it away; the header's menu button is the one control for it.
+   */
+  public sidebarHidden = signal(false);
+
+  public toggleSidebar() {
+    this.sidebarHidden.update((hidden) => !hidden);
+  }
+
   private auth = inject(AuthService);
 
   /**

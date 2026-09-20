@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -25,6 +25,9 @@ import { LanguageSwitcher } from '../../shared/language-switcher/language-switch
   ],
 })
 export class Header {
+  /** Whether the navigation should be shown or put away; the layout owns the answer. */
+  @Output() toggleNavigation = new EventEmitter<void>();
+
   public auth = inject(AuthService);
 
   logout() {

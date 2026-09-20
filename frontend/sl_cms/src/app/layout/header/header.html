@@ -1,6 +1,7 @@
 <mat-toolbar class="app-toolbar">
   <button
     matIconButton
+    (click)="toggleNavigation.emit()"
     [attr.aria-label]="'labels.toggleNavigation' | transloco"
     [matTooltip]="'labels.toggleNavigation' | transloco"
   >
