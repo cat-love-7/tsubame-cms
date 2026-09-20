@@ -614,6 +614,24 @@ export class ValueField implements OnInit, OnChanges {
     this.update(next);
   }
 
+  /**
+   * Move a reference one place.
+   *
+   * The order is the value: a site showing "featured articles" shows them in the order the editor
+   * put them in, so this is a change to the value like any other - and the index does not care
+   * (it holds a set of references), so nothing else has to move.
+   */
+  public moveReference(index: number, delta: number) {
+    const references = [...this.relationRefs()];
+    const target = index + delta;
+    if (target < 0 || target >= references.length) {
+      return;
+    }
+    [references[index], references[target]] = [references[target], references[index]];
+    this.errorChange.emit(null);
+    this.update(references);
+  }
+
   /** The key a reference is tracked by, exposed for the template. */
   public referenceKey = referenceKey;
 

@@ -60,7 +60,7 @@ fn relation_field(name: &str, kind: &str, target: &str, has_many: bool) -> Value
 /// A relation to a collection's items round-trips as a list of `{target, item}`, and the list is a
 /// set: the order it was sent in does not survive, and the same reference twice is one reference.
 #[tokio::test]
-async fn a_relation_to_a_collection_round_trips_as_a_set_of_references() {
+async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references() {
     let app = test_app().await;
     let token = app.admin_token.clone();
 
@@ -111,8 +111,8 @@ async fn a_relation_to_a_collection_round_trips_as_a_set_of_references() {
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 
-    // Read back sorted and deduplicated, which is what makes two items holding the same
-    // references compare equal.
+    // Read back in the order they were written, with the repeat dropped: the order is what a site
+    // shows, and it is the editor's, not the id order.
     let (status, body) = send(
         &app.router,
         Method::GET,
@@ -126,9 +126,43 @@ async fn a_relation_to_a_collection_round_trips_as_a_set_of_references() {
     assert_eq!(
         body["also"],
         json!([
+            { "target": "authors", "item": 3 },
+            { "target": "authors", "item": 1 },
+        ])
+    );
+
+    // Reordering is a save like any other, and what the site shows is the new order.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::PUT,
+        "/api/models/collections/posts/items/1",
+        json!({
+            "title": "Hello",
+            "author": [{ "target": "authors", "item": 1 }],
+            "also": [
+                { "target": "authors", "item": 1 },
+                { "target": "authors", "item": 3 },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/posts/items/1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        body["also"],
+        json!([
             { "target": "authors", "item": 1 },
             { "target": "authors", "item": 3 },
-        ])
+        ]),
+        "the order the editor saved"
     );
 
     // The response is a write shape, so loading an item and saving it back unchanged works.

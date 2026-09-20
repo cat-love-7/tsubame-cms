@@ -408,6 +408,8 @@
     "imageAlt": "image {{id}}",
     "moveElementEarlier": "move element {{index}} earlier",
     "moveElementLater": "move element {{index}} later",
+    "moveReferenceEarlier": "move reference {{index}} earlier",
+    "moveReferenceLater": "move reference {{index}} later",
     "removeElement": "remove element {{index}}",
     "publishChangesOf": "publish the changes of item {{id}}",
     "publishPage": "publish page {{id}}",

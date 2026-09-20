@@ -1665,14 +1665,64 @@ try {
     .filter({ hasText: wholeLabel(referencedTitle) })
     .first()
     .click();
-  const pickedChip = ((await relationCell.locator('mat-chip-row').first().textContent()) ?? 'none')
-    .replace('cancel', '')
-    .trim();
+  const pickedChip = (
+    (await relationCell.locator('mat-chip-row .reference-label').first().textContent()) ?? 'none'
+  ).trim();
   check(
     'ピッカーで参照先を選べる',
     (await relationCell.locator('mat-chip-row').count()) === 1 && pickedChip === referencedTitle,
     `${pickedChip} (expected ${referencedTitle})`,
   );
+  // The picker closes the way it opened, from the button beside it (the panel's own Close is the
+  // other way out, and the component's spec is where that one is checked).
+  await relationCell.locator('button.relation-add').click();
+  await page.locator('app-relation-picker').waitFor({ state: 'detached', timeout: 15000 });
+
+  // A relation is a list, so the order it was picked in is the order it is served in - and the
+  // chips can change it. A second reference is picked, moved in front of the first, and taken
+  // away again, which leaves this scenario's reference where the checks below expect it.
+  await relationCell.locator('button.relation-add').click();
+  const secondCandidate = relationCell.locator('app-relation-picker .candidate .label');
+  await secondCandidate.first().waitFor({ timeout: 15000 });
+  await secondCandidate
+    .filter({ hasText: wholeLabel(`${COLLECTION} item 2`) })
+    .first()
+    .click();
+  await relationCell
+    .locator('mat-chip-row .reference-label')
+    .nth(1)
+    .filter({ hasText: `${COLLECTION} item 2` })
+    .waitFor({ timeout: 15000 });
+  await relationCell.locator('button[aria-label="move reference 1 earlier"]').click();
+  // The value travels back through the form before the chips follow it, so wait for the moved
+  // reference to be first rather than reading the order the click started from.
+  await relationCell
+    .locator('mat-chip-row .reference-label')
+    .first()
+    .filter({ hasText: wholeLabel(`${COLLECTION} item 2`) })
+    .waitFor({ timeout: 15000 })
+    .catch(() => {});
+  const moved = (await relationCell.locator('mat-chip-row .reference-label').allTextContents()).map(
+    (name) => name.trim(),
+  );
+  check(
+    '参照の順序を画面で入れ替えられる',
+    moved[0] === `${COLLECTION} item 2` && moved[1] === referencedTitle,
+    moved.join(' / '),
+  );
+  await relationCell.locator('mat-chip-row').first().locator('button[matChipRemove]').click();
+  await page
+    .waitForFunction(
+      (selector) => document.querySelectorAll(selector).length === 1,
+      'mat-chip-row .reference-label',
+      { timeout: 10000 },
+    )
+    .catch(() => {});
+  const left = (await relationCell.locator('mat-chip-row .reference-label').allTextContents()).map(
+    (name) => name.trim(),
+  );
+  check('外した参照は残らない', left.length === 1 && left[0] === referencedTitle, left.join(' / '));
+
   // The picker closes the way it opened, from the button beside it (the panel's own Close is the
   // other way out, and the component's spec is where that one is checked).
   await relationCell.locator('button.relation-add').click();
@@ -1790,9 +1840,9 @@ try {
   // The picker names what it offers by the title the target has *now*, which the checks above have
   // been editing, and the chip the form holds reads the same way.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
-  const heldReference = (await relationCell.locator('mat-chip-row').first().textContent())
-    ?.replace('cancel', '')
-    .trim();
+  const heldReference = (
+    await relationCell.locator('mat-chip-row .reference-label').first().textContent()
+  )?.trim();
   check(
     '編集画面の参照は参照先のタイトルで出る',
     heldReference === referencedTitle,
@@ -1815,9 +1865,9 @@ try {
   await page.locator('.composite-element').first().waitFor({ timeout: 15000 });
   // The reference comes back as the item it points at, named the way the target names it, so a
   // reader sees which item it is without knowing an id.
-  const savedReference = (await relationCell.locator('mat-chip-row').first().textContent())
-    ?.replace('cancel', '')
-    .trim();
+  const savedReference = (
+    await relationCell.locator('mat-chip-row .reference-label').first().textContent()
+  )?.trim();
   check(
     '保存した参照が名前でフォームに出る',
     savedReference === referencedTitle,

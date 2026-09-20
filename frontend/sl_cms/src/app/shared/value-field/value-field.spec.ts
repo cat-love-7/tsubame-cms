@@ -548,8 +548,8 @@ describe('ValueField', () => {
     // The chips are the value, and they read as the item: the reference the target cannot name
     // keeps the reference, which is all that is knowable about it.
     const chips = Array.from(
-      fixture.nativeElement.querySelectorAll<HTMLElement>('mat-chip-row'),
-      (chip: HTMLElement) => chip.textContent?.replace('cancel', '').trim(),
+      fixture.nativeElement.querySelectorAll<HTMLElement>('mat-chip-row .reference-label'),
+      (chip: HTMLElement) => chip.textContent?.trim(),
     );
     expect(chips).toEqual(['技術', 'categories #9']);
 
@@ -586,8 +586,10 @@ describe('ValueField', () => {
     expect(nested.relationRefs()).toEqual([{ target: 'authors', item: 1 }]);
     expect(query('fieldset.composite button.relation-add')).toBeTruthy();
     const chips = Array.from(
-      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite mat-chip-row'),
-      (chip: HTMLElement) => chip.textContent?.replace('cancel', '').trim(),
+      fixture.nativeElement.querySelectorAll<HTMLElement>(
+        'fieldset.composite mat-chip-row .reference-label',
+      ),
+      (chip: HTMLElement) => chip.textContent?.trim(),
     );
     expect(chips).toEqual(['Ada']);
 
@@ -599,6 +601,42 @@ describe('ValueField', () => {
         { target: 'authors', item: 2 },
       ],
     });
+  });
+
+  // A relation is a list now: the order is what a site shows, so it can be changed from the chips
+  // and the change is a change to the value.
+  it('moves a reference, and only when there is more than one', () => {
+    const many = create(
+      field('authors', {
+        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+      }),
+      [
+        { target: 'authors', item: 1 },
+        { target: 'authors', item: 2 },
+        { target: 'authors', item: 3 },
+      ],
+    );
+    const emitted: FieldValue[] = [];
+    many.valueChange.subscribe((value) => emitted.push(value));
+
+    many.moveReference(2, -1);
+    expect(emitted.at(-1)).toEqual([
+      { target: 'authors', item: 1 },
+      { target: 'authors', item: 3 },
+      { target: 'authors', item: 2 },
+    ]);
+    // Off the end is nothing to do, not a wrap-around.
+    many.moveReference(0, -1);
+    expect(emitted).toHaveLength(1);
+
+    // One reference has no order to change, so the controls are not offered.
+    create(
+      field('author', {
+        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
+      }),
+      [{ target: 'authors', item: 1 }],
+    );
+    expect(fixture.nativeElement.querySelector('button[aria-label*="move reference"]')).toBeFalsy();
   });
 
   it('names a page reference without an item id', () => {

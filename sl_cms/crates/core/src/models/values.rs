@@ -337,9 +337,12 @@ fn parse_untagged_scalar(
                         item,
                     });
                 }
-                // A set, so writing the same reference twice is writing it once.
-                refs.sort();
-                refs.dedup();
+                // A list, not a set: the order is the one the editor put the references in, which
+                // is what a site showing "featured articles" in their chosen order needs. Writing
+                // the same reference twice is still writing it once, and the first place is where
+                // it stays.
+                let mut seen = std::collections::HashSet::new();
+                refs.retain(|reference| seen.insert(reference.target_owner()));
                 if options.is_single() && refs.len() > 1 {
                     return Err(format!(
                         "Field '{}': this field holds one reference, but {} were given",
@@ -641,11 +644,11 @@ mod untyped_parsing_tests {
     }
 
     #[test]
-    fn a_relation_value_is_a_canonical_set_of_references() {
+    fn a_relation_value_keeps_the_order_it_was_written_in() {
         let schema = vec![relation_field("author", author_target(), true)];
 
-        // Sorted and deduplicated: the same reference written twice is written once, and two
-        // items holding the same references compare equal.
+        // The order is the editor's, not the id order; the same reference written twice is written
+        // once, and it stays where it first appeared.
         let parsed = FieldValueMap::from_untyped(
             &json!({ "author": [
                 { "target": "authors", "item": 3 },
@@ -661,11 +664,11 @@ mod untyped_parsing_tests {
             FieldValue::Relation(vec![
                 RelationRef {
                     target: "authors".to_string(),
-                    item: Some(1),
+                    item: Some(3),
                 },
                 RelationRef {
                     target: "authors".to_string(),
-                    item: Some(3),
+                    item: Some(1),
                 },
             ])
         );
