@@ -246,6 +246,21 @@ impl FieldRefusal {
     }
 }
 
+/// Name the first few pieces of content that point at something, for a refusal to read.
+fn describe_referrers(referrers: &[crate::models::owner::ItemOwner]) -> String {
+    let named: Vec<String> = referrers
+        .iter()
+        .take(3)
+        .map(|referrer| referrer.describe())
+        .collect();
+    let rest = referrers.len().saturating_sub(named.len());
+    let mut list = named.join(", ");
+    if rest > 0 {
+        list.push_str(&format!(" and {rest} more"));
+    }
+    list
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpError {
     pub status_code: u16,
@@ -268,20 +283,24 @@ impl HttpError {
     /// client the names are the whole answer. The way to say "remove them and go ahead" is
     /// `?detach=true`, which the wording mentions because that is the only way past this.
     pub fn still_referenced(referrers: &[crate::models::owner::ItemOwner]) -> Self {
-        let named: Vec<String> = referrers
-            .iter()
-            .take(3)
-            .map(|referrer| referrer.describe())
-            .collect();
-        let rest = referrers.len().saturating_sub(named.len());
-        let mut list = named.join(", ");
-        if rest > 0 {
-            list.push_str(&format!(" and {rest} more"));
-        }
+        let list = describe_referrers(referrers);
         Self::new(
             STATUS_CONFLICT,
             &format!(
                 "still referenced by {list}; pass ?detach=true to remove those references first"
+            ),
+        )
+        .with_code("still_referenced")
+    }
+
+    /// The same rule where the delete has no `?detach=true`: deleting a whole collection is not a
+    /// rewrite of the content that points into it, so the wording must not offer one.
+    pub fn still_referenced_without_detach(referrers: &[crate::models::owner::ItemOwner]) -> Self {
+        let list = describe_referrers(referrers);
+        Self::new(
+            STATUS_CONFLICT,
+            &format!(
+                "still referenced by {list}; remove those references before deleting the collection"
             ),
         )
         .with_code("still_referenced")

@@ -2009,3 +2009,99 @@ async fn a_site_can_read_a_relation_from_the_other_side() {
         "the cap is what `limit` says"
     );
 }
+
+/// Deleting a whole collection is the same rule as deleting one item: nothing that points at what
+/// goes may be left behind.
+#[tokio::test]
+async fn a_collection_that_is_pointed_at_is_not_deleted() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/item",
+        json!({ "title": "Ada" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/posts/schema",
+        json!([
+            text_field("title", true),
+            relation_field("author", "collection", "authors", false),
+        ]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/posts/item",
+        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 1 }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The author is referenced, so the collection that holds it does not go.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::DELETE,
+        "/api/models/collections/authors",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("still_referenced"), "{body}");
+    assert!(body.contains("posts item 1"), "{body}");
+
+    // Removing the reference *and publishing the removal* is what frees it: the published copy is
+    // what the site serves, so it counts until it changes.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::PUT,
+        "/api/models/collections/posts/items/1",
+        json!({ "title": "Hello", "author": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/posts/items/1/publish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::DELETE,
+        "/api/models/collections/authors",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/collections/authors/schema",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the collection is gone");
+}

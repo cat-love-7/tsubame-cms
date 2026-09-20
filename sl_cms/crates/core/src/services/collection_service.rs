@@ -303,6 +303,14 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .map_err(map_internal_error)
     }
 
+    /// Delete a collection and everything in it, unless something points at it.
+    ///
+    /// The index is asked about each item in turn, which is the price of not leaving a reference
+    /// to content that is gone: the alternative - deleting the items first and finding out
+    /// afterwards - is the silent kind of loss this CMS refuses elsewhere. There is no
+    /// `?detach=true` here, because detaching every reference to every item of a collection is a
+    /// rewrite of content the operator has not looked at; deleting the items one at a time is
+    /// where that decision belongs.
     pub async fn delete_collection(
         &self,
         collection_name: &CollectionName,
@@ -318,6 +326,28 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 "Collection with id '{}' does not exist",
                 collection_name
             )));
+        }
+        let mut referenced = Vec::new();
+        for (item_id, _) in self
+            .collection_repository
+            .list_collection_items(collection_name)
+            .await
+            .map_err(map_internal_error)?
+        {
+            let referrers = self
+                .relations
+                .get_relation_references(&ItemOwner::collection_item(
+                    collection_name.as_str(),
+                    *item_id,
+                ))
+                .await
+                .map_err(map_internal_error)?;
+            referenced.extend(referrers);
+        }
+        if !referenced.is_empty() {
+            referenced.sort();
+            referenced.dedup();
+            return Err(HttpError::still_referenced_without_detach(&referenced));
         }
         self.collection_repository
             .delete_collection(collection_name)
