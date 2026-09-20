@@ -6,7 +6,9 @@
 //!
 //! Responses carry the collection schema alongside the values: values are untyped (the
 //! schema is what gives them meaning), so a consumer would otherwise need a second,
-//! authenticated request just to interpret them.
+//! authenticated request just to interpret them. The composite definitions a schema names are
+//! served the same way and for the same reason (see [`list_composite_fields`]): a block is an
+//! object whose fields only its definition knows.
 //!
 //! Item lists are paginated. `/content/collections/{name}` returns at most
 //! [`DEFAULT_PAGE_LIMIT`] items ordered by id and reports `total` and `next_offset`, so a
@@ -47,6 +49,7 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/content/single-pages/{page_name}",
             get(get_single_page::<R>),
         )
+        .route("/content/composite-fields", get(list_composite_fields::<R>))
 }
 
 #[derive(serde::Serialize)]
@@ -224,6 +227,23 @@ async fn list_single_pages<R: Storage>(
         module
             .single_page_service
             .list_published_page_names()
+            .await?,
+    ))
+}
+
+/// Every composite definition of the site, keyed by id.
+///
+/// A schema names the definitions it embeds by id - `{"CompositeField": {"id": "block"}}` - and
+/// reading the values would otherwise need an authenticated request for the definition alone. The
+/// definitions are part of the site's shape rather than its content, so this is the same answer the
+/// management API gives, without a token.
+async fn list_composite_fields<R: Storage>(
+    State(module): State<AppState<R>>,
+) -> Result<impl IntoResponse, HttpError> {
+    Ok(Json(
+        module
+            .composite_field_service
+            .list_composite_field_schemas()
             .await?,
     ))
 }

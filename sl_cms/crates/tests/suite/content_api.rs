@@ -722,3 +722,120 @@ async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
     // Every published item exactly once, so the cut neither skipped nor repeated anything.
     assert_eq!(seen, published);
 }
+
+/// A consumer reading content has to be able to read the definitions that content names: a schema
+/// points at a composite definition by id (`{"CompositeField": {"id": "block"}}`), and the fields
+/// of a block exist only in the definition. Served without a token, beside the content that needs
+/// it - the same answer the management API gives.
+#[tokio::test]
+async fn the_content_api_serves_the_composite_definitions_it_names() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    // Nothing is defined yet: an empty map, not an error.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/composite-fields",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({}));
+
+    // The management API defines one, and a page schema names it.
+    let definition = json!([
+        { "name": "url", "field_type": { "Text": {} }, "required": false, "width": 12, "height": 1 }
+    ]);
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/composite_fields/link",
+        Some(&token),
+        Some(definition),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/schema",
+        Some(&token),
+        Some(json!([{
+            "name": "links",
+            "field_type": { "Array": [{ "CompositeField": { "id": "link" } }] },
+            "required": false, "width": 12, "height": 1,
+        }])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A page is public once it is published, and publishing it is what puts the schema on the
+    // public side.
+    let (status, body) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/single_pages/home/item",
+        Some(&token),
+        Some(json!({ "links": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/home/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The public side reads the definition without a token, and it is what the schema names.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/composite-fields",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, page) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/single-pages/home",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        page["schema"][0]["field_type"]["Array"][0]["CompositeField"]["id"],
+        "link"
+    );
+    assert_eq!(body["link"][0]["name"], "url");
+    // The same answer the management API gives, which is what the editor's screens read.
+    let (status, admin) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/composite_fields",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, admin);
+
+    // Reading the same definitions through the management API still wants a token: this is a
+    // delivery route, not a loosening of the one an editor's screens use.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/composite_fields",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

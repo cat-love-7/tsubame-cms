@@ -8,9 +8,10 @@
 # can be wrong on its own: the shell coming out of S3 through CloudFront, the fallback that
 # turns an app route into that shell, the two cache lifetimes `deploy-frontend.sh` sets, the
 # `/api/*` behaviour reaching the function, the function answering in JSON rather than letting
-# the fallback swallow it, and - where sign-in is Cognito's - the hosted page the deployment
-# advertises. The API checks are the ones worth having: a distribution whose `/api/*` behaviour
-# is missing looks perfectly healthy from the outside until something asks it a question.
+# the fallback swallow it, the definitions the delivery API serves for the schemas it hands out,
+# and - where sign-in is Cognito's - the hosted page the deployment advertises. The API checks
+# are the ones worth having: a distribution whose `/api/*` behaviour is missing looks perfectly
+# healthy from the outside until something asks it a question.
 #
 # No AWS credentials and no browser are needed when the URL is given, so whoever applied the
 # stack can hand the address to anyone and the run is the same.
@@ -169,6 +170,16 @@ if [ "$status" = 401 ] && is_json "$content_type" && grep -q '"code"' "$work/bod
   ok "a protected route answers 401 in the refusal shape"
 else
   bad "a protected route answers 401 in the refusal shape (status $status, content-type ${content_type:-none})"
+fi
+
+# The delivery API has to be readable on its own: a schema names the composite definitions it
+# embeds by id, so the definitions are public too (a build has no token to spend on them).
+status="$(fetch "$app_url/api/content/composite-fields")"
+content_type="$(header content-type)"
+if [ "$status" = 200 ] && is_json "$content_type" && grep -q '^{' "$work/body"; then
+  ok "the content API serves composite definitions without a token"
+else
+  bad "the content API serves composite definitions without a token (status $status, content-type ${content_type:-none})"
 fi
 
 # The one a distribution gets wrong: with the fallback applied to `/api/*` as well, an unknown

@@ -66,6 +66,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
 | GET | `/api/content/single-pages` | 公開済み単一ページ名の配列 |
 | GET | `/api/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
+| GET | `/api/content/composite-fields` | 複合フィールド定義の全体(`{ "<id>": [フィールド定義] }`)。公開スキーマが id で参照するので、認証なしで読める |
 
 ### 管理(要トークン。`publish` / `unpublish` は編集権限が必要)
 
@@ -158,6 +159,11 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
 どこまでも再帰するため)。
 
 ### 複合フィールドの配列
+
+公開 API のスキーマは複合定義を **id で参照する**(`{"CompositeField": {"id": "block"}}`)。定義そのものは
+`GET /api/content/composite-fields` が**認証なしで**返す(id → フィールド定義の対応。管理 API の
+`GET /api/models/composite_fields` と同じ形・同じ内容)。管理画面はトークン付きで管理 API 側を読むので、
+こちらの経路が増えても認可は緩んでいない(管理 API は今も 401 を返す)。
 
 `{ "Array": [{ "CompositeField": { "id": "block" } }] }` のように、**複合フィールドを配列の要素型にできる**。
 要素はオブジェクトなのでスカラーと取り違えようがなく、参照先の定義を引いて中身まで検証する。
