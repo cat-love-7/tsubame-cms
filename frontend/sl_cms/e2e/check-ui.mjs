@@ -170,11 +170,31 @@ async function seed() {
   // be replaced; `e2e_schema_editor` is deleted before it is used again.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, login.token);
   await deleteIfPresent(`/models/composite_fields/${SCHEMA_BLOCK}`, login.token);
+  await seedComposite(login.token);
+  await seedCollection(COLLECTION, TOTAL, login.token);
+  await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
+  await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({
+    photo: null,
+    gallery: [],
+  }));
+  // After the collections it points at: a relation inside a definition names a target of the site,
+  // and that target has to exist when the definition is saved.
   await api(
     'POST',
     `/models/composite_fields/${SCHEMA_BLOCK}`,
     [
       { name: 'line', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      // A relation inside a composite definition: its target is a collection of the site, and the
+      // item that holds the value is what the reference belongs to.
+      {
+        name: 'author',
+        field_type: {
+          Relation: { target: { kind: 'collection', name: COLLECTION }, has_many: false },
+        },
+        required: false,
+        width: 12,
+        height: 1,
+      },
       // The block holds a list of blocks: the definition reaches itself through an array, which
       // is allowed because the editor draws elements from the value.
       {
@@ -187,13 +207,6 @@ async function seed() {
     ],
     login.token,
   );
-  await seedComposite(login.token);
-  await seedCollection(COLLECTION, TOTAL, login.token);
-  await seedCollection(LAST_PAGE_COLLECTION, LAST_PAGE_TOTAL, login.token);
-  await seedCollection(IMAGE_COLLECTION, 1, login.token, IMAGE_SCHEMA, () => ({
-    photo: null,
-    gallery: [],
-  }));
   return login.token;
 }
 
@@ -1580,21 +1593,9 @@ try {
     .catch(() => false);
   check('複合配列の要素を並べ替えられる', reordered);
 
-  // A relation is picked, not typed: the picker lists the target's items by the name their schema
-  // gives them, which is the whole reason a collection says which field names an item.
-  await page.locator('button.relation-add').click();
-  await page.locator('app-relation-picker .candidate').first().waitFor({ timeout: 15000 });
-  const candidates = (
-    await page.locator('app-relation-picker .candidate .label').allTextContents()
-  ).map((name) => name.trim());
-  check(
-    'ピッカーが参照先をタイトルで並べる',
-    candidates.length > 0 && candidates.every((name) => !name.includes(' #')),
-    candidates.slice(0, 3).join(' / '),
-  );
   // What the target calls its item 1 is a title the checks above have been editing, so ask instead
-  // of assuming it: the name offered here should be that one. The label is matched whole, because
-  // one title being a prefix of another is exactly the mistake this check is here to notice.
+  // of assuming it: the names offered below should be that one. A label is matched whole, because
+  // one title being a prefix of another is exactly the mistake these checks are here to notice.
   const referencedItem = await api(
     'GET',
     `/models/collections/${COLLECTION}/items/1`,
@@ -1602,34 +1603,83 @@ try {
     token,
   );
   const referencedTitle = String(referencedItem?.title ?? '');
-  await page
-    .locator('app-relation-picker .candidate .label')
-    .filter({ hasText: new RegExp(`^${referencedTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
+  const wholeLabel = (text) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+
+  // The form holds more than one relation field now, because a relation may sit inside a composite
+  // definition: the checks name the field they mean (the top-level `related`) instead of taking the
+  // first button or chip on the page.
+  const relationCell = page
+    .locator('.field-cell')
+    .filter({ has: page.locator('.field-label', { hasText: 'related' }) });
+
+  // The block elements hold a relation of their own, and the picker works the same way there: what
+  // it offers comes from the field's target, wherever the field sits.
+  const firstElement = elements.nth(0);
+  await firstElement.locator('button.relation-add').click();
+  const nestedCandidates = firstElement.locator('app-relation-picker .candidate .label');
+  await nestedCandidates.first().waitFor({ timeout: 15000 });
+  const nestedNames = (await nestedCandidates.allTextContents()).map((name) => name.trim());
+  check(
+    '複合の中のリレーションもピッカーで選べる',
+    nestedNames.includes(referencedTitle),
+    nestedNames.slice(0, 3).join(' / '),
+  );
+  await nestedCandidates
+    .filter({ hasText: wholeLabel(referencedTitle) })
     .first()
     .click();
-  const pickedChip = (
-    (await page.locator('app-value-field mat-chip-row').first().textContent()) ?? 'none'
-  )
+  // What the chip reads is a request of its own, and until it answers the chip falls back to the
+  // reference: wait for the name rather than reading the fallback.
+  const nestedChip = firstElement.locator('mat-chip-row').first();
+  await nestedChip
+    .filter({ hasText: referencedTitle })
+    .waitFor({ timeout: 15000 })
+    .catch(() => {});
+  const nestedChipText = ((await nestedChip.textContent()) ?? 'none').replace('cancel', '').trim();
+  check(
+    '複合の中の参照がチップで出る',
+    nestedChipText === referencedTitle,
+    `${nestedChipText} (expected ${referencedTitle})`,
+  );
+  await firstElement.locator('button.relation-add').click();
+
+  // A relation is picked, not typed: the picker lists the target's items by the name their schema
+  // gives them, which is the whole reason a collection says which field names an item.
+  await relationCell.locator('button.relation-add').click();
+  const candidateLabels = relationCell.locator('app-relation-picker .candidate .label');
+  // The items arrive first and their names are a second request: the check below is about the
+  // names, so wait for one of them rather than reading the fallbacks it started with.
+  await candidateLabels
+    .filter({ hasText: wholeLabel(referencedTitle) })
+    .first()
+    .waitFor({ timeout: 15000 })
+    .catch(() => {});
+  const candidates = (await candidateLabels.allTextContents()).map((name) => name.trim());
+  check(
+    'ピッカーが参照先をタイトルで並べる',
+    candidates.length > 0 && candidates.every((name) => !name.includes(' #')),
+    candidates.slice(0, 3).join(' / '),
+  );
+  await relationCell
+    .locator('app-relation-picker .candidate .label')
+    .filter({ hasText: wholeLabel(referencedTitle) })
+    .first()
+    .click();
+  const pickedChip = ((await relationCell.locator('mat-chip-row').first().textContent()) ?? 'none')
     .replace('cancel', '')
     .trim();
   check(
     'ピッカーで参照先を選べる',
-    (await page.locator('app-value-field mat-chip-row').count()) === 1 &&
-      pickedChip === referencedTitle,
+    (await relationCell.locator('mat-chip-row').count()) === 1 && pickedChip === referencedTitle,
     `${pickedChip} (expected ${referencedTitle})`,
   );
   // The picker closes the way it opened, from the button beside it (the panel's own Close is the
   // other way out, and the component's spec is where that one is checked).
-  await page.locator('button.relation-add').click();
+  await relationCell.locator('button.relation-add').click();
   await page.locator('app-relation-picker').waitFor({ state: 'detached', timeout: 15000 });
 
   // The JSON box stays for what the picker does not express: a shape the server refuses, or a
   // value written by a migration.
-  // Scoped to this field's cell: several fields on this form offer a JSON view, and only this one
-  // is the relation.
-  const relationCell = page
-    .locator('.field-cell')
-    .filter({ has: page.locator('button.relation-add') });
   await relationCell.locator('button:has-text("Edit as JSON")').click();
   const related = relationCell.locator('textarea[name=related]');
   await related.waitFor({ timeout: 15000 });
@@ -1685,6 +1735,28 @@ try {
     JSON.stringify(builtItem?.related) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
     JSON.stringify(builtItem?.related),
   );
+  // The reference inside the block was saved where it was picked, not flattened or dropped: an
+  // element carries the value that sits in it.
+  const savedBlockRelationship = builtItem?.blocks?.[0]?.values?.author;
+  check(
+    '複合の中の参照が保存される',
+    JSON.stringify(savedBlockRelationship) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
+    JSON.stringify(savedBlockRelationship),
+  );
+  // And the index sees it: the item that holds it is a referrer of the item it names, which is
+  // what stops the target from being deleted out from under a reference nobody counted.
+  const referrers = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1/references`,
+    undefined,
+    token,
+  );
+  check(
+    '複合の中の参照が逆引きに出る',
+    Array.isArray(referrers) &&
+      referrers.some((entry) => entry.name === SCHEMA_COLLECTION && entry.item === 1),
+    JSON.stringify(referrers),
+  );
 
   // The list says what the reference points at, by the name the target's schema gives it: an id
   // says nothing to an editor reading the row. `referencedTitle`, read before the reference was
@@ -1703,7 +1775,7 @@ try {
   // The picker names what it offers by the title the target has *now*, which the checks above have
   // been editing, and the chip the form holds reads the same way.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
-  const heldReference = (await page.locator('app-value-field mat-chip-row').first().textContent())
+  const heldReference = (await relationCell.locator('mat-chip-row').first().textContent())
     ?.replace('cancel', '')
     .trim();
   check(
@@ -1712,8 +1784,8 @@ try {
     `${heldReference} (expected ${referencedTitle})`,
   );
 
-  await page.locator('button.relation-add').click();
-  const offeredLabels = page.locator('app-relation-picker .candidate .label');
+  await relationCell.locator('button.relation-add').click();
+  const offeredLabels = relationCell.locator('app-relation-picker .candidate .label');
   await offeredLabels.first().waitFor({ timeout: 15000 });
   const offeredNames = (await offeredLabels.allTextContents()).map((name) => name.trim());
   check(
@@ -1721,14 +1793,14 @@ try {
     offeredNames.includes(referencedTitle),
     offeredNames.slice(0, 3).join(' / '),
   );
-  await page.locator('button.relation-add').click();
+  await relationCell.locator('button.relation-add').click();
 
   // Opening it again shows what was stored: the round trip through the form, not just the API.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('.composite-element').first().waitFor({ timeout: 15000 });
   // The reference comes back as the item it points at, named the way the target names it, so a
   // reader sees which item it is without knowing an id.
-  const savedReference = (await page.locator('app-value-field mat-chip-row').first().textContent())
+  const savedReference = (await relationCell.locator('mat-chip-row').first().textContent())
     ?.replace('cancel', '')
     .trim();
   check(

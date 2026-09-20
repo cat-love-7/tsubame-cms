@@ -323,6 +323,40 @@ async fn a_relation_may_only_point_at_what_the_site_has() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.contains("cannot be an array item"), "{body}");
+
+    // A composite definition is stored on its own and reused, so its save is where its own
+    // relation's target is checked - and it is checked again when a schema embeds it.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/composite_fields/cta",
+        Value::Array(vec![relation_field(
+            "author",
+            "collection",
+            "writers",
+            false,
+        )]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("'writers' is not a collection"), "{body}");
+
+    // The same definition, naming what the site has, is stored.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/composite_fields/cta",
+        Value::Array(vec![relation_field(
+            "author",
+            "collection",
+            "authors",
+            false,
+        )]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }
 
 /// A reference has to match the field that holds it, and how many it holds has to match too.
@@ -644,6 +678,136 @@ async fn the_reference_index_follows_what_content_holds() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// A relation may sit inside a composite definition: the definition is stored once and reused by
+/// whatever embeds it, and the reference it holds belongs to the item that holds the value - so the
+/// index, the delete refusal and `?detach` all have to reach inside it.
+#[tokio::test]
+async fn a_relation_inside_a_composite_is_indexed_and_detached_like_any_other() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let posts = "/api/models/collections/posts";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/item",
+        json!({ "title": "Ada" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The definition holds the relation, and the collection embeds it twice: once as a field and
+    // once as an array whose elements are the same definition.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/composite_fields/cta",
+        json!([relation_field("author", "collection", "authors", false)]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    save_schema(
+        &app,
+        &token,
+        &format!("{posts}/schema"),
+        json!([
+            text_field("title", true),
+            { "name": "cta", "field_type": { "CompositeField": { "id": "cta" } },
+              "required": false, "width": 12, "height": 1 },
+            { "name": "blocks", "field_type": { "Array": [{ "CompositeField": { "id": "cta" } }] },
+              "required": false, "width": 12, "height": 1 },
+        ]),
+    )
+    .await;
+
+    // A value is written the way the schema reads it: the bare object, with the reference inside.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/item"),
+        json!({
+            "title": "Hello",
+            "cta": { "author": [{ "target": "authors", "item": 1 }] },
+            "blocks": [{ "author": [] }],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        references(&app, &token, 1).await,
+        json!([{ "kind": "collection_item", "name": "posts", "item": 1 }]),
+        "a reference inside a composite is indexed"
+    );
+
+    // Moving it into an element of the array keeps the entry, and takes it away when it goes.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::PUT,
+        &format!("{posts}/items/1"),
+        json!({
+            "title": "Hello",
+            "cta": { "author": [] },
+            "blocks": [{ "author": [{ "target": "authors", "item": 1 }] }],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        references(&app, &token, 1).await,
+        json!([{ "kind": "collection_item", "name": "posts", "item": 1 }]),
+        "a reference inside an array element is indexed"
+    );
+
+    // The author cannot be deleted while anything points at it, however deep the field is.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::DELETE,
+        "/api/models/collections/authors/items/1",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("still_referenced"), "{body}");
+    assert!(body.contains("posts item 1"), "{body}");
+
+    // Detaching reaches into the composite, and leaves everything else as it was.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::DELETE,
+        "/api/models/collections/authors/items/1?detach=true",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("{posts}/items/1"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["title"], "Hello");
+    assert_eq!(body["cta"]["values"]["author"], json!([]));
+    assert_eq!(body["blocks"][0]["values"]["author"], json!([]));
 }
 
 /// The same index, with a single page as the thing being pointed at.

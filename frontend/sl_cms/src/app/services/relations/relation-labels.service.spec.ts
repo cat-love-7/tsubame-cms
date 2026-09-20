@@ -64,6 +64,40 @@ describe('RelationLabelsService', () => {
     expect(answer?.get('page:home')).toBe('ホーム');
   });
 
+  // An array of composites holds one relation field per element, and every one of them asks about
+  // the same target in the same moment: that is one request, not one per element.
+  it('shares a request another part of the screen is already waiting on', () => {
+    const first: Map<string, string>[] = [];
+    const second: Map<string, string>[] = [];
+    labels.labelsFor([{ target: 'categories', item: 3 }]).subscribe((value) => first.push(value));
+    labels.labelsFor([{ target: 'categories', item: 3 }]).subscribe((value) => second.push(value));
+
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
+      .flush({ 3: '技術' });
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0].get('collection:categories:3')).toBe('技術');
+  });
+
+  // Shared only while it is on the way: a title may have been renamed since, so the next question
+  // is asked again rather than answered from what the last one said.
+  it('asks again once the answer has arrived', () => {
+    labels.labelsFor([{ target: 'categories', item: 3 }]).subscribe();
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
+      .flush({ 3: '技術' });
+
+    let answer: Map<string, string> | undefined;
+    labels.labelsFor([{ target: 'categories', item: 3 }]).subscribe((value) => (answer = value));
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
+      .flush({ 3: 'もっと新しい' });
+
+    expect(answer?.get('collection:categories:3')).toBe('もっと新しい');
+  });
+
   it('asks nothing when there is nothing to name', () => {
     let answer: Map<string, string> | undefined;
     labels.labelsFor([]).subscribe((value) => (answer = value));

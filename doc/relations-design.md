@@ -1,7 +1,7 @@
 # コンテンツの関係(リレーション)の設計
 
 **状態: 第 2 段階(逆引きと安全)まで実装済み**。§9 の段階でいう 1 と 2 が入っており、3 以降は
-未実装。最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在
+未実装(第 5 段階のピッカーと、複合定義の中の relation は実装済み)。最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在
 リレーションを既定で落としている。
 
 Strapi の relation に相当するもの — コレクションのアイテムが、別のコレクションのアイテムを
@@ -20,7 +20,7 @@ Strapi の relation に相当するもの — コレクションのアイテム�
 - 移行ツールが Strapi の relation を取り込める(`--relations=relation`)
 
 **作らないもの**: ユーザーへの参照(権限は別の話)、参照の深い再帰展開、参照の双方向の手動管理
-(逆側はインデックスから自動)、参照の並び順(集合なので)、複合フィールドの定義を跨いだ対象指定。
+(逆側はインデックスから自動)、参照の並び順(集合なので)。
 
 ## 2. 決めたこと
 
@@ -39,6 +39,7 @@ Strapi の relation に相当するもの — コレクションのアイテム�
 | 公開 API の展開 | **既定は id のみ**、`?populate=<field>` で 1 段展開 | 画像は常に展開しているが、多対多では応答が重くなり、循環・未公開の説明も要る。明示が安全 |
 | 循環・自己参照 | **許す** | 値であって定義ではないので作成順の問題が無い。展開は 1 段なので再帰しない |
 | 配列の要素型 | **なれない**。複数持つのは `has_many` だけ | relation は既に集合なので、配列にすると「集合の集合」という 2 つ目の言い方になる。編集も配信もできない(検証で拒否) |
+| 置ける場所 | **フィールドと複合フィールド定義の中**。配列の要素型にはできない | 定義は独立して保存され再利用されるので、対象はサイトのコレクション / 単一ページで決まる(埋め込む側に依存しない)。値は複合の中に入るが、**参照を持つのはアイテム**なので索引の持ち主は変わらない |
 
 ## 3. データの形
 
@@ -56,8 +57,10 @@ FieldType::Relation(RelationOptions {
   あること、`inverse_name` が対象側で一意であること(`referenced_composite_ids` の隣に
   `referenced_targets` を足す)。
   - **対象の存在**はコレクションと単一ページの一覧が要るので、スキーマ保存のサービスで見る
-    (`RelationTargetSource` が両方の名前を答える。`SchemaScope::CompositeDefinition` は relation
-    自体を拒否する: 複合定義は使う側のアイテムに埋め込まれるので、対象が決まらない)。
+    (`RelationTargetSource` が両方の名前を答える)。**複合定義の中の relation も同じ対象**なので、
+    `referenced_relation_targets` は複合定義の中まで歩く(定義は 1 回だけ。配列を通して自分自身に
+    戻る定義があるため)。見る場所は 2 つ: **定義の保存時**(`CompositeFieldService`。誰も埋め込んで
+    いない定義も保存できてしまう)と、**埋め込む側のスキーマ保存時**(コレクション / 単一ページ)。
   - **`inverse_name` の一意性**はまだ見ていない(第 5 段階。逆引きの展開が入る時)。
 - `inverse_name` は**呼び名だけ**でデータを持たない。逆引きは常にインデックスから引く。
 - 定義の作成順に制約が出る(対象が先)。Strapi の相互参照は片側だけ採用して回避する(§7)。
@@ -85,7 +88,7 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 | `test_required` | `has_many: false` は 1 件以上、`true` は空を許す |
 | `FieldSchema::get_default_value`(schema.rs L150) | 空の配列 |
 | `FieldValue::to_response`(values.rs L721) | 画像と同じく**解決用の情報を渡す**形にする(今は `&HashMap<ImageId, Image>` を取る) |
-| `referenced_images` の隣 | `referenced_items`(値の木を走査。配列・複合の中も見る) |
+| `referenced_images` の隣 | `referenced_items`(値の木を走査。配列・複合の中も見る。`without_reference` も同じ) |
 | フロント `value-field` | 型ごとの分岐(§6) |
 
 **第 1 段階で実装した形**(`FieldValueResponse` は参照の配列をそのまま返す。展開は第 4 段階):
@@ -241,13 +244,17 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 
 **第 1・2 段階で入ったもの**:
 
-- unit(`core/src/models/{schema,values}.rs`): 対象の検証、単一ページの `has_many` 拒否、複合定義の
-  relation 拒否、配列要素の拒否、`validate_relation_targets` の種類違い、値の正準化(整列・重複除去)、
+- unit(`core/src/models/{schema,values}.rs`): 対象の検証、単一ページの `has_many` 拒否、配列要素の拒否、
+  複合定義が relation を持てること、複合定義の中まで歩く対象収集(自分自身に配列で戻る定義でも止まる)、
+  `validate_relation_targets` の種類違い、値の正準化(整列・重複除去)、
   対象の食い違い・アイテム id の欠落・単一に複数・単一ページの `item` の拒否、`required` の空
-- service(`core/src/services/{collection,single_page}_service.rs`): 存在しない対象を名指すスキーマ保存は
-  400(種類違いも 400)
+- service(`core/src/services/{collection,single_page,composite_field}_service.rs`): 存在しない対象を
+  名指すスキーマ保存は 400(種類違いも 400)。**複合定義の中の relation** は、定義の保存でも、
+  それを埋め込むスキーマの保存でも 400
 - 契約スイート(`crates/tests/suite/relations.rs`、両アダプタ): 集合の往復、単一ページの値の形、
-  スキーマ保存の 400 3 種、値の 400 4 種、`required` な relation が空のままの公開は 400
+  スキーマ保存の 400 4 種(複合定義の保存を含む)、値の 400 4 種、`required` な relation が空のままの公開は 400、
+  **複合の中の参照**(複合フィールドとその配列の両方)が索引に載り、削除が 409 で拒否され、
+  `?detach=true` が複合の中まで外すこと
 - spec(`fields.spec` / `field.spec` / `value-field.spec`): 型の分岐、送信前の正規化、
   一覧の遅延取得、値の JSON 欄の検証
 - 索引(`RelationIndexChanges::between` の集合差、`referenced_items` の走査、`without_reference`)。
@@ -306,3 +313,4 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
 | 逆側の呼び名 | `inverse_name`(表示と `?populate=` にだけ使う。データは持たない) |
 | 配信の展開 | 明示 `?populate=` のみ、1 段 |
 | 削除 | 拒否が既定、`?detach=true` で参照を全部外して削除 |
+| relation を置ける場所 | フィールドと複合フィールド定義の中(配列の要素型にはできない)。索引・削除の拒否・ detach は複合と配列の中まで届く |

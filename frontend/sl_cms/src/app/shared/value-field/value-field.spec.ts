@@ -32,6 +32,13 @@ const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } = {
     field('headline', { Text: {} }, { width: 8, height: 2 }),
     field('aside', { Text: {} }, { width: 4 }),
   ],
+  // A definition that holds a relation: the target is a collection of the site, and the field that
+  // embeds the definition is what declares it.
+  cta: [
+    field('author', {
+      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+    }),
+  ],
   // A block that holds blocks: the definition reaches itself through an array.
   tree: [
     field('line', { Text: {} }),
@@ -551,6 +558,47 @@ describe('ValueField', () => {
     fixture.detectChanges();
     expect(component.referenceNames()).toEqual(['技術']);
     expect(fixture.nativeElement.textContent).toContain('References: 技術');
+  });
+
+  // A relation may live inside a composite definition. The sub-field is edited by this same
+  // component, so the chips and the picker come with it, and choosing there is choosing for the
+  // composite that holds it.
+  it('edits a relation that lives inside a composite', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const component = create(field('cta', { CompositeField: { id: 'cta' } }), {
+      id: 'cta',
+      values: { author: [{ target: 'authors', item: 1 }] },
+    });
+    const emitted: FieldValue[] = [];
+    component.valueChange.subscribe((value) => emitted.push(value));
+    await fixture.whenStable();
+
+    // The nested instance holds what the composite holds, and the target's schema names it.
+    http
+      .expectOne((request) => request.url === '/api/models/collections/authors/items/titles')
+      .flush({ 1: 'Ada' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const nested = fixture.debugElement.queryAll(By.directive(ValueField)).at(-1)
+      ?.componentInstance as ValueField;
+    expect(nested.kind()).toBe('Relation');
+    expect(nested.relationRefs()).toEqual([{ target: 'authors', item: 1 }]);
+    expect(query('fieldset.composite button.relation-add')).toBeTruthy();
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite mat-chip-row'),
+      (chip: HTMLElement) => chip.textContent?.replace('cancel', '').trim(),
+    );
+    expect(chips).toEqual(['Ada']);
+
+    // A set, so it grows; the emitted value is the whole composite, not the nested field alone.
+    nested.toggleReference({ target: 'authors', item: 2 });
+    expect(emitted.at(-1)).toEqual({
+      author: [
+        { target: 'authors', item: 1 },
+        { target: 'authors', item: 2 },
+      ],
+    });
   });
 
   it('names a page reference without an item id', () => {

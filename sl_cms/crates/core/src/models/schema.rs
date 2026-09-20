@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 
 use crate::models::error::FieldRefusal;
@@ -352,17 +354,11 @@ pub fn validate_schema(fields: &[FieldSchema], scope: SchemaScope) -> Result<(),
             }
             title_so_far = Some(name.to_string());
         }
-        // A composite definition is reused inside other schemas, so a relation in one would have
-        // to be checked against the collections of whichever item embeds it. Refusing it here is
-        // the honest answer: the relation belongs to the collection or page that owns the values.
-        if matches!(scope, SchemaScope::CompositeDefinition)
-            && !referenced_relation_targets(std::slice::from_ref(field)).is_empty()
-        {
-            return Err(format!(
-                "field '{name}': a composite definition cannot hold a relation; put it in the \
-                 collection or page itself"
-            ));
-        }
+        // A relation inside a composite definition is allowed, and points at a collection or a
+        // page of the site - the definition is stored on its own and reused, so there is nothing
+        // about the embedder for its target to be relative to. What has to be checked is the
+        // target: see `referenced_relation_targets`, which walks into the definitions a schema
+        // embeds, and the composite save, which checks its own targets as it stores them.
     }
     Ok(())
 }
@@ -445,24 +441,55 @@ fn field_type_name(field_type: &FieldType) -> &'static str {
     }
 }
 
-/// Every relation target a schema names.
+/// Every relation target a schema names, including the ones inside the composite definitions it
+/// embeds.
 ///
-/// Arrays are walked as well as fields: `validate_field_type` refuses to store a relation as an
-/// array item, and this walk is what would still find the target if that rule ever changed.
-pub fn referenced_relation_targets(fields: &[FieldSchema]) -> Vec<RelationTarget> {
+/// Arrays and composite definitions are both walked: `validate_field_type` refuses to store a
+/// relation as an array item, and this walk is what would still find the target if that rule ever
+/// changed. A definition is reused by whatever embeds it, and one may hold an array of itself, so
+/// each definition is walked once.
+pub fn referenced_relation_targets(
+    fields: &[FieldSchema],
+    composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+) -> Vec<RelationTarget> {
     let mut targets = Vec::new();
-    for field in fields {
-        collect_relation_targets(&field.field_type, &mut targets);
-    }
+    let mut walked = HashSet::new();
+    collect_relation_targets(fields, composites, &mut walked, &mut targets);
     targets
 }
 
-fn collect_relation_targets(field_type: &FieldType, into: &mut Vec<RelationTarget>) {
+fn collect_relation_targets(
+    fields: &[FieldSchema],
+    composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+    walked: &mut HashSet<CompositeFieldId>,
+    into: &mut Vec<RelationTarget>,
+) {
+    for field in fields {
+        collect_field_relation_targets(&field.field_type, composites, walked, into);
+    }
+}
+
+fn collect_field_relation_targets(
+    field_type: &FieldType,
+    composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
+    walked: &mut HashSet<CompositeFieldId>,
+    into: &mut Vec<RelationTarget>,
+) {
     match field_type {
         FieldType::Relation(options) => into.push(options.target.clone()),
         FieldType::Array(items) => {
             for item in items {
-                collect_relation_targets(item, into);
+                collect_field_relation_targets(item, composites, walked, into);
+            }
+        }
+        FieldType::CompositeField(reference) => {
+            // Each definition once: which fields reach it changes nothing about what it names, and
+            // a definition that holds an array of itself would otherwise be walked for ever.
+            if !walked.insert(reference.id.clone()) {
+                return;
+            }
+            if let Some(schema) = composites.get(&reference.id) {
+                collect_relation_targets(schema, composites, walked, into);
             }
         }
         _ => {}
@@ -471,15 +498,18 @@ fn collect_relation_targets(field_type: &FieldType, into: &mut Vec<RelationTarge
 
 /// Every relation a schema declares has to point at something that exists.
 ///
-/// `available` is what the site has - the collections and the single pages - because this module
-/// knows neither (see `RelationTargetSource`, which is what hands them over). A typo here would
+/// `composites` is every composite definition of the site, which is what lets a target declared
+/// inside one be found from the schema that embeds it, and `available` is what the site has - the
+/// collections and the single pages - because this module knows neither (see
+/// `RelationTargetSource`, which is what hands them over). A typo here would
 /// otherwise leave a field that can never hold anything, refused only when somebody tries to fill
 /// it in.
 pub fn validate_relation_targets(
     fields: &[FieldSchema],
+    composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
     available: &[RelationTarget],
 ) -> Result<(), String> {
-    for target in referenced_relation_targets(fields) {
+    for target in referenced_relation_targets(fields, composites) {
         if !available.contains(&target) {
             let kind = match target {
                 RelationTarget::Collection { .. } => "collection",
@@ -1157,20 +1187,6 @@ mod tests {
                 .unwrap_err()
                 .contains("must not be blank")
         );
-
-        // A composite definition is embedded in whatever item uses it, so nothing would say which
-        // items its relation could point at.
-        assert!(
-            validate_schema(
-                &[field(
-                    "author",
-                    relation(collection_target("authors"), false)
-                )],
-                SchemaScope::CompositeDefinition
-            )
-            .unwrap_err()
-            .contains("cannot hold a relation")
-        );
     }
 
     #[test]
@@ -1185,21 +1201,95 @@ mod tests {
 
     #[test]
     fn collects_every_relation_target_a_schema_names() {
+        let mut composites = HashMap::new();
+        composites.insert(
+            CompositeFieldId::from("cta"),
+            vec![field("home", relation(page_target("home"), false))],
+        );
         let fields = vec![
             field("author", relation(collection_target("authors"), false)),
             // Walking arrays too, so a target is never missed wherever it was written.
             field(
                 "related",
-                FieldType::Array(vec![relation(page_target("home"), false)]),
+                FieldType::Array(vec![relation(collection_target("writers"), false)]),
+            ),
+            // And into the composite definitions it embeds, which is where a relation may sit.
+            field(
+                "cta",
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: CompositeFieldId::from("cta"),
+                }),
             ),
             field("plain", FieldType::Number),
         ];
 
         assert_eq!(
-            referenced_relation_targets(&fields),
-            vec![collection_target("authors"), page_target("home")]
+            referenced_relation_targets(&fields, &composites),
+            vec![
+                collection_target("authors"),
+                collection_target("writers"),
+                page_target("home")
+            ]
         );
-        assert!(referenced_relation_targets(&[field("plain", FieldType::Number)]).is_empty());
+        assert!(
+            referenced_relation_targets(&[field("plain", FieldType::Number)], &composites)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn walks_a_composite_definition_that_holds_an_array_of_itself() {
+        // Allowed by `validate_no_composite_cycles`, because the array's elements come from the
+        // value: the walk has to survive it, and still name what the definition holds.
+        let mut composites = HashMap::new();
+        composites.insert(
+            CompositeFieldId::from("block"),
+            vec![
+                field("label", FieldType::Text(TextFieldOptions::default())),
+                field("author", relation(collection_target("authors"), false)),
+                field(
+                    "blocks",
+                    FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
+                        id: CompositeFieldId::from("block"),
+                    })]),
+                ),
+            ],
+        );
+        let fields = vec![
+            field(
+                "blocks",
+                FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
+                    id: CompositeFieldId::from("block"),
+                })]),
+            ),
+            field(
+                "other",
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: CompositeFieldId::from("block"),
+                }),
+            ),
+        ];
+
+        assert_eq!(
+            referenced_relation_targets(&fields, &composites),
+            vec![collection_target("authors")]
+        );
+    }
+
+    #[test]
+    fn a_composite_definition_may_hold_a_relation() {
+        // Its target is a collection or a page of the site, not of whatever embeds it, so nothing
+        // about the embedder has to be known here.
+        assert!(
+            validate_schema(
+                &[field(
+                    "author",
+                    relation(collection_target("authors"), false)
+                )],
+                SchemaScope::CompositeDefinition
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1212,6 +1302,7 @@ mod tests {
                     "author",
                     relation(collection_target("authors"), false)
                 )],
+                &HashMap::new(),
                 &available
             )
             .is_ok()
@@ -1219,6 +1310,7 @@ mod tests {
         assert!(
             validate_relation_targets(
                 &[field("home", relation(page_target("home"), false))],
+                &HashMap::new(),
                 &available
             )
             .is_ok()
@@ -1229,6 +1321,7 @@ mod tests {
                 "author",
                 relation(collection_target("writers"), false),
             )],
+            &HashMap::new(),
             &available,
         )
         .unwrap_err();
@@ -1237,6 +1330,7 @@ mod tests {
         // The same name of the other kind is a different target, so it is still missing.
         let error = validate_relation_targets(
             &[field("home", relation(collection_target("home"), false))],
+            &HashMap::new(),
             &available,
         )
         .unwrap_err();
@@ -1244,6 +1338,7 @@ mod tests {
 
         let error = validate_relation_targets(
             &[field("about", relation(page_target("about"), false))],
+            &HashMap::new(),
             &available,
         )
         .unwrap_err();

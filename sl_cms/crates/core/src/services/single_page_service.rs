@@ -8,8 +8,9 @@ use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::owner::ItemOwner;
 use crate::models::schema::{
-    CompositeFieldId, RelationTarget, SchemaScope, referenced_relation_targets,
-    validate_composite_references, validate_relation_targets, validate_schema,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope,
+    referenced_relation_targets, validate_composite_references, validate_relation_targets,
+    validate_schema,
 };
 use crate::models::single_page::{
     SinglePageItem, SinglePageItemResponse, SinglePageName, SinglePageSchema,
@@ -79,8 +80,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
-        self.ensure_composites_exist(schema).await?;
-        self.ensure_relation_targets_exist(schema).await?;
+        let composites = self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema, &composites)
+            .await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)
@@ -107,27 +109,36 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     /// Every composite a schema references must exist, otherwise the schema can be stored
     /// but never used to read or write values.
-    async fn ensure_composites_exist(&self, schema: &SinglePageSchema) -> Result<(), HttpError> {
-        let available: HashSet<CompositeFieldId> = self
+    /// The definitions are handed back as well, because the relation check that follows needs
+    /// them: a relation declared inside one of them is a target of *this* schema.
+    async fn ensure_composites_exist(
+        &self,
+        schema: &SinglePageSchema,
+    ) -> Result<HashMap<CompositeFieldId, CompositeFieldSchema>, HttpError> {
+        let composites = self
             .composite_field_repository
             .list_composite_field_schemas()
             .await
-            .map_err(map_internal_error)?
-            .into_keys()
-            .collect();
-        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+            .map_err(map_internal_error)?;
+        let available: HashSet<CompositeFieldId> = composites.keys().cloned().collect();
+        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))?;
+        Ok(composites)
     }
 
     /// The same for relations: a target that does not exist is a field that can never hold
     /// anything, so the schema that names it is refused rather than stored.
+    ///
+    /// `composites` is what the schema embeds: a relation inside a definition is checked here,
+    /// where the definition is used, as well as when the definition itself is saved.
     ///
     /// Most schemas name no relation at all, and answering the question costs two lists of names,
     /// so a schema without one asks for nothing.
     async fn ensure_relation_targets_exist(
         &self,
         schema: &SinglePageSchema,
+        composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
     ) -> Result<(), HttpError> {
-        if referenced_relation_targets(schema).is_empty() {
+        if referenced_relation_targets(schema, composites).is_empty() {
             return Ok(());
         }
         let available: Vec<RelationTarget> = self
@@ -135,7 +146,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .relation_targets()
             .await
             .map_err(map_internal_error)?;
-        validate_relation_targets(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+        validate_relation_targets(schema, composites, &available)
+            .map_err(|e| HttpError::BadRequest(&e))
     }
     pub async fn add_single_page_schema(
         &self,
@@ -143,8 +155,9 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         schema: &SinglePageSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::SinglePage).map_err(|e| HttpError::BadRequest(&e))?;
-        self.ensure_composites_exist(schema).await?;
-        self.ensure_relation_targets_exist(schema).await?;
+        let composites = self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema, &composites)
+            .await?;
         if self
             .single_page_repository
             .get_single_page_schema(name)

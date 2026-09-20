@@ -14,8 +14,9 @@ use crate::models::item_status::{
 use crate::models::owner::ItemOwner;
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
-    CompositeFieldId, RelationTarget, SchemaScope, has_unique_fields, referenced_relation_targets,
-    unique_values, validate_composite_references, validate_relation_targets, validate_schema,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, has_unique_fields,
+    referenced_relation_targets, unique_values, validate_composite_references,
+    validate_relation_targets, validate_schema,
 };
 use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
@@ -82,8 +83,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
-        self.ensure_composites_exist(schema).await?;
-        self.ensure_relation_targets_exist(schema).await?;
+        let composites = self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema, &composites)
+            .await?;
         let Some(previous) = self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -165,15 +167,20 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     /// Every composite a schema references must exist, otherwise the schema can be stored
     /// but never used to read or write values.
-    async fn ensure_composites_exist(&self, schema: &CollectionSchema) -> Result<(), HttpError> {
-        let available: HashSet<CompositeFieldId> = self
+    /// The definitions are handed back as well, because the relation check that follows needs
+    /// them: a relation declared inside one of them is a target of *this* schema.
+    async fn ensure_composites_exist(
+        &self,
+        schema: &CollectionSchema,
+    ) -> Result<HashMap<CompositeFieldId, CompositeFieldSchema>, HttpError> {
+        let composites = self
             .composite_field_repository
             .list_composite_field_schemas()
             .await
-            .map_err(map_internal_error)?
-            .into_keys()
-            .collect();
-        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+            .map_err(map_internal_error)?;
+        let available: HashSet<CompositeFieldId> = composites.keys().cloned().collect();
+        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))?;
+        Ok(composites)
     }
 
     /// The same for relations: a target that does not exist is a field that can never hold
@@ -181,11 +188,14 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     ///
     /// Most schemas name no relation at all, and answering the question costs two lists of names,
     /// so a schema without one asks for nothing.
+    /// `composites` is what the schema embeds: a relation inside a definition is checked here,
+    /// where the definition is used, as well as when the definition itself is saved.
     async fn ensure_relation_targets_exist(
         &self,
         schema: &CollectionSchema,
+        composites: &HashMap<CompositeFieldId, CompositeFieldSchema>,
     ) -> Result<(), HttpError> {
-        if referenced_relation_targets(schema).is_empty() {
+        if referenced_relation_targets(schema, composites).is_empty() {
             return Ok(());
         }
         let available: Vec<RelationTarget> = self
@@ -193,7 +203,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .relation_targets()
             .await
             .map_err(map_internal_error)?;
-        validate_relation_targets(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+        validate_relation_targets(schema, composites, &available)
+            .map_err(|e| HttpError::BadRequest(&e))
     }
     pub async fn add_collection_schema(
         &self,
@@ -201,8 +212,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
         validate_schema(schema, SchemaScope::Collection).map_err(|e| HttpError::BadRequest(&e))?;
-        self.ensure_composites_exist(schema).await?;
-        self.ensure_relation_targets_exist(schema).await?;
+        let composites = self.ensure_composites_exist(schema).await?;
+        self.ensure_relation_targets_exist(schema, &composites)
+            .await?;
         if self
             .collection_repository
             .get_collection_schema(collection_name)
@@ -1723,7 +1735,7 @@ mod tests {
 
     use crate::models::collection::CollectionName;
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::{CompositeFieldId, RelationOptions};
+    use crate::models::schema::{CompositeFieldId, CompositeFieldReference, RelationOptions};
     use crate::models::values::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
     use crate::models::values::{FieldSchema, FieldType, FieldValue};
     use crate::repositories::image_repository::{ImageRepository, Replacement};
@@ -2581,6 +2593,77 @@ mod tests {
         );
     }
 
+    /// A relation inside a composite definition is a target of whatever embeds the definition,
+    /// and the definition is reused: the schema save has to walk into it, or a typo there would be
+    /// stored as a field nobody could ever fill in.
+    #[tokio::test]
+    async fn a_schema_that_embeds_a_composite_checks_the_relations_inside_it() {
+        let name = CollectionName::from("blog");
+        let composite_id = CompositeFieldId::from("cta");
+        let mut composites = HashMap::new();
+        composites.insert(
+            composite_id.clone(),
+            vec![FieldSchema {
+                is_title: false,
+                show_in_list: false,
+                name: "author".to_string(),
+                field_type: FieldType::Relation(RelationOptions {
+                    target: RelationTarget::Collection {
+                        name: "authors".to_string(),
+                    },
+                    has_many: false,
+                    inverse_name: None,
+                }),
+                required: false,
+                width: 12,
+                height: 1,
+                unique: false,
+            }],
+        );
+        let embedding = vec![FieldSchema {
+            is_title: false,
+            show_in_list: false,
+            name: "cta".to_string(),
+            field_type: FieldType::CompositeField(CompositeFieldReference { id: composite_id }),
+            required: false,
+            width: 12,
+            height: 1,
+            unique: false,
+        }];
+
+        // The definition's target exists, so the schema that embeds it is stored.
+        let service = service_over_with(
+            test_repository(HashMap::new(), false),
+            vec![RelationTarget::Collection {
+                name: "authors".to_string(),
+            }],
+            composites.clone(),
+        );
+        assert!(
+            service
+                .add_collection_schema(&name, &embedding)
+                .await
+                .is_ok()
+        );
+
+        // Without it, the save names what is missing rather than storing the field.
+        let service = service_over_with(
+            test_repository(HashMap::new(), false),
+            Vec::new(),
+            composites,
+        );
+        let missing = service
+            .add_collection_schema(&name, &embedding)
+            .await
+            .unwrap_err();
+        assert_eq!(missing.status_code, 400, "{}", missing.message);
+        assert!(
+            missing.message.contains("'authors' is not a collection"),
+            "{}",
+            missing.message
+        );
+    }
+
     /// Everything a mock store needs, with the index and the schemas the test placed in it.
     fn test_repository(
         schemas: HashMap<CollectionName, CollectionSchema>,
@@ -2637,10 +2720,24 @@ mod tests {
         MockCompositeFieldRepository,
         MockImageRepository,
     > {
+        service_over_with(repository, targets, HashMap::new())
+    }
+
+    /// The same, with composite definitions on the site: a relation may sit inside one, and a
+    /// schema that embeds it declares that target.
+    fn service_over_with(
+        repository: Arc<MockCollectionRepository>,
+        targets: Vec<RelationTarget>,
+        composites: HashMap<CompositeFieldId, CompositeFieldSchema>,
+    ) -> CollectionService<
+        MockCollectionRepository,
+        MockCompositeFieldRepository,
+        MockImageRepository,
+    > {
         CollectionService::new(
             repository,
             Arc::new(MockCompositeFieldRepository {
-                schemas: Arc::new(RwLock::new(HashMap::new())),
+                schemas: Arc::new(RwLock::new(composites)),
             }),
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::new(targets)),

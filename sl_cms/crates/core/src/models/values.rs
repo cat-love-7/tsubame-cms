@@ -854,6 +854,92 @@ mod untyped_parsing_tests {
         assert!(referenced_items(&FieldValueMap::<Vec<FieldSchema>>::default()).is_empty());
     }
 
+    /// The same, for references the schema puts inside a composite definition: the index has to
+    /// see them wherever they sit, and detaching has to reach them there.
+    #[test]
+    fn the_index_sees_a_reference_inside_a_composite() {
+        let composite_id = CompositeFieldId::from("cta");
+        let mut composites = HashMap::new();
+        composites.insert(
+            composite_id.clone(),
+            vec![
+                field("label", FieldType::Text(TextFieldOptions::default()), false),
+                relation_field("author", author_target(), false),
+            ],
+        );
+        let schema = vec![
+            field(
+                "cta",
+                FieldType::CompositeField(CompositeFieldReference {
+                    id: composite_id.clone(),
+                }),
+                false,
+            ),
+            // An array of composites: one relation per element, each its own reference.
+            field(
+                "blocks",
+                FieldType::Array(vec![FieldType::CompositeField(CompositeFieldReference {
+                    id: composite_id,
+                })]),
+                false,
+            ),
+        ];
+        let parsed = FieldValueMap::from_untyped(
+            &json!({
+                "cta": { "label": "read this", "author": [{ "target": "authors", "item": 1 }] },
+                "blocks": [
+                    { "label": "first", "author": [{ "target": "authors", "item": 2 }] },
+                    { "label": "second", "author": [] },
+                ],
+            }),
+            &composites,
+            &schema,
+        )
+        .unwrap();
+
+        assert_eq!(
+            referenced_items(&parsed),
+            vec![
+                ItemOwner::collection_item("authors", 1),
+                ItemOwner::collection_item("authors", 2),
+            ]
+        );
+
+        // Detaching one reaches into the composite and leaves everything else as it was.
+        let stripped = parsed.without_reference(&ItemOwner::collection_item("authors", 1));
+        assert_eq!(
+            referenced_items(&stripped),
+            vec![ItemOwner::collection_item("authors", 2)]
+        );
+        let FieldValue::CompositeField(Some(cta)) = &stripped.0["cta"] else {
+            panic!("expected a composite value");
+        };
+        assert_eq!(cta.values.0["author"], FieldValue::Relation(vec![]));
+        assert_eq!(
+            cta.values.0["label"],
+            FieldValue::Text("read this".to_string())
+        );
+
+        // And into an array of them, one element at a time.
+        let FieldValue::Array(blocks) = &stripped.0["blocks"] else {
+            panic!("expected an array value");
+        };
+        let FieldValue::CompositeField(Some(first)) = &blocks[0] else {
+            panic!("expected a composite value");
+        };
+        assert_eq!(
+            first.values.0["label"],
+            FieldValue::Text("first".to_string())
+        );
+        let FieldValue::CompositeField(Some(second)) = &blocks[1] else {
+            panic!("expected a composite value");
+        };
+        assert_eq!(
+            second.values.0["label"],
+            FieldValue::Text("second".to_string())
+        );
+    }
+
     #[test]
     fn a_required_relation_needs_at_least_one_reference() {
         let required = |has_many| {
@@ -1052,33 +1138,75 @@ impl<T> FieldValueMap<T> {
     /// What detaching does to the content on the other side: the reference goes and everything else
     /// is left as it was. A relation that ends up empty stays an empty set, which is what "no
     /// references" is, and a field that does not hold the target is not rewritten at all.
+    ///
+    /// The whole value is walked, composites and arrays included: detaching is what makes a delete
+    /// possible, and a reference the walk misses would refuse that delete for ever.
     pub fn without_reference(&self, target: &ItemOwner) -> Self {
         let mut values = self.0.clone();
         for value in values.values_mut() {
-            if let FieldValue::Relation(references) = value {
-                references.retain(|reference| &reference.target_owner() != target);
-            }
+            drop_reference(value, target);
         }
         FieldValueMap(values, PhantomData)
     }
 }
 
+/// Drop one reference from a value, wherever it sits.
+fn drop_reference(value: &mut FieldValue, target: &ItemOwner) {
+    match value {
+        FieldValue::Relation(references) => {
+            references.retain(|reference| &reference.target_owner() != target);
+        }
+        FieldValue::CompositeField(Some(composite)) => {
+            for nested in composite.values.0.values_mut() {
+                drop_reference(nested, target);
+            }
+        }
+        FieldValue::Array(items) => {
+            for item in items {
+                drop_reference(item, target);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Every piece of content a set of values references.
 ///
-/// Only the top level is walked, and deliberately so: a relation is never inside an array or a
-/// composite definition (the schema refuses both), and what is stored is what the index has to
-/// agree with - so a value left behind by a field the schema no longer declares is still found
-/// here, and is still a reason not to delete what it points at.
+/// The whole value is walked, composites and arrays included: a relation may sit in either, and
+/// what is stored is what the index has to agree with. That also means a value left behind by a
+/// field the schema no longer declares is still found here, and is still a reason not to delete
+/// what it points at.
+///
+/// The walk terminates on any value: a schema cannot reach itself except through an array, whose
+/// elements come from the value, and a value is finite.
 pub fn referenced_items<T>(item: &FieldValueMap<T>) -> Vec<ItemOwner> {
     let mut found = std::collections::BTreeSet::new();
     for value in item.0.values() {
-        if let FieldValue::Relation(references) = value {
+        collect_referenced_items(value, &mut found);
+    }
+    found.into_iter().collect()
+}
+
+/// Add every item a value points at, wherever the references in it sit.
+fn collect_referenced_items(value: &FieldValue, found: &mut std::collections::BTreeSet<ItemOwner>) {
+    match value {
+        FieldValue::Relation(references) => {
             for reference in references {
                 found.insert(reference.target_owner());
             }
         }
+        FieldValue::CompositeField(Some(composite)) => {
+            for nested in composite.values.0.values() {
+                collect_referenced_items(nested, found);
+            }
+        }
+        FieldValue::Array(items) => {
+            for item in items {
+                collect_referenced_items(item, found);
+            }
+        }
+        _ => {}
     }
-    found.into_iter().collect()
 }
 
 // API レスポンス用の型

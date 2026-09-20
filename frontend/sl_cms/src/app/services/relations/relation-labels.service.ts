@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, forkJoin, map, of } from 'rxjs';
+import { Observable, finalize, forkJoin, map, of, shareReplay } from 'rxjs';
 
 import { FieldValue, RelationRef, formatFieldValue } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -12,6 +12,10 @@ import { SinglePagesService } from 'app/services/schema/single-pages.service';
  * Asked for per screen rather than cached: a title is a value an editor may have just changed, and
  * a name that lags behind a rename is worse than one more request. What is asked for is bounded by
  * what is on screen - a page of rows, or the references of one item.
+ *
+ * What is shared is only what is already on the way (see `inFlight`): an array of composites holds
+ * one relation field per element, and every one of them asks about the same target at the same
+ * moment.
  */
 @Injectable({
   providedIn: 'root',
@@ -46,16 +50,10 @@ export class RelationLabelsService {
     // One request per target collection, and one for every page: what the screens ask about is
     // what they are showing, not a collection's worth of rows.
     const wanted: Observable<Map<string, string>>[] = [...byCollection].map(([name, ids]) =>
-      this.collections
-        .getItemTitles(name, ids)
-        .pipe(map((titles) => entriesOf(titles, (id) => `collection:${name}:${id}`))),
+      this.titlesFor(name, ids),
     );
     if (pagesWanted) {
-      wanted.push(
-        this.pages
-          .getPageTitles()
-          .pipe(map((titles) => entriesOf(titles, (name) => `page:${name}`))),
-      );
+      wanted.push(this.pageTitles());
     }
     return forkJoin(wanted).pipe(
       map((answers) => {
@@ -68,6 +66,48 @@ export class RelationLabelsService {
         return labels;
       }),
     );
+  }
+
+  /**
+   * The requests already on the way, keyed by what they ask for.
+   *
+   * An entry lives only until its answer arrives, so this is not a cache: a question asked
+   * afterwards is asked again, which is what keeps a rename from being answered with a stale name.
+   */
+  private inFlight = new Map<string, Observable<Map<string, string>>>();
+
+  /** One collection's titles, sharing the request with whoever is already waiting on it. */
+  private titlesFor(name: string, ids: number[]): Observable<Map<string, string>> {
+    return this.share(
+      `collection:${name}:${ids.join(',')}`,
+      this.collections
+        .getItemTitles(name, ids)
+        .pipe(map((titles) => entriesOf(titles, (id) => `collection:${name}:${id}`))),
+    );
+  }
+
+  /** The pages' titles, the same way. */
+  private pageTitles(): Observable<Map<string, string>> {
+    return this.share(
+      'single_pages',
+      this.pages.getPageTitles().pipe(map((titles) => entriesOf(titles, (name) => `page:${name}`))),
+    );
+  }
+
+  private share(
+    key: string,
+    request: Observable<Map<string, string>>,
+  ): Observable<Map<string, string>> {
+    const known = this.inFlight.get(key);
+    if (known) {
+      return known;
+    }
+    const shared = request.pipe(
+      finalize(() => this.inFlight.delete(key)),
+      shareReplay({ bufferSize: 1, refCount: false }),
+    );
+    this.inFlight.set(key, shared);
+    return shared;
   }
 }
 

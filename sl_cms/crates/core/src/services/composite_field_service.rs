@@ -3,20 +3,29 @@ use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::schema::{
-    CompositeFieldId, SchemaScope, validate_composite_references, validate_no_composite_cycles,
+    CompositeFieldId, RelationTarget, SchemaScope, referenced_relation_targets,
+    validate_composite_references, validate_no_composite_cycles, validate_relation_targets,
     validate_schema,
 };
 use crate::models::values::{CompositeFieldSchema, FieldSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
+use crate::repositories::relation_targets::RelationTargetSource;
 
 pub struct CompositeFieldService<CFR: CompositeFieldRepository> {
     composite_field_repository: Arc<CFR>,
+    /// What a relation may point at. A definition may hold one, and it is stored on its own, so
+    /// this is where such a target is checked.
+    relation_targets: Arc<dyn RelationTargetSource>,
 }
 
 impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
-    pub fn new(composite_field_repository: Arc<CFR>) -> Self {
+    pub fn new(
+        composite_field_repository: Arc<CFR>,
+        relation_targets: Arc<dyn RelationTargetSource>,
+    ) -> Self {
         CompositeFieldService {
             composite_field_repository,
+            relation_targets,
         }
     }
     pub async fn get_composite_field_schema(
@@ -44,9 +53,13 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
             .map_err(map_internal_error)
     }
 
-    /// Reject references to composites that do not exist, and references that would form a
-    /// cycle. Both matter because values are parsed and rendered by following references:
-    /// a cycle never terminates.
+    /// Reject references to composites that do not exist, references that would form a cycle, and
+    /// relations that point at nothing.
+    ///
+    /// All three matter because values are parsed and rendered by following references: a cycle
+    /// never terminates, and a target that does not exist leaves a field that can never hold
+    /// anything. The relation is checked here rather than only where the definition is embedded,
+    /// because a definition that nobody embeds yet is still a schema somebody can save.
     async fn validate_composite_graph(
         &self,
         id: &CompositeFieldId,
@@ -66,7 +79,22 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         available.insert(id.clone());
 
         validate_no_composite_cycles(id, schema, &all).map_err(|e| HttpError::BadRequest(&e))?;
-        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))
+        validate_composite_references(schema, &available).map_err(|e| HttpError::BadRequest(&e))?;
+
+        // The saved definition is what a relation inside it is read through, so it is part of the
+        // map this walk follows - including when it references itself through an array.
+        let mut composites = all;
+        composites.insert(id.clone(), schema.clone());
+        if referenced_relation_targets(schema, &composites).is_empty() {
+            return Ok(());
+        }
+        let targets: Vec<RelationTarget> = self
+            .relation_targets
+            .relation_targets()
+            .await
+            .map_err(map_internal_error)?;
+        validate_relation_targets(schema, &composites, &targets)
+            .map_err(|e| HttpError::BadRequest(&e))
     }
     pub async fn add_composite_field_schema(
         &self,
@@ -154,7 +182,8 @@ mod tests {
     use std::vec;
 
     use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
-    use crate::models::values::{FieldSchema, FieldType};
+    use crate::models::values::{FieldSchema, FieldType, RelationOptions};
+    use crate::repositories::relation_targets::StaticRelationTargets;
 
     use super::*;
 
@@ -199,10 +228,70 @@ mod tests {
 
     // Test helper functions
     fn create_test_service() -> CompositeFieldService<MockCompositeFieldRepository> {
+        create_test_service_over(Vec::new())
+    }
+
+    /// The same, for a site that has something a relation could point at.
+    fn create_test_service_over(
+        targets: Vec<RelationTarget>,
+    ) -> CompositeFieldService<MockCompositeFieldRepository> {
         let composite_field_repository = MockCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        CompositeFieldService::new(Arc::new(composite_field_repository))
+        CompositeFieldService::new(
+            Arc::new(composite_field_repository),
+            Arc::new(StaticRelationTargets::new(targets)),
+        )
+    }
+
+    fn relation_field(name: &str, target: &str) -> FieldSchema {
+        FieldSchema {
+            is_title: false,
+            show_in_list: false,
+            name: name.to_string(),
+            field_type: FieldType::Relation(RelationOptions {
+                target: RelationTarget::Collection {
+                    name: target.to_string(),
+                },
+                has_many: false,
+                inverse_name: None,
+            }),
+            required: false,
+            width: 12,
+            height: 1,
+            unique: false,
+        }
+    }
+
+    /// A definition is stored on its own and reused, so a relation inside one points at a
+    /// collection or a page of the site - and that target is checked when the definition is
+    /// saved, not only when somebody embeds it.
+    #[tokio::test]
+    async fn a_composite_definition_may_hold_a_relation_to_what_the_site_has() {
+        let service = create_test_service_over(vec![RelationTarget::Collection {
+            name: "authors".to_string(),
+        }]);
+        let schema = vec![relation_field("author", "authors")];
+
+        assert!(
+            service
+                .add_composite_field_schema(&"cta".into(), &schema)
+                .await
+                .is_ok()
+        );
+
+        // A target the site does not have is refused rather than stored.
+        let service = create_test_service();
+        let error = service
+            .add_composite_field_schema(&"cta".into(), &vec![relation_field("author", "writers")])
+            .await
+            .unwrap_err();
+        assert_eq!(error.status_code, 400, "{}", error.message);
+        assert!(
+            error.message.contains("'writers' is not a collection"),
+            "{}",
+            error.message
+        );
     }
 
     #[tokio::test]
