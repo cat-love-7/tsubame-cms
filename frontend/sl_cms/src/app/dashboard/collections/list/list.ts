@@ -126,8 +126,48 @@ export class CollectionItemList {
   /** Items in the collection, not just on this page. Drives the paginator. */
   public total = signal(0);
   public pageIndex = signal(0);
+  /**
+   * The order the list is read in, spelled the way the API spells it: newest first by default,
+   * which is what the service answers when nobody asks for another key.
+   */
+  public sortChoice = signal('-id');
+
   public pageSize = signal(DEFAULT_PAGE_SIZE);
   public readonly pageSizeOptions = [10, 25, 50, 100];
+
+  /**
+   * Order by a key, the other way round when it is already the key.
+   *
+   * One click asks for a column ascending, a second for it descending; the arrow in the header
+   * says which, and where values are equal the id decides so the pages stay put.
+   */
+  public setSort(key: string) {
+    const current = this.sortChoice();
+    this.sortChoice.set(current === key ? `-${key}` : key);
+    this.pageIndex.set(0);
+    this.reload.next();
+  }
+
+  /** Whether this column is the one the list is ordered by, and which way. */
+  public sortDirection(key: string): 'asc' | 'desc' | null {
+    const current = this.sortChoice();
+    if (current === key) {
+      return 'asc';
+    }
+    return current === `-${key}` ? 'desc' : null;
+  }
+
+  /** The same, as the attribute a screen reader reads on the header. */
+  public ariaSort(key: string): 'ascending' | 'descending' | 'none' {
+    switch (this.sortDirection(key)) {
+      case 'asc':
+        return 'ascending';
+      case 'desc':
+        return 'descending';
+      default:
+        return 'none';
+    }
+  }
   /** Exposed for the template. */
   public format = formatFieldValue;
 
@@ -164,6 +204,7 @@ export class CollectionItemList {
             page: this.collectionsService.listCollectionItemsPage(this.collectionName(), {
               limit: this.pageSize(),
               offset: this.pageIndex() * this.pageSize(),
+              sort: this.sortChoice(),
             }),
             metadata: this.collectionsService.listItemMetadata(this.collectionName()),
           }).pipe(

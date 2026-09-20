@@ -156,6 +156,7 @@
     "noReferenceCandidates": "参照できるアイテムがまだありません。",
     "referenceListLimited": "参照先の最初の {{count}} 件を並べています。",
     "chooseListColumns": "表示する項目を選ぶ",
+    "sortBy": "{{column}} で並べ替え",
     "noPages": "単一ページはまだありません。",
     "noCompositeFields": "複合フィールドはまだありません。",
     "images": "画像",

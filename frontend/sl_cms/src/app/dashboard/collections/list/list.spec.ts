@@ -625,7 +625,7 @@ describe('CollectionItemList', () => {
     const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
     fresh.detectChanges();
 
-    expect(stub.requested[0]).toEqual({ limit: 25, offset: 0 });
+    expect(stub.requested[0]).toEqual({ limit: 25, offset: 0, sort: '-id' });
     expect(rows(fresh)).toBe(25);
     expect(fresh.componentInstance.total()).toBe(60);
     // The pager is what makes the rest of the collection reachable.
@@ -640,7 +640,7 @@ describe('CollectionItemList', () => {
     fresh.componentInstance.onPage({ pageIndex: 2, pageSize: 25, length: 60 });
     fresh.detectChanges();
 
-    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 50 });
+    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 50, sort: '-id' });
     expect(rows(fresh)).toBe(10);
   });
 
@@ -652,7 +652,7 @@ describe('CollectionItemList', () => {
     fresh.componentInstance.onPage({ pageIndex: 0, pageSize: 10, length: 60 });
     fresh.detectChanges();
 
-    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 10, offset: 0 });
+    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 10, offset: 0, sort: '-id' });
     expect(rows(fresh)).toBe(10);
   });
 
@@ -671,7 +671,7 @@ describe('CollectionItemList', () => {
     fresh.detectChanges();
 
     expect(stub.deleted).toEqual([26]);
-    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 0 });
+    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 0, sort: '-id' });
     expect(rows(fresh)).toBe(25);
   });
 
@@ -725,7 +725,7 @@ describe('CollectionItemList', () => {
     fresh.detectChanges();
 
     expect(stub.deleted).toEqual([1]);
-    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 0 });
+    expect(stub.requested[stub.requested.length - 1]).toEqual({ limit: 25, offset: 0, sort: '-id' });
     expect(rows(fresh)).toBe(25);
   });
 });

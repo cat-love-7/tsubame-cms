@@ -156,6 +156,7 @@
     "noReferenceCandidates": "Nothing to reference yet.",
     "referenceListLimited": "Showing the first {{count}} items the target has.",
     "chooseListColumns": "Choose the fields to show",
+    "sortBy": "sort by {{column}}",
     "noPages": "No single pages yet.",
     "noCompositeFields": "No composite fields yet.",
     "images": "Images",

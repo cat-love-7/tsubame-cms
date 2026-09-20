@@ -44,9 +44,14 @@ export class CollectionsService {
   /** One page of items, with the total the server reports for the collection. */
   listCollectionItemsPage(
     name: string,
-    page: { limit: number; offset: number },
+    page: { limit: number; offset: number; sort?: string },
   ): Observable<CollectionItemPage> {
-    return this.collectionRepository.listCollectionItemsPage(name, page.limit, page.offset);
+    return this.collectionRepository.listCollectionItemsPage(
+      name,
+      page.limit,
+      page.offset,
+      page.sort,
+    );
   }
 
   getCollectionItem(name: string, id: number): Observable<CollectionValue> {

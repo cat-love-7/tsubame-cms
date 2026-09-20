@@ -59,3 +59,34 @@ td.value .cell-images {
   padding-inline-start: 20px;
   color: var(--mat-sys-error);
 }
+
+/* A sortable header: the column's name, and an arrow drawn in CSS.
+ *
+ * Not a `mat-icon`: the ligature would put its own name into the table's text, which is what a
+ * screen reader reading the header, and every check that reads the header row, would see. The
+ * direction travels in `aria-sort` on the cell instead. */
+.sort-header {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 500;
+  color: inherit;
+  cursor: pointer;
+
+  &.asc::after,
+  &.desc::after {
+    display: inline-block;
+    margin-left: 0.25rem;
+    font-size: 0.7em;
+    vertical-align: middle;
+  }
+
+  &.asc::after {
+    content: '▲';
+  }
+
+  &.desc::after {
+    content: '▼';
+  }
+}

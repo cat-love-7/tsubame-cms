@@ -10,5 +10,6 @@ pub mod pagination;
 pub mod schema;
 pub mod single_page;
 pub mod slug;
+pub mod sort;
 pub mod user;
 pub mod values;

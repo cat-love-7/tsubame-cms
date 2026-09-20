@@ -14,6 +14,7 @@ use crate::models::collection::{CollectionItemId, CollectionName, CollectionSche
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{PageQuery, Pagination};
+use crate::models::sort::Sort;
 use crate::preview_link::PreviewTarget;
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
@@ -451,18 +452,36 @@ async fn delete_collection<R: Storage>(
     Ok(StatusCode::OK)
 }
 
+/// What the admin item list takes: a page, and the order to read it in.
+#[derive(serde::Deserialize)]
+struct ItemsQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+    /// `?sort=` as the delivery API spells it (`models::sort`), so the two screens order the same
+    /// way. The default is newest first.
+    sort: Option<String>,
+}
+
 async fn get_collection_items<R: Storage>(
     State(module): State<AppState<R>>,
     Path(collection_name): Path<String>,
-    Query(query): Query<PageQuery>,
+    Query(query): Query<ItemsQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     // The admin list is returned whole unless the caller asks for a page: the UI renders
     // every row, and silently truncating it would be worse than a long response.
-    let pagination = Pagination::optional(query)?;
+    let pagination = Pagination::optional(PageQuery {
+        limit: query.limit,
+        offset: query.offset,
+    })?;
     let name = CollectionName::from(collection_name.as_str());
+    let schema = module
+        .collection_service
+        .get_collection_schema(&name)
+        .await?;
+    let sort = Sort::parse(query.sort.as_deref(), &schema)?;
     let page = module
         .collection_service
-        .get_collection_items_page(&name, &pagination)
+        .get_collection_items_page(&name, &pagination, sort.as_ref())
         .await?;
 
     // The body keeps the `[id, values]` array the UI already reads; the total travels in a

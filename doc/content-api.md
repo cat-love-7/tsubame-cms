@@ -72,7 +72,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 
 | メソッド | パス | 返すもの |
 |---|---|---|
-| GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ。**新しい順( id の降順)**(`?limit=` / `?offset=` でページング。同じ順を、内容編集画面のピッカーの候補も使う) |
+| GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ。**新しい順( id の降順)**(`?limit=` / `?offset=` でページング。同じ順を、内容編集画面のピッカーの候補も使う)。並び順は `?sort=` で指定でき、綴りは配信 API と同じ(`id` / `published_at` / `created_at` / `updated_at` / フィールド名。同値は id でタイブレーク) |
 | GET | `/api/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
 | GET | `/api/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
 | PUT | `/api/models/collections/{name}/items/{id}/metadata` | 日時を設定(下記「移行のための日時」)。返すのは更新後のメタデータ |

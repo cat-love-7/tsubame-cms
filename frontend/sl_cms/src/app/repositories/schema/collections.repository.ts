@@ -71,10 +71,11 @@ export class CollectionRepository {
     name: string,
     limit: number,
     offset: number,
+    sort?: string,
   ): Observable<CollectionItemPage> {
     return this.http
       .get<CollectionItemEntry[]>(apiUrl(`/models/collections/${name}/items`), {
-        params: { limit, offset },
+        params: sort ? { limit, offset, sort } : { limit, offset },
         observe: 'response',
       })
       .pipe(

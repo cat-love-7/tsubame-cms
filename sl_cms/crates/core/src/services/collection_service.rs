@@ -7,8 +7,8 @@ use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
 use crate::models::delivery::{
-    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, Populate, RelationFilter, Sort,
-    compare_items, field_holds, inverse_references,
+    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, Populate, RelationFilter, field_holds,
+    inverse_references,
 };
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
@@ -22,6 +22,7 @@ use crate::models::schema::{
     referenced_relation_targets, unique_values, validate_composite_references,
     validate_relation_targets, validate_schema,
 };
+use crate::models::sort::{Sort, compare_delivered, compare_responses};
 use crate::models::values::{FieldType, FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
@@ -1688,9 +1689,39 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
+        sort: Option<&Sort>,
     ) -> Result<Page<(CollectionItemId, CollectionItemResponse)>, HttpError> {
         let mut items = self.get_collection_items(collection_name).await?;
-        items.reverse();
+        // The default is newest first; a caller that asked for an order gets that order, with the
+        // same rules the delivery API uses (`models::sort`). A timestamp lives in the metadata,
+        // which is one read for the whole list rather than one per item.
+        let sort = match sort {
+            Some(sort) => sort,
+            None => {
+                items.reverse();
+                return Ok(pagination.apply(items));
+            }
+        };
+        let metadata: HashMap<CollectionItemId, ItemMetadata> = if sort.is_metadata() {
+            self.list_item_metadata(collection_name)
+                .await?
+                .into_iter()
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        let mut sortable: Vec<(u64, ItemMetadata, CollectionItemResponse)> = items
+            .into_iter()
+            .map(|(id, values)| {
+                let metadata = metadata.get(&id).cloned().unwrap_or_default();
+                (*id, metadata, values)
+            })
+            .collect();
+        sortable.sort_by(|a, b| compare_responses(a, b, sort));
+        let items: Vec<(CollectionItemId, CollectionItemResponse)> = sortable
+            .into_iter()
+            .map(|(id, _, values)| (CollectionItemId::from_u64(id), values))
+            .collect();
         Ok(pagination.apply(items))
     }
 
@@ -1905,7 +1936,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             items.push((*id, metadata, values));
         }
         if let Some(sort) = sort {
-            items.sort_by(|a, b| compare_items(a, b, sort));
+            items.sort_by(|a, b| compare_delivered(a, b, sort));
         }
         // The window is cut here when the set was read whole (a filter or an order); otherwise
         // storage already did it.

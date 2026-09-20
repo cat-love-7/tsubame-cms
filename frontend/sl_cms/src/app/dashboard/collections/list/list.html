@@ -77,9 +77,31 @@
           />
         }
       </th>
-      <th>{{ 'common.id' | transloco }}</th>
+      <th [attr.aria-sort]="ariaSort('id')">
+        <button
+          type="button"
+          class="sort-header"
+          [class.asc]="sortDirection('id') === 'asc'"
+          [class.desc]="sortDirection('id') === 'desc'"
+          (click)="setSort('id')"
+          [attr.aria-label]="'content.sortBy' | transloco: { column: ('common.id' | transloco) }"
+        >
+          {{ 'common.id' | transloco }}
+        </button>
+      </th>
       @for (field of listColumns(); track field.name) {
-        <th>{{ field.name }}</th>
+        <th [attr.aria-sort]="ariaSort(field.name)">
+          <button
+            type="button"
+            class="sort-header"
+            [class.asc]="sortDirection(field.name) === 'asc'"
+            [class.desc]="sortDirection(field.name) === 'desc'"
+            (click)="setSort(field.name)"
+            [attr.aria-label]="'content.sortBy' | transloco: { column: field.name }"
+          >
+            {{ field.name }}
+          </button>
+        </th>
       }
       <th>{{ 'common.status' | transloco }}</th>
       <th>{{ 'common.updated' | transloco }}</th>
