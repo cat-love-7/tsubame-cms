@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 
 import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
+import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldValue } from 'app/models/values/fields';
@@ -66,6 +67,11 @@ export class SinglePagesService {
 
   unpublishPage(name: string): Observable<ItemMetadata> {
     return this.pages.unpublishPage(name);
+  }
+
+  /** The content that points at this page, for the references panel. */
+  pageReferences(name: string): Observable<RelationReference[]> {
+    return this.pages.pageReferences(name);
   }
 
   createPreviewLink(name: string): Observable<PreviewLink> {

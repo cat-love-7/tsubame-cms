@@ -11,6 +11,7 @@ import {
   ItemStatusOutcome,
 } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
+import { RelationReference } from 'app/models/relations';
 
 import {
   CollectionItemEntry,
@@ -145,6 +146,18 @@ export class CollectionRepository {
   }
 
   /** Mints a link that shows this working copy to someone without an account. */
+  /**
+   * The content that points at this item, by the relation index.
+   *
+   * Read with a token: the management API shows drafts, which is what an editor needs to see
+   * before deleting something.
+   */
+  itemReferences(name: string, id: number): Observable<RelationReference[]> {
+    return this.http.get<RelationReference[]>(
+      apiUrl(`/models/collections/${name}/items/${id}/references`),
+    );
+  }
+
   createPreviewLink(name: string, id: number): Observable<PreviewLink> {
     return this.http.post<PreviewLink>(
       apiUrl(`/models/collections/${name}/items/${id}/preview-link`),

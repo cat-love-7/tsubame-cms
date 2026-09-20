@@ -6,6 +6,7 @@ import {
   ItemStatusOutcome,
 } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
+import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
 import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
@@ -90,6 +91,11 @@ export class CollectionsService {
 
   unpublishItem(name: string, id: number): Observable<ItemMetadata> {
     return this.collectionRepository.unpublishItem(name, id);
+  }
+
+  /** The content that points at this item, for the references panel. */
+  itemReferences(name: string, id: number): Observable<RelationReference[]> {
+    return this.collectionRepository.itemReferences(name, id);
   }
 
   createPreviewLink(name: string, id: number): Observable<PreviewLink> {

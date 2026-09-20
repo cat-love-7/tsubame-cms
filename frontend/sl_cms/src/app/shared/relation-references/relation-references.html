@@ -1,0 +1,26 @@
+<button type="button" class="references-toggle" (click)="toggle()">
+  {{ 'content.referencesTitle' | transloco }}
+</button>
+
+@if (open()) {
+  @if (loading()) {
+    <p class="note">{{ 'common.loading' | transloco }}</p>
+  } @else if (failed()) {
+    <p class="note">{{ 'content.referencesUnavailable' | transloco }}</p>
+  } @else if (groups().length === 0) {
+    <p class="note">{{ 'content.noReferences' | transloco }}</p>
+  } @else {
+    @for (group of groups(); track group.heading) {
+      <section class="reference-group">
+        <h4>{{ group.heading }}</h4>
+        <ul>
+          @for (row of group.rows; track row.link) {
+            <li>
+              <a [routerLink]="row.link">{{ row.label }}</a>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  }
+}

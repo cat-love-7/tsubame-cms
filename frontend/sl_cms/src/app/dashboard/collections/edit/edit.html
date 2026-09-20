@@ -108,6 +108,10 @@
   </div>
 }
 
+@if (referencedItemId(); as itemId) {
+  <app-relation-references kind="collection_item" [name]="collectionName()" [item]="itemId" />
+}
+
 @if (canEdit()) {
   <div class="actions">
     <button matButton color="primary" [disabled]="!loaded()" (click)="save()">

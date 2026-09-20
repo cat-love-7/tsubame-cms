@@ -5,6 +5,7 @@ import { Observable } from 'rxjs';
 
 import { ItemMetadata } from 'app/models/item-status';
 import { PreviewLink } from 'app/models/links';
+import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldValue } from 'app/models/values/fields';
@@ -85,6 +86,11 @@ export class SinglePageRepository {
   }
 
   /** Mints a link that shows this working copy to someone without an account. */
+  /** The content that points at this page, by the relation index. */
+  pageReferences(name: string): Observable<RelationReference[]> {
+    return this.http.get<RelationReference[]>(apiUrl(`/models/single_pages/${name}/references`));
+  }
+
   createPreviewLink(name: string): Observable<PreviewLink> {
     return this.http.post<PreviewLink>(apiUrl(`/models/single_pages/${name}/preview-link`), null);
   }

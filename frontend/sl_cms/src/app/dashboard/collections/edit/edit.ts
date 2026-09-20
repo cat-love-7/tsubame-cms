@@ -19,6 +19,7 @@ import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
+import { RelationReferences } from 'app/shared/relation-references/relation-references';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /**
@@ -46,7 +47,15 @@ interface StartedItem {
  */
 @Component({
   selector: 'app-collection-item-edit',
-  imports: [ItemStatusBadge, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe, ValueField],
+  imports: [
+    ItemStatusBadge,
+    MatButtonModule,
+    MessagePipe,
+    RelationReferences,
+    RouterLink,
+    TranslocoPipe,
+    ValueField,
+  ],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
@@ -72,6 +81,9 @@ export class CollectionItemEdit implements HasUnsavedChanges {
   /** The id the address names, which stops matching the item once a new one has been created. */
   private routeItemId = signal<number | null>(null);
   public isNew = computed(() => this.itemId() === null);
+
+  /** The item the references panel is about: what this screen is editing, once it exists. */
+  public referencedItemId = computed(() => this.itemId());
 
   /**
    * The schema and the values being edited, as signals.

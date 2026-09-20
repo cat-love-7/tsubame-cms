@@ -20,6 +20,7 @@ import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
+import { RelationReferences } from 'app/shared/relation-references/relation-references';
 import { ValueField } from 'app/shared/value-field/value-field';
 
 /** The page a request was started for (see the collection item editor). */
@@ -37,7 +38,15 @@ interface StartedPage {
  */
 @Component({
   selector: 'app-single-page-edit',
-  imports: [ItemStatusBadge, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe, ValueField],
+  imports: [
+    ItemStatusBadge,
+    MatButtonModule,
+    MessagePipe,
+    RelationReferences,
+    RouterLink,
+    TranslocoPipe,
+    ValueField,
+  ],
   templateUrl: './edit.html',
   styleUrl: './edit.scss',
 })
