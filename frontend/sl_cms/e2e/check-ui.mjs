@@ -1772,6 +1772,21 @@ try {
     `${referenceCell} (expected ${referencedTitle})`,
   );
 
+  // The inverse direction is on the screen that holds what is pointed at: an item says who points
+  // at it, grouped under the name the other schema gives the relation (`inverse_name`).
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('button.references-toggle').click();
+  await page.locator('.reference-group h4').first().waitFor({ timeout: 15000 });
+  const pointingHeading = (
+    (await page.locator('.reference-group h4').first().textContent()) ?? ''
+  ).trim();
+  const pointingLink = await page.locator('.reference-group a').first().getAttribute('href');
+  check(
+    '参照元パネルが逆側の呼び名で出る',
+    pointingHeading === 'posts' && pointingLink === `/collections/${SCHEMA_COLLECTION}/edit/1`,
+    `${pointingHeading} / ${pointingLink}`,
+  );
+
   // The picker names what it offers by the title the target has *now*, which the checks above have
   // been editing, and the chip the form holds reads the same way.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
