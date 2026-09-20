@@ -18,8 +18,10 @@ use crate::models::single_page::{
 use crate::models::values::FieldValueResponse;
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
+use crate::repositories::content_reader::ContentReader;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::relation_repository::RelationRepository;
+use crate::repositories::relation_rules;
 use crate::repositories::relation_targets::RelationTargetSource;
 use crate::repositories::single_page_repository::SinglePageRepository;
 use crate::webhook::{ContentEvent, Notifier};
@@ -36,6 +38,8 @@ pub struct SinglePageService<
     relation_targets: Arc<dyn RelationTargetSource>,
     /// The relation index, which answers who references a page.
     relations: Arc<dyn RelationRepository>,
+    /// The content those references point at, which the publish rules read.
+    content: Arc<dyn ContentReader>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -49,6 +53,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         image_repository: Arc<IR>,
         relation_targets: Arc<dyn RelationTargetSource>,
         relations: Arc<dyn RelationRepository>,
+        content: Arc<dyn ContentReader>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         SinglePageService {
@@ -57,6 +62,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             image_repository,
             relation_targets,
             relations,
+            content,
             notifier,
         }
     }
@@ -562,13 +568,14 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         self.get_single_page_schema(name).await?;
         // Built from the stored record so publishing keeps the first publication date and the
         // content timestamps.
-        let mut metadata = self
+        let stored = self
             .single_page_repository
             .get_page_metadata(name)
             .await
             .map_err(map_internal_error)?
-            .unwrap_or_default()
-            .with_status(status, Some(actor));
+            .unwrap_or_default();
+        let was_published = stored.is_published();
+        let mut metadata = stored.with_status(status, Some(actor));
 
         // Publishing is the copy, handed over in one call (see
         // `CollectionService::set_item_status`).
@@ -588,15 +595,37 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // field, and the site must not be served one (see `CollectionService::set_item_status`).
         if let Some(copy) = pending.as_ref() {
             let schema = self.get_single_page_schema(name).await?;
-            copy.validate_to_schema(
-                &self
-                    .composite_field_repository
-                    .list_composite_field_schemas()
-                    .await
-                    .map_err(map_internal_error)?,
+            let composites = self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?;
+            copy.validate_to_schema(&composites, &schema)
+                .map_err(|e| e.into_http_error())?;
+            // Filled in is not the same as served: a required relation whose targets are all still
+            // drafts would leave the site with a reference to nothing (§4).
+            relation_rules::ensure_required_relations_are_published(
                 &schema,
+                copy,
+                &composites,
+                &*self.content,
             )
-            .map_err(|e| e.into_http_error())?;
+            .await?;
+        }
+        // Taking the page off the site is the same rule from the other end.
+        if was_published && !metadata.is_published() {
+            let composites = self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?;
+            relation_rules::ensure_unpublish_keeps_required_referrers(
+                &ItemOwner::single_page(name.as_str()),
+                &composites,
+                &*self.content,
+                &*self.relations,
+            )
+            .await?;
         }
         if let Err(e) = self
             .single_page_repository
@@ -677,6 +706,7 @@ mod tests {
     use crate::repositories::image_repository::Replacement;
 
     use super::*;
+    use crate::repositories::content_reader::NoContent;
     use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
@@ -1032,6 +1062,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::new(targets)),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         )
     }
@@ -1071,6 +1102,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             notifier.clone(),
         );
 
@@ -1436,6 +1468,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1479,6 +1512,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1549,6 +1583,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1589,6 +1624,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1620,6 +1656,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
         let result = service.get_single_page_item(&"test_schema".into()).await;
@@ -1669,6 +1706,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1707,6 +1745,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
         let result = service
@@ -1762,6 +1801,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -1801,6 +1841,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 

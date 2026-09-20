@@ -7,6 +7,7 @@ use crate::password_reset::PasswordResetIssuer;
 use crate::preview_link::PreviewLinkIssuer;
 use crate::repositories::collection_repository::CollectionRepository;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
+use crate::repositories::content_reader::ContentReader;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
@@ -123,6 +124,8 @@ impl<R: Storage> AppModule<R> {
         // written into (see `RelationRepository`).
         let relation_targets: Arc<dyn RelationTargetSource> = repository.clone();
         let relations: Arc<dyn RelationRepository> = repository.clone();
+        // The publish rules read the content a reference points at, whichever kind it is.
+        let content: Arc<dyn ContentReader> = repository.clone();
         AppModule {
             collection_service: CollectionService::new(
                 repository.clone(),
@@ -130,6 +133,7 @@ impl<R: Storage> AppModule<R> {
                 repository.clone(),
                 relation_targets.clone(),
                 relations.clone(),
+                content.clone(),
                 notifier.clone(),
             ),
             single_page_service: SinglePageService::new(
@@ -138,6 +142,7 @@ impl<R: Storage> AppModule<R> {
                 repository.clone(),
                 relation_targets.clone(),
                 relations,
+                content,
                 notifier,
             ),
             composite_field_service: CompositeFieldService::new(

@@ -1,6 +1,6 @@
 # コンテンツの関係(リレーション)の設計
 
-**状態: 第 2 段階(逆引きと安全)まで実装済み**。§9 の段階でいう 1 と 2 が入っており、3 以降は
+**状態: 第 3 段階(公開の整合)まで実装済み**。§9 の段階でいう 1〜3 が入っており、4 以降は
 未実装(第 5 段階のピッカーと、複合定義の中の relation は実装済み)。最初の利用者は Strapi からの移行(`scripts/migrate-from-strapi/`)で、同ツールは現在
 リレーションを既定で落としている。
 
@@ -255,6 +255,11 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
   スキーマ保存の 400 4 種(複合定義の保存を含む)、値の 400 4 種、`required` な relation が空のままの公開は 400、
   **複合の中の参照**(複合フィールドとその配列の両方)が索引に載り、削除が 409 で拒否され、
   `?detach=true` が複合の中まで外すこと
+- 公開の整合(2026-09、`repositories/relation_rules.rs` の unit + 契約スイート): 未公開の相手しか
+  持たない `required` な relation を持つ公開は 409 `relation_unpublished`、相手を先に公開すれば通る、
+  公開中の参照元がいる `unpublish` は 409 `relation_required_by`、参照元が未公開なら通る、
+  同じフィールドに公開済みの参照が残るなら通る、任意の relation はどちらも通る、
+  複合・配列の中の `required` は経路つきで拒否、消えた相手は未公開として数える
 - spec(`fields.spec` / `field.spec` / `value-field.spec`): 型の分岐、送信前の正規化、
   一覧の遅延取得、値の JSON 欄の検証
 - 索引(`RelationIndexChanges::between` の集合差、`referenced_items` の走査、`without_reference`)。
@@ -288,7 +293,15 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
    — **実装済み**。索引は各アダプタの書き込み経路の中で差分を取って本体と同じトランザクションで
    書く。`GET …/items/{id}/references` と `GET …/single_pages/{name}/references`、
    `?detach=true` つきの削除。契約スイートは `crates/tests/suite/relations.rs`。
-3. **公開の整合**: 公開時の検査(`required` が空になるなら 409)+ unpublish の扱い
+3. ✅ **公開の整合**: 公開時の検査(`required` が空になるなら 409)+ unpublish の扱い
+   — **実装済み**(2026-09)。規則は §4 の 1 つだけで、公開と unpublish を同じ質問の両方向として見る
+   (`repositories/relation_rules.rs`)。公開時は公開コピーの `required` な relation について
+   **公開されている参照先**が 1 つ以上あることを確かめ、無ければ 409 `relation_unpublished`。
+   unpublish 時は**索引が答える参照元**(公開中のものだけ)について、そのフィールドが他に公開済みの
+   参照を持つかを確かめ、無ければ 409 `relation_required_by`。任意の relation はどちらも自由。
+   複合の中・配列の要素の中の `required` な relation も同じ規則で見て、拒否は
+   `cta.author` / `blocks[0].author` のような経路を返す。参照先の状態は `ContentReader`
+   (アイテムでもページでも同じ質問ができる)が読み、両サービスに配線した。
 4. **配信**: `?populate=` の 1 段展開 + 逆引きのフィルタ(`?where=`)と逆引きの展開(`inverse_name`)
 5. **UI**: スキーマ編集の relation 型 + ピッカー + 参照元パネル(見出しは `inverse_name`。
    `inverse_name` の一意性もここで見る)

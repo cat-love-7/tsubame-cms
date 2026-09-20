@@ -22,8 +22,10 @@ use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
+use crate::repositories::content_reader::ContentReader;
 use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::relation_repository::RelationRepository;
+use crate::repositories::relation_rules;
 use crate::repositories::relation_targets::RelationTargetSource;
 use crate::webhook::{ContentEvent, Notifier};
 
@@ -39,6 +41,8 @@ pub struct CollectionService<
     relation_targets: Arc<dyn RelationTargetSource>,
     /// The relation index, which answers who references what.
     relations: Arc<dyn RelationRepository>,
+    /// The content those references point at, which the publish rules read.
+    content: Arc<dyn ContentReader>,
     /// Told about every publish/unpublish so a site build can be triggered.
     notifier: Arc<dyn Notifier>,
 }
@@ -52,6 +56,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         image_repository: Arc<IR>,
         relation_targets: Arc<dyn RelationTargetSource>,
         relations: Arc<dyn RelationRepository>,
+        content: Arc<dyn ContentReader>,
         notifier: Arc<dyn Notifier>,
     ) -> Self {
         CollectionService {
@@ -60,6 +65,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             image_repository,
             relation_targets,
             relations,
+            content,
             notifier,
         }
     }
@@ -1490,7 +1496,32 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .map_err(map_internal_error)?;
                 copy.validate_to_schema(&composite_schemas, &schema)
                     .map_err(|e| e.into_http_error())?;
+                // Filled in is not the same as served: a required relation whose targets are all
+                // still drafts would leave the site with a reference to nothing (§4).
+                relation_rules::ensure_required_relations_are_published(
+                    &schema,
+                    copy,
+                    &composite_schemas,
+                    &*self.content,
+                )
+                .await?;
             }
+        }
+        // Taking the item off the site is the same rule from the other end: it must not leave
+        // published content with a required relation pointing at nothing.
+        if was_published && !metadata.is_published() {
+            let composites = self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?;
+            relation_rules::ensure_unpublish_keeps_required_referrers(
+                &ItemOwner::collection_item(collection_name.as_str(), *item_id),
+                &composites,
+                &*self.content,
+                &*self.relations,
+            )
+            .await?;
         }
         let (reserve, release) = if has_unique_fields(&schema) {
             let before = Self::held_unique_values_for_status(
@@ -1743,6 +1774,7 @@ mod tests {
     use super::*;
     use crate::models::user::UserId;
     use crate::repositories::collection_repository::{Reservation, UniqueValue};
+    use crate::repositories::content_reader::NoContent;
     use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
@@ -2329,6 +2361,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             notifier.clone(),
         );
 
@@ -2415,6 +2448,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         )
     }
@@ -2742,6 +2776,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::new(targets)),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         )
     }
@@ -3127,6 +3162,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3183,6 +3219,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3237,6 +3274,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3277,6 +3315,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3337,6 +3376,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3401,6 +3441,7 @@ mod tests {
             Arc::new(MockImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3466,6 +3507,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3534,6 +3576,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3590,6 +3633,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3652,6 +3696,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 
@@ -3701,6 +3746,7 @@ mod tests {
             Arc::new(image_repository),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
+            Arc::new(NoContent),
             Arc::new(NoopNotifier),
         );
 

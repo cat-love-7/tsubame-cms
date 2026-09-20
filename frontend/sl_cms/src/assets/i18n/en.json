@@ -310,7 +310,9 @@
     "invalid_slug": "'{{field}}' has nothing a URL could use: a slug is made of letters, digits and hyphens.",
     "draft_changed": "This item was saved again while it was being published. What you see is not what is stored: open it again and publish once more.",
     "image_not_trashed": "Put the image in the trash first, then delete it for good.",
-    "still_referenced": "Other content references this, so it was not deleted. Remove those references first."
+    "still_referenced": "Other content references this, so it was not deleted. Remove those references first.",
+    "relation_unpublished": "A required relation points at content that is not published yet. Publish it first.",
+    "relation_required_by": "Published content references this through a required relation. Change that content, or unpublish it, first."
   },
   "nav": {
     "documents": "Documents",

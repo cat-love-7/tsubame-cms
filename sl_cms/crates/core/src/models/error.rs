@@ -36,6 +36,10 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     // Deleting content another piece of content points at. The references are what has to go
     // first - or be detached in the same request (`?detach=true`).
     "still_referenced",
+    // Publishing content whose required relation points at nothing published, and unpublishing the
+    // last published target somebody else's required relation points at.
+    "relation_unpublished",
+    "relation_required_by",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -88,6 +92,10 @@ pub const ERROR_CODES: &[&str] = &[
     "image_not_trashed",
     // Deleting content another piece of content points at.
     "still_referenced",
+    // Publishing content whose required relation points at nothing published, or unpublishing
+    // the last published target of somebody else's required relation.
+    "relation_unpublished",
+    "relation_required_by",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -263,16 +271,7 @@ impl HttpError {
         let named: Vec<String> = referrers
             .iter()
             .take(3)
-            .map(|referrer| match referrer.kind {
-                crate::models::owner::ItemOwnerKind::CollectionItem => format!(
-                    "{} item {}",
-                    referrer.name,
-                    referrer.item.unwrap_or_default()
-                ),
-                crate::models::owner::ItemOwnerKind::SinglePage => {
-                    format!("single page {}", referrer.name)
-                }
-            })
+            .map(|referrer| referrer.describe())
             .collect();
         let rest = referrers.len().saturating_sub(named.len());
         let mut list = named.join(", ");
@@ -286,6 +285,41 @@ impl HttpError {
             ),
         )
         .with_code("still_referenced")
+    }
+
+    /// A required relation whose target is not published, refused before it goes live.
+    ///
+    /// One rule in both directions (see `doc/relations-design.md` §4): what the site serves must
+    /// not have a required reference to nothing. Publishing an item whose only target is still a
+    /// draft is refused with this, and so is unpublishing the last published target of somebody
+    /// else's required relation - which is [`Self::relation_required_by`], because there the
+    /// person has to change the *other* piece of content.
+    pub fn relation_unpublished(field: &str, target: &crate::models::owner::ItemOwner) -> Self {
+        Self::new(
+            STATUS_CONFLICT,
+            &format!(
+                "field '{field}': '{}' is not published, and a required relation needs a \
+                 published target",
+                target.describe()
+            ),
+        )
+        .with_code("relation_unpublished")
+        .with_field(field)
+    }
+
+    /// The same rule seen from the content being taken off the site: a published referrer's
+    /// required relation would be left with nothing.
+    pub fn relation_required_by(referrer: &crate::models::owner::ItemOwner, field: &str) -> Self {
+        Self::new(
+            STATUS_CONFLICT,
+            &format!(
+                "'{}' is published and its required relation '{field}' points here; unpublish \
+                 or change it first",
+                referrer.describe()
+            ),
+        )
+        .with_code("relation_required_by")
+        .with_field(field)
     }
 
     /// Say what went wrong more precisely than the status does.

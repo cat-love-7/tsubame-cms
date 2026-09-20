@@ -1247,3 +1247,289 @@ async fn a_delete_nothing_points_at_goes_straight_through() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
+
+/// A required relation is a promise that the site can serve it: publishing content whose only
+/// target is still a draft would break that promise, so the publish is refused - and the same rule
+/// refuses taking the last published target off the site while somebody requires it.
+#[tokio::test]
+async fn a_required_relation_needs_a_published_target_to_go_live() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let categories = "/api/models/collections/categories";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/item",
+        json!({ "title": "Ada" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The category requires the author, and the author is only a draft.
+    save_schema(
+        &app,
+        &token,
+        &format!("{categories}/schema"),
+        json!([
+            text_field("title", true),
+            {
+                "name": "author",
+                "field_type": { "Relation": {
+                    "target": { "kind": "collection", "name": "authors" },
+                    "has_many": false,
+                }},
+                "required": true, "width": 12, "height": 1,
+            },
+        ]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/item"),
+        json!({ "title": "Tech", "author": [{ "target": "authors", "item": 1 }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("relation_unpublished"), "{body}");
+    assert!(body.contains("authors item 1"), "{body}");
+
+    // Publishing the target first is the way through, which is the order a migration follows too.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/1/publish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Now the author is what the published category requires: taking it down is refused for the
+    // same reason, from the other end, and the refusal names the content that requires it.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/1/unpublish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("relation_required_by"), "{body}");
+    assert!(body.contains("categories item 1"), "{body}");
+
+    // Unpublishing the category first frees it.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/items/1/unpublish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/1/unpublish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// The rule is about being left with *nothing* published: another published target keeps the
+/// field served, a referrer that is not on the site asks nothing of its targets, and an optional
+/// relation is free to point at a draft (the delivery API drops it).
+#[tokio::test]
+async fn only_a_required_relation_that_would_be_left_empty_holds_a_target() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let categories = "/api/models/collections/categories";
+    let posts = "/api/models/collections/posts";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    for (index, title) in ["Ada", "Grace"].iter().enumerate() {
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            "/api/models/collections/authors/item",
+            json!({ "title": title }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        // Both authors are on the site before the category that requires them.
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            &format!(
+                "/api/models/collections/authors/items/{}/publish",
+                index + 1
+            ),
+            json!(null),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    // A required set: two published authors, so one of them can go.
+    save_schema(
+        &app,
+        &token,
+        &format!("{categories}/schema"),
+        json!([
+            text_field("title", true),
+            {
+                "name": "authors",
+                "field_type": { "Relation": {
+                    "target": { "kind": "collection", "name": "authors" },
+                    "has_many": true,
+                }},
+                "required": true, "width": 12, "height": 1,
+            },
+        ]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/item"),
+        json!({
+            "title": "Tech",
+            "authors": [
+                { "target": "authors", "item": 1 },
+                { "target": "authors", "item": 2 },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // One of two going is one the site still serves.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/1/unpublish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The last one is not.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/2/unpublish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("relation_required_by"), "{body}");
+
+    // An optional relation does not hold anything: taking its only target down is allowed.
+    save_schema(
+        &app,
+        &token,
+        &format!("{posts}/schema"),
+        json!([
+            text_field("title", true),
+            {
+                "name": "author",
+                "field_type": { "Relation": {
+                    "target": { "kind": "collection", "name": "authors" },
+                    "has_many": false,
+                }},
+                "required": false, "width": 12, "height": 1,
+            },
+        ]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/item"),
+        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 2 }] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The category is unpublished, so its required set asks nothing; the post's relation is
+    // optional, so the site drops it rather than refusing the unpublish.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{categories}/items/1/unpublish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/authors/items/2/unpublish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}

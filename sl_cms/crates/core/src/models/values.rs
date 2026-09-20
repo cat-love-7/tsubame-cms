@@ -1170,6 +1170,107 @@ fn drop_reference(value: &mut FieldValue, target: &ItemOwner) {
     }
 }
 
+/// One relation field of a value, with the path that names it.
+///
+/// The path is what a refusal can name (`author`, `cta.author`, `blocks[0].author`), so an editor
+/// knows which input to open even when the field is nested in a composite.
+pub struct RelationValue<'a> {
+    /// Where the field sits in the value.
+    pub path: String,
+    /// Whether the schema asks for this field, which is what the publish-time rules turn on.
+    pub required: bool,
+    /// What the references point at, as the schema declares it.
+    pub target: RelationTarget,
+    /// The references the value holds, in the canonical order they were stored in.
+    pub references: &'a [RelationRef],
+}
+
+/// Every relation a value holds, with the schema that declares it.
+///
+/// Composites and arrays are walked: a relation may sit inside either (see
+/// `doc/relations-design.md` §3), and a rule that only looked at the top level would let a required
+/// relation inside a block go live pointing at nothing.
+///
+/// A field the value does not hold is not reported: whether a missing field is a problem is
+/// `validate_to_schema`'s question, and it has an answer about the field rather than about a
+/// target.
+pub fn relation_values<'a>(
+    schema: &'a [FieldSchema],
+    values: &'a FieldValueMap<Vec<FieldSchema>>,
+    composites: &'a HashMap<CompositeFieldId, CompositeFieldSchema>,
+) -> Vec<RelationValue<'a>> {
+    let mut found = Vec::new();
+    collect_relation_values(schema, values, composites, "", &mut found);
+    found
+}
+
+fn collect_relation_values<'a>(
+    schema: &'a [FieldSchema],
+    values: &'a FieldValueMap<Vec<FieldSchema>>,
+    composites: &'a HashMap<CompositeFieldId, CompositeFieldSchema>,
+    prefix: &str,
+    found: &mut Vec<RelationValue<'a>>,
+) {
+    for field in schema {
+        let path = format!("{prefix}{}", field.name);
+        match &field.field_type {
+            FieldType::Relation(options) => {
+                if let Some(FieldValue::Relation(references)) = values.0.get(&field.name) {
+                    found.push(RelationValue {
+                        path,
+                        required: field.required,
+                        target: options.target.clone(),
+                        references,
+                    });
+                }
+            }
+            FieldType::CompositeField(reference) => {
+                let (Some(definition), Some(FieldValue::CompositeField(Some(composite)))) =
+                    (composites.get(&reference.id), values.0.get(&field.name))
+                else {
+                    continue;
+                };
+                collect_relation_values(
+                    definition,
+                    &composite.values,
+                    composites,
+                    &format!("{path}."),
+                    found,
+                );
+            }
+            FieldType::Array(items) => {
+                let Some(FieldValue::Array(elements)) = values.0.get(&field.name) else {
+                    continue;
+                };
+                for (index, element) in elements.iter().enumerate() {
+                    // Only a composite element can hold a relation: a relation is never an array
+                    // item itself (see `validate_field_type`).
+                    let FieldValue::CompositeField(Some(composite)) = element else {
+                        continue;
+                    };
+                    let definition = items.iter().find_map(|item| match item {
+                        FieldType::CompositeField(reference) if reference.id == composite.id => {
+                            composites.get(&reference.id)
+                        }
+                        _ => None,
+                    });
+                    let Some(definition) = definition else {
+                        continue;
+                    };
+                    collect_relation_values(
+                        definition,
+                        &composite.values,
+                        composites,
+                        &format!("{path}[{index}]."),
+                        found,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Every piece of content a set of values references.
 ///
 /// The whole value is walked, composites and arrays included: a relation may sit in either, and

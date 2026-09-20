@@ -50,6 +50,19 @@ impl ItemOwner {
         self.kind == ItemOwnerKind::SinglePage
     }
 
+    /// What to call this in a sentence somebody reads: "authors item 3", "single page home".
+    ///
+    /// Refusals name the content they are about, and they have to say it the same way wherever
+    /// they come from (see `HttpError::still_referenced` and the relation rules).
+    pub fn describe(&self) -> String {
+        match self.kind {
+            ItemOwnerKind::CollectionItem => {
+                format!("{} item {}", self.name, self.item.unwrap_or_default())
+            }
+            ItemOwnerKind::SinglePage => format!("single page {}", self.name),
+        }
+    }
+
     /// The owner as one string, for a key in the index.
     ///
     /// The name is escaped (`:` becomes `%3A`), so a collection named `a:b` cannot produce the
