@@ -20,9 +20,11 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId, ImageResponse};
+use crate::models::owner::ItemOwner;
 use crate::models::schema::{CompositeFieldId, CompositeFieldSchema, FieldSchema, FieldType};
-use crate::models::values::FieldValueResponse;
+use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::content_reader::ContentReader;
+use crate::repositories::relation_repository::RelationRepository;
 
 /// One item's values as the site is served them.
 pub type DeliveredItem = HashMap<String, DeliveryValue>;
@@ -54,19 +56,28 @@ impl Populate {
         Populate(HashSet::new())
     }
 
-    /// A name the caller asked for that this schema does not relate through.
-    ///
-    /// Refused rather than ignored: a typo that quietly answers with nothing is the kind of thing
-    /// a site builder spends an afternoon on.
-    pub fn unknown_in(&self, schema: &[FieldSchema]) -> Option<&str> {
-        self.0
+    /// The names this schema relates through, so a caller can tell a forward expansion from one
+    /// that has to be answered from the index (`inverse_name`).
+    pub fn relates_through(&self, schema: &[FieldSchema], name: &str) -> bool {
+        schema
             .iter()
-            .find(|name| {
-                !schema.iter().any(|field| {
-                    &field.name == *name && matches!(field.field_type, FieldType::Relation(_))
-                })
-            })
-            .map(String::as_str)
+            .any(|field| &field.name == name && matches!(field.field_type, FieldType::Relation(_)))
+    }
+
+    /// The names asked for, one by one, so a caller can split them itself.
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.0.iter().map(String::as_str)
+    }
+
+    /// Just the names this schema relates through: what a forward expansion is given.
+    pub fn forward_only(&self, schema: &[FieldSchema]) -> Populate {
+        Populate(
+            self.0
+                .iter()
+                .filter(|name| self.relates_through(schema, name))
+                .cloned()
+                .collect(),
+        )
     }
 }
 
@@ -297,6 +308,176 @@ fn delivery_of_untyped(value: &FieldValueResponse) -> DeliveryValue {
             DeliveryValue::Array(elements.iter().map(delivery_of_untyped).collect())
         }
     }
+}
+
+/// The published content that points at `owner`, under the name the other side calls the
+/// relation (`inverse_name`).
+///
+/// `None` when nothing calls the relation `name`: the caller turns that into a refusal, because a
+/// name nothing answers is a typo rather than an empty set. A name the site does declare is an
+/// empty list when nothing references the item yet, which is not an error - a build asking about a
+/// category with no articles is a normal question.
+///
+/// The index names the candidates and their schemas say what they call the relation; the referrer
+/// has to be published *and* its published copy has to hold the reference, which is the same
+/// "what the site serves" rule the forward direction follows.
+pub async fn inverse_references(
+    owner: &ItemOwner,
+    name: &str,
+    limit: usize,
+    delivery: &DeliveryMaps,
+    reader: &dyn ContentReader,
+    relations: &dyn RelationRepository,
+) -> Result<Option<Vec<DeliveryReference>>, HttpError> {
+    let referrers = relations
+        .get_relation_references(owner)
+        .await
+        .map_err(map_internal_error)?;
+    let mut named = false;
+    let mut delivered = Vec::new();
+    for referrer in referrers {
+        let Some(content) = reader
+            .read_content(&referrer)
+            .await
+            .map_err(map_internal_error)?
+        else {
+            continue;
+        };
+        let calls_it = content.schema.iter().any(|field| match &field.field_type {
+            FieldType::Relation(options) => {
+                options.inverse_name.as_deref() == Some(name)
+                    && options.target.name() == owner.name
+                    && options.target.is_single_page() == owner.is_single_page()
+            }
+            _ => false,
+        });
+        if !calls_it {
+            continue;
+        }
+        named = true;
+        if !content.published {
+            continue;
+        }
+        let Some(published) = content.published_values.as_ref() else {
+            continue;
+        };
+        // The published copy is what decides: an editor may have already taken the reference out.
+        if !holds_reference(published, owner) {
+            continue;
+        }
+        let formatted = published
+            .format_to_schema(&delivery.composites, &content.schema)
+            .to_response(&delivery.images);
+        let values = delivery
+            .deliver(&content.schema, &formatted, reader, &Populate::none())
+            .await?;
+        if delivered.len() >= limit {
+            break;
+        }
+        delivered.push(DeliveryReference {
+            target: referrer.name.clone(),
+            item: referrer.item,
+            values: Some(values),
+        });
+    }
+    if !named {
+        // No referrer declares it, and an item nothing references cannot answer whether the name
+        // exists at all: ask the site, because answering "empty" to a typo is the failure this
+        // refusal exists to prevent.
+        if !reader
+            .declares_inverse(name)
+            .await
+            .map_err(map_internal_error)?
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(delivered))
+}
+
+/// Whether a set of values points at this content anywhere, composites and arrays included.
+fn holds_reference(values: &FieldValueMap<Vec<FieldSchema>>, owner: &ItemOwner) -> bool {
+    values
+        .0
+        .values()
+        .any(|value| holds_reference_in(value, owner))
+}
+
+fn holds_reference_in(value: &FieldValue, owner: &ItemOwner) -> bool {
+    match value {
+        FieldValue::Relation(references) => references
+            .iter()
+            .any(|reference| &reference.target_owner() == owner),
+        FieldValue::CompositeField(Some(composite)) => composite
+            .values
+            .0
+            .values()
+            .any(|nested| holds_reference_in(nested, owner)),
+        FieldValue::Array(elements) => elements
+            .iter()
+            .any(|element| holds_reference_in(element, owner)),
+        _ => false,
+    }
+}
+
+/// How many pieces of content an inverse expansion may bring back when the request does not say
+/// (see `doc/relations-design.md` §5: a big set is read through the filter, which pages).
+pub const DEFAULT_INVERSE_LIMIT: usize = 25;
+
+/// What a delivery request asked for.
+#[derive(Debug, Clone)]
+pub struct Expansion {
+    pub populate: Populate,
+    /// The cap on one inverse expansion. A route with a page of its own takes `?limit=` for the
+    /// page, so its inverse expansions use the default.
+    pub inverse_limit: usize,
+}
+
+impl Default for Expansion {
+    fn default() -> Self {
+        Expansion {
+            populate: Populate::none(),
+            inverse_limit: DEFAULT_INVERSE_LIMIT,
+        }
+    }
+}
+
+impl Expansion {
+    /// A request that asked for `populate` names, with the default inverse cap.
+    pub fn of(populate: Populate) -> Self {
+        Expansion {
+            populate,
+            inverse_limit: DEFAULT_INVERSE_LIMIT,
+        }
+    }
+
+    /// The same, with the cap the request asked for.
+    pub fn capped_at(mut self, limit: Option<usize>) -> Self {
+        if let Some(limit) = limit {
+            self.inverse_limit = limit;
+        }
+        self
+    }
+}
+
+/// One relation of a collection's schema, and the content it has to point at: what `?where=` says.
+#[derive(Debug, Clone)]
+pub struct RelationFilter {
+    pub field: String,
+    pub owner: ItemOwner,
+}
+
+/// Whether the relation field `field` of these values points at `owner`.
+pub fn field_holds(
+    values: &FieldValueMap<Vec<FieldSchema>>,
+    field: &str,
+    owner: &ItemOwner,
+) -> bool {
+    matches!(
+        values.0.get(field),
+        Some(FieldValue::Relation(references))
+            if references.iter().any(|reference| &reference.target_owner() == owner)
+    )
 }
 
 /// What the delivery walker needs, built where the maps are already read.

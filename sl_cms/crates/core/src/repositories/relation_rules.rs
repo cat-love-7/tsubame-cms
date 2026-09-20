@@ -163,6 +163,13 @@ mod tests {
     }
 
     impl ContentReader for FakeContent {
+        fn declares_inverse<'a>(
+            &'a self,
+            _name: &'a str,
+        ) -> crate::repositories::content_reader::DeclaresInverseFuture<'a> {
+            Box::pin(async { Ok(false) })
+        }
+
         fn read_content(&self, owner: &ItemOwner) -> ReadContentFuture<'_> {
             let content = self
                 .0

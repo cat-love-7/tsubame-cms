@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use crate::models::delivery::{DeliveredItem, DeliveryMaps, Populate};
+use crate::models::delivery::{
+    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, inverse_references,
+};
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
@@ -658,7 +660,7 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     pub async fn get_published_page_item(
         &self,
         name: &SinglePageName,
-        populate: &Populate,
+        expansion: &Expansion,
     ) -> Result<(ItemMetadata, DeliveredItem), HttpError> {
         let metadata = self.get_page_metadata(name).await?;
         if !metadata.is_published() {
@@ -694,9 +696,36 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let formatted = published
             .format_to_schema(&maps.composites, &schema)
             .to_response(&maps.images);
-        let values = maps
-            .deliver(&schema, &formatted, &*self.content, populate)
+        let forward = expansion.populate.forward_only(&schema);
+        let mut values = maps
+            .deliver(&schema, &formatted, &*self.content, &forward)
             .await?;
+        // The other side's name for a relation is answered from the index, the way the collection
+        // service does it: a name that is neither a field here nor declared by a referrer is a
+        // refusal rather than an empty answer.
+        let owner = ItemOwner::single_page(name.as_str());
+        for asked in expansion
+            .populate
+            .iter()
+            .filter(|asked| !forward.asks(asked))
+        {
+            let Some(references) = inverse_references(
+                &owner,
+                asked,
+                expansion.inverse_limit,
+                &maps,
+                &*self.content,
+                &*self.relations,
+            )
+            .await?
+            else {
+                return Err(HttpError::BadRequest(&format!(
+                    "no relation field or inverse name '{asked}' to populate"
+                ))
+                .with_field(asked));
+            };
+            values.insert(asked.to_string(), DeliveryValue::Relation(references));
+        }
         Ok((metadata, values))
     }
 

@@ -6,7 +6,10 @@ use chrono::Utc;
 use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
-use crate::models::delivery::{DeliveredItem, DeliveryMaps, Populate};
+use crate::models::delivery::{
+    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, Populate, RelationFilter, field_holds,
+    inverse_references,
+};
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{
@@ -1632,44 +1635,162 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
     }
 
     /// One item as the delivery API serves it: the published copy, rendered the way the screens
-    /// render it, with unpublished references dropped and the named fields expanded.
+    /// render it, with unpublished references dropped and the fields a client asked for expanded.
+    ///
+    /// An expansion is a field name (answered from the schema, one level deep) or the other side's
+    /// name for the relation (`inverse_name`, answered from the index). A name that is neither is
+    /// refused here, where both halves are known.
     async fn deliver_item(
         &self,
+        owner: &ItemOwner,
         schema: &CollectionSchema,
         maps: &DeliveryMaps,
         item: &CollectionItem,
-        populate: &Populate,
+        expansion: &Expansion,
     ) -> Result<DeliveredItem, HttpError> {
         let formatted = item
             .format_to_schema(&maps.composites, schema)
             .to_response(&maps.images);
-        maps.deliver(schema, &formatted, &*self.content, populate)
+        let forward = expansion.populate.forward_only(schema);
+        let mut delivered = maps
+            .deliver(schema, &formatted, &*self.content, &forward)
+            .await?;
+        self.add_inverse_expansions(owner, schema, maps, expansion, &forward, &mut delivered)
+            .await?;
+        Ok(delivered)
+    }
+
+    /// The expansions that are answered from the index rather than from a field.
+    async fn add_inverse_expansions(
+        &self,
+        owner: &ItemOwner,
+        _schema: &CollectionSchema,
+        maps: &DeliveryMaps,
+        expansion: &Expansion,
+        forward: &Populate,
+        into: &mut DeliveredItem,
+    ) -> Result<(), HttpError> {
+        for name in expansion.populate.iter().filter(|name| !forward.asks(name)) {
+            let Some(references) = inverse_references(
+                owner,
+                name,
+                expansion.inverse_limit,
+                maps,
+                &*self.content,
+                &*self.relations,
+            )
+            .await?
+            else {
+                return Err(HttpError::BadRequest(&format!(
+                    "no relation field or inverse name '{name}' to populate"
+                ))
+                .with_field(name));
+            };
+            into.insert(name.to_string(), DeliveryValue::Relation(references));
+        }
+        Ok(())
+    }
+
+    /// The published items of this collection that point at what `filter` names, in id order.
+    ///
+    /// The index answers who references the target, which is a list bounded by the reference
+    /// itself rather than by the collection: a site asking for "the articles of this category"
+    /// reads the articles that hold the category, not every article. The published copy decides -
+    /// the index counts both copies - so an editor's unsaved reference does not put an item in a
+    /// list the site serves.
+    async fn filtered_published_items(
+        &self,
+        collection_name: &CollectionName,
+        filter: &RelationFilter,
+    ) -> Result<Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, HttpError> {
+        let referrers = self
+            .relations
+            .get_relation_references(&filter.owner)
             .await
+            .map_err(map_internal_error)?;
+        let mut ids: Vec<CollectionItemId> = referrers
+            .iter()
+            .filter(|owner| !owner.is_single_page() && owner.name == collection_name.as_str())
+            .filter_map(|owner| owner.item.map(CollectionItemId::from_u64))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+
+        let mut held = Vec::with_capacity(ids.len());
+        for id in ids {
+            let Some(metadata) = self
+                .collection_repository
+                .get_item_metadata(collection_name, &id)
+                .await
+                .map_err(map_internal_error)?
+            else {
+                continue;
+            };
+            if !metadata.is_published() {
+                continue;
+            }
+            let Some(item) = self
+                .collection_repository
+                .get_collection_item(collection_name, &id)
+                .await
+                .map_err(map_internal_error)?
+            else {
+                continue;
+            };
+            if !field_holds(&item, &filter.field, &filter.owner) {
+                continue;
+            }
+            held.push((id, item, metadata));
+        }
+        Ok(held)
     }
 
     pub async fn list_published_items(
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
-        populate: &Populate,
+        expansion: &Expansion,
+        filter: Option<&RelationFilter>,
     ) -> Result<Page<(CollectionItemId, ItemMetadata, DeliveredItem)>, HttpError> {
-        // The window goes to the storage, which can read a page of the *published* set
-        // without materialising it (see `CollectionRepository::list_published_items_page`).
-        // The delivery API is the one caller that walks a list it did not bound itself, so
-        // this is where reading everything would actually hurt.
-        let (offset, limit) = pagination.window();
-        let (page, total) = self
-            .collection_repository
-            .list_published_items_page(collection_name, offset, limit)
-            .await
-            .map_err(map_internal_error)?;
-
         let schema = self.get_collection_schema(collection_name).await?;
         let maps = self.delivery_maps().await?;
-        let mut items = Vec::with_capacity(page.len());
-        for (id, item, metadata) in page {
+        // A filter is answered from the index, which is a set of ids rather than a page, so the
+        // window is applied here; without one the window goes to the storage, which can read a
+        // page of the *published* set without materialising it (see
+        // `CollectionRepository::list_published_items_page`). The delivery API is the one caller
+        // that walks a list it did not bound itself, so that is where reading everything would
+        // actually hurt.
+        let (selected, total) = match filter {
+            Some(filter) => {
+                let held = self
+                    .filtered_published_items(collection_name, filter)
+                    .await?;
+                let total = held.len();
+                let (offset, limit) = pagination.window();
+                let windowed = match limit {
+                    Some(limit) => held.into_iter().skip(offset).take(limit).collect(),
+                    None => held.into_iter().skip(offset).collect(),
+                };
+                (windowed, total)
+            }
+            None => {
+                let (offset, limit) = pagination.window();
+                let (page, total) = self
+                    .collection_repository
+                    .list_published_items_page(collection_name, offset, limit)
+                    .await
+                    .map_err(map_internal_error)?;
+                (page, total)
+            }
+        };
+
+        let mut items = Vec::with_capacity(selected.len());
+        for (id, item, metadata) in selected {
             // The published copy, never the working one: edits must not leak to a site.
-            let values = self.deliver_item(&schema, &maps, &item, populate).await?;
+            let owner = ItemOwner::collection_item(collection_name.as_str(), *id);
+            let values = self
+                .deliver_item(&owner, &schema, &maps, &item, expansion)
+                .await?;
             items.push((id, metadata, values));
         }
         Ok(pagination.wrap(items, total))
@@ -1683,7 +1804,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         &self,
         collection_name: &CollectionName,
         item_id: CollectionItemId,
-        populate: &Populate,
+        expansion: &Expansion,
     ) -> Result<(ItemMetadata, DeliveredItem), HttpError> {
         let metadata = self.get_item_metadata(collection_name, item_id).await?;
         if !metadata.is_published() {
@@ -1705,9 +1826,11 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             })?;
         let schema = self.get_collection_schema(collection_name).await?;
         let maps = self.delivery_maps().await?;
+        let owner = ItemOwner::collection_item(collection_name.as_str(), *item_id);
         Ok((
             metadata,
-            self.deliver_item(&schema, &maps, &item, populate).await?,
+            self.deliver_item(&owner, &schema, &maps, &item, expansion)
+                .await?,
         ))
     }
 
@@ -1722,13 +1845,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         collection_name: &CollectionName,
         field: &str,
         value: &str,
-        populate: &Populate,
+        expansion: &Expansion,
     ) -> Result<(CollectionItemId, ItemMetadata, DeliveredItem), HttpError> {
         let (item_id, _) = self
             .get_item_by_unique_value(collection_name, field, value)
             .await?;
         let (metadata, values) = self
-            .get_published_item(collection_name, item_id, populate)
+            .get_published_item(collection_name, item_id, expansion)
             .await?;
         // Asked in the same form the index holds: for a slug that is the canonical spelling, so
         // `Hello World` and `hello-world` are one question rather than two.

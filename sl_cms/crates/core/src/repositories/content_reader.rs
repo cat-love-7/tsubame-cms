@@ -44,6 +44,9 @@ pub struct OwnedContent {
 pub type ReadContentFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<OwnedContent>, BoxError>> + Send + 'a>>;
 
+pub type DeclaresInverseFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<bool, BoxError>> + Send + 'a>>;
+
 /// Content, by the name a reference index uses for it.
 pub trait ContentReader: Send + Sync + 'static {
     /// What this content declares and holds, or `None` when it is gone.
@@ -51,10 +54,37 @@ pub trait ContentReader: Send + Sync + 'static {
     /// Gone is an answer rather than an error: the rules treat it as "not published", because a
     /// reference to something that is not there serves nothing.
     fn read_content<'a>(&'a self, owner: &'a ItemOwner) -> ReadContentFuture<'a>;
+
+    /// Whether anything on the site gives a relation this name on the other side (`inverse_name`).
+    ///
+    /// The one question that needs the whole site rather than one piece of content: a caller
+    /// asking for an inverse expansion of an item nothing references has no referrer to read the
+    /// name off, and answering "empty" to a typo is worse than reading the schemas.
+    fn declares_inverse<'a>(&'a self, name: &'a str) -> DeclaresInverseFuture<'a>;
 }
 
 /// Storage answers both halves, because it is both repositories (see `Storage`).
 impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
+    fn declares_inverse<'a>(&'a self, name: &'a str) -> DeclaresInverseFuture<'a> {
+        Box::pin(async move {
+            for collection in self.list_collection_names().await? {
+                if let Some(schema) = self.get_collection_schema(&collection).await? {
+                    if schema_declares_inverse(&schema, name) {
+                        return Ok(true);
+                    }
+                }
+            }
+            for page in self.list_all_page_names().await? {
+                if let Some(schema) = self.get_single_page_schema(&page).await? {
+                    if schema_declares_inverse(&schema, name) {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        })
+    }
+
     fn read_content<'a>(&'a self, owner: &'a ItemOwner) -> ReadContentFuture<'a> {
         Box::pin(async move {
             match owner.kind {
@@ -98,6 +128,16 @@ impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
     }
 }
 
+/// Whether a schema gives a relation this name on the other side.
+fn schema_declares_inverse(schema: &[FieldSchema], name: &str) -> bool {
+    schema.iter().any(|field| match &field.field_type {
+        crate::models::schema::FieldType::Relation(options) => {
+            options.inverse_name.as_deref() == Some(name)
+        }
+        _ => false,
+    })
+}
+
 /// Content that is always gone, for tests that are not about relations.
 ///
 /// A deployment always reads the real storage; this exists so a service test can be built without
@@ -109,5 +149,9 @@ pub struct NoContent;
 impl ContentReader for NoContent {
     fn read_content<'a>(&'a self, _owner: &'a ItemOwner) -> ReadContentFuture<'a> {
         Box::pin(async { Ok(None) })
+    }
+
+    fn declares_inverse<'a>(&'a self, _name: &'a str) -> DeclaresInverseFuture<'a> {
+        Box::pin(async { Ok(false) })
     }
 }

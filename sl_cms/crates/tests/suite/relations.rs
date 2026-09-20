@@ -1802,3 +1802,210 @@ async fn a_page_is_served_the_references_it_can_follow() {
         json!([{ "target": "authors", "item": 1, "values": { "title": "Ada" } }])
     );
 }
+
+/// The other side of a relation, which a site needs to build a page: the articles of a category,
+/// and the articles that name a category, under the name that side gives the relation.
+#[tokio::test]
+async fn a_site_can_read_a_relation_from_the_other_side() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let articles = "/api/models/collections/articles";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/categories/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    for title in ["Tech", "Life"] {
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            "/api/models/collections/categories/item",
+            json!({ "title": title }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    for id in [1, 2] {
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            &format!("/api/models/collections/categories/items/{id}/publish"),
+            json!(null),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    // The articles name the category relation `articles` on the other side.
+    save_schema(
+        &app,
+        &token,
+        &format!("{articles}/schema"),
+        json!([
+            text_field("title", true),
+            relation_field("category", "collection", "categories", false),
+        ]),
+    )
+    .await;
+
+    // Three articles in the first category, two of them on the site.
+    for (index, category) in [1u64, 2, 1].iter().enumerate() {
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            &format!("{articles}/item"),
+            json!({
+                "title": format!("Article {}", index + 1),
+                "category": [{ "target": "categories", "item": category }],
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if index < 2 {
+            let (status, body) = send_json(
+                &app,
+                &token,
+                Method::POST,
+                &format!("{articles}/items/{}/publish", index + 1),
+                json!(null),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+    }
+
+    // The filter reads the index and the published copy decides: the draft is not in the list.
+    let (status, page) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/articles?where=category:1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["total"], 1, "{page}");
+    assert_eq!(page["items"][0]["id"], 1);
+    assert_eq!(page["items"][0]["values"]["title"], "Article 1");
+
+    // Paging is over the filtered set, not over the collection.
+    let (_, second) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/articles?where=category:2",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(second["total"], 1);
+    assert_eq!(second["items"][0]["id"], 2);
+    let (_, paged) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/articles?where=category:1&limit=1&offset=1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(paged["total"], 1);
+    assert_eq!(paged["items"], json!([]));
+    assert_eq!(paged["next_offset"], json!(null));
+
+    // A field that is not there, or is not a relation, is a refusal rather than an empty page.
+    for query in [
+        "where=nope:1",
+        "where=title:1",
+        "where=category",
+        "where=category:abc",
+    ] {
+        let (status, _) = send(
+            &app.router,
+            Method::GET,
+            &format!("/api/content/collections/articles?{query}"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+    }
+
+    // The inverse expansion: the category carries the articles that name it, by `inverse_name`,
+    // with the values a site would render - and only the ones it serves.
+    let (status, category) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/1?populate=articles",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        category["values"]["articles"],
+        json!([{
+            "target": "articles",
+            "item": 1,
+            "values": { "title": "Article 1", "category": [{ "target": "categories", "item": 1 }] },
+        }])
+    );
+
+    // A name the site does declare, with nothing referencing this item yet: an empty list, not a
+    // refusal - a build asking about a category with no articles is a normal question.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/categories/item",
+        json!({ "title": "Empty" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/categories/items/3/publish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (_, empty) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/3?populate=articles",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(empty["values"]["articles"], json!([]));
+
+    // A name nothing answers is refused, and the cap is the route's own `limit`.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/1?populate=nope",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, capped) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/1?populate=articles&limit=0",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        capped["values"]["articles"],
+        json!([]),
+        "the cap is what `limit` says"
+    );
+}

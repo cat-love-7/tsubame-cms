@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
-use crate::models::delivery::{DeliveredItem, Populate};
+use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter};
 use crate::models::error::HttpError;
 use crate::models::pagination::{PageQuery, Pagination};
 use crate::models::single_page::{SinglePageName, SinglePageSchema};
@@ -59,9 +59,13 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
 struct ContentQuery {
     limit: Option<usize>,
     offset: Option<usize>,
-    /// Comma-separated field names: each one carries the published values of what it points at,
-    /// one level deep (see `doc/relations-design.md` §5).
+    /// Comma-separated names to expand: a relation field of this schema, or the other side's name
+    /// for the relation (`inverse_name`), one level deep (see `doc/relations-design.md` §5).
     populate: Option<String>,
+    /// One relation to filter a collection's list by, as `<field>:<value>`: an item id for a
+    /// collection target, and the page's name for a single page.
+    #[serde(rename = "where")]
+    r#where: Option<String>,
 }
 
 impl ContentQuery {
@@ -72,25 +76,71 @@ impl ContentQuery {
         })
     }
 
-    fn populate(&self) -> Populate {
-        Populate::parse(self.populate.as_deref())
+    /// What to expand. `cap_with_limit` is for the routes where `?limit=` means nothing else: on a
+    /// list it is the page size, so there the inverse expansion keeps its default cap.
+    fn expansion(&self, cap_with_limit: bool) -> Expansion {
+        let expansion = Expansion::of(Populate::parse(self.populate.as_deref()));
+        if cap_with_limit {
+            expansion.capped_at(self.limit)
+        } else {
+            expansion
+        }
     }
-}
 
-/// Refuse a name that does not exist, rather than answering without it.
-///
-/// The delivery API is read by site builds, where a silently ignored field means an afternoon
-/// spent on why the data is not there.
-fn check_populate(
-    populate: &Populate,
-    schema: &[crate::models::schema::FieldSchema],
-) -> Result<(), HttpError> {
-    match populate.unknown_in(schema) {
-        Some(unknown) => Err(HttpError::BadRequest(&format!(
-            "no relation field named '{unknown}' to populate"
-        ))
-        .with_field(unknown)),
-        None => Ok(()),
+    /// The relation a collection's list is filtered by, checked against the schema it will be read
+    /// against: a field that is not there, or is not a relation, is a refusal rather than an empty
+    /// page.
+    fn filter(
+        &self,
+        schema: &[crate::models::schema::FieldSchema],
+    ) -> Result<Option<RelationFilter>, HttpError> {
+        use crate::models::owner::ItemOwner;
+        use crate::models::schema::{FieldType, RelationTarget};
+
+        let Some(raw) = self
+            .r#where
+            .as_deref()
+            .map(str::trim)
+            .filter(|raw| !raw.is_empty())
+        else {
+            return Ok(None);
+        };
+        let (field, value) = raw
+            .split_once(':')
+            .ok_or_else(|| HttpError::BadRequest("where= takes <field>:<value>"))?;
+        let Some(found) = schema.iter().find(|candidate| candidate.name == field) else {
+            return Err(
+                HttpError::BadRequest(&format!("no field named '{field}'")).with_field(field)
+            );
+        };
+        let FieldType::Relation(options) = &found.field_type else {
+            return Err(
+                HttpError::BadRequest(&format!("field '{field}' is not a relation"))
+                    .with_field(field),
+            );
+        };
+        let owner = match &options.target {
+            RelationTarget::Collection { name } => {
+                let id: u64 = value.parse().map_err(|_| {
+                    HttpError::BadRequest(&format!("where={field} takes an item id"))
+                        .with_field(field)
+                })?;
+                ItemOwner::collection_item(name, id)
+            }
+            RelationTarget::SinglePage { name } => {
+                if value != name {
+                    return Err(HttpError::BadRequest(&format!(
+                        "where={field} takes the page name '{name}'"
+                    ))
+                    .with_field(field));
+                }
+                ItemOwner::single_page(name)
+            }
+        };
+        Ok(Some(RelationFilter {
+            field: field.to_string(),
+            owner,
+        }))
     }
 }
 
@@ -164,15 +214,10 @@ async fn get_collection_item_by_unique_value<R: Storage>(
     Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    let populate = query.populate();
-    let schema = module
-        .collection_service
-        .get_collection_schema(&name)
-        .await?;
-    check_populate(&populate, &schema)?;
+    let expansion = query.expansion(true);
     let (id, metadata, values) = module
         .collection_service
-        .get_published_item_by_unique_value(&name, &field, &value, &populate)
+        .get_published_item_by_unique_value(&name, &field, &value, &expansion)
         .await?;
     Ok(Json(PublishedItem {
         id,
@@ -208,16 +253,16 @@ async fn get_collection<R: Storage>(
     Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let pagination = query.pagination()?;
-    let populate = query.populate();
+    let expansion = query.expansion(false);
     let name = CollectionName::from(collection_name.as_str());
     let schema = module
         .collection_service
         .get_collection_schema(&name)
         .await?;
-    check_populate(&populate, &schema)?;
+    let filter = query.filter(&schema)?;
     let page = module
         .collection_service
-        .list_published_items(&name, &pagination, &populate)
+        .list_published_items(&name, &pagination, &expansion, filter.as_ref())
         .await?;
     let items = page
         .items
@@ -259,15 +304,10 @@ async fn get_collection_item<R: Storage>(
     Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = CollectionName::from(collection_name.as_str());
-    let populate = query.populate();
-    let schema = module
-        .collection_service
-        .get_collection_schema(&name)
-        .await?;
-    check_populate(&populate, &schema)?;
+    let expansion = query.expansion(true);
     let (metadata, values) = module
         .collection_service
-        .get_published_item(&name, CollectionItemId::from_u64(id), &populate)
+        .get_published_item(&name, CollectionItemId::from_u64(id), &expansion)
         .await?;
 
     Ok(Json(PublishedItem {
@@ -312,15 +352,14 @@ async fn get_single_page<R: Storage>(
     Query(query): Query<ContentQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
     let name = SinglePageName::from(page_name.as_str());
-    let populate = query.populate();
+    let expansion = query.expansion(true);
     let schema = module
         .single_page_service
         .get_single_page_schema(&name)
         .await?;
-    check_populate(&populate, &schema)?;
     let (metadata, values) = module
         .single_page_service
-        .get_published_page_item(&name, &populate)
+        .get_published_page_item(&name, &expansion)
         .await?;
 
     Ok(Json(SinglePageContent {
