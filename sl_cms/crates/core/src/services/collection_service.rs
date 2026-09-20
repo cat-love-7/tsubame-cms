@@ -1677,12 +1677,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
 
     /// Items with the window the caller asked for. The total travels alongside, because
     /// `X-Total-Count` is what tells an admin caller there is more to fetch.
+    /// Items with the window the caller asked for.
+    ///
+    /// **Newest first**: an editor opening a collection wants what they just wrote at the top, and
+    /// the picker's candidates are the same list. Ids are handed out in creation order, so the
+    /// largest is the newest. The whole list is read before the window is cut, which is what the
+    /// admin list has always done (a page of a collection is not the memory the delivery API's
+    /// storage-side paging exists for).
     pub async fn get_collection_items_page(
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
     ) -> Result<Page<(CollectionItemId, CollectionItemResponse)>, HttpError> {
-        Ok(pagination.apply(self.get_collection_items(collection_name).await?))
+        let mut items = self.get_collection_items(collection_name).await?;
+        items.reverse();
+        Ok(pagination.apply(items))
     }
 
     /// Items visible to the public delivery API, with the metadata it reports.

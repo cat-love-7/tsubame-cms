@@ -348,6 +348,18 @@ async function expandSettings(rolePage) {
   }
 }
 
+/**
+ * Put the whole collection on one page.
+ *
+ * The list is newest first, so the oldest item (the one scenarios name) is on the last page; a
+ * hundred rows to a page is simpler than paging to the end and makes the row visible by name.
+ */
+async function showWholeCollection(count) {
+  await page.locator('mat-paginator mat-select').click({ force: true });
+  await page.locator('mat-option', { hasText: '100' }).first().click({ force: true });
+  await waitForRows(count);
+}
+
 async function waitForRows(count) {
   await page
     .waitForFunction(
@@ -472,8 +484,9 @@ try {
     unconfiguredHeaders.join(','),
   );
 
+  // Newest first: the id an item got when it was created is its age, so the largest is on top.
   const firstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
-  check('id 昇順で 1 から始まる', firstId === '1', `id=${firstId}`);
+  check(`新しい順で id ${TOTAL} から始まる`, firstId === String(TOTAL), `id=${firstId}`);
 
   const paginator = page.locator('mat-paginator');
   check('ページャが表示される', await paginator.isVisible());
@@ -499,16 +512,23 @@ try {
   await paginator.locator('.mat-mdc-paginator-navigation-next').click({ force: true });
   // Waiting for 25 rows would prove nothing (page one has 25 too), so wait for the content that
   // tells the pages apart. Without this the check raced the reload and sometimes read page one.
+  // One page holds 25, so the next page starts 25 ids below the top of this one.
+  const secondPageFirst = String(TOTAL - 25);
   await page
     .waitForFunction(
-      () => document.querySelector('table.items tbody tr td')?.textContent?.trim() === '26',
-      null,
+      (expected) =>
+        document.querySelector('table.items tbody tr td')?.textContent?.trim() === expected,
+      secondPageFirst,
       { timeout: 10000 },
     )
     .catch(() => {});
   await waitForRows(25);
   const secondPageFirstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
-  check('次ページは id 26 から始まる', secondPageFirstId === '26', `id=${secondPageFirstId}`);
+  check(
+    `次ページは id ${secondPageFirst} から始まる`,
+    secondPageFirstId === secondPageFirst,
+    `id=${secondPageFirstId}`,
+  );
 
   // -------------------------------------------------------------- page size
   await paginator.locator('mat-select').click({ force: true });
@@ -518,8 +538,12 @@ try {
   check('ページサイズ 50 で 50 行', rowsAtFifty === 50, `${rowsAtFifty} 行`);
 
   // -------------------------------------------------------------- publish a draft from the list
+  // Item 1 is what the rest of the scenario works with (the delivery checks and the relation
+  // target), and the list is newest first: the oldest item lives on the last page, so show the
+  // whole collection and name the row rather than taking the top of the list.
+  await showWholeCollection(TOTAL);
   const draftRow = dataRows()
-    .filter({ has: page.locator('button[aria-label^="publish item"]') })
+    .filter({ has: page.locator('button[aria-label="publish item 1"]') })
     .first();
   const draftId = (await draftRow.locator('td').nth(1).textContent())?.trim();
 
@@ -1007,6 +1031,8 @@ try {
   // The list offers the same release beside the row's state.
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });
+  // The row has to be on screen: the list is newest first and item 1 is the oldest.
+  await showWholeCollection(TOTAL);
   const releaseInList = page.locator(`button[aria-label="publish the changes of item ${'1'}"]`);
   check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
 
