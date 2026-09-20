@@ -61,7 +61,7 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | メソッド | パス | 返すもの |
 |---|---|---|
 | GET | `/api/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
-| GET | `/api/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }` |
+| GET | `/api/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }`。`?sort=` で順序を指定(既定は id 昇順) |
 | GET | `/api/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
 | GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
 | GET | `/api/content/single-pages` | 公開済み単一ページ名の配列 |
@@ -276,6 +276,15 @@ DELETE /api/models/collections/authors/items/1?detach=true
   「サイトが辿れない参照」だからで、管理 API は編集のためにそのまま返す。`?populate=<フィールド名>`
   を付けると、その参照に**公開コピーの値**(画面と同じ形。画像は `{id,url}`)が 1 段だけ入る。
   一覧・単一アイテム・単一ページのどこでも効き、**知らない名前は 400**(黙って無視しない)。
+- **並び順は呼ぶ側が決める**(`?sort=`、2026-09)。`sort=<key>` / `sort=-<key>` の 1 つだけで、
+  `id`(既定)/ `published_at` / `created_at` / `updated_at` / **そのコレクションのフィールド名**。
+  同値は **id でタイブレーク**するので、`next_offset` でページを歩いても重複も抜けも出ない。
+  知らないキーや順序を作れない型(画像・配列・複合・リレーション)は 400。
+  **順序を指定すると、その一覧は全件を読んでから並べ替えてページを切る**(フィルタと同じ。
+  1 ページずつでは順序が決まらないため)。既定の並びはこれまでどおり id 昇順で、そちらは
+  格納側のページングのままなので、大きなコレクションでも全件を読みません。
+  **逆引き展開(`?populate=<inverse_name>`)は索引順のまま**で、`?sort=` は効きません
+  (`?where=` の一覧には効きます)。
 - **逆引きも配信で読める**(2026-09)。一覧は `?where=<フィールド>:<値>` で**その参照を持つ
   公開アイテムだけ**に絞れる(`articles?where=category:3`。値はコレクションの対象ならアイテム id、
   単一ページの対象ならページ名。ページングと `total` は**絞ったあとの集合**に対する)。

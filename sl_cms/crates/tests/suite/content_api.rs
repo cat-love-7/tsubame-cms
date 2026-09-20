@@ -601,7 +601,8 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     assert_eq!(body.as_array().unwrap().len(), 3);
     assert_eq!(headers.get("x-total-count").unwrap(), "3");
 
-    // A page keeps the `[id, values]` body shape the UI already reads.
+    // A page keeps the `[id, values]` body shape the UI already reads, and the order is newest
+    // first (ids are creation order, and an editor opening a collection wants the last one).
     let (status, headers, bytes) = send_with_headers(
         &app.router,
         Method::GET,
@@ -613,7 +614,7 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body.as_array().unwrap().len(), 2);
     assert_eq!(body[0][0], 2);
-    assert_eq!(body[1][0], 3);
+    assert_eq!(body[1][0], 1);
     assert_eq!(headers.get("x-total-count").unwrap(), "3");
 
     // Paging does not open the list up.
@@ -838,4 +839,105 @@ async fn the_content_api_serves_the_composite_definitions_it_names() {
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// A site build asks for the order it wants to walk; the default stays the id order it always
+/// had, and the id is the tie-break that keeps the pages from skipping.
+#[tokio::test]
+async fn the_content_api_orders_a_list_how_it_is_asked_to() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, body) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/posts/schema",
+        Some(&token),
+        Some(json!([
+            { "name": "title", "field_type": { "Text": {} }, "required": true, "width": 12, "height": 1 },
+            { "name": "rank", "field_type": "Number", "required": false, "width": 12, "height": 1 },
+        ])),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Three items whose id order, title order and rank order all differ.
+    for (title, rank) in [("b", 2), ("A", 3), ("c", 1)] {
+        let (status, body) = send(
+            &app.router,
+            Method::POST,
+            "/api/models/collections/posts/item",
+            Some(&token),
+            Some(json!({ "title": title, "rank": rank })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    for id in 1..=3 {
+        let (status, body) = send(
+            &app.router,
+            Method::POST,
+            &format!("/api/models/collections/posts/items/{id}/publish"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let ids = |body: &Value| -> Vec<u64> {
+        body["items"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item["id"].as_u64())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let listed = |query: &'static str| {
+        let app = &app;
+        async move {
+            let (status, body) = send(
+                &app.router,
+                Method::GET,
+                &format!("/api/content/collections/posts{query}"),
+                None,
+                None,
+            )
+            .await;
+            (status, body)
+        }
+    };
+
+    // The default is what it always was: id ascending.
+    let (status, body) = listed("").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ids(&body), vec![1, 2, 3]);
+
+    // Newest first, oldest first, and by a field - text without regard to case, numbers as
+    // numbers, and the id as the tie-break.
+    let (_, body) = listed("?sort=-id").await;
+    assert_eq!(ids(&body), vec![3, 2, 1]);
+    let (_, body) = listed("?sort=title").await;
+    assert_eq!(ids(&body), vec![2, 1, 3], "A, b, c");
+    let (_, body) = listed("?sort=-title").await;
+    assert_eq!(ids(&body), vec![3, 1, 2]);
+    let (_, body) = listed("?sort=rank").await;
+    assert_eq!(ids(&body), vec![3, 1, 2], "rank 1, 2, 3");
+
+    // The window is over the order that was asked for, and the next page continues it.
+    let (_, first) = listed("?sort=-id&limit=2").await;
+    assert_eq!(ids(&first), vec![3, 2]);
+    assert_eq!(first["next_offset"], 2);
+    let (_, second) = listed("?sort=-id&limit=2&offset=2").await;
+    assert_eq!(ids(&second), vec![1]);
+    assert_eq!(second["next_offset"], json!(null));
+
+    // A key that is not there, or is not something an order can be made of, is refused.
+    for query in ["?sort=nope", "?sort=-", "?sort=-nope"] {
+        let (status, _) = listed(query).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+    }
 }

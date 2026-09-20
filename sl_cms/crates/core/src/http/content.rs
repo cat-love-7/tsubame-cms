@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
-use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter};
+use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter, Sort};
 use crate::models::error::HttpError;
 use crate::models::pagination::{PageQuery, Pagination};
 use crate::models::single_page::{SinglePageName, SinglePageSchema};
@@ -66,6 +66,9 @@ struct ContentQuery {
     /// collection target, and the page's name for a single page.
     #[serde(rename = "where")]
     r#where: Option<String>,
+    /// One key to order a collection's list by: `id`, `published_at`, `created_at`, `updated_at`,
+    /// or a field of the collection, with `-` in front for the other way round.
+    sort: Option<String>,
 }
 
 impl ContentQuery {
@@ -85,6 +88,15 @@ impl ContentQuery {
         } else {
             expansion
         }
+    }
+
+    /// The order a collection's list is asked for, checked against the schema it will be read
+    /// against (see `Sort::parse`).
+    fn sort(
+        &self,
+        schema: &[crate::models::schema::FieldSchema],
+    ) -> Result<Option<Sort>, HttpError> {
+        Sort::parse(self.sort.as_deref(), schema)
     }
 
     /// The relation a collection's list is filtered by, checked against the schema it will be read
@@ -260,9 +272,16 @@ async fn get_collection<R: Storage>(
         .get_collection_schema(&name)
         .await?;
     let filter = query.filter(&schema)?;
+    let sort = query.sort(&schema)?;
     let page = module
         .collection_service
-        .list_published_items(&name, &pagination, &expansion, filter.as_ref())
+        .list_published_items(
+            &name,
+            &pagination,
+            &expansion,
+            filter.as_ref(),
+            sort.as_ref(),
+        )
         .await?;
     let items = page
         .items

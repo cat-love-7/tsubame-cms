@@ -12,6 +12,7 @@
 //! there may not: the management shape is a *stored* value, and what a site is served is a
 //! rendering of one. Every other kind of field, images included, renders the same way in both.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
@@ -20,6 +21,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId, ImageResponse};
+use crate::models::item_status::ItemMetadata;
 use crate::models::owner::ItemOwner;
 use crate::models::schema::{CompositeFieldId, CompositeFieldSchema, FieldSchema, FieldType};
 use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
@@ -478,6 +480,134 @@ pub fn field_holds(
         Some(FieldValue::Relation(references))
             if references.iter().any(|reference| &reference.target_owner() == owner)
     )
+}
+
+/// What a delivery request asked to be ordered by.
+///
+/// One key, `-` in front for the other way round: `?sort=-published_at`. A key is a piece of
+/// metadata every item has (`id`, `published_at`, `created_at`, `updated_at`) or the name of a
+/// sortable field on the item. The id is always the tie-break, so two items that compare equal
+/// keep a stable place and walking the pages cannot skip or repeat one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sort {
+    key: SortKey,
+    descending: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SortKey {
+    Id,
+    PublishedAt,
+    CreatedAt,
+    UpdatedAt,
+    Field(String),
+}
+
+impl Sort {
+    /// Read `?sort=`, checked against the schema it will be read against.
+    ///
+    /// Refused rather than ignored: a caller that spelled a key wrong would otherwise be served
+    /// the default order and never hear about it.
+    pub fn parse(raw: Option<&str>, schema: &[FieldSchema]) -> Result<Option<Sort>, HttpError> {
+        let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
+            return Ok(None);
+        };
+        let (descending, name) = match raw.strip_prefix('-') {
+            Some(rest) => (true, rest.trim()),
+            None => (false, raw),
+        };
+        let key = match name {
+            "id" => SortKey::Id,
+            "published_at" => SortKey::PublishedAt,
+            "created_at" => SortKey::CreatedAt,
+            "updated_at" => SortKey::UpdatedAt,
+            other => {
+                let Some(field) = schema.iter().find(|field| field.name == other) else {
+                    return Err(HttpError::BadRequest(&format!(
+                        "no field named '{other}' to sort by"
+                    ))
+                    .with_field(other));
+                };
+                if !sortable(&field.field_type) {
+                    return Err(HttpError::BadRequest(&format!(
+                        "field '{other}' cannot be sorted on"
+                    ))
+                    .with_field(other));
+                }
+                SortKey::Field(other.to_string())
+            }
+        };
+        Ok(Some(Sort { key, descending }))
+    }
+}
+
+/// Whether a field holds something two items can be put in order by.
+///
+/// A reference, an image, an array or a composite does not: there is no one value to compare, and
+/// guessing (the first element? the name?) would make an order nobody can explain.
+fn sortable(field_type: &FieldType) -> bool {
+    matches!(
+        field_type,
+        FieldType::Text(_)
+            | FieldType::Slug(_)
+            | FieldType::Markdown(_)
+            | FieldType::Number
+            | FieldType::Boolean
+            | FieldType::Date
+            | FieldType::DateTime
+            | FieldType::TextEnum(_)
+    )
+}
+
+/// One item as a list is being ordered: what it is called, when it changed, and what it holds.
+pub type Sortable = (u64, ItemMetadata, DeliveredItem);
+
+/// The order two items go in: the key the caller asked for, then the id.
+///
+/// The id is not decoration. Two items with the same title have to come in the same order on
+/// every request, or a client walking `next_offset` sees one twice and misses another.
+pub fn compare_items(a: &Sortable, b: &Sortable, sort: &Sort) -> Ordering {
+    let order = match &sort.key {
+        SortKey::Id => a.0.cmp(&b.0),
+        SortKey::PublishedAt => a.1.published_at.cmp(&b.1.published_at),
+        SortKey::CreatedAt => a.1.created_at.cmp(&b.1.created_at),
+        SortKey::UpdatedAt => a.1.updated_at.cmp(&b.1.updated_at),
+        SortKey::Field(name) => compare_values(a.2.get(name), b.2.get(name)),
+    };
+    let order = if sort.descending {
+        order.reverse()
+    } else {
+        order
+    };
+    order.then_with(|| a.0.cmp(&b.0))
+}
+
+/// Two values of the same field, in the order a reader expects: numbers as numbers, dates as
+/// dates, and text without regard to case (a title's capital letters are not what an order means).
+fn compare_values(a: Option<&DeliveryValue>, b: Option<&DeliveryValue>) -> Ordering {
+    match (a, b) {
+        (None, None) => Ordering::Equal,
+        // Nothing sorts before something in either direction, which is what "empty first" means
+        // when the caller flips the order (`-title` puts the filled ones on top).
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(a), Some(b)) => match (a, b) {
+            (DeliveryValue::Number(a), DeliveryValue::Number(b)) => {
+                a.partial_cmp(b).unwrap_or(Ordering::Equal)
+            }
+            (DeliveryValue::Boolean(a), DeliveryValue::Boolean(b)) => a.cmp(b),
+            (DeliveryValue::Date(a), DeliveryValue::Date(b)) => a.cmp(b),
+            (DeliveryValue::DateTime(a), DeliveryValue::DateTime(b)) => a.cmp(b),
+            (DeliveryValue::Text(a), DeliveryValue::Text(b))
+            | (DeliveryValue::Markdown(a), DeliveryValue::Markdown(b)) => {
+                a.to_lowercase().cmp(&b.to_lowercase())
+            }
+            (DeliveryValue::TextEnum(a), DeliveryValue::TextEnum(b)) => {
+                a.join(",").to_lowercase().cmp(&b.join(",").to_lowercase())
+            }
+            _ => Ordering::Equal,
+        },
+    }
 }
 
 /// What the delivery walker needs, built where the maps are already read.

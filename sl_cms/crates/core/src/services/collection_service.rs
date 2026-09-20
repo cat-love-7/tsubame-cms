@@ -7,8 +7,8 @@ use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionItemResponse, CollectionName, CollectionSchema,
 };
 use crate::models::delivery::{
-    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, Populate, RelationFilter, field_holds,
-    inverse_references,
+    DeliveredItem, DeliveryMaps, DeliveryValue, Expansion, Populate, RelationFilter, Sort,
+    compare_items, field_holds, inverse_references,
 };
 use crate::models::error::{FieldRefusal, HttpError, map_internal_error};
 use crate::models::image::{Image, ImageId};
@@ -1826,44 +1826,74 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         Ok(held)
     }
 
+    /// Every published item, for an order that needs the whole list before it can cut a page.
+    ///
+    /// The price of `?sort=`: the storage pages a collection so a big one is never materialised
+    /// (see `CollectionRepository::list_published_items_page`), and an order over a field cannot
+    /// be decided one page at a time. Asking for an order is asking to read the set.
+    async fn read_all_published_items(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, HttpError> {
+        const PAGE: usize = 100;
+        let mut all = Vec::new();
+        let mut offset = 0;
+        loop {
+            let (page, total) = self
+                .collection_repository
+                .list_published_items_page(collection_name, offset, Some(PAGE))
+                .await
+                .map_err(map_internal_error)?;
+            let read = page.len();
+            all.extend(page);
+            offset += read;
+            if read < PAGE || all.len() >= total {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
     pub async fn list_published_items(
         &self,
         collection_name: &CollectionName,
         pagination: &Pagination,
         expansion: &Expansion,
         filter: Option<&RelationFilter>,
+        sort: Option<&Sort>,
     ) -> Result<Page<(CollectionItemId, ItemMetadata, DeliveredItem)>, HttpError> {
         let schema = self.get_collection_schema(collection_name).await?;
         let maps = self.delivery_maps().await?;
-        // A filter is answered from the index, which is a set of ids rather than a page, so the
-        // window is applied here; without one the window goes to the storage, which can read a
-        // page of the *published* set without materialising it (see
-        // `CollectionRepository::list_published_items_page`). The delivery API is the one caller
-        // that walks a list it did not bound itself, so that is where reading everything would
-        // actually hurt.
-        let (selected, total) = match filter {
-            Some(filter) => {
-                let held = self
-                    .filtered_published_items(collection_name, filter)
-                    .await?;
-                let total = held.len();
-                let (offset, limit) = pagination.window();
-                let windowed = match limit {
-                    Some(limit) => held.into_iter().skip(offset).take(limit).collect(),
-                    None => held.into_iter().skip(offset).collect(),
-                };
-                (windowed, total)
-            }
-            None => {
-                let (offset, limit) = pagination.window();
-                let (page, total) = self
-                    .collection_repository
-                    .list_published_items_page(collection_name, offset, limit)
-                    .await
-                    .map_err(map_internal_error)?;
-                (page, total)
-            }
-        };
+        // A filter or an order has to see the whole set before a page is cut out of it: the window
+        // belongs to the order the caller asked for, not to the order storage happened to have.
+        // Without either, the window goes to the storage, which reads a page of the *published*
+        // set without materialising it. The delivery API is the one caller that walks a list it
+        // did not bound itself, so that is where reading everything would actually hurt.
+        let materialised = filter.is_some() || sort.is_some();
+        let (selected, total): (Vec<(CollectionItemId, CollectionItem, ItemMetadata)>, usize) =
+            match filter {
+                Some(filter) => {
+                    let held = self
+                        .filtered_published_items(collection_name, filter)
+                        .await?;
+                    let total = held.len();
+                    (held, total)
+                }
+                None if materialised => {
+                    let all = self.read_all_published_items(collection_name).await?;
+                    let total = all.len();
+                    (all, total)
+                }
+                None => {
+                    let (offset, limit) = pagination.window();
+                    let (page, total) = self
+                        .collection_repository
+                        .list_published_items_page(collection_name, offset, limit)
+                        .await
+                        .map_err(map_internal_error)?;
+                    (page, total)
+                }
+            };
 
         let mut items = Vec::with_capacity(selected.len());
         for (id, item, metadata) in selected {
@@ -1872,8 +1902,26 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             let values = self
                 .deliver_item(&owner, &schema, &maps, &item, expansion)
                 .await?;
-            items.push((id, metadata, values));
+            items.push((*id, metadata, values));
         }
+        if let Some(sort) = sort {
+            items.sort_by(|a, b| compare_items(a, b, sort));
+        }
+        // The window is cut here when the set was read whole (a filter or an order); otherwise
+        // storage already did it.
+        let items = if materialised {
+            let (offset, limit) = pagination.window();
+            match limit {
+                Some(limit) => items.into_iter().skip(offset).take(limit).collect(),
+                None => items.into_iter().skip(offset).collect(),
+            }
+        } else {
+            items
+        };
+        let items = items
+            .into_iter()
+            .map(|(id, metadata, values)| (CollectionItemId::from_u64(id), metadata, values))
+            .collect();
         Ok(pagination.wrap(items, total))
     }
 
