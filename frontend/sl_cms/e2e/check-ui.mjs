@@ -27,6 +27,8 @@
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:4200';
+/** Where a preview link is opened: the site's origin, which the API is told separately. */
+const PREVIEW_SITE = process.env.PREVIEW_SITE_URL ?? BASE;
 const API = `${BASE}/api`;
 const USERNAME = process.env.ADMIN_USERNAME ?? process.env.ADMIN_EMAIL ?? 'admin@example.com';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin-password';
@@ -1058,13 +1060,21 @@ try {
   const previewAnchor = page.locator('.preview-link a');
   await previewAnchor.waitFor({ timeout: 10000 });
   const previewUrl = await previewAnchor.getAttribute('href');
+  // What is handed over is an address on the *preview site*, not the API's own JSON: the site is
+  // what a reviewer can read, and the route mirrors the API's minus the `/api` prefix.
   check(
     'プレビュー URL が発行される',
-    /\/api\/preview\/collections\/e2e_blog\/items\/1\?token=/.test(previewUrl ?? ''),
+    new RegExp(`^${PREVIEW_SITE}/preview/collections/${COLLECTION}/items/1\\?token=`).test(
+      previewUrl ?? '',
+    ),
     String(previewUrl).slice(0, 70),
   );
 
-  const previewResponse = await request.fetch(previewUrl);
+  // The site asks the API behind it, which is the answer a check can read here: the harness has
+  // no preview site to render (that package has its own suite), only the CMS.
+  const copied = new URL(previewUrl);
+  const apiPreviewUrl = `${API}${copied.pathname}${copied.search}`;
+  const previewResponse = await request.fetch(apiPreviewUrl);
   check(
     'プレビュー URL はトークン無しで開ける',
     previewResponse.status() === 200,
@@ -1078,7 +1088,7 @@ try {
   );
 
   // The link is signed for one item: pointing it at another one is refused.
-  const tamperedResponse = await request.fetch(previewUrl.replace('/items/1?', '/items/2?'));
+  const tamperedResponse = await request.fetch(apiPreviewUrl.replace('/items/1?', '/items/2?'));
   check(
     'リンクの宛先は書き換えられない',
     tamperedResponse.status() === 401,

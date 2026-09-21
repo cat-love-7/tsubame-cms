@@ -27,8 +27,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The preview site the suite checks links against. The app is served by the dev server on 4200,
+# and a link is written out as an address *on that site* - so the harness has to be told which
+# origin the deployment would use, or there is no link to check at all.
+preview_site="${PREVIEW_SITE_URL:-http://localhost:4200}"
+
 echo "== starting the backend on 8080 (data in $data_root) =="
-setsid env DATA_ROOT="$data_root" JWT_SECRET="$jwt_secret" \
+setsid env DATA_ROOT="$data_root" JWT_SECRET="$jwt_secret" PREVIEW_SITE_URL="$preview_site" \
   ADMIN_USERNAME=admin@example.com ADMIN_PASSWORD=admin-password \
   cargo run --manifest-path "$root/sl_cms/Cargo.toml" >/tmp/sl-cms-e2e-backend.log 2>&1 &
 backend_pid=$!
@@ -54,4 +59,4 @@ wait_for http://localhost:4200/ frontend
 
 echo "== running the harness =="
 cd "$frontend"
-BASE_URL=http://localhost:4200 npm run e2e
+BASE_URL=http://localhost:4200 PREVIEW_SITE_URL="$preview_site" npm run e2e
