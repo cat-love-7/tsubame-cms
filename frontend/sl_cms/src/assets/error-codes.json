@@ -23,7 +23,8 @@
     "image_not_trashed",
     "still_referenced",
     "relation_unpublished",
-    "relation_required_by"
+    "relation_required_by",
+    "preview_disabled"
   ],
   "status": [
     "bad_request",

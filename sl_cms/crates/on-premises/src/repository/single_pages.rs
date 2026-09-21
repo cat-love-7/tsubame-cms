@@ -1,11 +1,12 @@
 use crate::repository::relations;
 use crate::repository::{
     DRAFT_STORE, METADATA_STORE, RkvRepository, SINGLE_PAGE_ITEM_STORE, SINGLE_PAGE_SCHEMA_STORE,
-    page_draft_key, page_metadata_key,
+    SINGLE_PAGE_SETTINGS_STORE, page_draft_key, page_metadata_key,
 };
 use rkv::{StoreOptions, Value};
 use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::schema::SchemaSettings;
 use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
@@ -107,6 +108,34 @@ impl SinglePageRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
+    async fn get_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+    ) -> Result<SchemaSettings, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(SINGLE_PAGE_SETTINGS_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        match store.get(&reader, page_name.as_bytes())? {
+            Some(Value::Str(stored)) => Ok(serde_json::from_str(&stored)?),
+            // A page that was never given any settings answers the default, as a collection does.
+            _ => Ok(SchemaSettings::default()),
+        }
+    }
+    async fn set_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+        settings: &SchemaSettings,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(SINGLE_PAGE_SETTINGS_STORE, StoreOptions::create())?;
+        let stored = serde_json::to_string(settings)?;
+        let mut writer = env.write()?;
+        store.put(&mut writer, page_name.as_bytes(), &Value::Str(&stored))?;
+        writer.commit()?;
+        Ok(())
+    }
     async fn delete_single_page(
         &self,
         page_name: &SinglePageName,
@@ -119,6 +148,7 @@ impl SinglePageRepository for RkvRepository {
         // the transaction that uses it began.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let settings_store = env.open_single(SINGLE_PAGE_SETTINGS_STORE, StoreOptions::create())?;
         // Opened before the transactions, for the reason given in the page's own delete.
         let relation_store =
             env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
@@ -152,6 +182,10 @@ impl SinglePageRepository for RkvRepository {
         let draft_key = page_draft_key(page_name.as_str());
         if draft_store.get(&reader, draft_key.as_bytes())?.is_some() {
             draft_store.delete(&mut writer, draft_key.as_bytes())?;
+        }
+        // So do the page's settings, if it was ever given any.
+        if settings_store.get(&reader, page_name.as_bytes())?.is_some() {
+            settings_store.delete(&mut writer, page_name.as_bytes())?;
         }
         writer.commit()?;
         Ok(())

@@ -7,13 +7,14 @@ use std::collections::HashMap;
 
 use crate::app_module::Storage;
 use crate::http::{
-    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, preview_link_error, require_admin,
-    require_publish,
+    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, ensure_preview_allowed,
+    preview_link_error, require_admin, require_publish,
 };
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::pagination::{PageQuery, Pagination};
+use crate::models::schema::SchemaSettings;
 use crate::models::sort::Sort;
 use crate::preview_link::PreviewTarget;
 
@@ -29,6 +30,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         .route(
             "/models/collections/{collection_name}",
             delete(delete_collection::<R>),
+        )
+        // What the collection is told about itself, apart from its fields.
+        .route(
+            "/models/collections/{collection_name}/settings",
+            get(get_collection_settings::<R>).put(update_collection_settings::<R>),
         )
         .route(
             "/models/collections/{collection_name}/items",
@@ -233,6 +239,13 @@ async fn create_collection_item_preview_link<R: Storage>(
         .collection_service
         .get_collection_item(&name, item_id)
         .await?;
+    ensure_preview_allowed(
+        &module
+            .collection_service
+            .get_collection_settings(&name)
+            .await?,
+        &crate::models::owner::ItemOwner::collection_item(name.as_str(), id),
+    )?;
 
     Ok(Json(module.preview_links.issue(
         &PreviewTarget::CollectionItem {
@@ -266,6 +279,14 @@ async fn open_collection_item_preview<R: Storage>(
         .preview_links
         .verify(&target, &query.token, chrono::Utc::now())
         .map_err(preview_link_error)?;
+    // A link that was minted while previews were on stops working the moment they are turned off.
+    ensure_preview_allowed(
+        &module
+            .collection_service
+            .get_collection_settings(&name)
+            .await?,
+        &crate::models::owner::ItemOwner::collection_item(name.as_str(), id),
+    )?;
 
     // The same body the authenticated preview returns, so a site's preview code needs one
     // parser for both.
@@ -408,6 +429,38 @@ async fn get_collection_schema<R: Storage>(
             .get_collection_schema(&name)
             .await?,
     ))
+}
+
+/// What the collection is told about itself. Any signed-in reader may see it: the screens that
+/// offer a preview link have to know whether there is one to offer.
+async fn get_collection_settings<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(collection_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    Ok(Json(
+        module
+            .collection_service
+            .get_collection_settings(&name)
+            .await?,
+    ))
+}
+
+/// Turning a setting on changes what content can leave the CMS, which is not an editing act - the
+/// same rule as creating the collection.
+async fn update_collection_settings<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(collection_name): Path<String>,
+    Json(settings): Json<SchemaSettings>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    let name = CollectionName::from(collection_name.as_str());
+    module
+        .collection_service
+        .update_collection_settings(&name, &settings)
+        .await?;
+    Ok(StatusCode::OK)
 }
 
 async fn add_collection_schema<R: Storage>(

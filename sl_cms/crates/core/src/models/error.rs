@@ -40,6 +40,9 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     // last published target somebody else's required relation points at.
     "relation_unpublished",
     "relation_required_by",
+    // A preview link asked for on a schema whose preview is not enabled. Off by default, so this
+    // is an ordinary answer rather than a fault.
+    "preview_disabled",
 ];
 
 /// The fallback code a status stands for, when a site has nothing more specific to say.
@@ -96,6 +99,8 @@ pub const ERROR_CODES: &[&str] = &[
     // the last published target of somebody else's required relation.
     "relation_unpublished",
     "relation_required_by",
+    // A preview link asked for on a schema whose preview is not enabled.
+    "preview_disabled",
     // The fallback for a status that has nothing more specific to say.
     "bad_request",
     "unauthorized",
@@ -339,6 +344,23 @@ impl HttpError {
         )
         .with_code("relation_required_by")
         .with_field(field)
+    }
+
+    /// A preview link asked for where the schema does not allow one.
+    ///
+    /// Off until an administrator turns it on (see `SchemaSettings`), so this is the ordinary
+    /// answer rather than a fault: the message names the schema, because that is what the person
+    /// reading can go and change.
+    pub fn preview_disabled(owner: &crate::models::owner::ItemOwner) -> Self {
+        Self::new(
+            STATUS_FORBIDDEN,
+            &format!(
+                "preview links are not enabled for {}; an administrator can turn them on in its \
+                 schema",
+                owner.describe_schema()
+            ),
+        )
+        .with_code("preview_disabled")
     }
 
     /// Say what went wrong more precisely than the status does.

@@ -8,6 +8,7 @@
 use super::*;
 use crate::repository::relations;
 use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::schema::SchemaSettings;
 use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::relation_repository::RelationIndexChanges;
 use sl_cms_core::repositories::relation_repository::Written;
@@ -87,6 +88,30 @@ impl SinglePageRepository for AwsRepository {
         // The index entry is what `list_all_page_names` queries; it is written after the
         // schema so a name is never listed before the page exists.
         write(&inner, key::PAGE_INDEX, name.as_str(), name.as_str()).await
+    }
+
+    async fn get_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+    ) -> Result<SchemaSettings, BoxError> {
+        let inner = self.inner.clone();
+        let name = page_name.clone();
+        match read(&inner, &key::page(&name), key::SETTINGS).await? {
+            Some(data) => Ok(AwsRepository::decode(&data)?),
+            // No record: the page was never given settings, which is the default.
+            None => Ok(SchemaSettings::default()),
+        }
+    }
+
+    async fn set_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+        settings: &SchemaSettings,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = page_name.clone();
+        let data = AwsRepository::encode(settings)?;
+        write(&inner, &key::page(&name), key::SETTINGS, &data).await
     }
 
     async fn delete_single_page(&self, page_name: &SinglePageName) -> Result<(), BoxError> {

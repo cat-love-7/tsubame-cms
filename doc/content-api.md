@@ -842,13 +842,27 @@ curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/preview-link 
 curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9c...
 ```
 
+**スキーマごとの許可が要ります。** 既定は**無効**で、スキーマ編集画面の「プレビューリンクを
+許可する」を入れて保存したコレクション・単一ページだけがリンクを発行できます(要管理者)。
+
 | メソッド | パス | 内容 |
 |---|---|---|
-| POST | `/api/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit`) |
+| GET | `/api/models/collections/{name}/settings` | `{ "preview": false }`(要トークン。未設定なら既定) |
+| PUT | `/api/models/collections/{name}/settings` | `{ "preview": true }`(要管理者) |
+| GET / PUT | `/api/models/single_pages/{name}/settings` | 同上 |
+| POST | `/api/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit` かつ `preview` 有効) |
 | POST | `/api/models/single_pages/{name}/preview-link` | 同上 |
 | GET | `/api/preview/collections/{name}/items/{id}?token=...` | 作業コピーを返す(認証不要) |
 | GET | `/api/preview/single_pages/{name}?token=...` | 同上 |
 
+- 許可していないスキーマへの発行・そのリンクを開くことは、どちらも **403 `preview_disabled`**
+  (メッセージがコレクション名・ページ名を名指しする)。**設定を切ると、発行済みのリンクもその場で
+  開けなくなる**(リンクは数分の命で、取り消すべき台帳が無いため)。既存のデプロイは設定が無いので、
+  これまで使えていたコレクションも**管理者が入れ直すまで発行できない**。
+- 設定はスキーマ定義とは**別のレコード**に入る(`collection_settings` / `single_page_settings`。
+  DynamoDB では同じパーティションの `settings`)。フィールドの保存が設定を書き戻すことはなく、
+  コレクション・ページを削除すれば設定も消える。表示の順も同じ: 保存した設定は、次に同じ名前で
+  作り直したスキーマには引き継がれない。
 - 期限は `PREVIEW_LINK_TTL_MINUTES`(既定 60 分)。トークンは `有効期限.署名` の形で、
   署名は**行き先と有効期限そのもの**に対する HMAC-SHA256(`JWT_SECRET` を使用、メッセージには
   専用の接頭辞を付けるので他の署名と使い回せない)。
@@ -856,8 +870,8 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
   - 有効期限を先に延ばすこともできない。期限切れは 403、署名違い・壊れたトークンは 401。
 - サーバ側に**保存するものが無い**(期限が署名に含まれるので、消すべきレコードが存在しない)。
 - ただしリンクは**持っている人にとっては資格情報**。期限まではその 1 件の下書きを読めるので、
-  渡す相手と有効期限は意識すること。失効させたい場合は `PREVIEW_LINK_TTL_MINUTES` を短くするか、
-  `JWT_SECRET` を変える(全トークンが無効になる)。
+  渡す相手と有効期限は意識すること。失効させたい場合は**そのスキーマの許可を切る**(即時に効く)、
+  `PREVIEW_LINK_TTL_MINUTES` を短くする、`JWT_SECRET` を変える(全トークンが無効になる)。
 - 返す本文は管理側のプレビューと同じ形(schema + values)なので、サイト側は 1 つのパーサで済む。
 - **渡すリンクはプレビューサイトの URL に写す。** API のパスをそのまま渡すと、レビュアーには
   JSON が表示される。`GET /api/auth/capabilities` の `preview_site_url` がプレビューサイトの

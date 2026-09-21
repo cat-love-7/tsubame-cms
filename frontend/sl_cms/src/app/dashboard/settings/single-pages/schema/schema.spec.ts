@@ -33,7 +33,8 @@ describe('SinglePageSchema', () => {
     // The load has to land first: what is on screen when it does is what "unsaved" is measured
     // against.
     const http = TestBed.inject(HttpTestingController);
-    http.expectOne((request) => request.method === 'GET').flush([]);
+    http.expectOne('/api/models/single_pages/home/schema').flush([]);
+    http.expectOne('/api/models/single_pages/home/settings').flush({ preview: false });
     await fixture.whenStable();
     expect(component.hasUnsavedChanges()).toBe(false);
 
@@ -42,6 +43,30 @@ describe('SinglePageSchema', () => {
     ]);
 
     expect(component.hasUnsavedChanges()).toBe(true);
+  });
+
+  // The same as the collection schema editor: one Save writes the fields and the setting.
+  it('saves the preview setting with the fields', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/models/single_pages/home/schema').flush([]);
+    http.expectOne('/api/models/single_pages/home/settings').flush({ preview: false });
+    await fixture.whenStable();
+    expect(component.preview()).toBe(false);
+
+    component.preview.set(true);
+    component.save([]);
+    const schema = http.expectOne(
+      (request) => request.method === 'PUT' && request.url.endsWith('/home/schema'),
+    );
+    const settings = http.expectOne(
+      (request) => request.method === 'PUT' && request.url.endsWith('/home/settings'),
+    );
+    expect(settings.request.body).toEqual({ preview: true });
+    schema.flush(null);
+    settings.flush(null);
+    await fixture.whenStable();
+
+    expect(component.hasUnsavedChanges()).toBe(false);
   });
 
   it('should create', () => {

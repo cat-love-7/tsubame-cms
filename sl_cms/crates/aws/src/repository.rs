@@ -531,6 +531,9 @@ pub mod key {
     }
     pub const COUNTER: &str = "counter";
     pub const SCHEMA: &str = "schema";
+    /// What a collection or page is told about itself, apart from its field definitions
+    /// (see `sl_cms_core::models::schema::SchemaSettings`).
+    pub const SETTINGS: &str = "settings";
     /// Where the names of every collection are listed, so listing them is a query.
     pub const COLLECTION_INDEX: &str = "collections";
 

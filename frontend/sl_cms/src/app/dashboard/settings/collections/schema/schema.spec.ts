@@ -61,13 +61,52 @@ describe('CollectionSchemaEdit', () => {
     // The load has to land first: what is on screen when it does is what "unsaved" is measured
     // against.
     const http = TestBed.inject(HttpTestingController);
-    http.expectOne((request) => request.method === 'GET').flush([]);
+    http.expectOne('/api/models/collections/blog/schema').flush([]);
+    http.expectOne('/api/models/collections/blog/settings').flush({ preview: false });
     await fixture.whenStable();
     expect(component.hasUnsavedChanges()).toBe(false);
 
     component.collectionSchema.set([
       { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
     ]);
+
+    expect(component.hasUnsavedChanges()).toBe(true);
+  });
+
+  // The setting is saved beside the fields, from the one Save the screen has: an editor who turned
+  // it on should not have to remember a second button.
+  it('saves the preview setting with the fields', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/models/collections/blog/schema').flush([]);
+    http.expectOne('/api/models/collections/blog/settings').flush({ preview: true });
+    await fixture.whenStable();
+    expect(component.preview()).toBe(true);
+
+    component.preview.set(false);
+    component.save([]);
+    const schema = http.expectOne(
+      (request) => request.method === 'PUT' && request.url.endsWith('/blog/schema'),
+    );
+    const settings = http.expectOne(
+      (request) => request.method === 'PUT' && request.url.endsWith('/blog/settings'),
+    );
+    expect(settings.request.body).toEqual({ preview: false });
+    schema.flush(null);
+    settings.flush(null);
+    await fixture.whenStable();
+
+    expect(component.hasUnsavedChanges()).toBe(false);
+  });
+
+  // Turning the setting on is an edit like any other: leaving without saving has to be asked about.
+  it('counts the preview setting as an unsaved change', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/models/collections/blog/schema').flush([]);
+    http.expectOne('/api/models/collections/blog/settings').flush({ preview: false });
+    await fixture.whenStable();
+    expect(component.hasUnsavedChanges()).toBe(false);
+
+    component.preview.set(true);
 
     expect(component.hasUnsavedChanges()).toBe(true);
   });

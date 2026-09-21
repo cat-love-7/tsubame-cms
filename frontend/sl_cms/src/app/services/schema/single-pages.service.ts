@@ -6,6 +6,7 @@ import { PreviewLink } from 'app/models/links';
 import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
+import { SchemaSettings } from 'app/models/schema/settings';
 import { FieldValue } from 'app/models/values/fields';
 import { ContentValue } from 'app/models/values/single-page';
 
@@ -36,6 +37,14 @@ export class SinglePagesService {
 
   updatePageSchema(name: string, schema: CollectionSchema): Observable<void> {
     return this.pages.updatePageSchema(name, schema);
+  }
+
+  /** What the page is told about itself, apart from its fields. */
+  getPageSettings(name: string): Observable<SchemaSettings> {
+    return this.pages.getPageSettings(name);
+  }
+  updatePageSettings(name: string, settings: SchemaSettings): Observable<void> {
+    return this.pages.updatePageSettings(name, settings);
   }
 
   deletePage(name: string): Observable<void> {

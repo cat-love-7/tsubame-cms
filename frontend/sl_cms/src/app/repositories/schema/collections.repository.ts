@@ -3,6 +3,7 @@ import { apiUrl } from 'app/core/api-url';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { CollectionSchema } from 'app/models/schema/collection';
+import { SchemaSettings } from 'app/models/schema/settings';
 import { FieldValue } from 'app/models/values/fields';
 import {
   ItemMetadata,
@@ -36,6 +37,16 @@ export class CollectionRepository {
   }
   updateCollectionSchema(name: string, schema: CollectionSchema): Observable<void> {
     return this.http.put<void>(apiUrl(`/models/collections/${name}/schema`), schema);
+  }
+  /**
+   * What the collection is told about itself. A collection that was never given any settings
+   * answers the defaults, so this is never a 404 for a collection that exists.
+   */
+  getCollectionSettings(name: string): Observable<SchemaSettings> {
+    return this.http.get<SchemaSettings>(apiUrl(`/models/collections/${name}/settings`));
+  }
+  updateCollectionSettings(name: string, settings: SchemaSettings): Observable<void> {
+    return this.http.put<void>(apiUrl(`/models/collections/${name}/settings`), settings);
   }
   /**
    * The titles of the named items: what a reference to one shows as its name.

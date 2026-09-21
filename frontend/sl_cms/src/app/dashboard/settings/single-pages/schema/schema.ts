@@ -1,5 +1,6 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { forkJoin } from 'rxjs';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
@@ -27,6 +28,11 @@ export class SinglePageSchema implements HasUnsavedChanges {
   /** A signal, and read from the parameter stream: switching pages reuses this component. */
   public pageName = signal('');
   public schema = signal<FieldSchema[]>([]);
+  /**
+   * Whether a preview link may be minted for this page's working copy. Saved beside the fields; the
+   * server keeps the two apart (see the collection schema editor).
+   */
+  public preview = signal(false);
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
   /** Which visit to a schema the answers on screen belong to (see `load`). */
@@ -50,6 +56,7 @@ export class SinglePageSchema implements HasUnsavedChanges {
     const token = ++this.loadToken;
     this.pageName.set(name);
     this.schema.set([]);
+    this.preview.set(false);
     this.status.set(null);
     this.error.set(null);
 
@@ -60,7 +67,26 @@ export class SinglePageSchema implements HasUnsavedChanges {
         next: (schema) => {
           if (token === this.loadToken) {
             this.schema.set(schema);
-            this.saved.set(fingerprint(schema));
+            this.saved.set(this.fingerprintNow());
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.failedToLoadSchema', e));
+          }
+        },
+      });
+
+    // Asked for separately, so a failure to read the setting cannot hide a schema that arrived
+    // perfectly well.
+    this.pages
+      .getPageSettings(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (settings) => {
+          if (token === this.loadToken) {
+            this.preview.set(settings.preview);
+            this.saved.set(this.fingerprintNow());
           }
         },
         error: (e) => {
@@ -71,10 +97,19 @@ export class SinglePageSchema implements HasUnsavedChanges {
       });
   }
 
+  /** Everything the screen would save, as one string: what "unchanged" is measured by. */
+  private fingerprintNow(): string {
+    return fingerprint({ schema: this.schema(), preview: this.preview() });
+  }
+
   save(schema: FieldSchema[]) {
     const started = this.start();
-    this.pages
-      .updatePageSchema(started.name, schema)
+    // The fields and the setting are one press from where the editor is sitting (see the
+    // collection schema editor).
+    forkJoin([
+      this.pages.updatePageSchema(started.name, schema),
+      this.pages.updatePageSettings(started.name, { preview: this.preview() }),
+    ])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -83,7 +118,7 @@ export class SinglePageSchema implements HasUnsavedChanges {
           }
           this.error.set(null);
           this.status.set(t('common.saved'));
-          this.saved.set(fingerprint(this.schema()));
+          this.saved.set(this.fingerprintNow());
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -101,7 +136,7 @@ export class SinglePageSchema implements HasUnsavedChanges {
 
   /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */
   hasUnsavedChanges(): boolean {
-    return fingerprint(this.schema()) !== this.saved();
+    return this.fingerprintNow() !== this.saved();
   }
 
   /** Whether the screen is still on the schema a slow answer was about, as it was then. */

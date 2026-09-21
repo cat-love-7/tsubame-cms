@@ -309,6 +309,22 @@ pub(crate) fn preview_link_error(error: PreviewLinkError) -> HttpError {
     }
 }
 
+/// Refuse a preview link where the schema does not allow one.
+///
+/// Both ends of a link go through this: minting one, and opening one. Turning the setting off is
+/// meant to close the links already out there as much as to stop new ones - a link lives for
+/// minutes and there is no list of them to withdraw.
+pub(crate) fn ensure_preview_allowed(
+    settings: &crate::models::schema::SchemaSettings,
+    owner: &crate::models::owner::ItemOwner,
+) -> Result<(), HttpError> {
+    if settings.preview {
+        Ok(())
+    } else {
+        Err(HttpError::preview_disabled(owner))
+    }
+}
+
 /// Liveness endpoint. AWS Lambda Web Adapter also uses this as its readiness check, so it
 /// must answer 200 without touching storage or requiring a token.
 async fn root() -> impl IntoResponse {

@@ -59,6 +59,24 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// What a schema is told about itself, as opposed to what it says about its values.
+///
+/// Held apart from the fields on purpose. A schema's fields are read by almost every screen and by
+/// the delivery API's composite route, and none of them has any use for these; a separate record
+/// also means a setting can be added without rewriting the definition every item's values are
+/// checked against, and an adapter that has never been told about one answers the default.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct SchemaSettings {
+    /// Whether a preview link may be minted for this schema's working copies.
+    ///
+    /// Off until an administrator turns it on. A preview link is a URL that shows unpublished
+    /// content to whoever holds it, and the signature is the only thing guarding it - so a
+    /// deployment that renders previews at all still decides schema by schema, rather than every
+    /// collection becoming shareable the moment a preview site exists.
+    #[serde(default)]
+    pub preview: bool,
+}
+
 pub type CompositeFieldId = StringId<CompositeFieldSchema>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]

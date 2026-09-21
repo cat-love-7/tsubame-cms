@@ -9,6 +9,7 @@ import { PreviewLink } from 'app/models/links';
 import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
+import { SchemaSettings } from 'app/models/schema/settings';
 import { CollectionItemPage, CollectionValue } from 'app/models/values/collection';
 import { FieldValue } from 'app/models/values/fields';
 import { CollectionRepository } from 'app/repositories/schema/collections.repository';
@@ -34,6 +35,13 @@ export class CollectionsService {
   }
   updateCollectionSchema(name: string, schema: CollectionSchema): Observable<void> {
     return this.collectionRepository.updateCollectionSchema(name, schema);
+  }
+  /** What the collection is told about itself, apart from its fields. */
+  getCollectionSettings(name: string): Observable<SchemaSettings> {
+    return this.collectionRepository.getCollectionSettings(name);
+  }
+  updateCollectionSettings(name: string, settings: SchemaSettings): Observable<void> {
+    return this.collectionRepository.updateCollectionSettings(name, settings);
   }
   deleteCollection(name: string): Observable<void> {
     return this.collectionRepository.deleteCollection(name);

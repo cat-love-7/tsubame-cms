@@ -7,6 +7,7 @@
 use super::*;
 use crate::repository::relations;
 use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::schema::SchemaSettings;
 use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::relation_repository::RelationIndexChanges;
 use sl_cms_core::repositories::relation_repository::Written;
@@ -86,6 +87,30 @@ impl CollectionRepository for AwsRepository {
             .into_iter()
             .map(|(sk, _)| Ok(CollectionName::from(sk.as_str())))
             .collect()
+    }
+
+    async fn get_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<SchemaSettings, BoxError> {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        match read(&inner, &key::collection(&name), key::SETTINGS).await? {
+            Some(data) => Ok(AwsRepository::decode(&data)?),
+            // No record: the collection was never given settings, which is the default.
+            None => Ok(SchemaSettings::default()),
+        }
+    }
+
+    async fn set_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+        settings: &SchemaSettings,
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let name = collection_name.clone();
+        let data = AwsRepository::encode(settings)?;
+        write(&inner, &key::collection(&name), key::SETTINGS, &data).await
     }
 
     async fn add_collection_schema(

@@ -11,7 +11,7 @@ use crate::models::image::{Image, ImageId};
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
 use crate::models::owner::ItemOwner;
 use crate::models::schema::{
-    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, SchemaSettings,
     referenced_relation_targets, validate_composite_references, validate_relation_targets,
     validate_schema,
 };
@@ -83,6 +83,32 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             None => Err(HttpError::NotFound("Single page not found")),
         }
     }
+    /// What a page is told about itself, apart from its fields; a 404 for a page that is not there,
+    /// as for its schema (see `CollectionService::get_collection_settings`).
+    pub async fn get_single_page_settings(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<SchemaSettings, HttpError> {
+        self.get_single_page_schema(name).await?;
+        self.single_page_repository
+            .get_single_page_settings(name)
+            .await
+            .map_err(map_internal_error)
+    }
+
+    /// Replace what a page is told about itself, leaving its fields alone.
+    pub async fn update_single_page_settings(
+        &self,
+        name: &SinglePageName,
+        settings: &SchemaSettings,
+    ) -> Result<(), HttpError> {
+        self.get_single_page_schema(name).await?;
+        self.single_page_repository
+            .set_single_page_settings(name, settings)
+            .await
+            .map_err(map_internal_error)
+    }
+
     pub async fn update_single_page_schema(
         &self,
         name: &SinglePageName,
@@ -795,7 +821,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::{CompositeFieldId, RelationOptions};
+    use crate::models::schema::{CompositeFieldId, RelationOptions, SchemaSettings};
     use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
     use crate::models::values::{
         FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
@@ -831,6 +857,20 @@ mod tests {
         ) -> Result<Vec<SinglePageName>, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             Ok(self.schemas.read().unwrap().keys().cloned().collect())
+        }
+        async fn get_single_page_settings(
+            &self,
+            _page_name: &SinglePageName,
+        ) -> Result<SchemaSettings, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // As in the collection mock: the answer is storage's, and the adapters' suite covers it.
+            Ok(SchemaSettings::default())
+        }
+        async fn set_single_page_settings(
+            &self,
+            _page_name: &SinglePageName,
+            _settings: &SchemaSettings,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
         }
         async fn add_single_page_schema(
             &self,

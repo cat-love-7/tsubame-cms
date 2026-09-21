@@ -63,6 +63,13 @@ class StubCollectionsService {
     return of(this.schema);
   }
 
+  /** What the schema is told about itself. On by default, so a preview is there to be minted. */
+  public settings: { preview: boolean } = { preview: true };
+
+  getCollectionSettings(): Observable<{ preview: boolean }> {
+    return of(this.settings);
+  }
+
   /**
    * Answers the test delivers by hand, by item id.
    *
@@ -615,6 +622,31 @@ describe('CollectionItemEdit', () => {
       key: 'content.previewNotCopied',
       params: { expires: formatDateTime('2026-09-13T12:00:00Z', 'en') },
     });
+  });
+
+  // A schema with previews turned off has no link to hand out, so the button is not offered at
+  // all - an editor who cannot change the setting should not be shown a button that only refuses.
+  it('does not offer a preview link when the schema does not allow one', async () => {
+    // Before the component exists: it asks for the settings as it is built, not on first paint.
+    stub.settings = { preview: false };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(previewButton(fresh.nativeElement)).toBeUndefined();
+  });
+
+  // The other way round: the answer arrives after the form is on screen, and the button has to go.
+  it('takes the preview link away when the setting arrives off', () => {
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    expect(previewButton(fresh.nativeElement)).toBeTruthy();
+
+    stub.settings = { preview: false };
+    fresh.componentInstance.previewAllowed.set(false);
+    fresh.detectChanges();
+
+    expect(previewButton(fresh.nativeElement)).toBeUndefined();
   });
 
   // A deployment with no preview site has nothing readable to hand over: the API's own answer is

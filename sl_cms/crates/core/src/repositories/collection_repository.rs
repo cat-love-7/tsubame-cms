@@ -6,6 +6,7 @@ use crate::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
 use crate::models::item_status::{ItemDates, ItemMetadata};
+use crate::models::schema::SchemaSettings;
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
@@ -203,6 +204,23 @@ pub trait CollectionRepository: Send + Sync + 'static {
     fn delete_collection(
         &self,
         collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// What a collection is told about itself, as opposed to what its fields say.
+    ///
+    /// A collection that has never been given any answers [`SchemaSettings::default`], which is
+    /// what makes a setting that did not exist until now read the same way everywhere: adapters
+    /// hold settings apart from the definition, and a missing record is not a failure.
+    fn get_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+    ) -> impl Future<Output = Result<SchemaSettings, BoxError>> + Send;
+
+    /// Replace a collection's settings. The caller has already checked the collection exists.
+    fn set_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+        settings: &SchemaSettings,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     fn list_collection_items(
         &self,

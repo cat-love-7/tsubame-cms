@@ -8,11 +8,13 @@ use axum::{Json, Router};
 
 use crate::app_module::Storage;
 use crate::http::{
-    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, preview_link_error, require_admin,
-    require_publish,
+    AppState, AuthenticatedUser, PreviewTokenQuery, Resource, ensure_preview_allowed,
+    preview_link_error, require_admin, require_publish,
 };
 use crate::models::error::HttpError;
 use crate::models::item_status::{ItemDates, ItemMetadata, ItemStatus, PublishedBy};
+use crate::models::owner::ItemOwner;
+use crate::models::schema::SchemaSettings;
 use crate::models::single_page::{SinglePageItemResponse, SinglePageName, SinglePageSchema};
 use crate::preview_link::PreviewTarget;
 
@@ -34,6 +36,11 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
         .route(
             "/models/single_pages/{page_name}",
             delete(delete_single_page::<R>),
+        )
+        // What the page is told about itself, apart from its fields.
+        .route(
+            "/models/single_pages/{page_name}/settings",
+            get(get_single_page_settings::<R>).put(update_single_page_settings::<R>),
         )
         // The name of every page, for the screens that show a reference.
         .route("/models/single_pages/titles", get(get_page_titles::<R>))
@@ -143,6 +150,38 @@ async fn set_single_page_item_metadata<R: Storage>(
     }))
 }
 
+/// What the page is told about itself; any signed-in reader, for the same reason as a collection's
+/// settings (see `http::collections::get_collection_settings`).
+async fn get_single_page_settings<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    Ok(Json(
+        module
+            .single_page_service
+            .get_single_page_settings(&name)
+            .await?,
+    ))
+}
+
+/// Turning a setting on changes what content can leave the CMS, so it is an administrator's act -
+/// the same rule as a collection's settings.
+async fn update_single_page_settings<R: Storage>(
+    State(module): State<AppState<R>>,
+    Extension(AuthenticatedUser(user)): Extension<AuthenticatedUser>,
+    Path(page_name): Path<String>,
+    Json(settings): Json<SchemaSettings>,
+) -> Result<impl IntoResponse, HttpError> {
+    require_admin(&user)?;
+    let name = SinglePageName::from(page_name.as_str());
+    module
+        .single_page_service
+        .update_single_page_settings(&name, &settings)
+        .await?;
+    Ok(StatusCode::OK)
+}
+
 /// What the page would look like if it were published now: the working copy, with the
 /// schema. Authenticated, because that copy is unpublished content.
 async fn preview_single_page<R: Storage>(
@@ -180,6 +219,13 @@ async fn create_single_page_preview_link<R: Storage>(
         .single_page_service
         .get_single_page_schema(&name)
         .await?;
+    ensure_preview_allowed(
+        &module
+            .single_page_service
+            .get_single_page_settings(&name)
+            .await?,
+        &ItemOwner::single_page(name.as_str()),
+    )?;
 
     Ok(Json(module.preview_links.issue(
         &PreviewTarget::SinglePage {
@@ -210,6 +256,14 @@ async fn open_single_page_preview<R: Storage>(
         .preview_links
         .verify(&target, &query.token, chrono::Utc::now())
         .map_err(preview_link_error)?;
+    // A link that was minted while previews were on stops working the moment they are turned off.
+    ensure_preview_allowed(
+        &module
+            .single_page_service
+            .get_single_page_settings(&name)
+            .await?,
+        &ItemOwner::single_page(name.as_str()),
+    )?;
 
     Ok(Json(SinglePagePreview {
         schema: module

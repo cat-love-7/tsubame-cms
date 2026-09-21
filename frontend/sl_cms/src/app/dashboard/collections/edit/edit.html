@@ -46,7 +46,10 @@
         </button>
       }
     }
-    @if (canEdit()) {
+    <!-- Offered unless the schema says otherwise: a collection with previews turned off has no
+         link to hand out, and an editor who is not allowed to change that should not be shown a
+         button that only ever refuses. -->
+    @if (canEdit() && previewAllowed() !== false) {
       <button matButton (click)="sharePreview()">
         {{ 'content.previewLink' | transloco }}
       </button>

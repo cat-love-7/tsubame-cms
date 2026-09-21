@@ -21,11 +21,20 @@ pub(crate) const USER_STORE: &str = "user";
 /// Store holding a collection's field definitions.
 pub(crate) const COLLECTION_SCHEMA_STORE: &str = "collection_schema";
 
+/// Store holding what a collection is told about itself, keyed by collection name.
+///
+/// Apart from the definition so saving the fields never rewrites the settings, and a collection
+/// that has never been given any simply has no record here (see `models::schema::SchemaSettings`).
+pub(crate) const COLLECTION_SETTINGS_STORE: &str = "collection_settings";
+
 /// Store holding reusable field groups, keyed by their id.
 pub(crate) const COMPOSITE_FIELD_SCHEMA_STORE: &str = "composite_field_schema";
 
 /// Store holding a single page's field definition.
 pub(crate) const SINGLE_PAGE_SCHEMA_STORE: &str = "single_page_schema";
+
+/// Store holding what a single page is told about itself, keyed by page name.
+pub(crate) const SINGLE_PAGE_SETTINGS_STORE: &str = "single_page_settings";
 
 /// Store holding a single page's published content.
 pub(crate) const SINGLE_PAGE_ITEM_STORE: &str = "single_page_item";

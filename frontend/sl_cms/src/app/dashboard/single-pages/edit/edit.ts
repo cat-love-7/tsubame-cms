@@ -101,6 +101,11 @@ export class SinglePageEdit implements HasUnsavedChanges {
   /** What this account may do *with this page*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName()));
   public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName()));
+  /**
+   * Whether this page allows preview links, or `null` while that is not known yet (see the
+   * collection editor).
+   */
+  public previewAllowed = signal<boolean | null>(null);
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
@@ -136,9 +141,25 @@ export class SinglePageEdit implements HasUnsavedChanges {
     this.metadata.set(null);
     this.error.set(null);
     this.notice.set(null);
+    this.previewAllowed.set(null);
     this.previewUrl.set('');
     this.problemField.set(null);
     this.fieldErrors = {};
+
+    // Whether the schema allows preview links at all, asked for on every visit (see the collection
+    // editor for why it is not cached).
+    this.pages
+      .getPageSettings(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (settings) => {
+          if (token === this.loadToken) {
+            this.previewAllowed.set(settings.preview);
+          }
+        },
+        // Left unknown, which keeps the button offering what the server can still refuse.
+        error: () => undefined,
+      });
 
     this.pages
       .getPageSchema(name)

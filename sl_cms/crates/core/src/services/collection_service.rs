@@ -18,8 +18,8 @@ use crate::models::item_status::{
 use crate::models::owner::ItemOwner;
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
-    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, has_unique_fields,
-    referenced_relation_targets, unique_values, validate_composite_references,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, SchemaSettings,
+    has_unique_fields, referenced_relation_targets, unique_values, validate_composite_references,
     validate_relation_targets, validate_schema,
 };
 use crate::models::sort::{Sort, compare_delivered, compare_responses};
@@ -88,6 +88,36 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             None => Err(HttpError::NotFound("Collection not found")),
         }
     }
+    /// What a collection is told about itself, apart from its fields.
+    ///
+    /// A collection that does not exist is a 404, as for its schema: the repository answers the
+    /// default for a collection that was never given settings, so existence is checked here rather
+    /// than guessed from the answer.
+    pub async fn get_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<SchemaSettings, HttpError> {
+        self.get_collection_schema(collection_name).await?;
+        self.collection_repository
+            .get_collection_settings(collection_name)
+            .await
+            .map_err(map_internal_error)
+    }
+
+    /// Replace what a collection is told about itself. The fields are untouched, so this needs none
+    /// of the checks a schema save makes - only that the collection is there.
+    pub async fn update_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+        settings: &SchemaSettings,
+    ) -> Result<(), HttpError> {
+        self.get_collection_schema(collection_name).await?;
+        self.collection_repository
+            .set_collection_settings(collection_name, settings)
+            .await
+            .map_err(map_internal_error)
+    }
+
     pub async fn update_collection_schema(
         &self,
         collection_name: &CollectionName,
@@ -2088,7 +2118,9 @@ mod tests {
 
     use crate::models::collection::CollectionName;
     use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::{CompositeFieldId, CompositeFieldReference, RelationOptions};
+    use crate::models::schema::{
+        CompositeFieldId, CompositeFieldReference, RelationOptions, SchemaSettings,
+    };
     use crate::models::values::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
     use crate::models::values::{FieldSchema, FieldType, FieldValue};
     use crate::repositories::image_repository::{ImageRepository, Replacement};
@@ -2137,6 +2169,21 @@ mod tests {
         ) -> Result<Vec<CollectionName>, Box<dyn std::error::Error + Send + Sync + 'static>>
         {
             Ok(self.schemas.read().unwrap().keys().cloned().collect())
+        }
+        async fn get_collection_settings(
+            &self,
+            _collection_name: &CollectionName,
+        ) -> Result<SchemaSettings, Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // Settings are storage's business, and nothing this service does with them is
+            // decided here: the adapters' own suite is where both answers are exercised.
+            Ok(SchemaSettings::default())
+        }
+        async fn set_collection_settings(
+            &self,
+            _collection_name: &CollectionName,
+            _settings: &SchemaSettings,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            Ok(())
         }
         async fn add_collection_schema(
             &self,

@@ -1,9 +1,11 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { EditSchema } from '../../shared/edit-schema/edit-schema';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { CollectionSchema } from 'app/models/schema/collection';
 import { FieldSchema } from 'app/models/schema/fields';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { forkJoin } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
@@ -12,7 +14,7 @@ import { fingerprint } from 'app/core/value-changes';
 
 @Component({
   selector: 'app-collection-schema-edit',
-  imports: [EditSchema, MessagePipe],
+  imports: [EditSchema, MessagePipe, TranslocoPipe],
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })
@@ -29,6 +31,13 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
    * resolves, discarding fields the user had already added.
    */
   public collectionSchema = signal<FieldSchema[]>([]);
+  /**
+   * Whether a preview link may be minted for this collection's working copies.
+   *
+   * A plain signal rather than part of the schema array: it is saved beside the fields, and the
+   * server keeps the two apart for the same reason.
+   */
+  public preview = signal(false);
   /** What the last save did, or the failure to show: keys, so they follow a language change. */
   public status = signal<Message | null>(null);
   public error = signal<Message | null>(null);
@@ -60,6 +69,7 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
     const token = ++this.loadToken;
     this.collectionName.set(name);
     this.collectionSchema.set([]);
+    this.preview.set(false);
     this.status.set(null);
     this.error.set(null);
 
@@ -70,7 +80,26 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
         next: (schema: CollectionSchema) => {
           if (token === this.loadToken) {
             this.collectionSchema.set(schema);
-            this.saved.set(fingerprint(schema));
+            this.saved.set(this.fingerprintNow());
+          }
+        },
+        error: (e) => {
+          if (token === this.loadToken) {
+            this.error.set(failure('content.loadFailed', e));
+          }
+        },
+      });
+
+    // Asked for separately rather than alongside the schema: a deployment that predates settings
+    // would fail the pair, and then a schema that arrived perfectly well would not be shown.
+    this.collectionsService
+      .getCollectionSettings(name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (settings) => {
+          if (token === this.loadToken) {
+            this.preview.set(settings.preview);
+            this.saved.set(this.fingerprintNow());
           }
         },
         error: (e) => {
@@ -81,10 +110,19 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
       });
   }
 
+  /** Everything the screen would save, as one string: what "unchanged" is measured by. */
+  private fingerprintNow(): string {
+    return fingerprint({ schema: this.collectionSchema(), preview: this.preview() });
+  }
+
   save(schema: FieldSchema[]) {
     const started = this.start();
-    this.collectionsService
-      .updateCollectionSchema(started.name, schema)
+    // One press saves both: the fields an editor changed and the setting they turned on are one
+    // act from where they are sitting, even though the server keeps them in two records.
+    forkJoin([
+      this.collectionsService.updateCollectionSchema(started.name, schema),
+      this.collectionsService.updateCollectionSettings(started.name, { preview: this.preview() }),
+    ])
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -93,7 +131,7 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
           }
           this.error.set(null);
           this.status.set(t('common.saved'));
-          this.saved.set(fingerprint(this.collectionSchema()));
+          this.saved.set(this.fingerprintNow());
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -111,7 +149,7 @@ export class CollectionSchemaEdit implements HasUnsavedChanges {
 
   /** Whether the schema holds edits that would be lost by leaving (see `unsavedChangesGuard`). */
   hasUnsavedChanges(): boolean {
-    return fingerprint(this.collectionSchema()) !== this.saved();
+    return this.fingerprintNow() !== this.saved();
   }
 
   /** Whether the screen is still on the schema a slow answer was about, as it was then. */

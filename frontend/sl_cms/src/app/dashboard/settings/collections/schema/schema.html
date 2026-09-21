@@ -9,6 +9,21 @@
   <p class="error">{{ problem | message }}</p>
 }
 
+<!-- What the collection is told about itself, above the fields it is told about its values. The
+     browser's own checkbox rather than a Material one: this screen is a plain form, and the
+     control is one line that has to read as a sentence with the hint under it. -->
+<div class="schema-settings">
+  <label class="preview-setting">
+    <input
+      type="checkbox"
+      [checked]="preview()"
+      (change)="preview.set($any($event.target).checked)"
+    />
+    <span>{{ 'schema.previewAllowed' | transloco }}</span>
+  </label>
+  <p class="hint">{{ 'schema.previewAllowedHint' | transloco }}</p>
+</div>
+
 <!-- A collection has a list, so its schema is the one screen that offers "show in list". -->
 <app-edit-schema
   [schema]="collectionSchema()"

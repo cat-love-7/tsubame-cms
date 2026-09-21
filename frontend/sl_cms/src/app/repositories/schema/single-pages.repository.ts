@@ -8,6 +8,7 @@ import { PreviewLink } from 'app/models/links';
 import { RelationReference } from 'app/models/relations';
 
 import { CollectionSchema } from 'app/models/schema/collection';
+import { SchemaSettings } from 'app/models/schema/settings';
 import { FieldValue } from 'app/models/values/fields';
 import { ContentValue } from 'app/models/values/single-page';
 
@@ -37,6 +38,13 @@ export class SinglePageRepository {
 
   getPageSchema(name: string): Observable<CollectionSchema> {
     return this.http.get<CollectionSchema>(apiUrl(`/models/single_pages/${name}/schema`));
+  }
+  /** What the page is told about itself; the defaults for a page that was never given any. */
+  getPageSettings(name: string): Observable<SchemaSettings> {
+    return this.http.get<SchemaSettings>(apiUrl(`/models/single_pages/${name}/settings`));
+  }
+  updatePageSettings(name: string, settings: SchemaSettings): Observable<void> {
+    return this.http.put<void>(apiUrl(`/models/single_pages/${name}/settings`), settings);
   }
 
   createPage(name: string, schema: CollectionSchema): Observable<void> {

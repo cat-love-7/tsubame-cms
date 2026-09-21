@@ -11,6 +11,7 @@
 
 ```
 管理画面            POST /api/models/.../preview-link   →  { path: "/api/preview/...?token=...", expires_at }
+                   (スキーマが preview を許可しているときだけ。既定は無効 - §7)
                    link.path を preview_site_url の下へ写してコピー
 レビュアー          GET  {preview_site_url}/preview/...?token=...   ← プレビューサイト(静的)
 プレビューサイト    GET  {cms}/api/preview/...?token=...            ← 認証不要。{schema, values}
@@ -184,6 +185,23 @@ export function Article({ doc }: { doc: ArticleView }) { … }
   将来 `unsafe-inline` が必要になれば破れます。別オリジンならこの依存が消えます。
 - **トークンは資格情報です。** 期限は `PREVIEW_LINK_TTL_MINUTES`(既定60分)。CloudFront・S3・
   nginx のアクセスログにはクエリが残りうるので、ログの保持にも気を配ってください。
+
+### スキーマごとの許可(既定は無効)
+
+プレビューサイトが在ることと、**どのスキーマをプレビューしてよいか**は別の話です。スキーマ
+(コレクション・単一ページ)ごとに `preview` を持ち、**既定は無効**。スキーマ編集画面の
+「プレビューリンクを許可する」を入れて保存したものだけがリンクを発行できます(要管理者。
+`GET`/`PUT /api/models/collections/{name}/settings`、`/api/models/single_pages/{name}/settings`)。
+
+- 許可の無いスキーマへの発行も、そのリンクを開くことも **403 `preview_disabled`**。開く側でも
+  見るのは、**設定を切った瞬間に発行済みのリンクが死ぬ**ようにするためです(§7 の「失効させる」
+  手段がこれで、`JWT_SECRET` を回さずに済みます)。
+- 発行できるのは `can_edit` を持つ人、許可を変えられるのは管理者だけです。編集のできない相手に
+  プレビューを配る導線を作らないため、管理画面は**許可が無いスキーマではボタン自体を出しません**。
+- 設定はスキーマ定義とは別のレコードです(`collection_settings` / `single_page_settings`、
+  DynamoDB は `settings`)。フィールドの保存が設定を書き戻すことはなく、コレクション・ページを
+  消せば設定も消えます。**既存のデプロイは設定を持たないので、これまで配っていたコレクションも
+  一度は管理者が入れ直すまで発行できません。**
 
 ## 8. 配備
 

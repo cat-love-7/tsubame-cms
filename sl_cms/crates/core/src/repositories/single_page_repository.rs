@@ -3,6 +3,7 @@ use std::error::Error;
 use std::future::Future;
 
 use crate::models::item_status::{ItemDates, ItemMetadata};
+use crate::models::schema::SchemaSettings;
 use crate::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -23,6 +24,20 @@ pub trait SinglePageRepository: Send + Sync + 'static {
     fn delete_single_page(
         &self,
         page_name: &SinglePageName,
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
+    /// What a page is told about itself; [`SchemaSettings::default`] for a page that has never been
+    /// given any, as for a collection.
+    fn get_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+    ) -> impl Future<Output = Result<SchemaSettings, BoxError>> + Send;
+
+    /// Replace a page's settings. The caller has already checked the page exists.
+    fn set_single_page_settings(
+        &self,
+        page_name: &SinglePageName,
+        settings: &SchemaSettings,
     ) -> impl Future<Output = Result<(), BoxError>> + Send;
     fn get_single_page_item(
         &self,

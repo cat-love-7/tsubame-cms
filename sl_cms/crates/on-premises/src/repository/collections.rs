@@ -1,7 +1,7 @@
 use crate::repository::relations;
 use crate::repository::{
-    COLLECTION_SCHEMA_STORE, DRAFT_STORE, METADATA_STORE, RkvRepository, UNIQUE_STORE,
-    collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
+    COLLECTION_SCHEMA_STORE, COLLECTION_SETTINGS_STORE, DRAFT_STORE, METADATA_STORE, RkvRepository,
+    UNIQUE_STORE, collection_draft_prefix, collection_item_draft_key, collection_item_metadata_key,
     collection_metadata_prefix, unique_key,
 };
 use rkv::{StoreOptions, Value};
@@ -10,6 +10,7 @@ use sl_cms_core::models::collection::{
 };
 use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
 use sl_cms_core::models::owner::ItemOwner;
+use sl_cms_core::models::schema::SchemaSettings;
 use sl_cms_core::models::values::referenced_items;
 use sl_cms_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
@@ -118,6 +119,39 @@ impl CollectionRepository for RkvRepository {
         writer.commit()?;
         Ok(())
     }
+    async fn get_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+    ) -> Result<SchemaSettings, Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(COLLECTION_SETTINGS_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        match store.get(&reader, collection_name.as_bytes())? {
+            Some(Value::Str(stored)) => Ok(serde_json::from_str(&stored)?),
+            // A collection that was never given any settings answers the default, which is what
+            // every collection did before settings existed.
+            _ => Ok(SchemaSettings::default()),
+        }
+    }
+    async fn set_collection_settings(
+        &self,
+        collection_name: &CollectionName,
+        settings: &SchemaSettings,
+    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(COLLECTION_SETTINGS_STORE, StoreOptions::create())?;
+        let stored = serde_json::to_string(settings)?;
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            collection_name.as_bytes(),
+            &Value::Str(&stored),
+        )?;
+        writer.commit()?;
+        Ok(())
+    }
     async fn delete_collection(
         &self,
         collection_name: &CollectionName,
@@ -134,11 +168,20 @@ impl CollectionRepository for RkvRepository {
         // transaction using it began, so opening it later would make DELETE fail.
         let metadata_store = env.open_single(METADATA_STORE, StoreOptions::create())?;
         let draft_store = env.open_single(DRAFT_STORE, StoreOptions::create())?;
+        let settings_store = env.open_single(COLLECTION_SETTINGS_STORE, StoreOptions::create())?;
         let relation_store =
             env.open_single(relations::RELATION_REFS_STORE, StoreOptions::create())?;
         let mut writer = env.write()?;
         store.delete(&mut writer, collection_name.as_bytes())?;
         let reader = env.read()?;
+        // Settings go with the definition they belong to - and, like the counter below, only if
+        // there are any: rkv reports deleting an absent key as an error.
+        if settings_store
+            .get(&reader, collection_name.as_bytes())?
+            .is_some()
+        {
+            settings_store.delete(&mut writer, collection_name.as_bytes())?;
+        }
         for result in item_store.iter_start(&reader)? {
             if let Ok((key, Value::Str(_s))) = result {
                 item_store.delete(&mut writer, &key)?;

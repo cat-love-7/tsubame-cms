@@ -54,6 +54,13 @@ class StubSinglePagesService {
     return of([{ name: 'title', field_type: 'Text', required: false, width: 12, height: 1 }]);
   }
 
+  /** What the schema is told about itself. On by default, so a preview is there to be minted. */
+  public settings: { preview: boolean } = { preview: true };
+
+  getPageSettings(): Observable<{ preview: boolean }> {
+    return of(this.settings);
+  }
+
   /** When set, the page's content waits for the test to complete it. */
   public heldItem?: Subject<unknown>;
 
@@ -386,6 +393,19 @@ describe('SinglePageEdit', () => {
 
     expect(component.error()).toBeNull();
     expect(component.problemField()).toBeNull();
+  });
+
+  // A schema with previews turned off offers no button at all (see the collection item editor).
+  it('does not offer a preview link when the schema does not allow one', async () => {
+    stub.settings = { preview: false };
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    const labels = Array.from(fresh.nativeElement.querySelectorAll('button')).map(
+      (button) => button.textContent ?? '',
+    );
+    expect(labels.some((label) => label.includes('Preview link'))).toBe(false);
   });
 
   // A deployment with no preview site has nothing readable to hand over (see the collection item

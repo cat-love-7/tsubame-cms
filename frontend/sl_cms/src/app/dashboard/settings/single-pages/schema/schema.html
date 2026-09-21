@@ -16,6 +16,19 @@
   <p class="error" role="alert">{{ problem | message }}</p>
 }
 
+<!-- What the page is told about itself, above the fields it is told about its values. -->
+<div class="schema-settings">
+  <label class="preview-setting">
+    <input
+      type="checkbox"
+      [checked]="preview()"
+      (change)="preview.set($any($event.target).checked)"
+    />
+    <span>{{ 'schema.previewAllowed' | transloco }}</span>
+  </label>
+  <p class="hint">{{ 'schema.previewAllowedHint' | transloco }}</p>
+</div>
+
 <!-- One item (or an embedded definition): nothing to compare a value against. -->
 <app-edit-schema
   [schema]="schema()"

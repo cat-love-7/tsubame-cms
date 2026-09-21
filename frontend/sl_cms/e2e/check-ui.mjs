@@ -1011,6 +1011,30 @@ try {
     `${await page.locator('.library .image').count()} 件`,
   );
 
+  // ------------------------------------------------- preview links are a schema's choice
+  // A schema that was never asked for previews offers no link at all: the button is not there, so
+  // nobody is invited to mint something the server would refuse.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('app-value-field input').first().waitFor({ timeout: 15000 });
+  check(
+    'プレビュー無効のスキーマではボタンを出さない',
+    (await page.locator('button:has-text("Preview link")').count()) === 0,
+    `buttons=${await page.locator('button:has-text("Preview link")').count()}`,
+  );
+
+  // Turning it on happens where the rest of the schema is saved, and on its own it says the
+  // collection may be previewed - the fields did not change.
+  await page.goto(`${BASE}/settings/collections/${COLLECTION}/schema`, {
+    waitUntil: 'networkidle',
+  });
+  const previewToggle = page.locator('.preview-setting input[type="checkbox"]');
+  await previewToggle.waitFor({ timeout: 15000 });
+  check('既定ではプレビューは許可されていない', !(await previewToggle.isChecked()));
+  await previewToggle.check();
+  await page.getByRole('button', { name: 'Save schema' }).click();
+  await page.locator('.status').first().waitFor({ timeout: 15000 });
+  check('スキーマの保存でプレビューが許可される', await previewToggle.isChecked(), 'checked');
+
   // ------------------------------------------------- a link shows unpublished work to a guest
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   const titleField = page.locator('app-value-field input').first();

@@ -321,7 +321,8 @@
     "image_not_trashed": "Put the image in the trash first, then delete it for good.",
     "still_referenced": "Other content references this, so it was not deleted. Remove those references first.",
     "relation_unpublished": "A required relation points at content that is not published yet. Publish it first.",
-    "relation_required_by": "Published content references this through a required relation. Change that content, or unpublish it, first."
+    "relation_required_by": "Published content references this through a required relation. Change that content, or unpublish it, first.",
+    "preview_disabled": "Preview links are not enabled for this schema. An administrator can turn them on in the schema editor."
   },
   "nav": {
     "documents": "Documents",
@@ -368,7 +369,9 @@
     "showInListHint": "Adds this field to the collection's list, so an editor can tell the items apart there.",
     "slugGenerateFrom": "Generate from",
     "slugNoSource": "No suggestion",
-    "slugGenerateHint": "The field the content editor may fill the slug from, when asked."
+    "slugGenerateHint": "The field the content editor may fill the slug from, when asked.",
+    "previewAllowed": "Allow preview links",
+    "previewAllowedHint": "A preview link shows this schema's unpublished working copies, without an account, to whoever holds the URL. It needs a preview site to open."
   },
   "labels": {
     "toggleNavigation": "Toggle navigation",

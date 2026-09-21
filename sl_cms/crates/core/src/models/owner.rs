@@ -63,6 +63,18 @@ impl ItemOwner {
         }
     }
 
+    /// What to call the schema this content belongs to: "the collection 'blog'", "the single page
+    /// 'home'".
+    ///
+    /// A setting is a property of the schema rather than of the one item, so a refusal about one
+    /// has to name the schema - which is what an administrator would go and change.
+    pub fn describe_schema(&self) -> String {
+        match self.kind {
+            ItemOwnerKind::CollectionItem => format!("the collection '{}'", self.name),
+            ItemOwnerKind::SinglePage => format!("the single page '{}'", self.name),
+        }
+    }
+
     /// The owner as one string, for a key in the index.
     ///
     /// The name is escaped (`:` becomes `%3A`), so a collection named `a:b` cannot produce the

@@ -45,7 +45,7 @@
         </button>
       }
     }
-    @if (canEdit()) {
+    @if (canEdit() && previewAllowed() !== false) {
       <button matButton (click)="sharePreview()">
         {{ 'content.previewLink' | transloco }}
       </button>
