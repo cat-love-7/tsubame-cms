@@ -1,0 +1,19 @@
+{
+  "kind": "collectionType",
+  "connection": "default",
+  "collectionName": "tags",
+  "info": {
+    "name": "tag",
+    "description": "A tag, related to articles both ways"
+  },
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "articles": {
+      "collection": "article",
+      "via": "tags"
+    }
+  }
+}

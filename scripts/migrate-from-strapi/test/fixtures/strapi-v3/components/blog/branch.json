@@ -1,0 +1,19 @@
+{
+  "connection": "default",
+  "collectionName": "components_blog_branches",
+  "info": {
+    "name": "branch",
+    "icon": "code-branch"
+  },
+  "options": {},
+  "attributes": {
+    "text": {
+      "type": "text"
+    },
+    "back": {
+      "type": "component",
+      "repeatable": true,
+      "component": "blog.tree"
+    }
+  }
+}

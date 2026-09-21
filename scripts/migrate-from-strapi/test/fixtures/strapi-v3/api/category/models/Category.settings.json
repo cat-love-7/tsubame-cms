@@ -1,0 +1,30 @@
+{
+  "kind": "collectionType",
+  "connection": "default",
+  "collectionName": "categories",
+  "info": {
+    "name": "category",
+    "description": "A category an article belongs to"
+  },
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "slug": {
+      "type": "uid",
+      "targetField": "name"
+    },
+    "section": {
+      "model": "section",
+      "required": true
+    },
+    "parent": {
+      "model": "category"
+    },
+    "articles": {
+      "collection": "article",
+      "via": "category"
+    }
+  }
+}

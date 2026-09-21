@@ -1,0 +1,29 @@
+{
+  "name": "gatsby-source-sl-cms",
+  "version": "0.1.0",
+  "description": "Gatsby source plugin for the sl_cms delivery API. Markdown fields become text/markdown nodes, so gatsby-transformer-remark turns them into HTML.",
+  "license": "MIT",
+  "main": "gatsby-node.js",
+  "files": [
+    "gatsby-node.js",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "gatsby",
+    "gatsby-plugin",
+    "gatsby-source",
+    "gatsby-source-plugin",
+    "sl-cms"
+  ],
+  "peerDependencies": {
+    "gatsby": "^5.0.0"
+  },
+  "dependencies": {}
+}

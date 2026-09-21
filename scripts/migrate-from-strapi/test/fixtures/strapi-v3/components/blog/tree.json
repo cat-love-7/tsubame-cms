@@ -1,0 +1,19 @@
+{
+  "connection": "default",
+  "collectionName": "components_blog_trees",
+  "info": {
+    "name": "tree",
+    "icon": "sitemap"
+  },
+  "options": {},
+  "attributes": {
+    "line": {
+      "type": "string"
+    },
+    "branches": {
+      "type": "component",
+      "repeatable": true,
+      "component": "blog.branch"
+    }
+  }
+}

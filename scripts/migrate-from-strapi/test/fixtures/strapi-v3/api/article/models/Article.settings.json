@@ -1,0 +1,97 @@
+{
+  "kind": "collectionType",
+  "connection": "default",
+  "collectionName": "articles",
+  "info": {
+    "name": "article",
+    "description": "A blog post"
+  },
+  "options": {
+    "increments": true,
+    "timestamps": true,
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true,
+      "minLength": 3,
+      "maxLength": 120
+    },
+    "slug": {
+      "type": "uid",
+      "targetField": "title"
+    },
+    "body": {
+      "type": "richtext"
+    },
+    "excerpt": {
+      "type": "text"
+    },
+    "views": {
+      "type": "integer"
+    },
+    "rating": {
+      "type": "decimal"
+    },
+    "featured": {
+      "type": "boolean"
+    },
+    "publishedOn": {
+      "type": "date"
+    },
+    "reviewedAt": {
+      "type": "datetime"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["draft", "review", "live"]
+    },
+    "meta": {
+      "type": "json"
+    },
+    "cover": {
+      "model": "file",
+      "via": "related",
+      "plugin": "upload"
+    },
+    "gallery": {
+      "collection": "file",
+      "via": "related",
+      "plugin": "upload"
+    },
+    "seo": {
+      "type": "component",
+      "repeatable": false,
+      "component": "default.seo"
+    },
+    "sections": {
+      "type": "component",
+      "repeatable": true,
+      "component": "blog.quote"
+    },
+    "blocks": {
+      "type": "dynamiczone",
+      "components": ["default.seo", "blog.quote"]
+    },
+    "tree": {
+      "type": "component",
+      "repeatable": false,
+      "component": "blog.tree"
+    },
+    "category": {
+      "model": "category"
+    },
+    "tags": {
+      "collection": "tag",
+      "via": "articles"
+    },
+    "featuredOn": {
+      "model": "home"
+    },
+    "author": {
+      "model": "user",
+      "via": "articles"
+    }
+  }
+}

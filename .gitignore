@@ -24,6 +24,11 @@ Thumbs.db
 .history/
 *.launch
 
+# --- Migration run artifacts (scripts/migrate-from-strapi) ---
+# The resume state names every Strapi id that became a CMS id, and the report quotes content;
+# neither belongs in the repository.
+**/.strapi-migration/
+
 # --- Terraform (infra) ---
 # `**/` so the bootstrap root (`infra/bootstrap/`) is covered by the same rules.
 /infra/**/.terraform/

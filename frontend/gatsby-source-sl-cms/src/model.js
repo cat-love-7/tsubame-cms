@@ -1,0 +1,421 @@
+'use strict';
+
+const { sanitizeTypeName, sanitizeFieldName, createNameAllocator } = require('./naming');
+const { describeFieldType } = require('./fields');
+
+/**
+ * The model one build is read against: which GraphQL type each collection, page and composite
+ * definition gets, which GraphQL name each of their fields gets, how a CMS field type maps to a
+ * GraphQL type, and which reverse references (`inverse_name`) each type answers to.
+ *
+ * It is built twice per build - once in `createSchemaCustomization` to declare the schema and once
+ * in `sourceNodes` to fill it - from the same `fetchSchemaSnapshot()`, and the two have to agree
+ * exactly: a field the declaration renamed but the value did not is a null at runtime, and the
+ * other way round is a field that does not exist. Keeping every naming decision in one function
+ * over one input is what makes that agreement checkable rather than hopeful.
+ */
+
+/** The types that are the same for every project, after the configurable prefix. */
+const STATIC_TYPE_SUFFIXES = ['Collection', 'Markdown', 'Image', 'Composite', 'RelationRef'];
+
+/** The GraphQL names this plugin uses, all built from the configured prefix. */
+function graphqlNamesFor(prefix) {
+  return {
+    collection: `${prefix}Collection`,
+    markdown: `${prefix}Markdown`,
+    image: `${prefix}Image`,
+    composite: `${prefix}Composite`,
+    relation: `${prefix}RelationRef`,
+  };
+}
+
+/** `collection:blog` / `page:home`: the key a schema (or a content type) is looked up by. */
+function schemaKey(kind, name) {
+  return `${kind}:${name}`;
+}
+
+/** `collection:authors` / `page:home`: the key a relation target is looked up by. */
+function targetKey(target) {
+  return `${target.kind === 'single_page' ? 'page' : 'collection'}:${target.name}`;
+}
+
+/**
+ * The key a piece of content's node is created with (`sl-cms-item:authors:7`, `sl-cms-page:home`).
+ *
+ * `values.js` builds the same key from a reference, which is what lets a reverse reference be
+ * answered with `createNodeId` and nothing else.
+ */
+function ownerNodeKey({ kind, name, item }) {
+  return kind === 'collection' ? `sl-cms-item:${name}:${item}` : `sl-cms-page:${name}`;
+}
+
+/** A relation target, with the two kinds spelled the way the rest of the model spells them. */
+function normalizeTarget(target) {
+  if (target === null || typeof target !== 'object' || typeof target.name !== 'string') {
+    return null;
+  }
+  return { kind: target.kind === 'single_page' ? 'single_page' : 'collection', name: target.name };
+}
+
+/**
+ * Which GraphQL type each collection, page and composite definition uses.
+ *
+ * All three are allocated from one namespace, in a fixed order (collections, then pages, then
+ * composite definitions; each sorted), because two of them can want the same name and the
+ * allocator's answer depends on who asked first. Sorting is what makes it stable: the API does not
+ * promise an order, and a name allocated in a different order would be a different name.
+ */
+function planTypeNames(collectionNames, pageNames, compositeIds, prefix) {
+  const allocator = createNameAllocator(STATIC_TYPE_SUFFIXES.map((suffix) => `${prefix}${suffix}`));
+
+  const collections = new Map();
+  for (const name of [...collectionNames].sort()) {
+    collections.set(name, allocator.take(`${prefix}${sanitizeTypeName(name)}Item`));
+  }
+
+  const pages = new Map();
+  for (const name of [...pageNames].sort()) {
+    pages.set(name, allocator.take(`${prefix}${sanitizeTypeName(name)}Page`));
+  }
+
+  const composites = new Map();
+  for (const id of [...compositeIds].sort()) {
+    composites.set(id, allocator.take(`${prefix}Composite${sanitizeTypeName(id)}`));
+  }
+
+  return { prefix, collections, pages, composites };
+}
+
+/**
+ * The names a content field may not take, because the plugin already uses them.
+ *
+ * `children<Markdown>` and `childMarkdownRemark` are what Gatsby itself derives from the
+ * parent/child links, so a CMS field of that name would collide with a field the consumer did not
+ * ask for but gets anyway. A composite is not a node, but its `id` and `values` are still the
+ * plugin's own.
+ */
+function reservedFieldNames(kind, names) {
+  if (kind === 'composite') {
+    return ['id', 'values'];
+  }
+  const reserved = [
+    'id',
+    'parent',
+    'children',
+    'internal',
+    'fields',
+    'values',
+    'fieldNames',
+    'childMarkdownRemark',
+    `child${names.markdown}`,
+    `children${names.markdown}`,
+  ];
+  if (kind === 'item') {
+    reserved.push('remoteId', 'collection', 'publishedAt', 'lastPublishedAt');
+  } else {
+    reserved.push('name', 'publishedAt', 'lastPublishedAt');
+  }
+  return reserved;
+}
+
+/**
+ * The GraphQL names of a type's CMS fields and of the reverse references it answers to.
+ *
+ * The mappings travel with the node inside `fieldNames`, because a query has to be written against
+ * the GraphQL name, and `published-at` -> `published_at` is guessable while `お知らせ` -> `Unnamed`
+ * is not. An inverse name is a label the CMS lets an editor choose, so it is rewritten the same
+ * way; the CMS already guarantees one inverse name per target, and the allocator is what keeps a
+ * name from colliding with the target's own fields.
+ */
+function planTypeFields(kind, schema, inverseNames, names) {
+  const allocator = createNameAllocator(reservedFieldNames(kind, names));
+
+  const fields = new Map();
+  for (const field of Array.isArray(schema) ? schema : []) {
+    const original = String(field.name);
+    if (fields.has(original)) {
+      continue;
+    }
+    fields.set(original, allocator.take(sanitizeFieldName(original)));
+  }
+
+  const inverses = new Map();
+  for (const inverseName of [...inverseNames].sort()) {
+    if (inverses.has(inverseName)) {
+      continue;
+    }
+    inverses.set(inverseName, allocator.take(sanitizeFieldName(inverseName)));
+  }
+
+  return { fields, inverses };
+}
+
+/** The fields of a schema, without any inverse names: what a composite definition needs. */
+function planFieldNames(kind, schema, names) {
+  return planTypeFields(kind, schema, [], names).fields;
+}
+
+function mappingToObject(mapping) {
+  return Object.fromEntries(mapping);
+}
+
+/** The type of one relation's target, or null when the target is not part of this build. */
+function relationTargetTypeName(model, target) {
+  const normalized = normalizeTarget(target);
+  if (normalized === null) {
+    return null;
+  }
+  if (normalized.kind === 'single_page') {
+    return model.plan.pages.get(normalized.name) ?? null;
+  }
+  return model.plan.collections.get(normalized.name) ?? null;
+}
+
+/**
+ * The GraphQL type of a field, and whether its value is a link to a node.
+ *
+ * Four choices are worth stating:
+ *
+ * - `Number` is `Float`, not `Int`: the CMS stores `f64`, and a GraphQL `Int` would make a value
+ *   like `1.5` a query error rather than a value.
+ * - `Date` and `DateTime` are the `Date` scalar Gatsby already has, so `formatString` works and the
+ *   consumer does not have to parse strings by hand.
+ * - A `Relation` field is a link to the target's type (`[Type]` when the relation holds several),
+ *   which is what makes `author { name }` a query instead of a second lookup. A target that is not
+ *   part of the build falls back to `[SlCmsRelationRef]`, so the schema still compiles.
+ * - A `CompositeField` is typed after its definition once `/api/content/composite-fields` answers
+ *   it, and by the opaque `SlCmsComposite` otherwise.
+ *
+ * `JSON` is the last fallback that keeps an unknown or ambiguous field queryable: the whole value
+ * is still there, under `values`.
+ */
+function graphqlFieldType(model, fieldType) {
+  const { kind, options } = describeFieldType(fieldType);
+  switch (kind) {
+    case 'Text':
+    case 'Slug':
+      return { type: 'String', link: false };
+    case 'Markdown':
+      return { type: model.names.markdown, link: true };
+    case 'Number':
+      return { type: 'Float', link: false };
+    case 'Boolean':
+      return { type: 'Boolean', link: false };
+    case 'Date':
+    case 'DateTime':
+      return { type: 'Date', link: false };
+    case 'Image':
+      return { type: model.names.image, link: false };
+    case 'TextEnum':
+      return { type: '[String]', link: false };
+    case 'CompositeField': {
+      const id = options === null || typeof options !== 'object' ? undefined : options.id;
+      const typeName = typeof id === 'string' ? model.plan.composites.get(id) : undefined;
+      return { type: typeName ?? model.names.composite, link: false };
+    }
+    case 'Relation': {
+      const relation = options === null || typeof options !== 'object' ? {} : options;
+      const targetType = relationTargetTypeName(model, relation.target);
+      if (targetType === null) {
+        return { type: `[${model.names.relation}]`, link: false };
+      }
+      // A single page is one item, so a relation that points at one is never a list, whatever the
+      // schema says; the server refuses the combination, and reading it as "several" would only
+      // hide a broken schema.
+      const many = Boolean(relation.has_many) && !(relation.target && relation.target.kind === 'single_page');
+      return { type: many ? `[${targetType}]` : targetType, link: true };
+    }
+    case 'Array': {
+      // An array with more than one declared item type is left untyped: the server reads each
+      // element with the first type that fits, so the elements need not be the same type.
+      if (!Array.isArray(options) || options.length !== 1) {
+        return { type: 'JSON', link: false };
+      }
+      const item = graphqlFieldType(model, options[0]);
+      if (item.type === 'JSON') {
+        return { type: 'JSON', link: false };
+      }
+      return { type: `[${item.type}]`, link: item.link };
+    }
+    default:
+      return { type: 'JSON', link: false };
+  }
+}
+
+/**
+ * The reverse references the schemas declare, from both ends.
+ *
+ * `inverse_name` is written on the *referring* field - `blog.author` says the other side calls it
+ * `articles` - and the CMS keeps it unique per target, so a target answers to one name from one
+ * schema. That is what makes an inverse field a list of one concrete type rather than a union.
+ *
+ * Only a **top-level** relation field declares an inverse, which is the rule the delivery API's
+ * `?populate=<inverse_name>` follows too (`ContentReader::declared_inverses` reads the schema's own
+ * fields, and `inverse_references` matches them). A relation inside a composite definition is not a
+ * declaration: a composite can be embedded by several collections, so "who is referring" would have
+ * more than one answer.
+ *
+ * - `bySchema`: what a content type declares, for the walk that builds the reverse index.
+ * - `byTarget`: what a target answers to, for the declared fields and their types.
+ */
+function collectInverseDeclarations(snapshot, plan) {
+  const bySchema = new Map();
+  const byTarget = new Map();
+
+  const consider = (schema, declaringSchemaKey, declaringTypeName) => {
+    if (declaringTypeName === undefined) {
+      return;
+    }
+    const declarations = [];
+    for (const field of Array.isArray(schema) ? schema : []) {
+      const { kind, options } = describeFieldType(field.field_type);
+      if (kind !== 'Relation') {
+        continue;
+      }
+      const inverseName =
+        options !== null && typeof options === 'object' && typeof options.inverse_name === 'string'
+          ? options.inverse_name.trim()
+          : '';
+      const target = options !== null && typeof options === 'object' ? normalizeTarget(options.target) : null;
+      if (inverseName === '' || target === null) {
+        continue;
+      }
+      declarations.push({ inverseName, target });
+      const key = targetKey(target);
+      const declared = byTarget.get(key) ?? [];
+      declared.push({ inverseName, declaringTypeName });
+      byTarget.set(key, declared);
+    }
+    if (declarations.length > 0) {
+      bySchema.set(declaringSchemaKey, declarations);
+    }
+  };
+
+  for (const [name, schema] of snapshot.collections) {
+    consider(schema, schemaKey('collection', name), plan.collections.get(name));
+  }
+  for (const [name, schema] of snapshot.pages) {
+    consider(schema, schemaKey('page', name), plan.pages.get(name));
+  }
+
+  for (const [key, declared] of byTarget) {
+    const seen = new Set();
+    byTarget.set(
+      key,
+      declared
+        .filter((entry) => {
+          const identity = `${entry.inverseName}\u0000${entry.declaringTypeName}`;
+          if (seen.has(identity)) {
+            return false;
+          }
+          seen.add(identity);
+          return true;
+        })
+        .sort((left, right) =>
+          left.inverseName === right.inverseName
+            ? left.declaringTypeName.localeCompare(right.declaringTypeName)
+            : left.inverseName.localeCompare(right.inverseName),
+        ),
+    );
+  }
+
+  return { bySchema, byTarget };
+}
+
+/**
+ * The `fieldNames` a content node carries: its CMS fields, plus the reverse references it answers
+ * to. A name already taken by a CMS field keeps that field's entry (the allocator gave the inverse
+ * a suffix, so the two are still separate GraphQL fields; only the lookup table is shadowed, and
+ * only when a schema names an inverse exactly like one of the target's own fields).
+ */
+function contentFieldNames(model, kind, name) {
+  const mapping = kind === 'collection' ? model.fieldNames.collections.get(name) : model.fieldNames.pages.get(name);
+  const result = Object.fromEntries(mapping ?? new Map());
+  const inverses = model.inverseFieldNames.get(schemaKey(kind, name)) ?? new Map();
+  for (const [inverseName, graphqlName] of inverses) {
+    if (!(inverseName in result)) {
+      result[inverseName] = graphqlName;
+    }
+  }
+  return result;
+}
+
+/**
+ * The model for one build.
+ *
+ * `snapshot` is what `SlCmsClient.fetchSchemaSnapshot()` read: the collections with published items
+ * (the index), every collection and page a relation names (whose schema is public whether or not
+ * they have published items), the published pages, the composite definitions, and the single-page
+ * targets that are not published and therefore have no public schema.
+ */
+function buildContentModel(snapshot, options) {
+  const names = graphqlNamesFor(options.typePrefix);
+  const pageNames = [...new Set([...snapshot.pages.keys(), ...(snapshot.unpublishedPageTargets || [])])];
+  const plan = planTypeNames([...snapshot.collections.keys()], pageNames, [...snapshot.composites.keys()], options.typePrefix);
+  const { bySchema, byTarget } = collectInverseDeclarations(snapshot, plan);
+
+  const fieldNames = { collections: new Map(), pages: new Map(), composites: new Map() };
+  const inverseFieldNames = new Map();
+
+  for (const [name, schema] of snapshot.collections) {
+    const declared = byTarget.get(schemaKey('collection', name)) ?? [];
+    const planned = planTypeFields(
+      'item',
+      schema,
+      declared.map((entry) => entry.inverseName),
+      names,
+    );
+    fieldNames.collections.set(name, planned.fields);
+    inverseFieldNames.set(schemaKey('collection', name), planned.inverses);
+  }
+
+  for (const name of plan.pages.keys()) {
+    // A page a relation names but the index does not list has no public schema; its type is
+    // declared with the plugin fields only, but it still answers to the inverse names declared
+    // against it, so those are planned from the target key rather than from a schema.
+    const schema = snapshot.pages.get(name) ?? [];
+    const declared = byTarget.get(schemaKey('page', name)) ?? [];
+    const planned = planTypeFields(
+      'page',
+      schema,
+      declared.map((entry) => entry.inverseName),
+      names,
+    );
+    fieldNames.pages.set(name, planned.fields);
+    inverseFieldNames.set(schemaKey('page', name), planned.inverses);
+  }
+
+  for (const [id, schema] of snapshot.composites) {
+    fieldNames.composites.set(id, planFieldNames('composite', schema, names));
+  }
+
+  return {
+    options,
+    names,
+    plan,
+    fieldNames,
+    inverseFieldNames,
+    inverseDeclarationsBySchema: bySchema,
+    inverseDeclarationsByTarget: byTarget,
+    snapshot,
+  };
+}
+
+module.exports = {
+  STATIC_TYPE_SUFFIXES,
+  graphqlNamesFor,
+  schemaKey,
+  targetKey,
+  ownerNodeKey,
+  normalizeTarget,
+  planTypeNames,
+  reservedFieldNames,
+  planTypeFields,
+  planFieldNames,
+  mappingToObject,
+  relationTargetTypeName,
+  graphqlFieldType,
+  collectInverseDeclarations,
+  contentFieldNames,
+  buildContentModel,
+};

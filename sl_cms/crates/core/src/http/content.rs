@@ -23,10 +23,11 @@ use chrono::{DateTime, Utc};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
-use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter, Sort};
+use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter};
 use crate::models::error::HttpError;
 use crate::models::pagination::{PageQuery, Pagination};
 use crate::models::single_page::{SinglePageName, SinglePageSchema};
+use crate::models::sort::Sort;
 
 pub fn routes<R: Storage>() -> Router<AppState<R>> {
     Router::new()

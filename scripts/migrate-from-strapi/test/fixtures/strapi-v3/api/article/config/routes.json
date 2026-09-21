@@ -1,0 +1,28 @@
+{
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/blog-posts",
+      "handler": "article.find",
+      "config": {
+        "policies": []
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/blog-posts/count",
+      "handler": "article.count",
+      "config": {
+        "policies": []
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/blog-posts/:id",
+      "handler": "article.findOne",
+      "config": {
+        "policies": []
+      }
+    }
+  ]
+}

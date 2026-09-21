@@ -1,0 +1,28 @@
+{
+  "kind": "singleType",
+  "connection": "default",
+  "collectionName": "home",
+  "info": {
+    "name": "home",
+    "description": "The landing page"
+  },
+  "attributes": {
+    "headline": {
+      "type": "string",
+      "required": true
+    },
+    "intro": {
+      "type": "text"
+    },
+    "hero": {
+      "model": "file",
+      "via": "related",
+      "plugin": "upload"
+    },
+    "seo": {
+      "type": "component",
+      "repeatable": false,
+      "component": "default.seo"
+    }
+  }
+}

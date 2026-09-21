@@ -1,0 +1,15 @@
+{
+  "kind": "collectionType",
+  "connection": "default",
+  "collectionName": "sections",
+  "info": {
+    "name": "section",
+    "description": "A section a category belongs to"
+  },
+  "attributes": {
+    "name": {
+      "type": "string",
+      "required": true
+    }
+  }
+}

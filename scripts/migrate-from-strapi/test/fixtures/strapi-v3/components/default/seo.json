@@ -1,0 +1,17 @@
+{
+  "connection": "default",
+  "collectionName": "components_default_seos",
+  "info": {
+    "name": "seo",
+    "icon": "search"
+  },
+  "options": {},
+  "attributes": {
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "text"
+    }
+  }
+}
