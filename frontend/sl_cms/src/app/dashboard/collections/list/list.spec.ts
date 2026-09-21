@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
+import type { MockInstance } from 'vitest';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { ItemMetadata, ItemMetadataMap } from 'app/models/item-status';
@@ -168,6 +169,8 @@ describe('CollectionItemList', () => {
   let fixture: TypedFixture<CollectionItemList>;
   let stub: StubCollectionsService;
   let route: ReturnType<typeof stubActivatedRoute>;
+  /** `window.confirm`, which every question this screen asks goes through. */
+  let confirmSpy: MockInstance<(message?: string) => boolean>;
 
   beforeEach(async () => {
     stub = new StubCollectionsService();
@@ -183,6 +186,10 @@ describe('CollectionItemList', () => {
         stubAuth(),
       ],
     }).compileComponents();
+
+    // Publishing and deleting both ask before they act; the default of these specs is that the
+    // editor says yes, and the tests that care about the answer change it through `confirmSpy`.
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     fixture = TestBed.createComponent(CollectionItemList);
     component = fixture.componentInstance;
@@ -520,6 +527,8 @@ describe('CollectionItemList', () => {
     expect(component.statusOf(1)).toBe('published');
     const badge = fixture.nativeElement.querySelector('app-item-status .badge') as HTMLElement;
     expect(badge.textContent?.trim()).toBe('Published');
+    // Publishing is asked for first, because it is visible to the world the moment it lands.
+    expect(confirmSpy).toHaveBeenCalledWith('Publish item 1?');
   });
 
   it('hides a published item again', () => {
@@ -535,6 +544,30 @@ describe('CollectionItemList', () => {
 
     expect(stub.unpublished).toEqual([1]);
     expect(fresh.componentInstance.statusOf(1)).toBe('draft');
+  });
+
+  // Answering no has to leave the item exactly as it was - the question is the only thing standing
+  // between a misclick and a page appearing or disappearing on the public site.
+  it('leaves an item alone when the confirmation is declined', () => {
+    confirmSpy.mockReturnValue(false);
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector(
+      'button[aria-label="publish item 1"]',
+    ) as HTMLButtonElement;
+    button.click();
+    fixture.detectChanges();
+
+    expect(confirmSpy).toHaveBeenCalledWith('Publish item 1?');
+    expect(stub.published).toEqual([]);
+    expect(component.statusOf(1)).toBe('draft');
+
+    // The same answer stops a batch, which is the larger accident of the two.
+    component.toggleAll();
+    component.setSelectedPublished('published');
+    expect(confirmSpy).toHaveBeenCalledWith('Publish the 1 selected items?');
+    expect(stub.batches).toEqual([]);
+    expect(component.selected().size).toBe(1);
   });
 
   /** The audit trail: the list says who published the row, and stays quiet for drafts. */

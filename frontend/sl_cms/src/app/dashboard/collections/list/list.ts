@@ -368,6 +368,15 @@ export class CollectionItemList {
     if (ids.length === 0) {
       return;
     }
+    // Publishing and unpublishing change what the site serves, so the answer to "are you sure?" is
+    // the editor's - the same as deleting one item (`content.publishSelectedConfirm`).
+    const question =
+      status === 'published'
+        ? 'content.publishSelectedConfirm'
+        : 'content.unpublishSelectedConfirm';
+    if (!confirm(this.i18n.translate(question, { count: ids.length }))) {
+      return;
+    }
     // The collection the rows were picked in, not the one on screen when the answer lands: the ids
     // are only meaningful there.
     const started = { name: this.collectionName(), generation: this.loadToken };
@@ -424,6 +433,12 @@ export class CollectionItemList {
   }
 
   private setPublished(id: number, published: boolean) {
+    // The same confirmation a delete asks for: this is what the site serves, not what the editor
+    // is looking at.
+    const question = published ? 'content.publishItemConfirm' : 'content.unpublishItemConfirm';
+    if (!confirm(this.i18n.translate(question, { id }))) {
+      return;
+    }
     const request = published
       ? this.collectionsService.publishItem(this.collectionName(), id)
       : this.collectionsService.unpublishItem(this.collectionName(), id);
