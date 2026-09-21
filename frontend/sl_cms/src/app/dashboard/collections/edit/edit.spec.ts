@@ -7,6 +7,7 @@ import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, defer, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { CollectionsService } from 'app/services/schema/collections.service';
 
@@ -120,6 +121,20 @@ class StubCollectionsService {
   }
 }
 
+/** The deployment's answer about the preview site, which is the deployment's business. */
+class StubCapabilities {
+  /** Set to null to be a deployment that has no preview site. */
+  public site: string | null = 'https://preview.example.test';
+
+  previewSiteUrl(): string | null {
+    return this.site;
+  }
+
+  load(): void {
+    // The screen never loads it; the app does.
+  }
+}
+
 /** The form's save button, by its exact label ("Save and publish" is a different button). */
 function saveButton(element: HTMLElement): HTMLButtonElement {
   const button = Array.from(element.querySelectorAll('button')).find(
@@ -173,10 +188,12 @@ function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
 
 describe('CollectionItemEdit', () => {
   let stub: StubCollectionsService;
+  let capabilities: StubCapabilities;
   let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     stub = new StubCollectionsService();
+    capabilities = new StubCapabilities();
     // Editing item 7 of the `blog` collection.
     route = stubActivatedRoute({ name: 'blog', id: '7' });
     await TestBed.configureTestingModule({
@@ -187,6 +204,7 @@ describe('CollectionItemEdit', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: route },
         { provide: CollectionsService, useValue: stub },
+        { provide: CapabilitiesService, useValue: capabilities },
         stubAuth(),
       ],
     }).compileComponents();
@@ -586,7 +604,7 @@ describe('CollectionItemEdit', () => {
 
     const component = fresh.componentInstance;
     expect(component.previewUrl()).toBe(
-      `${location.origin}/api/preview/collections/blog/items/7?token=1758000000.abc123`,
+      'https://preview.example.test/preview/collections/blog/items/7?token=1758000000.abc123',
     );
     // The link is rendered as a real anchor as well as offered to the clipboard.
     const anchor = fresh.nativeElement.querySelector('.preview-link a') as HTMLAnchorElement;
@@ -597,6 +615,32 @@ describe('CollectionItemEdit', () => {
       key: 'content.previewNotCopied',
       params: { expires: formatDateTime('2026-09-13T12:00:00Z', 'en') },
     });
+  });
+
+  // A deployment with no preview site has nothing readable to hand over: the API's own answer is
+  // JSON, so the screen says so rather than copying a link nobody can use.
+  it('says so when the deployment has no preview site', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      capabilities.site = null;
+      const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+      fresh.detectChanges();
+
+      previewButton(fresh.nativeElement).click();
+      await fresh.whenStable();
+      fresh.detectChanges();
+
+      expect(fresh.componentInstance.error()).toEqual(t('content.previewSiteNotConfigured'));
+      expect(fresh.componentInstance.previewUrl()).toBe('');
+      expect(fresh.componentInstance.notice()).toBeNull();
+      expect(writeText).not.toHaveBeenCalled();
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>)['clipboard'];
+    }
   });
 
   // A link is minted for the item on screen when the button is pressed. Switching items reuses

@@ -6,6 +6,7 @@ import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { ItemMetadata } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 
@@ -135,6 +136,20 @@ function publishButton(element: HTMLElement, label: string): HTMLButtonElement {
   return button;
 }
 
+/** The deployment's answer about the preview site, which is the deployment's business. */
+class StubCapabilities {
+  /** Set to null to be a deployment that has no preview site. */
+  public site: string | null = 'https://preview.example.test';
+
+  previewSiteUrl(): string | null {
+    return this.site;
+  }
+
+  load(): void {
+    // The screen never loads it; the app does.
+  }
+}
+
 /** Permissions are the server's business; the screens are only told what to offer. */
 function stubAuth(canEdit = true, canPublish = true, isAdmin = true) {
   return {
@@ -156,10 +171,12 @@ describe('SinglePageEdit', () => {
   let component: SinglePageEdit;
   let fixture: TypedFixture<SinglePageEdit>;
   let stub: StubSinglePagesService;
+  let capabilities: StubCapabilities;
   let route: ReturnType<typeof stubActivatedRoute>;
 
   beforeEach(async () => {
     stub = new StubSinglePagesService();
+    capabilities = new StubCapabilities();
     route = stubActivatedRoute({ name: 'home' });
     await TestBed.configureTestingModule({
       imports: [SinglePageEdit],
@@ -169,6 +186,7 @@ describe('SinglePageEdit', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: route },
         { provide: SinglePagesService, useValue: stub },
+        { provide: CapabilitiesService, useValue: capabilities },
         stubAuth(),
       ],
     }).compileComponents();
@@ -368,6 +386,29 @@ describe('SinglePageEdit', () => {
 
     expect(component.error()).toBeNull();
     expect(component.problemField()).toBeNull();
+  });
+
+  // A deployment with no preview site has nothing readable to hand over (see the collection item
+  // editor): the API's own answer is JSON.
+  it('says so when the deployment has no preview site', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      capabilities.site = null;
+      component.sharePreview();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.error()).toEqual(t('content.previewSiteNotConfigured'));
+      expect(component.previewUrl()).toBe('');
+      expect(component.notice()).toBeNull();
+      expect(writeText).not.toHaveBeenCalled();
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>)['clipboard'];
+    }
   });
 
   // A link is minted for the page on screen when the button is pressed, and the sidebar switches

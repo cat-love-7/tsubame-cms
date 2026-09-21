@@ -196,6 +196,7 @@
     "previewLink": "Preview link",
     "previewCopied": "The preview link was copied (valid until {{expires}}).",
     "previewNotCopied": "The preview link was created (valid until {{expires}}). It could not be copied, so copy it from below.",
+    "previewSiteNotConfigured": "This deployment has no preview site, so there is no readable link to share. The preview API answers with JSON; set PREVIEW_SITE_URL to where a preview site is served.",
     "newItem": "New item",
     "editItem": "Edit item",
     "noFieldsInCollection": "This collection has no fields yet. Add fields in the schema editor first.",

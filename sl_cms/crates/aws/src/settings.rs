@@ -48,6 +48,9 @@ pub struct AwsSettings {
     /// Cognito's hosted sign-in page, when the deployment has one, so a client can send people
     /// there instead of telling them to find it.
     pub login_url: Option<String>,
+    /// The preview site's origin, when this deployment has one, so an admin screen can turn a
+    /// signed preview link into a page a reviewer can read.
+    pub preview_site_url: Option<String>,
     /// Where the DynamoDB endpoint is, for a local emulator. `None` means the real AWS
     /// endpoint, which is what a deployment uses.
     pub endpoint_url: Option<String>,
@@ -141,6 +144,11 @@ impl AwsSettings {
             )?,
             client_id: required(non_empty_env("COGNITO_CLIENT_ID"), "COGNITO_CLIENT_ID")?,
             login_url: non_empty_env("COGNITO_LOGIN_URL"),
+            // Parsed with the core's rule rather than taken as written: the same typo has to be a
+            // startup error whichever backend is reading it.
+            preview_site_url: non_empty_env("PREVIEW_SITE_URL")
+                .map(|raw| sl_cms_core::config::parse_preview_site_url(&raw))
+                .transpose()?,
             endpoint_url: non_empty_env("AWS_ENDPOINT_URL"),
             s3_endpoint_url: non_empty_env("AWS_ENDPOINT_URL_S3"),
             image_base_url: non_empty_env("AWS_IMAGE_BASE_URL"),
@@ -231,6 +239,7 @@ mod tests {
             user_pool_id: "eu-west-1_abc".to_string(),
             client_id: "client-1".to_string(),
             login_url: None,
+            preview_site_url: None,
             endpoint_url: None,
             s3_endpoint_url: None,
             image_base_url: None,

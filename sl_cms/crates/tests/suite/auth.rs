@@ -29,6 +29,10 @@ async fn capabilities_say_how_this_deployment_signs_users_in() {
             "presigned"
         }
     );
+    // Where a shared preview link is opened. The API's own answer is JSON, so a deployment that
+    // has a preview site names it here and a client can hand a reviewer something readable; the
+    // harness sets one so both backends are shown to pass it through.
+    assert_eq!(body["preview_site_url"], Backend::PREVIEW_SITE_URL);
     // The image limit travels with the answer, so a browser can refuse a file it already knows is
     // too big instead of uploading it to be told afterwards. The harness runs with the defaults,
     // so this is also what a deployment that sets nothing reports.

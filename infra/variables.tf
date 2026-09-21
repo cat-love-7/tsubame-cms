@@ -83,6 +83,44 @@ variable "frontend_certificate_arn" {
   }
 }
 
+variable "preview_url" {
+  description = <<-EOT
+    Where the preview site is served from, as a browser sees it: an origin, without a trailing
+    slash, for example `https://preview.cms.example.com`. Empty means the conventional name under
+    the app's own: `https://preview.<app_url's host>`.
+
+    This is a **name of its own**, not a path under `app_url`, and that is the point. A preview
+    renders unpublished HTML, and the CMS keeps its bearer token in `localStorage` on the app's
+    origin, so the two must not share an origin: a stored-XSS in a draft could otherwise read the
+    editor's token (`doc/preview-site.md` §7).
+
+    Whatever name is chosen has to be covered by `preview_certificate_arn` (or a wildcard), and its
+    DNS record is the operator's to make: `terraform output preview_url` is what to point it at.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.preview_url == "" || can(regex("^https://[^/]+$", var.preview_url))
+    error_message = "preview_url is an https origin without a trailing slash, for example https://preview.cms.example.com."
+  }
+}
+
+variable "preview_certificate_arn" {
+  description = <<-EOT
+    An ACM certificate covering `preview_url`, in **us-east-1** like every CloudFront certificate.
+    Empty means `frontend_certificate_arn` covers both names - which it does when it is a wildcard
+    (`*.example.com`) or when it was issued with both names in its SAN list.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.preview_certificate_arn == "" || can(regex("^arn:aws:acm:us-east-1:", var.preview_certificate_arn))
+    error_message = "CloudFront reads certificates from us-east-1, so the ARN has to name that region."
+  }
+}
+
 variable "frontend_bucket" {
   description = <<-EOT
     Name of the bucket the built app is synced to. Empty means `<project>-<environment>-app`, which

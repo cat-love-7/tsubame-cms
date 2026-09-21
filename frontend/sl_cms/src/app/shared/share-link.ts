@@ -1,4 +1,4 @@
-import { apiUrl } from 'app/core/api-url';
+import { API_BASE, apiUrl } from 'app/core/api-url';
 
 /**
  * Shareable links, from the browser's side.
@@ -23,6 +23,25 @@ export function absoluteApiUrl(path: string, origin: string = location.origin): 
 /** A password reset token as the link an administrator passes on. */
 export function passwordResetUrl(token: string, origin: string = location.origin): string {
   return `${origin}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+/**
+ * A signed preview link as the page a reviewer opens, on the deployment's preview site.
+ *
+ * The API's own preview answer is JSON, which is not something to hand someone with no account.
+ * The preview site exists to render it, and its routes mirror the API's minus the `/api` prefix
+ * the API adds (`sl_cms_core::API_PREFIX`): `/api/preview/collections/blog/items/7?token=…`
+ * becomes `<origin>/preview/collections/blog/items/7?token=…`. The token is carried through
+ * untouched, because it is the whole credential and it is what the site hands back to the API.
+ *
+ * `siteOrigin` is an origin - scheme, host and port - which is what a deployment reports through
+ * `preview_site_url` (`sl_cms_core::config::parse_preview_site_url`), so nothing here has to
+ * decide whether a base path and a route meet with one slash or two.
+ */
+export function previewSiteUrl(path: string, siteOrigin: string): string {
+  const origin = siteOrigin.replace(/\/+$/, '');
+  const route = path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path;
+  return `${origin}${route.startsWith('/') ? route : `/${route}`}`;
 }
 
 /**

@@ -207,12 +207,15 @@ fn cognito_settings(settings: &AwsSettings) -> CognitoSettings {
 
 /// The whole HTTP surface for this backend, with nothing said about where users sign in.
 ///
-/// Used by the adapter tests, which sign in with a token this crate mints itself.
+/// Used by the adapter tests, which sign in with a token this crate mints itself. The preview
+/// site is still passed, because it is part of what `/auth/capabilities` reports and the contract
+/// suite checks that answer against both backends.
 pub fn build_router(
     module: std::sync::Arc<AppModule<AwsRepository>>,
     cors: tower_http::cors::CorsLayer,
+    preview_site_url: Option<String>,
 ) -> axum::Router {
-    build_router_with(module, cors, None, None)
+    build_router_with(module, cors, None, None, preview_site_url)
 }
 
 /// The same, told where users sign in and where a sign-in the provider started is finished.
@@ -225,6 +228,7 @@ pub fn build_router_with(
     cors: tower_http::cors::CorsLayer,
     login_url: Option<String>,
     exchange: Option<sl_cms_core::http::cognito_login::TokenEndpoint>,
+    preview_site_url: Option<String>,
 ) -> axum::Router {
     // Sign-in belongs to Cognito here, and so does the credential: what is left answering 501 is
     // the CMS's own password endpoints, which have no meaning where it holds no password. They are
@@ -239,6 +243,7 @@ pub fn build_router_with(
             sl_cms_core::models::capabilities::Capabilities::aws(
                 login_url.clone(),
                 module.limits.max_image_bytes,
+                preview_site_url.clone(),
             ),
         ))
         // Finishing a sign-in the provider started: the code it sent back becomes a session.
@@ -301,6 +306,7 @@ pub async fn run_lambda(config: &Config) -> Result<(), Box<dyn std::error::Error
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
         settings.login_url.clone(),
         cognito_login(&settings),
+        settings.preview_site_url.clone(),
     );
 
     lambda_http::run(tower::service_fn(move |request| {
@@ -332,6 +338,7 @@ pub async fn run_local(config: &Config) -> Result<(), Box<dyn std::error::Error 
         sl_cms_core::http::cors_layer(&config.cors_allowed_origins),
         settings.login_url.clone(),
         cognito_login(&settings),
+        settings.preview_site_url.clone(),
     );
     let addr = config.socket_addr()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -458,6 +465,7 @@ mod deployed_verifier_tests {
             user_pool_id: "eu-west-1_abc".to_string(),
             client_id: "client-1".to_string(),
             login_url: None,
+            preview_site_url: None,
             endpoint_url: Some("http://localhost:8000".to_string()),
             s3_endpoint_url: None,
             image_base_url: None,

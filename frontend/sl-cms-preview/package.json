@@ -1,0 +1,23 @@
+{
+  "name": "sl-cms-preview",
+  "version": "0.1.0",
+  "description": "Render a signed sl_cms preview link without a build: fetch the working copy, resolve its fields against the schema, and shape it for a page. Framework-independent.",
+  "license": "MIT",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "sl-cms",
+    "preview",
+    "headless-cms"
+  ],
+  "dependencies": {}
+}

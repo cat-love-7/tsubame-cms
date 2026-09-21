@@ -105,6 +105,24 @@ the shell and its fallback, the two cache lifetimes, `/api/*` reaching the funct
 shapes, and the sign-in page the deployment advertises. It takes the app URL as an argument, so
 anyone can run it against a deployment without credentials of their own.
 
+The preview site is a **separate artifact** with its own deployment, and it is deliberately not the
+app: a preview renders *unpublished* HTML, while the app's origin keeps the editor's token in
+`localStorage` and renders no CMS HTML at all, so the two must not share an origin
+(`doc/preview-site.md` §7). It lives in the same bucket under `preview/` and gets its own
+distribution on its own name (`infra/preview.tf`):
+
+```bash
+# The site's preview build is the deployment's own (no source plugin, client-only routes:
+# `frontend/gatsby-source-sl-cms/README.md` §6); this script only delivers the result.
+scripts/deploy-preview.sh --dist ../site/public
+```
+
+Because the two deployments share one bucket, neither may delete the other's objects:
+`scripts/deploy-frontend.sh` excludes `preview/*` from its `--delete`, and `deploy-preview.sh` syncs
+(and deletes) only inside `preview/`. The function's `PREVIEW_SITE_URL` and the preview origin in
+`CORS_ALLOWED_ORIGINS` are both set from `preview_url` (`infra/locals.tf`), so a deployment does not
+have to remember either.
+
 `backend.hcl` is what makes the state shared: `terraform init` writes it to the bucket under the
 key the file names, so two operators who run `plan` at once share one state and one lock instead of
 two guesses. It is not committed (it names one account's bucket); `backend.hcl.example` is the
@@ -168,6 +186,7 @@ All four take the same five placeholders.
 | an apply that *replaces* a resource | the same, plus the deletes of what it takes away - `terraform plan` says `# forces replacement`, and that is a delete and a create |
 | `terraform destroy` | the 18 `Delete*`/`Remove*`/`Disassociate*` |
 | `scripts/deploy-frontend.sh`, every time | `<name>-app` objects (`ListBucket`, `GetObject`, `PutObject`, `DeleteObject`) and `cloudfront:CreateInvalidation`/`GetInvalidation` |
+| `scripts/deploy-preview.sh`, every time | the same bucket (`preview/*` only) and the same two invalidation calls, on the preview distribution - so no new action is needed for it |
 
 The difference between the first deployment and later ones is therefore only the create half - and
 it comes back whenever a resource is replaced, which is why the apply identity keeps it. What a

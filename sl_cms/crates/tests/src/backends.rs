@@ -60,7 +60,11 @@ impl TestBackend for OnPremises {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        sl_cms_on_premises::build_router(module, test_cors())
+        sl_cms_on_premises::build_router(
+            module,
+            test_cors(),
+            Some(OnPremises::PREVIEW_SITE_URL.to_string()),
+        )
     }
 
     async fn sign_in_admin(&self, module: &Arc<AppModule<Self::Storage>>) -> String {
@@ -151,7 +155,7 @@ impl TestBackend for Aws {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        sl_cms_aws::build_router(module, test_cors())
+        sl_cms_aws::build_router(module, test_cors(), Some(Aws::PREVIEW_SITE_URL.to_string()))
     }
 
     async fn sign_in_admin(&self, _module: &Arc<AppModule<Self::Storage>>) -> String {

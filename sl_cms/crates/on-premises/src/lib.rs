@@ -100,6 +100,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository>
 pub fn build_router(
     module: std::sync::Arc<AppModule<repository::RkvRepository>>,
     cors: tower_http::cors::CorsLayer,
+    preview_site_url: Option<String>,
 ) -> axum::Router {
     // Everything this backend has that a deployment without local storage does not: serving and
     // accepting image bytes, and the password endpoints (it is the CMS, not an identity
@@ -109,6 +110,7 @@ pub fn build_router(
         .merge(sl_cms_core::http::capabilities::routes(
             sl_cms_core::models::capabilities::Capabilities::on_premises(
                 module.limits.max_image_bytes,
+                preview_site_url,
             ),
         ));
     let extra_protected =

@@ -42,8 +42,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // The shared router, plus the routes for serving and accepting image bytes: this backend
     // keeps them itself, so they are part of what it composes rather than of what every
     // backend has.
-    let router =
-        sl_cms_on_premises::build_router(module, http::cors_layer(&config.cors_allowed_origins));
+    let router = sl_cms_on_premises::build_router(
+        module,
+        http::cors_layer(&config.cors_allowed_origins),
+        config.preview_site_url.clone(),
+    );
 
     let addr = config.socket_addr()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

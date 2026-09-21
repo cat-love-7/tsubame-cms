@@ -22,6 +22,13 @@ locals {
   app_origin  = var.app_url
   app_aliases = [replace(var.app_url, "https://", "")]
 
+  # Where the preview site is served from, and the name its distribution answers to. A name of its
+  # own rather than a path under the app: a preview renders unpublished HTML and the app's origin
+  # holds the editor's token in `localStorage`, so the two must not share an origin
+  # (`doc/preview-site.md` §7). Empty `preview_url` means the conventional name under the app's.
+  preview_origin = var.preview_url != "" ? var.preview_url : "https://preview.${replace(var.app_url, "https://", "")}"
+  preview_host   = replace(local.preview_origin, "https://", "")
+
   # Where the browser signs in. `GET /auth/capabilities` reports it, so the client can send
   # someone there instead of describing where to go.
   # The hosted sign-in page. The screen does not link here as it stands: it builds the address from
@@ -42,7 +49,13 @@ locals {
       COGNITO_CLIENT_ID         = aws_cognito_user_pool_client.browser.id
       COGNITO_LOGIN_URL         = local.login_url
       BOOTSTRAP_ADMIN_USERNAMES = join(",", var.bootstrap_admin_usernames)
-      CORS_ALLOWED_ORIGINS      = join(",", var.cors_allowed_origins)
+      # The app's own origin, plus the preview site: the preview is on a name of its own, so its
+      # browser calls the API cross-origin and has to be allowed to. Added here rather than left to
+      # the operator so the two cannot disagree.
+      CORS_ALLOWED_ORIGINS = join(",", distinct(concat(var.cors_allowed_origins, [local.preview_origin])))
+      # Where an admin screen sends a reviewer: `/auth/capabilities` reports it, and a deployment
+      # that did not set it would have nothing readable to hand over (`doc/preview-site.md`).
+      PREVIEW_SITE_URL = local.preview_origin
       # Only the ARN: the value is read from Secrets Manager at startup, so it is in neither the
       # function's configuration nor the state file.
       JWT_SECRET_ARN = var.jwt_secret_arn

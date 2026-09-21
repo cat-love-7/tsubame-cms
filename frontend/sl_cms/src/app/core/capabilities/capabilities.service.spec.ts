@@ -21,6 +21,20 @@ describe('CapabilitiesService', () => {
   it('assumes the CMS checks passwords until the deployment says otherwise', () => {
     expect(service.passwordLogin()).toBe(true);
     expect(service.imageUpload()).toBe('proxied');
+    // Guessing a preview site would hand out a link that goes nowhere, so silence means none.
+    expect(service.previewSiteUrl()).toBeNull();
+  });
+
+  it('takes the preview site from the deployment', () => {
+    service.load();
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: true,
+      password_reset: 'link',
+      image_upload: 'proxied',
+      preview_site_url: 'https://preview.example.com',
+    });
+
+    expect(service.previewSiteUrl()).toBe('https://preview.example.com');
   });
 
   it('takes the deployment at its word', () => {

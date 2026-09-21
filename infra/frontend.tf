@@ -30,8 +30,10 @@ resource "aws_cloudfront_origin_access_control" "app" {
   signing_protocol                  = "sigv4"
 }
 
-# Only this distribution may read, and only objects. No `s3:ListBucket`: nothing here reads a
-# listing, and what a deployment puts in the bucket is its own build output.
+# Only the app's distribution and the preview site's may read, and only objects. No
+# `s3:ListBucket`: nothing here reads a listing, and what a deployment puts in the bucket is its own
+# build output. The preview site is a second distribution over the same bucket (a different prefix,
+# `infra/preview.tf`), so its ARN is the second value the condition accepts.
 resource "aws_s3_bucket_policy" "app" {
   bucket = aws_s3_bucket.app.id
 
@@ -44,7 +46,12 @@ resource "aws_s3_bucket_policy" "app" {
       Action    = "s3:GetObject"
       Resource  = "${aws_s3_bucket.app.arn}/*"
       Condition = {
-        StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.app.arn }
+        StringEquals = {
+          "AWS:SourceArn" = [
+            aws_cloudfront_distribution.app.arn,
+            aws_cloudfront_distribution.preview.arn,
+          ]
+        }
       }
     }]
   })
@@ -98,10 +105,12 @@ resource "aws_cloudfront_distribution" "app" {
     cache_policy_id        = aws_cloudfront_cache_policy.app.id
     compress               = true
 
-    # A path with no file extension in it is a route, not a file: the app is one document.
+    # A path with no file extension in it is a route, not a file: the app is one document. The same
+    # function refuses `/preview/*`, which shares this bucket but belongs to another origin
+    # (`app-routing.js`).
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.spa_routing.arn
+      function_arn = aws_cloudfront_function.app_routing.arn
     }
 
     # ... and every answer says a crawler should stay away (see `no-index.js`).
@@ -153,6 +162,16 @@ resource "aws_cloudfront_function" "no_index" {
   code    = file("${path.module}/no-index.js")
 }
 
+resource "aws_cloudfront_function" "app_routing" {
+  name    = "${local.name}-app-routing"
+  runtime = "cloudfront-js-2.0"
+  comment = "Serve a path that names no file as index.html, and keep /preview out of this origin"
+  publish = true
+  code    = file("${path.module}/app-routing.js")
+}
+
+# The preview distribution's own routing (`infra/preview.tf`), which is the rewrite alone: its
+# routes all begin with `/preview/`, so it cannot use the app's function, which refuses those.
 resource "aws_cloudfront_function" "spa_routing" {
   name    = "${local.name}-spa-routing"
   runtime = "cloudfront-js-2.0"

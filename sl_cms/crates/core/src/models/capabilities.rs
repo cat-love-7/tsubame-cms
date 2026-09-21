@@ -26,6 +26,13 @@ pub struct Capabilities {
     /// to find it. A deployment that knows its provider's sign-in page says so here.
     #[serde(default)]
     pub login_url: Option<String>,
+    /// Where a shared preview link should be opened: the site that renders unpublished content,
+    /// when the deployment has one.
+    ///
+    /// The API's preview answer is JSON, so without a site there is nothing to hand a reviewer.
+    /// A client that finds this absent offers nothing rather than a link nobody can read.
+    #[serde(default)]
+    pub preview_site_url: Option<String>,
     /// The largest image this deployment accepts, in bytes (`config::Limits::max_image_bytes`).
     ///
     /// A browser knows the size of the file before it sends it, so this is what lets it refuse a
@@ -59,13 +66,14 @@ pub enum ImageUpload {
 
 impl Capabilities {
     /// The on-premises deployment: it is the CMS that verifies passwords and keeps the bytes.
-    pub const fn on_premises(max_image_bytes: usize) -> Capabilities {
+    pub fn on_premises(max_image_bytes: usize, preview_site_url: Option<String>) -> Capabilities {
         Capabilities {
             password_login: true,
             password_reset: Some(PasswordResetKind::Link),
             image_upload: ImageUpload::Proxied,
             // This deployment *is* the sign-in page.
             login_url: None,
+            preview_site_url,
             max_image_bytes,
         }
     }
@@ -79,12 +87,17 @@ impl Capabilities {
     /// A reset here is Cognito's `AdminSetUserPassword`: the CMS cannot choose a password for an
     /// account it does not own the credential of, so an administrator gets a temporary one to pass
     /// on and the person changes it at their next sign-in.
-    pub fn aws(login_url: Option<String>, max_image_bytes: usize) -> Capabilities {
+    pub fn aws(
+        login_url: Option<String>,
+        max_image_bytes: usize,
+        preview_site_url: Option<String>,
+    ) -> Capabilities {
         Capabilities {
             password_login: false,
             password_reset: Some(PasswordResetKind::Temporary),
             image_upload: ImageUpload::Presigned,
             login_url,
+            preview_site_url,
             max_image_bytes,
         }
     }

@@ -78,6 +78,13 @@ pub trait TestBackend: Sized {
     /// the next sign-in. The capabilities answer promises one, and a reset has to match it.
     const PASSWORD_RESET: &'static str;
 
+    /// The preview site every test deployment reports, so that a client's use of it is exercised
+    /// against both backends rather than only against the one it was written for.
+    ///
+    /// A single value for both is the point: the capabilities answer is the contract, and the
+    /// wiring that fills it in is what this pins down.
+    const PREVIEW_SITE_URL: &'static str = "https://preview.example.test";
+
     /// A storage of its own, with whatever scratch space it needs. Dropping it cleans up.
     ///
     /// `hint` names the scratch space; it is unique per test so tests can run at once.

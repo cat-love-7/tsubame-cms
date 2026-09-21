@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
+import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
 import { fingerprint } from 'app/core/value-changes';
@@ -19,7 +20,7 @@ import { ContentValue } from 'app/models/values/single-page';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
-import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
+import { copyToClipboard, previewSiteUrl } from 'app/shared/share-link';
 import { RelationReferences } from 'app/shared/relation-references/relation-references';
 import { ValueField } from 'app/shared/value-field/value-field';
 
@@ -55,6 +56,7 @@ export class SinglePageEdit implements HasUnsavedChanges {
   /** When this screen goes away, so does everything it still has in flight (see the constructor). */
   private destroyRef = inject(DestroyRef);
   private pages = inject(SinglePagesService);
+  private capabilities = inject(CapabilitiesService);
   private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
@@ -266,6 +268,14 @@ export class SinglePageEdit implements HasUnsavedChanges {
     const started = this.start();
     this.error.set(null);
     this.notice.set(null);
+    // The API's own preview answer is JSON, so without a preview site there is nothing readable
+    // to hand a reviewer (see the collection item editor).
+    const site = this.capabilities.previewSiteUrl();
+    if (site === null) {
+      this.previewUrl.set('');
+      this.error.set(t('content.previewSiteNotConfigured'));
+      return;
+    }
     this.pages
       .createPreviewLink(started.name)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -273,7 +283,7 @@ export class SinglePageEdit implements HasUnsavedChanges {
         next: (link) => {
           // The clipboard write is asynchronous and nothing waits for it (see the collection item
           // editor).
-          void this.copyPreviewLink(link, started);
+          void this.copyPreviewLink(link, started, site);
         },
         error: (e) => {
           if (this.stillOn(started)) {
@@ -287,11 +297,11 @@ export class SinglePageEdit implements HasUnsavedChanges {
    * Put a minted link on the clipboard, and report how that went (see the collection item
    * editor).
    */
-  private async copyPreviewLink(link: PreviewLink, started: StartedPage) {
+  private async copyPreviewLink(link: PreviewLink, started: StartedPage, site: string) {
     if (!this.stillOn(started)) {
       return;
     }
-    const url = absoluteApiUrl(link.path);
+    const url = previewSiteUrl(link.path, site);
     this.previewUrl.set(url);
     const copied = await copyToClipboard(url);
     if (!this.stillOn(started)) {

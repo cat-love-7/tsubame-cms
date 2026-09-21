@@ -25,6 +25,14 @@ export interface Capabilities {
   /** Where to sign in, when that is not here. Absent when the deployment does not know. */
   login_url?: string | null;
   /**
+   * Where a shared preview link should be opened: the origin of the site that renders
+   * unpublished content, when the deployment has one.
+   *
+   * The API's own preview answer is JSON, which is not something to hand a reviewer, so a
+   * deployment that has no preview site says nothing here and the screen offers nothing.
+   */
+  preview_site_url?: string | null;
+  /**
    * The largest image the deployment accepts, in bytes. Absent from a server that predates the
    * answer, and absent until the answer arrives: the client then lets the upload go and shows
    * what the server says, rather than refusing a file on a number it invented.
@@ -44,6 +52,9 @@ const ASSUMED: Capabilities = {
   password_reset: 'link',
   image_upload: 'proxied',
   login_url: null,
+  // A server that does not answer cannot be assumed to have a preview site: guessing one would
+  // hand out a link that goes nowhere.
+  preview_site_url: null,
 };
 
 @Injectable({ providedIn: 'root' })
@@ -66,6 +77,9 @@ export class CapabilitiesService {
 
   /** Where to send someone to sign in, when the deployment named a page. */
   readonly loginUrl = computed(() => this.known().login_url ?? null);
+
+  /** The preview site's origin, or null where the deployment has none. */
+  readonly previewSiteUrl = computed(() => this.known().preview_site_url ?? null);
 
   /** How large an image may be, or null while that is not known. */
   readonly maxImageBytes = computed(() => this.known().max_image_bytes ?? null);

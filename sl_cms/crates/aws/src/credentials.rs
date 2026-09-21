@@ -49,6 +49,7 @@ mod credential_tests {
             user_pool_id: "pool".to_string(),
             client_id: "client".to_string(),
             login_url: None,
+            preview_site_url: None,
             endpoint_url: endpoint.map(str::to_string),
             s3_endpoint_url: None,
             image_base_url: None,

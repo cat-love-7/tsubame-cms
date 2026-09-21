@@ -46,3 +46,22 @@ output "frontend_distribution_id" {
   description = "The distribution to invalidate after a deployment."
   value       = aws_cloudfront_distribution.app.id
 }
+
+output "preview_site_url" {
+  description = <<-EOT
+    Where a shared preview link should be opened: `preview_url` when the operator named a site, or
+    the conventional `preview.<app_url's host>` otherwise. The same value the function reports as
+    `preview_site_url` in `/auth/capabilities`.
+  EOT
+  value       = local.preview_origin
+}
+
+output "preview_url" {
+  description = "The distribution the preview site's DNS record should point at (a CNAME/alias target)."
+  value       = "https://${aws_cloudfront_distribution.preview.domain_name}"
+}
+
+output "preview_distribution_id" {
+  description = "The preview distribution to invalidate after a deployment."
+  value       = aws_cloudfront_distribution.preview.id
+}

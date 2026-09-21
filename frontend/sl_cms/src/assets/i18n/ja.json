@@ -196,6 +196,7 @@
     "previewLink": "プレビュー URL",
     "previewCopied": "プレビュー URL をコピーしました(有効期限: {{expires}})",
     "previewNotCopied": "プレビュー URL を作成しました(有効期限: {{expires}})。コピーできなかったので下から手動でコピーしてください",
+    "previewSiteNotConfigured": "このデプロイにはプレビューサイトが設定されていないため、共有できる閲覧用の URL がありません。プレビュー API は JSON を返します。プレビューサイトを配信する場所を PREVIEW_SITE_URL に設定してください。",
     "newItem": "新しいアイテム",
     "editItem": "アイテムを編集",
     "noFieldsInCollection": "このコレクションにはまだフィールドがありません。先にスキーマ編集でフィールドを追加してください。",

@@ -21,6 +21,15 @@ app_url = "https://cms.example.com"
 # rest of the deployment is in; create it (with DNS validation) and paste its ARN. Pointing the
 # name at `terraform output frontend_url` is the operator's, like the secret above.
 frontend_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+# Where the preview site is served from: a name of its own, never a path under app_url. The app's
+# origin keeps the editor's token in localStorage and the app never renders CMS HTML; a preview does
+# render a draft, so it has to be a different origin (`doc/preview-site.md` §7). Leave this unset for
+# the conventional `https://preview.<app_url's host>`. Point the name at `terraform output
+# preview_url`, and set the site's own build to talk to `SL_CMS_URL` / the app's origin.
+preview_url = "https://preview.cms.example.com"
+# Only when frontend_certificate_arn does not already cover preview_url - a wildcard
+# (`*.example.com`) or a certificate issued with both names covers both, and then this stays unset.
+# preview_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
 # "public" (a stable URL in content) or "presigned" (a private bucket, signed URLs: for a site that
 # fetches images at build time and serves its own copies).
 image_delivery = "public"

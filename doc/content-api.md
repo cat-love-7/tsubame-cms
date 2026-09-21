@@ -859,6 +859,11 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
   渡す相手と有効期限は意識すること。失効させたい場合は `PREVIEW_LINK_TTL_MINUTES` を短くするか、
   `JWT_SECRET` を変える(全トークンが無効になる)。
 - 返す本文は管理側のプレビューと同じ形(schema + values)なので、サイト側は 1 つのパーサで済む。
+- **渡すリンクはプレビューサイトの URL に写す。** API のパスをそのまま渡すと、レビュアーには
+  JSON が表示される。`GET /api/auth/capabilities` の `preview_site_url` がプレビューサイトの
+  origin で、パスは API のパスから `/api` を除いたもの(`/preview/collections/{c}/items/{id}`)。
+  `preview_site_url` が無いデプロイでは、管理画面はコピーせず「プレビューサイト未設定」と表示する
+  (生 JSON の URL は渡さない)。契約の全体は `doc/preview-site.md`。
 
 ### 差し替えの適用は「この画像に与えたアップロード」だけ
 

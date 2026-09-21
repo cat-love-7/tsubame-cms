@@ -90,6 +90,45 @@ jobs:
       - run: npm run lint
       - run: ../../scripts/test-frontend.sh
 
+  migration:
+    name: Migration script
+    runs-on: ubuntu-latest
+    # Nothing here compiles or downloads anything: the script is dependency-free Node, and its
+    # tests are the pure decisions (mapping, ordering, value translation).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: scripts/test-migration.sh
+
+  gatsby-source:
+    name: Gatsby source plugin
+    runs-on: ubuntu-latest
+    # Nothing here compiles or downloads anything either: the plugin's only runtime dependency is
+    # `fetch`, and its tests drive the two Gatsby hooks against a faked delivery API.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: scripts/test-gatsby-source.sh
+
+  preview:
+    name: Preview package
+    runs-on: ubuntu-latest
+    # Framework-independent by design: no Gatsby, no browser, no CMS - `fetch` is injected and the
+    # delivery API is faked, so this is the same shape as the plugin job above.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: scripts/test-preview.sh
+
   lambda-artifact:
     name: Lambda artifact (arm64)
     runs-on: ubuntu-latest

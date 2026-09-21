@@ -47,8 +47,14 @@ echo "== syncing to s3://$bucket =="
 # The bundles name their own contents (`main-3Z4V2JVF.js`), so a file that changes gets a new name
 # and the old one can be kept for a year: `immutable` is what makes a returning reader skip even a
 # conditional request.
+#
+# `--delete` is scoped to the app: the preview site lives in this same bucket under `preview/`
+# (`infra/preview.tf`, `scripts/deploy-preview.sh`), and the include filters would otherwise treat
+# its bundles as files this deployment removed. The last filter wins in the CLI, so the exclude goes
+# after the includes.
 aws s3 sync "$dist" "s3://$bucket" --delete \
   --exclude "*" --include "*.js" --include "*.css" --include "*.woff" --include "*.woff2" \
+  --exclude "preview/*" \
   --cache-control "public, max-age=31536000, immutable"
 
 # Everything else keeps its name across deployments - `index.html`, `favicon.ico`, the notices - so

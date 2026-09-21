@@ -163,6 +163,32 @@ else
   bad "capabilities says whether the CMS handles passwords"
 fi
 
+# Where a signed preview link is opened. The deployment advertises it whether or not the preview site
+# has been deployed, so this is also the check that `scripts/deploy-preview.sh` ran - an advertised
+# name that answers nothing is a broken shared link, not a missing extra.
+preview_site_url="$(printf '%s' "$capabilities" | sed -n 's/.*"preview_site_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+if [ -z "$preview_site_url" ]; then
+  note "the deployment advertises no preview site: a shared link would stay JSON (doc/preview-site.md §8)"
+else
+  status="$(fetch "$preview_site_url/")"
+  robots="$(header x-robots-tag)"
+  if [ "$status" = 200 ] && printf '%s' "$robots" | grep -qi 'noindex'; then
+    ok "the preview site answers on its own name and stays out of search ($preview_site_url)"
+  else
+    bad "the preview site answers on its own name and stays out of search (status $status, x-robots-tag ${robots:-none}; has scripts/deploy-preview.sh run?)"
+  fi
+
+  # The preview lives in the app's bucket under `preview/`, so the app's origin has to refuse it:
+  # the app's origin holds the editor's token in localStorage and renders no CMS HTML, and the
+  # preview renders a draft (`doc/preview-site.md` §7, `infra/app-routing.js`).
+  status="$(fetch "$app_url/preview/index.html")"
+  if [ "$status" = 404 ]; then
+    ok "the app's origin refuses the preview site, which shares its bucket"
+  else
+    bad "the app's origin refuses the preview site, which shares its bucket (status $status; see infra/app-routing.js)"
+  fi
+fi
+
 # A token is required, so this is 401 - which proves the request reached the router rather than
 # the shell, and that the route exists.
 status="$(fetch "$app_url/api/models/collections")"

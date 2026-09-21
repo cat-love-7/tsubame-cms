@@ -104,6 +104,14 @@ pub struct Config {
     pub preview_link_ttl_minutes: i64,
     /// How long an issued password reset link stays valid (`PASSWORD_RESET_TTL_MINUTES`).
     pub password_reset_ttl_minutes: i64,
+    /// Where a shared preview link should be opened (`PREVIEW_SITE_URL`): the origin of the site
+    /// that renders unpublished content, for example `https://preview.example.com`.
+    ///
+    /// The API's own preview answer is JSON, which is not something to hand a reviewer. A
+    /// deployment that has a preview site says where it is, and `/auth/capabilities` passes that
+    /// on so an admin screen can build a link a person can actually read. Without one a client
+    /// has nothing useful to offer.
+    pub preview_site_url: Option<String>,
     /// Sign-in identifier for the initial administrator (`ADMIN_USERNAME`, or `ADMIN_EMAIL`
     /// as the older name of the same setting). Only consulted when the user store is still
     /// empty, and only by the on-premises backend: an `aws` deployment authenticates with
@@ -134,6 +142,7 @@ impl Default for Config {
             token_ttl_hours: DEFAULT_TOKEN_TTL_HOURS,
             preview_link_ttl_minutes: DEFAULT_PREVIEW_LINK_TTL_MINUTES,
             password_reset_ttl_minutes: DEFAULT_PASSWORD_RESET_TTL_MINUTES,
+            preview_site_url: None,
             admin_username: None,
             admin_email: None,
             admin_password: None,
@@ -230,6 +239,9 @@ impl Config {
                 config.password_reset_ttl_minutes = minutes;
             }
         }
+        if let Some(url) = non_empty_env("PREVIEW_SITE_URL") {
+            config.preview_site_url = Some(parse_preview_site_url(&url)?);
+        }
         config.admin_username =
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
         config.admin_email = non_empty_env("ADMIN_EMAIL");
@@ -324,6 +336,32 @@ fn parse_webhook_urls(raw: &str) -> Result<Vec<String>, String> {
         .collect()
 }
 
+/// Parse `PREVIEW_SITE_URL`, refusing anything that could not be opened.
+///
+/// A preview link is handed to someone with no account, so a typo here is a broken link in
+/// somebody else's inbox rather than a local error worth a log line. What is accepted is a
+/// site's **origin** - scheme, host and port - because the route is appended to it verbatim:
+/// a deployment that allowed a base path here would have to decide whether the path and the
+/// route meet with one slash or two, and the preview site is expected on a name of its own.
+pub fn parse_preview_site_url(raw: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(raw.trim())
+        .map_err(|e| format!("invalid PREVIEW_SITE_URL {raw:?}: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!(
+            "invalid PREVIEW_SITE_URL {raw:?}: only http and https are supported"
+        ));
+    }
+    if parsed.host_str().is_none() {
+        return Err(format!("invalid PREVIEW_SITE_URL {raw:?}: no host"));
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(format!(
+            "invalid PREVIEW_SITE_URL {raw:?}: it names a site's origin, not a path or a page"
+        ));
+    }
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,6 +388,43 @@ mod tests {
         // Without an explicit secret the process must know its secret is ephemeral.
         assert!(config.jwt_secret_is_ephemeral);
         assert!(config.jwt_secret.len() >= MIN_JWT_SECRET_LEN);
+        // A deployment that says nothing has no preview site, and a client then offers nothing
+        // rather than handing out the API's JSON.
+        assert_eq!(config.preview_site_url, None);
+    }
+
+    #[test]
+    fn a_preview_site_url_is_an_origin_and_a_trailing_slash_is_trimmed() {
+        assert_eq!(
+            parse_preview_site_url("https://preview.example.com").unwrap(),
+            "https://preview.example.com"
+        );
+        assert_eq!(
+            parse_preview_site_url(" https://preview.example.com/ ").unwrap(),
+            "https://preview.example.com"
+        );
+        // A port is part of the origin, which is what a local preview site needs.
+        assert_eq!(
+            parse_preview_site_url("http://localhost:3000").unwrap(),
+            "http://localhost:3000"
+        );
+        assert_eq!(
+            parse_preview_site_url("http://localhost:3000/").unwrap(),
+            "http://localhost:3000"
+        );
+    }
+
+    #[test]
+    fn rejects_preview_site_urls_that_could_not_be_opened() {
+        // A typo has to stop the process: the link would otherwise be broken in somebody else's
+        // inbox, where nobody is watching the log.
+        assert!(parse_preview_site_url("not-a-url").is_err());
+        assert!(parse_preview_site_url("ftp://preview.example.com").is_err());
+        // A path would make the route join ambiguous (one slash or two?), so only the origin is
+        // accepted: the preview site is expected on a name of its own.
+        assert!(parse_preview_site_url("https://example.com/preview").is_err());
+        assert!(parse_preview_site_url("https://preview.example.com/?token=x").is_err());
+        assert!(parse_preview_site_url("https://preview.example.com/#x").is_err());
     }
 
     #[test]
