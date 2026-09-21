@@ -127,7 +127,11 @@ else
     --package sl-cms-aws --bin sl-cms-aws --release --target "$target"
 fi
 
-binary="$root/sl_cms/target/$target/release/sl-cms-aws"
+# Where cargo actually wrote it. `CARGO_TARGET_DIR` moves the artifact, and a caller who set it (a
+# CI job sharing a cache, a container with a small workspace) would otherwise get the copy left in
+# the default place - an older binary, which deploys code that looks deployed and is not.
+target_root="${CARGO_TARGET_DIR:-$root/sl_cms/target}"
+binary="$target_root/$target/release/sl-cms-aws"
 
 # The artifact and the function's `architectures` must agree, and a mismatch is invisible until the
 # function is invoked. Checking here costs nothing when `file` is available.
