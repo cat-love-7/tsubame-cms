@@ -22,6 +22,12 @@ pub struct ImageData {
     /// The upload this image is waiting for, if a replacement was requested and not applied.
     #[serde(default)]
     pub pending_replacement: Option<String>,
+    /// The small copy the library shows, if one has been stored.
+    ///
+    /// Absent in records written before small copies existed, and in images uploaded through the
+    /// API rather than a browser: both simply have none (see [`ImageRepository::set_image_thumbnail`]).
+    #[serde(default)]
+    pub thumbnail_file_name: Option<String>,
 }
 
 /// Where the image reference index lives: which content uses which image.
@@ -74,12 +80,23 @@ impl RkvRepository {
     }
 }
 
+/// Where an image's small copy is served from, when it has one.
+///
+/// The same public route as the original: the CMS serves whatever is stored under a file name, and
+/// the small copy is another such file (`images::public_routes`).
+fn thumbnail_url(thumbnail_file_name: &Option<String>) -> Option<String> {
+    thumbnail_file_name
+        .as_ref()
+        .map(|file_name| format!("{}/images/{}", sl_cms_core::API_PREFIX, file_name))
+}
+
 impl ImageRepository for RkvRepository {
     async fn get_image(&self, id: &ImageId) -> Result<Option<Image>, BoxError> {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
                 original_filename: image.original_filename,
                 url: format!("{}/images/{}", sl_cms_core::API_PREFIX, image.file_name),
+                thumbnail_url: thumbnail_url(&image.thumbnail_file_name),
                 uploaded_at: image.uploaded_at,
                 deleted_at: image.deleted_at,
             })),
@@ -109,6 +126,7 @@ impl ImageRepository for RkvRepository {
                         sl_cms_core::API_PREFIX,
                         image_data.file_name
                     ),
+                    thumbnail_url: thumbnail_url(&image_data.thumbnail_file_name),
                     uploaded_at: image_data.uploaded_at,
                     deleted_at: image_data.deleted_at,
                 };
@@ -147,6 +165,8 @@ impl ImageRepository for RkvRepository {
             // A fresh upload is in the library, not the trash, and is waiting for nothing.
             deleted_at: None,
             pending_replacement: None,
+            // A fresh upload has no small copy: the browser sends one right after the bytes.
+            thumbnail_file_name: None,
         };
         store.put(
             &mut writer,
@@ -317,6 +337,9 @@ impl ImageRepository for RkvRepository {
             deleted_at: previous.deleted_at,
             // And the upload it came from is no longer waiting for anything.
             pending_replacement: None,
+            // A small copy describes the picture it was made from, and that picture is gone. The
+            // browser that replaced it makes another one; until then the original is shown.
+            thumbnail_file_name: None,
         };
         let mut writer = env.write()?;
         store.put(
@@ -330,6 +353,12 @@ impl ImageRepository for RkvRepository {
         // upload may never have completed.
         if previous.file_name != file_name {
             if let Ok(path) = self.image_path(&previous.file_name) {
+                fs::remove_file(path).ok();
+            }
+        }
+        // The small copy of the picture that was just replaced goes with it.
+        if let Some(thumbnail_file_name) = &previous.thumbnail_file_name {
+            if let Ok(path) = self.image_path(thumbnail_file_name) {
                 fs::remove_file(path).ok();
             }
         }
@@ -439,6 +468,59 @@ impl ImageRepository for RkvRepository {
         Ok(())
     }
 
+    async fn set_image_thumbnail(
+        &self,
+        id: &ImageId,
+        ext: &str,
+        data: &[u8],
+    ) -> Result<(), BoxError> {
+        let _guard = self.begin();
+        let env = self.rkv.read().map_err(|e| e.to_string())?;
+        let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
+        let reader = env.read()?;
+        let previous = match store.get(&reader, id.to_le_bytes())? {
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            _ => return Err("Image not found".into()),
+        };
+
+        // A fresh name each time, like an upload's: the old bytes stay readable under the URL a
+        // page already has until they are removed below, and no cache can answer with the picture
+        // this one replaces.
+        let file_name = match sanitize_ext(ext) {
+            Some(ext) => format!("thumb-{}.{}", uuid::Uuid::new_v4(), ext),
+            None => format!("thumb-{}", uuid::Uuid::new_v4()),
+        };
+        let path = self.image_path(&file_name)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, data)?;
+
+        let updated = ImageData {
+            original_filename: previous.original_filename.clone(),
+            file_name: previous.file_name.clone(),
+            uploaded_at: previous.uploaded_at,
+            deleted_at: previous.deleted_at,
+            pending_replacement: previous.pending_replacement.clone(),
+            thumbnail_file_name: Some(file_name),
+        };
+        let mut writer = env.write()?;
+        store.put(
+            &mut writer,
+            id.to_le_bytes(),
+            &Value::Str(&serde_json::to_string(&updated)?),
+        )?;
+        writer.commit()?;
+
+        // What it showed before is unreferenced now.
+        if let Some(previous_thumbnail) = &previous.thumbnail_file_name {
+            if let Ok(path) = self.image_path(previous_thumbnail) {
+                fs::remove_file(path).ok();
+            }
+        }
+        Ok(())
+    }
+
     async fn delete_image(&self, id: &ImageId) -> Result<(), BoxError> {
         let _guard = self.begin();
         let image = self.image_data(id)?.ok_or("Image not found")?;
@@ -446,6 +528,13 @@ impl ImageRepository for RkvRepository {
         // may exist without bytes if an upload never completed).
         if let Ok(path) = self.image_path(&image.file_name) {
             fs::remove_file(path).ok();
+        }
+        // The small copy is the image's too: leaving it behind would keep a deleted picture on
+        // disk under a name nothing can reach any more.
+        if let Some(thumbnail_file_name) = &image.thumbnail_file_name {
+            if let Ok(path) = self.image_path(thumbnail_file_name) {
+                fs::remove_file(path).ok();
+            }
         }
 
         let env = self.rkv.read().map_err(|e| e.to_string())?;

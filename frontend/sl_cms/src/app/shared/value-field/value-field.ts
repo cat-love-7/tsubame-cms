@@ -151,6 +151,10 @@ export class ValueField implements OnInit, OnChanges {
 
   /** Images already uploaded, so one can be reused instead of uploaded again. */
   public library = signal<ImageEntry[]>([]);
+  /** How many the library holds altogether, which is more than the picker shows at once. */
+  public libraryTotal = signal(0);
+  /** Whether the picker is fetching the next page. */
+  public libraryLoadingMore = signal(false);
   public pickerOpen = signal(false);
   /** True when the open picker collects several images (for an image array). */
   public pickerMulti = signal(false);
@@ -782,11 +786,34 @@ export class ValueField implements OnInit, OnChanges {
       return;
     }
     this.images.listImages().subscribe({
-      next: (images) => {
+      next: (page) => {
         this.libraryLoaded = true;
-        this.library.set(images);
+        this.library.set(page.images);
+        this.libraryTotal.set(page.total);
       },
       error: (e) => this.errorChange.emit(failure('content.failedToLoadImages', e)),
+    });
+  }
+
+  /** Whether the library holds images the picker has not been handed yet. */
+  public libraryCanLoadMore = () => this.library().length < this.libraryTotal();
+
+  /** Ask for the next page of the library, without closing the picker. */
+  loadMoreLibrary() {
+    if (this.libraryLoadingMore() || !this.libraryCanLoadMore()) {
+      return;
+    }
+    this.libraryLoadingMore.set(true);
+    this.images.listImages(this.library().length).subscribe({
+      next: (page) => {
+        this.libraryLoadingMore.set(false);
+        this.library.set([...this.library(), ...page.images]);
+        this.libraryTotal.set(page.total);
+      },
+      error: (e) => {
+        this.libraryLoadingMore.set(false);
+        this.errorChange.emit(failure('content.failedToLoadImages', e));
+      },
     });
   }
 

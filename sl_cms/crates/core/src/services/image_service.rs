@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::image::{
-    Image, ImageEntry, ImageId, MAX_IMAGE_NAME_LENGTH, NewImageInfo, NewImageRequest,
-    ReplacementInfo, is_safe_display_name, is_safe_file_name, is_safe_image_ext,
+    Image, ImageEntry, ImageId, MAX_IMAGE_NAME_LENGTH, MAX_THUMBNAIL_BYTES, NewImageInfo,
+    NewImageRequest, ReplacementInfo, is_safe_display_name, is_safe_file_name, is_safe_image_ext,
 };
+use crate::models::pagination::{Page, Pagination};
 use crate::repositories::image_repository::{ImageRepository, Replacement};
 
 pub struct ImageService<R: ImageRepository> {
@@ -42,16 +43,22 @@ impl<R: ImageRepository> ImageService<R> {
     ///
     /// Trashed images are not in it (see [`ImageService::list_trash`]), but they still resolve for
     /// content that references them, so an item keeps its picture while the operator decides.
-    pub async fn list_images(&self) -> Result<Vec<ImageEntry>, HttpError> {
-        Ok(self.entries(false).await?)
+    pub async fn list_images(
+        &self,
+        pagination: &Pagination,
+    ) -> Result<Page<ImageEntry>, HttpError> {
+        // The whole list is read and then cut: the library's metadata is small next to the
+        // pictures, and the window is what the screen renders. A backend with a cheaper window can
+        // return it here later (see `Pagination::window`).
+        Ok(pagination.apply(self.entries(false).await?))
     }
 
     /// The trash: images taken out of the library, most recently trashed first.
-    pub async fn list_trash(&self) -> Result<Vec<ImageEntry>, HttpError> {
+    pub async fn list_trash(&self, pagination: &Pagination) -> Result<Page<ImageEntry>, HttpError> {
         let mut trashed = self.entries(true).await?;
         // Most recently trashed first, which is the one an operator wants back.
         trashed.sort_by_key(|entry| std::cmp::Reverse(entry.deleted_at));
-        Ok(trashed)
+        Ok(pagination.apply(trashed))
     }
 
     /// The library or the trash, by whether the record carries a deletion time.
@@ -139,6 +146,41 @@ impl<R: ImageRepository> ImageService<R> {
             .await
             .map_err(map_internal_error)?
             .ok_or_else(|| HttpError::NotFound(&format!("Image with id '{}' does not exist", id)))
+    }
+
+    /// Store the small copy the library shows, made by the browser that uploaded the picture.
+    ///
+    /// The bytes are not decoded here and are not checked to be an image, exactly as an upload's
+    /// are not: the browser made them from a file it was already sending, and a deployment that
+    /// trusts a client with the picture can trust it with a smaller one. What *is* checked is the
+    /// size - a small copy that is not smaller has no reason to exist - and the extension, since
+    /// the stored name is what says what the bytes are when they are served.
+    pub async fn set_image_thumbnail(
+        &self,
+        id: ImageId,
+        ext: &str,
+        data: &[u8],
+    ) -> Result<(), HttpError> {
+        self.require_image(&id).await?;
+        if data.is_empty() {
+            return Err(HttpError::BadRequest("the small copy is empty"));
+        }
+        if data.len() > MAX_THUMBNAIL_BYTES {
+            return Err(HttpError::PayloadTooLarge(&format!(
+                "the small copy is {} bytes; at most {MAX_THUMBNAIL_BYTES} are kept",
+                data.len()
+            )));
+        }
+        let ext = ext.trim().to_ascii_lowercase();
+        if !is_safe_image_ext(&ext) {
+            return Err(HttpError::BadRequest(&format!(
+                "'{ext}' is not an image type this CMS stores"
+            )));
+        }
+        self.repository
+            .set_image_thumbnail(&id, &ext, data)
+            .await
+            .map_err(map_internal_error)
     }
 
     /// Give an image another display name.

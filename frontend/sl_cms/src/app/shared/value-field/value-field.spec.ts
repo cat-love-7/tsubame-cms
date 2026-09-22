@@ -68,7 +68,8 @@ class StubImagesService {
   public uploaded: string[] = [];
   listImages = () => {
     this.listCalls += 1;
-    return of(LIBRARY);
+    // The page shape the server answers with: the images, and how many there are altogether.
+    return of({ images: LIBRARY, total: LIBRARY.length });
   };
   uploadImage = (file: File) => {
     const index = this.uploaded.push(file.name);

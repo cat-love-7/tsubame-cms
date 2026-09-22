@@ -676,6 +676,20 @@ try {
   const servedStatus = await page.evaluate(async (src) => (await fetch(src)).status, imageSource);
   check('画像の実体が配信される', servedStatus === 200, `${imageSource} → ${servedStatus}`);
 
+  // A tile shows the small copy the browser made from the file it just uploaded, not the original:
+  // 180 pixels of tile for a megabyte of photograph is what made a library cost hundreds of
+  // megabytes (see `doc/content-api.md`).
+  check(
+    'タイルはブラウザが作った小さなコピーを出す',
+    /\/api\/images\/thumb-.*\.webp$/.test(imageSource ?? ''),
+    String(imageSource).slice(0, 80),
+  );
+  const thumbnailStatus = await page.evaluate(
+    async (src) => (await fetch(src)).status,
+    imageSource,
+  );
+  check('小さなコピーが配信される', thumbnailStatus === 200, `status=${thumbnailStatus}`);
+
   // The name is a label: renaming it leaves the id, the URL and the bytes alone, so content that
   // references the image is unaffected.
   const renameLabel = `renamed-${Date.now()}.png`;

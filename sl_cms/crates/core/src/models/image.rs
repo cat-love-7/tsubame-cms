@@ -12,6 +12,15 @@ pub struct ImageResponse {
 pub struct Image {
     pub original_filename: String,
     pub url: String,
+    /// Where the small copy is served from, when one has been stored.
+    ///
+    /// The library and the pickers show tiles a couple of hundred pixels wide, and a photograph
+    /// is a megabyte: without this they download the original for every tile (see
+    /// [`crate::repositories::image_repository::ImageRepository::set_image_thumbnail`]). Absent
+    /// means "no small copy yet", and a reader falls back to `url` - an image uploaded through
+    /// the API rather than a browser has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
     /// When the image was moved to the trash, if it is there.
     ///
@@ -26,6 +35,9 @@ pub struct Image {
 pub struct ImageEntry {
     pub id: ImageId,
     pub url: String,
+    /// The small copy, when there is one; `None` means the reader should show `url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
     pub original_filename: String,
     pub uploaded_at: chrono::DateTime<chrono::Utc>,
     /// When it was moved to the trash, which is how the two lists are told apart.
@@ -39,6 +51,7 @@ impl ImageEntry {
         ImageEntry {
             id,
             url: image.url,
+            thumbnail_url: image.thumbnail_url,
             original_filename: image.original_filename,
             uploaded_at: image.uploaded_at,
             deleted_at: image.deleted_at,
@@ -183,6 +196,13 @@ mod reference_tests {
 /// Long enough for the file names people actually have, short enough that the library stays
 /// readable and a record stays small.
 pub const MAX_IMAGE_NAME_LENGTH: usize = 255;
+
+/// The largest small copy the API keeps, in bytes.
+///
+/// A browser makes one a few hundred pixels wide, which is tens of kilobytes; this is the ceiling
+/// that keeps "a small copy" from becoming a second original. It is well inside the JSON body
+/// limit, so the refusal a caller sees is this one rather than the router's.
+pub const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
 
 /// Changing an image's record: the name it is shown under, or the bytes it serves.
 ///

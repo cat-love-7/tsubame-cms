@@ -39,8 +39,14 @@ class StubImagesService {
   public trashedIds: number[] = [];
   public restored: number[] = [];
 
-  listImages = () => of(this.library);
-  listTrash = () => of(this.trashed);
+  /** What the server would answer for one page, so a screen can be watched filling up. */
+  public pageSize = 60;
+
+  // The page shape the API answers with: the window, and the total it reports in a header.
+  listImages = (offset = 0, limit = this.pageSize) =>
+    of({ images: this.library.slice(offset, offset + limit), total: this.library.length });
+  listTrash = (offset = 0, limit = this.pageSize) =>
+    of({ images: this.trashed.slice(offset, offset + limit), total: this.trashed.length });
 
   trashImage = (id: number) => {
     this.trashedIds.push(id);
@@ -151,6 +157,64 @@ describe('Image library', () => {
     expect(images().length).toBe(1);
     expect(fixture.nativeElement.textContent).toContain('first.png');
     expect(fixture.componentInstance.library()[0].id).toBe(1);
+  });
+
+  // A tile is 180px wide and the original is a megabyte: what is shown is the small copy the
+  // browser made when the picture was uploaded (see `image-thumbnail.ts`).
+  it('shows the small copy, and the original for an image that has none', () => {
+    stub.library = [
+      {
+        id: 1,
+        url: '/images/first.png',
+        thumbnail_url: '/images/thumb-first.webp',
+        original_filename: 'first.png',
+        uploaded_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 2,
+        url: '/images/second.png',
+        original_filename: 'second.png',
+        uploaded_at: '2024-01-01T00:00:00Z',
+      },
+    ];
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
+    fresh.detectChanges();
+
+    const tiles = fresh.nativeElement.querySelectorAll<HTMLImageElement>('.library .image img');
+    expect(Array.from(tiles, (image) => image.getAttribute('src'))).toEqual([
+      '/api/images/thumb-first.webp',
+      '/api/images/second.png',
+    ]);
+    // Both are deferred: a tile below the fold is not fetched until it is looked at.
+    expect(Array.from(tiles, (image) => image.getAttribute('loading'))).toEqual(['lazy', 'lazy']);
+  });
+
+  // The library is handed over a page at a time: a wall of a thousand tiles is what makes the
+  // screen - and the download - expensive, and the reader only needs the ones they are looking at.
+  it('asks for one page, and hands over the next one when asked', () => {
+    stub.library = Array.from({ length: 90 }, (_, index) => ({
+      id: index + 1,
+      url: `/images/${index + 1}.png`,
+      original_filename: `${index + 1}.png`,
+      uploaded_at: '2024-01-01T00:00:00Z',
+    }));
+    stub.pageSize = 60;
+    const fresh: TypedFixture<ImageLibrary> = TestBed.createComponent(ImageLibrary);
+    fresh.detectChanges();
+    const component = fresh.componentInstance;
+
+    // The first page is what is on screen, and the count says how many there are.
+    expect(component.library().length).toBe(60);
+    expect(component.visibleTotal()).toBe(90);
+    expect(fresh.nativeElement.querySelector('.count')?.textContent).toContain('90');
+    expect(fresh.nativeElement.querySelector('.load-more')).toBeTruthy();
+
+    component.loadMore();
+    fresh.detectChanges();
+
+    expect(component.library().length).toBe(90);
+    expect(component.canLoadMore()).toBe(false);
+    expect(fresh.nativeElement.querySelector('.load-more')).toBeNull();
   });
 
   it('says so when the library is empty', () => {

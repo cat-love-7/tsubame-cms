@@ -35,6 +35,12 @@ struct ImageData {
     /// The upload this image is waiting for, if a replacement was requested and not applied.
     #[serde(default)]
     pending_replacement: Option<String>,
+    /// The object holding the small copy the library shows, if one has been stored.
+    ///
+    /// Absent in records written before small copies existed, and in images uploaded through the
+    /// API rather than a browser (see `ImageRepository::set_image_thumbnail`).
+    #[serde(default)]
+    thumbnail_file_name: Option<String>,
 }
 
 impl AwsRepository {
@@ -43,6 +49,10 @@ impl AwsRepository {
         Ok(Image {
             original_filename: data.original_filename.clone(),
             url: serve_url(inner, &data.file_name).await?,
+            thumbnail_url: match &data.thumbnail_file_name {
+                Some(file_name) => Some(serve_url(inner, file_name).await?),
+                None => None,
+            },
             uploaded_at: data.uploaded_at,
             deleted_at: data.deleted_at,
         })
@@ -147,6 +157,8 @@ impl ImageRepository for AwsRepository {
             // A fresh upload is in the library, not the trash, and is waiting for nothing.
             deleted_at: None,
             pending_replacement: None,
+            // A fresh upload has no small copy: the browser sends one right after the bytes.
+            thumbnail_file_name: None,
         };
         write(
             &inner,
@@ -282,6 +294,8 @@ impl ImageRepository for AwsRepository {
                 deleted_at: previous.deleted_at,
                 // And the upload it came from is no longer waiting for anything.
                 pending_replacement: None,
+                // A small copy describes the picture it was made from, and that picture is gone.
+                thumbnail_file_name: None,
             };
             if !write_if_unchanged(
                 &inner,
@@ -305,6 +319,22 @@ impl ImageRepository for AwsRepository {
                 .send()
                 .await
                 .map_err(|e| format!("could not delete the replaced image: {}", describe(&e)))?;
+            // And the small copy of the picture it replaced.
+            if let Some(thumbnail) = &previous.thumbnail_file_name {
+                inner
+                    .s3
+                    .delete_object()
+                    .bucket(&inner.settings.bucket)
+                    .key(thumbnail)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "could not delete the replaced image's small copy: {}",
+                            describe(&e)
+                        )
+                    })?;
+            }
             return Ok(Replacement::Applied);
         }
         Err(format!(
@@ -402,6 +432,78 @@ impl ImageRepository for AwsRepository {
         change_image(&inner, **id, |data| data.deleted_at = at).await
     }
 
+    async fn set_image_thumbnail(
+        &self,
+        id: &ImageId,
+        ext: &str,
+        data: &[u8],
+    ) -> Result<(), BoxError> {
+        let inner = self.inner.clone();
+        let raw = **id;
+        if read(&inner, key::IMAGE_INDEX, &key::image(raw))
+            .await?
+            .is_none()
+        {
+            return Err("Image not found".into());
+        }
+
+        // A fresh key each time, like an upload's: the small copy a page already has keeps working
+        // until it is removed below, and no cache can answer with the picture this one replaces.
+        let file_name = match sanitize_ext(ext) {
+            Some(ext) => format!("thumb-{}.{}", uuid::Uuid::new_v4(), ext),
+            None => format!("thumb-{}", uuid::Uuid::new_v4()),
+        };
+        // The object goes first: a record naming bytes that are not there would show a broken
+        // tile, while bytes nothing names are merely invisible (and cheap).
+        inner
+            .s3
+            .put_object()
+            .bucket(&inner.settings.bucket)
+            .key(&file_name)
+            .body(aws_sdk_s3::primitives::ByteStream::from(data.to_vec()))
+            .send()
+            .await
+            .map_err(|e| format!("could not store the image's small copy: {}", describe(&e)))?;
+
+        // A conditional read-modify-write, as for the record's other fields: another request may be
+        // recording something else about this image at the same moment, and writing back what this
+        // attempt read would undo it.
+        let displaced: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        let installed = file_name.clone();
+        let outcome = change_record(
+            &inner,
+            key::IMAGE_INDEX,
+            &key::image(raw),
+            |data: &mut ImageData| {
+                // The closure runs here, synchronously, inside the write this await is waiting
+                // for; a mutex is all that is needed to bring the answer back out of it.
+                *displaced
+                    .lock()
+                    .expect("the small-copy closure is not reentered") =
+                    data.thumbnail_file_name.replace(installed.clone());
+            },
+        )
+        .await?;
+        if outcome.is_none() {
+            return Err("Image not found".into());
+        }
+
+        // What it showed before is unreferenced now.
+        if let Some(previous_thumbnail) = displaced.into_inner().unwrap_or(None) {
+            inner
+                .s3
+                .delete_object()
+                .bucket(&inner.settings.bucket)
+                .key(previous_thumbnail)
+                .send()
+                .await
+                .map_err(|e| {
+                    format!("could not delete the previous small copy: {}", describe(&e))
+                })?;
+        }
+        Ok(())
+    }
+
     async fn delete_image(&self, id: &ImageId) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let raw = **id;
@@ -422,6 +524,20 @@ impl ImageRepository for AwsRepository {
             .send()
             .await
             .map_err(|e| format!("could not delete the image bytes: {}", describe(&e)))?;
+        // The small copy is the image's too: leaving it behind would keep a deleted picture in
+        // the bucket under a name nothing can reach any more.
+        if let Some(thumbnail) = &data.thumbnail_file_name {
+            inner
+                .s3
+                .delete_object()
+                .bucket(&inner.settings.bucket)
+                .key(thumbnail)
+                .send()
+                .await
+                .map_err(|e| {
+                    format!("could not delete the image's small copy: {}", describe(&e))
+                })?;
+        }
         remove(&inner, key::IMAGE_INDEX, &key::image(raw)).await
     }
 }
@@ -1177,5 +1293,176 @@ mod tests {
         );
 
         repository.delete_table().await.unwrap();
+    }
+
+    /// The small copy the library shows: stored beside the image, served like the original, and
+    /// dropped when the picture it describes is replaced or the image goes for good.
+    #[tokio::test]
+    async fn a_small_copy_is_stored_beside_the_image_and_dropped_with_it() {
+        if !emulator_reachable(&crate::test_s3_endpoint())
+            || !emulator_reachable(&crate::test_endpoint())
+        {
+            eprintln!("skipped: the emulators are not running (docker compose up -d)");
+            return;
+        }
+        let (repository, _table) = crate::open_test_repository("cms_thumbnail")
+            .await
+            .expect("a repository");
+        let bucket = repository.inner.settings.bucket.clone();
+        let s3 = repository.inner.s3.clone();
+        // The deployment makes the image bucket readable (the URL in content is public and
+        // unsigned), and the emulator starts private.
+        s3.create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
+
+        let info = repository
+            .generate_image_upload_url(&NewImageRequest {
+                original_filename: "cat.png".to_string(),
+                ext: "png".to_string(),
+                size: 3,
+            })
+            .await
+            .unwrap();
+
+        // Nothing has been made yet: the screen falls back to the original.
+        assert!(
+            repository
+                .get_image(&info.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .thumbnail_url
+                .is_none()
+        );
+
+        repository
+            .set_image_thumbnail(&info.id, "webp", b"SMALL")
+            .await
+            .unwrap();
+        let first = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .thumbnail_url
+            .expect("a small copy");
+        // A name of its own, whose extension is what the serving end reads a type from.
+        let first_key = first.rsplit('/').next().unwrap().to_string();
+        assert!(first_key.starts_with("thumb-"), "{first_key}");
+        assert!(first_key.ends_with(".webp"), "{first_key}");
+        assert_eq!(read_object(&s3, &bucket, &first_key).await, b"SMALL");
+
+        // A second copy replaces the first, and the first object goes with it.
+        repository
+            .set_image_thumbnail(&info.id, "jpg", b"SMALLER")
+            .await
+            .unwrap();
+        let second = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .thumbnail_url
+            .expect("the second small copy");
+        let second_key = second.rsplit('/').next().unwrap().to_string();
+        assert!(second_key.ends_with(".jpg"), "{second_key}");
+        assert!(object_missing(&s3, &bucket, &first_key).await, "古いコピー");
+        assert_eq!(read_object(&s3, &bucket, &second_key).await, b"SMALLER");
+
+        // Replacing the picture drops the copy: it described the bytes that are gone. The email
+        // of the flow is what the browser does next - it sends another copy.
+        let replacement = repository
+            .generate_replacement_upload_url(
+                &info.id,
+                &ReplaceImageRequest {
+                    ext: "png".to_string(),
+                    size: 3,
+                },
+            )
+            .await
+            .unwrap();
+        s3.put_object()
+            .bucket(&bucket)
+            .key(&replacement.file_name)
+            .body(aws_sdk_s3::primitives::ByteStream::from(b"NEW".to_vec()))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            repository
+                .replace_image(&info.id, &replacement.file_name)
+                .await
+                .unwrap(),
+            Replacement::Applied
+        );
+        assert!(
+            repository
+                .get_image(&info.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .thumbnail_url
+                .is_none(),
+            "写真が変われば小さなコピーも無くなる"
+        );
+        assert!(
+            object_missing(&s3, &bucket, &second_key).await,
+            "古いコピー"
+        );
+
+        // And deleting the image takes whatever copy it has with it.
+        repository
+            .set_image_thumbnail(&info.id, "webp", b"LAST")
+            .await
+            .unwrap();
+        let last = repository
+            .get_image(&info.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .thumbnail_url
+            .unwrap();
+        let last_key = last.rsplit('/').next().unwrap().to_string();
+        repository
+            .set_image_deleted_at(&info.id, Some(chrono::Utc::now()))
+            .await
+            .unwrap();
+        repository.delete_image(&info.id).await.unwrap();
+        assert!(
+            object_missing(&s3, &bucket, &last_key).await,
+            "小さなコピーも消える"
+        );
+        assert!(repository.get_image(&info.id).await.unwrap().is_none());
+
+        repository.delete_table().await.unwrap();
+    }
+
+    /// The bytes stored under `key`, failing loudly when there are none.
+    async fn read_object(s3: &aws_sdk_s3::Client, bucket: &str, key: &str) -> Vec<u8> {
+        let object = s3
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("could not read {key}: {}", describe(&e)));
+        object
+            .body
+            .collect()
+            .await
+            .expect("the object's bytes")
+            .into_bytes()
+            .to_vec()
+    }
+
+    /// Whether there is no object under `key`.
+    async fn object_missing(s3: &aws_sdk_s3::Client, bucket: &str, key: &str) -> bool {
+        match s3.head_object().bucket(bucket).key(key).send().await {
+            Ok(_) => false,
+            Err(e) => e.as_service_error().is_some_and(|e| e.is_not_found()),
+        }
     }
 }

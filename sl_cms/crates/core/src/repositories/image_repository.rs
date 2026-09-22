@@ -110,6 +110,24 @@ pub trait ImageRepository: Send + Sync {
         &self,
         file_name: &str,
     ) -> impl Future<Output = Result<bool, BoxError>> + Send;
+    /// Store the small copy of an image: what the library and the pickers show.
+    ///
+    /// The browser makes one from the file it is uploading (a canvas at a few hundred pixels) and
+    /// sends it here, which is why no image decoding lives in this application: the bytes are
+    /// opaque to every adapter, as the original's are. `ext` says what they are - the adapter puts
+    /// it on the stored file name, which is what the serving end reads a content type from - and
+    /// is sanitised exactly as an upload's extension is.
+    ///
+    /// Whatever small copy the image had is dropped: the picture it showed is not the one this
+    /// describes any more. An image with no small copy simply has none ([`Image::thumbnail_url`]
+    /// is absent), and readers fall back to the original.
+    fn set_image_thumbnail(
+        &self,
+        id: &ImageId,
+        ext: &str,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), BoxError>> + Send;
+
     /// Point an image at the upload it was waiting for, and forget that upload.
     ///
     /// The file name is the server's to choose: [`ImageRepository::generate_replacement_upload_url`]

@@ -3,8 +3,8 @@
   <span class="spacer"></span>
   <span class="count">
     {{
-      (visible().length === 1 ? 'content.imageCountOne' : 'content.imageCountOther')
-        | transloco: { count: visible().length }
+      (visibleTotal() === 1 ? 'content.imageCountOne' : 'content.imageCountOther')
+        | transloco: { count: visibleTotal() }
     }}
   </span>
   <!-- Two lists, one screen: the library, and what has been taken out of it. -->
@@ -13,8 +13,8 @@
   </button>
   <button matButton [class.selected]="showTrash()" (click)="showLibrary(true)">
     {{ 'content.trash' | transloco }}
-    @if (trashed().length > 0) {
-      <span class="trash-count">{{ trashed().length }}</span>
+    @if (trashTotal() > 0) {
+      <span class="trash-count">{{ trashTotal() }}</span>
     }
   </button>
   @if (!showTrash() && auth.canUploadImages()) {
@@ -48,7 +48,14 @@
 <div class="library">
   @for (image of visible(); track image.id) {
     <figure class="image">
-      <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
+      <!-- The small copy when the browser that uploaded the picture made one, and the original
+           for an image uploaded through the API: a tile is 180px wide, and the original is a
+           megabyte (see `doc/content-api.md`). -->
+      <img
+        [src]="imageUrl(image.thumbnail_url || image.url)"
+        [alt]="image.original_filename"
+        loading="lazy"
+      />
       <figcaption>
         @if (renaming() === image.id) {
           <!-- The name is a label, so it is edited in place: nothing else about the image
@@ -167,3 +174,9 @@
     </figure>
   }
 </div>
+
+@if (canLoadMore()) {
+  <button matButton class="load-more" (click)="loadMore()" [disabled]="loadingMore()">
+    {{ (loadingMore() ? 'content.loadingMore' : 'content.loadMore') | transloco }}
+  </button>
+}

@@ -218,3 +218,23 @@ Angular はコンポーネントを再利用する。スナップショットを
 - Rust 側は型が UpperCamelCase で、頭字語も `Id`(`ImageID` ではなく `ImageId`。
   `CollectionItemId` / `UserId` と揃える)、関数・フィールドは snake_case、JSON のキーは
   `serde` が決める(`doc/content-api.md` が API の綴り)。
+
+## 10. 画像タイルはブラウザが作った小さなコピーを出す
+
+一覧とピッカーは 180px 幅のタイルに、写真 1 枚 1MB 級の**原本**を読み込んでいた。実測で
+**275 枚のライブラリを最後まで見ると 154MB**(初回描画だけで 85 枚・47.7MB)。`loading="lazy"` は
+入っていたが、遅らせるだけで取得するのは原本なので効かなかった。
+
+そこで **`ImagesService.uploadImage` がアップロードの直後にブラウザで小さなコピーを作り**
+(`core/image-thumbnail.ts`。`createImageBitmap` → canvas → WebP 360px)、
+`PUT /api/models/images/{id}/thumbnail` で送る。サーバは画像をデコードしない — 原本と同じく
+バイト列として扱うので、アダプタごとの差が出ない。
+
+- **失敗は握りつぶす**: 小さなコピーが作れないブラウザ、保存を断るサーバ、どちらでも
+  アップロード自体は成功として扱う(`sendThumbnail` が `catchError` で `undefined` にする)。
+  画像は使えて、タイルが重いだけ。
+- **表示は `image.thumbnail_url || image.url`**。API 経由のアップロードや、この機能より前の
+  画像はコピーを持たないので、そのまま原本が出る。
+- **一覧はページ単位**。`ImagesService.listImages(offset)` が 60 枚ずつ読み、画面は
+  「もっと見る」で足す。削除や差し替えのあとは、**読み込んでいたページ数ぶん**を読み直す
+  (4 ページ目まで見ていた編集者を先頭に戻さない)。

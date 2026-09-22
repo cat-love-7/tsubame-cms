@@ -1,4 +1,5 @@
-use axum::extract::{Path, State};
+use axum::body::Bytes;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
@@ -10,6 +11,7 @@ use crate::models::error::HttpError;
 use crate::models::image::{
     ImageId, NewImageRequest, ReplaceImageRequest, UpdateImageRequest, is_safe_image_ext,
 };
+use crate::models::pagination::{PageQuery, Pagination};
 
 /// Uploading requires authentication (enforced by the auth middleware).
 pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
@@ -33,6 +35,12 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
         // one being a `DELETE` that does not delete.
         .route("/models/images/{id}/references", get(image_references::<R>))
         .route("/models/images/{id}/trash", post(trash_image::<R>))
+        // The small copy: PUT rather than POST because the bytes are the whole body, and the
+        // image already has an id to hang them on.
+        .route(
+            "/models/images/{id}/thumbnail",
+            put(put_image_thumbnail::<R>),
+        )
         .route("/models/images/{id}/restore", post(restore_image::<R>))
         .route(
             "/models/images/get_upload_url",
@@ -43,8 +51,26 @@ pub fn protected_routes<R: Storage>() -> Router<AppState<R>> {
 /// Every uploaded image, newest first.
 async fn list_images<R: Storage>(
     State(module): State<AppState<R>>,
+    Query(query): Query<ListQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.image_service.list_images().await?))
+    let pagination = Pagination::optional(PageQuery {
+        limit: query.limit,
+        offset: query.offset,
+    })?;
+    let page = module.image_service.list_images(&pagination).await?;
+    // As for a collection's items: the body stays the array a client already reads, and how much
+    // there is travels in a header.
+    Ok((
+        [("x-total-count", page.total.to_string())],
+        Json(page.items),
+    ))
+}
+
+/// `?limit=&offset=` for the two library lists, read the same way the other list endpoints read it.
+#[derive(serde::Deserialize)]
+struct ListQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 /// Change an image's record: the name it is shown under, the bytes it serves, or when it arrived.
@@ -94,8 +120,41 @@ async fn request_replacement<R: Storage>(
 /// The trash: images taken out of the library, most recently trashed first.
 async fn list_trash<R: Storage>(
     State(module): State<AppState<R>>,
+    Query(query): Query<ListQuery>,
 ) -> Result<impl IntoResponse, HttpError> {
-    Ok(Json(module.image_service.list_trash().await?))
+    let pagination = Pagination::optional(PageQuery {
+        limit: query.limit,
+        offset: query.offset,
+    })?;
+    let page = module.image_service.list_trash(&pagination).await?;
+    Ok((
+        [("x-total-count", page.total.to_string())],
+        Json(page.items),
+    ))
+}
+
+/// `?ext=` for the small copy: what the bytes are, for the file name they are stored under.
+#[derive(serde::Deserialize)]
+struct ThumbnailQuery {
+    #[serde(default)]
+    ext: String,
+}
+
+/// Store the small copy the library and the pickers show, made by the browser that has the file.
+///
+/// The body is the image itself rather than JSON, which is why the route takes `Bytes`: the same
+/// shape as the local upload route, for the same reason.
+async fn put_image_thumbnail<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(id): Path<u64>,
+    Query(query): Query<ThumbnailQuery>,
+    body: Bytes,
+) -> Result<impl IntoResponse, HttpError> {
+    module
+        .image_service
+        .set_image_thumbnail(ImageId::from_u64(id), &query.ext, &body)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The content that uses an image, so a delete can say what it would break.

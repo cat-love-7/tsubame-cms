@@ -673,3 +673,227 @@ async fn rejects_unsafe_image_file_names_and_extensions() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// The small copy a browser makes: the library shows it instead of the original, one page of the
+/// library is a window rather than everything, and the copy goes when the image does.
+///
+/// The copy is sent through the API on both backends - that is the point of making it in the
+/// browser, no adapter has to decode an image - but only a backend that stores the bytes itself can
+/// serve them back here, so the half that fetches the copy is asked of that one. The AWS adapter's
+/// own tests cover its side against the emulators.
+#[tokio::test]
+async fn the_library_carries_a_small_copy_and_hands_out_one_page_at_a_time() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let upload_one = |name: &str| {
+        let app = &app;
+        let token = token.clone();
+        let name = name.to_string();
+        async move {
+            let (status, info) = send(
+                &app.router,
+                Method::POST,
+                "/api/models/images/get_upload_url",
+                Some(&token),
+                Some(json!({ "original_filename": name, "ext": "png", "size": 8 })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            info["id"].as_u64().expect("the image id")
+        }
+    };
+    // The thumbnail route takes the image itself as the body, so it is built by hand: the JSON
+    // helpers are for JSON.
+    let put_thumbnail = |url: String, body: Vec<u8>| {
+        let app = &app;
+        let token = token.clone();
+        async move {
+            let request = Request::builder()
+                .method(Method::PUT)
+                .uri(url)
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(body))
+                .expect("a request");
+            let response = app
+                .router
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("a response");
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("a body")
+                .to_vec();
+            (status, bytes)
+        }
+    };
+
+    let first = upload_one("first.png").await;
+    let second = upload_one("second.png").await;
+
+    // A record without a copy says nothing about one, which is how the screen knows to fall back
+    // to the original.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/images",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().map(Vec::len), Some(2), "両方ある");
+    assert!(
+        body[0].get("thumbnail_url").is_none(),
+        "無いものは黙っている: {body}"
+    );
+
+    // Storing one is the local backend's half of this: the AWS adapter puts an object in S3, and
+    // the contract harness has no bucket to put it in (its adapter's own tests cover that path).
+    // What is checked here either way is what the *API* says about a copy.
+    let mut stored_thumbnail_url = String::new();
+    if Backend::SERVES_IMAGE_BYTES {
+        let (status, body) = put_thumbnail(
+            format!("/api/models/images/{first}/thumbnail?ext=webp"),
+            b"SMALL-COPY".to_vec(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NO_CONTENT,
+            "{}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let (status, body) = send(
+            &app.router,
+            Method::GET,
+            "/api/models/images",
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let with_copy = body
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == first)
+            .expect("the image that was given a copy");
+        stored_thumbnail_url = with_copy["thumbnail_url"]
+            .as_str()
+            .expect("the small copy's URL")
+            .to_string();
+        assert!(
+            stored_thumbnail_url.starts_with("/api/images/"),
+            "the copy is served like the original: {stored_thumbnail_url}"
+        );
+        assert_ne!(
+            with_copy["url"].as_str().unwrap(),
+            stored_thumbnail_url,
+            "小さなコピーは原本とは別のファイル"
+        );
+        // The other image is untouched: a copy belongs to one image.
+        let without_copy = body
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == second)
+            .expect("the other image");
+        assert!(without_copy.get("thumbnail_url").is_none());
+
+        // The bytes are what was sent.
+        let (status, bytes) =
+            send_raw(&app.router, Method::GET, &stored_thumbnail_url, None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(bytes, b"SMALL-COPY");
+    }
+
+    // A page of the library, with how much there is in a header - the same shape a collection's
+    // items use.
+    let (status, headers, bytes) = send_with_headers(
+        &app.router,
+        Method::GET,
+        "/api/models/images?limit=1",
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers.get("x-total-count").unwrap(), "2");
+    let page: Vec<Value> = serde_json::from_slice(&bytes).expect("a page of images");
+    assert_eq!(page.len(), 1, "1 ページは 1 件");
+
+    let (status, headers, bytes) = send_with_headers(
+        &app.router,
+        Method::GET,
+        "/api/models/images?limit=1&offset=1",
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers.get("x-total-count").unwrap(), "2");
+    let second_page: Vec<Value> = serde_json::from_slice(&bytes).expect("a page of images");
+    assert_eq!(second_page.len(), 1);
+    assert_ne!(page[0]["id"], second_page[0]["id"], "次のページは別の画像");
+
+    // A limit nobody can answer is refused rather than guessed at.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/images?limit=0",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A copy that is not an image, or is not small, is refused with a sentence.
+    let (status, body) = put_thumbnail(
+        format!("/api/models/images/{first}/thumbnail?ext=tar.gz"),
+        b"COPY".to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        String::from_utf8_lossy(&body).contains("not an image type"),
+        "unexpected body: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let too_large = vec![0u8; 512 * 1024 + 1];
+    let (status, _) = put_thumbnail(
+        format!("/api/models/images/{first}/thumbnail?ext=webp"),
+        too_large,
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    // The copy goes when the image does. Deleting an image removes its objects, and the AWS side of
+    // this suite has no bucket for them to be in (`Backend::SERVES_IMAGE_BYTES` is false there),
+    // which is why this half is asked of the backend that stores the bytes.
+    if Backend::SERVES_IMAGE_BYTES {
+        let (status, _) = send_raw(
+            &app.router,
+            Method::POST,
+            &format!("/api/models/images/{first}/trash"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = send(
+            &app.router,
+            Method::DELETE,
+            &format!("/api/models/images/{first}"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) =
+            send_raw(&app.router, Method::GET, &stored_thumbnail_url, None, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "小さなコピーも消える");
+    }
+}

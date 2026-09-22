@@ -286,7 +286,9 @@
     "addElement": "Add element",
     "elementType": "Element type",
     "noElements": "No elements yet.",
-    "publishChanges": "Publish changes"
+    "publishChanges": "Publish changes",
+    "loadMore": "Show more images",
+    "loadingMore": "Loading…"
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",

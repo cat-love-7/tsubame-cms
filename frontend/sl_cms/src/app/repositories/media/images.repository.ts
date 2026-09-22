@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { map, Observable } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
 
@@ -48,10 +48,30 @@ export interface ImageEntry {
   id: number;
   /** Backend-relative (`/images/...`); prefix it with `apiUrl` to load the bytes. */
   url: string;
+  /**
+   * The small copy to show in a tile, when one has been stored; absent for an image uploaded
+   * through the API rather than a browser, which the screens then show at full size.
+   */
+  thumbnail_url?: string | null;
   original_filename: string;
   uploaded_at: string;
   /** When it was moved to the trash; absent while it is in the library. */
   deleted_at?: string | null;
+}
+
+/** One page of a library list, with how many there are altogether. */
+export interface ImagePage {
+  images: ImageEntry[];
+  /** Images in the whole list, not only in this page. */
+  total: number;
+}
+
+/** The body the API answers with, plus the total it reports in a header. */
+function pageOf(response: HttpResponse<ImageEntry[]>): ImagePage {
+  const images = response.body ?? [];
+  // An older server does not send the header; the page it answered is then the whole list.
+  const total = Number(response.headers.get('x-total-count') ?? images.length);
+  return { images, total: Number.isFinite(total) ? total : images.length };
 }
 
 @Injectable({
@@ -70,9 +90,27 @@ export class ImageRepository {
     return this.http.put<void>(apiUrl(uploadUrl), file);
   }
 
-  /** Everything that has been uploaded, newest first. */
-  listImages(): Observable<ImageEntry[]> {
-    return this.http.get<ImageEntry[]>(apiUrl('/models/images'));
+  /**
+   * One page of what has been uploaded, newest first.
+   *
+   * The library renders tiles, and a browser that has to lay out thousands of them at once is
+   * slower than one that is handed the next page when the reader asks for it. `total` comes from
+   * the server so the screen can say how many there are without reading them.
+   */
+  listImages(page: { limit: number; offset: number }): Observable<ImagePage> {
+    return this.http
+      .get<ImageEntry[]>(apiUrl('/models/images'), {
+        params: { limit: page.limit, offset: page.offset },
+        observe: 'response',
+      })
+      .pipe(map((response) => pageOf(response)));
+  }
+
+  /** Store the small copy of an image: what the tiles show instead of the original. */
+  putThumbnail(id: number, ext: string, blob: Blob): Observable<void> {
+    return this.http.put<void>(apiUrl(`/models/images/${id}/thumbnail`), blob, {
+      params: { ext },
+    });
   }
 
   /**
@@ -128,9 +166,14 @@ export class ImageRepository {
     return this.http.get<ImageOwner[]>(apiUrl(`/models/images/${id}/references`));
   }
 
-  /** The trash: images taken out of the library, most recently trashed first. */
-  listTrash(): Observable<ImageEntry[]> {
-    return this.http.get<ImageEntry[]>(apiUrl('/models/images/trash'));
+  /** One page of the trash, most recently trashed first. */
+  listTrash(page: { limit: number; offset: number }): Observable<ImagePage> {
+    return this.http
+      .get<ImageEntry[]>(apiUrl('/models/images/trash'), {
+        params: { limit: page.limit, offset: page.offset },
+        observe: 'response',
+      })
+      .pipe(map((response) => pageOf(response)));
   }
 
   /**

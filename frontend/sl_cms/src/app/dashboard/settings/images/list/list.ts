@@ -10,8 +10,8 @@ import { apiUrl } from 'app/core/api-url';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { ImageEntry, ImageOwner } from 'app/repositories/media/images.repository';
-import { ImagesService } from 'app/services/media/images.service';
-import { Observable } from 'rxjs';
+import { IMAGE_PAGE_SIZE, ImagesService } from 'app/services/media/images.service';
+import { Observable, forkJoin } from 'rxjs';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 
 /**
@@ -42,8 +42,13 @@ export class ImageLibrary {
   public auth = inject(AuthService);
 
   public library = signal<ImageEntry[]>([]);
+  /** How many images there are altogether, which is more than are on screen (see `loadMore`). */
+  public libraryTotal = signal(0);
   /** What has been taken out of the library, and is waiting to be put back or deleted for good. */
   public trashed = signal<ImageEntry[]>([]);
+  public trashTotal = signal(0);
+  /** Whether another page is on its way, so the button can say so. */
+  public loadingMore = signal(false);
   /** Whether the screen is showing the trash. */
   public showTrash = signal(false);
   public error = signal<Message | null>(null);
@@ -61,21 +66,78 @@ export class ImageLibrary {
   }
 
   /**
+   * How many pages of each list the screen is holding. One until the reader asks for more.
+   *
+   * Pages rather than a count, because what the screen re-reads after an image moves is "as much
+   * as it already had" - an editor who scrolled four pages down should not be sent back to the
+   * first one by deleting something.
+   */
+  private loadedPages = 1;
+
+  /**
    * Both lists, so the toggle is instant and the trash button can say how much is in it.
    *
-   * They are two small requests against the same store; a screen that had to fetch on every
-   * switch would make the simple act of looking in the trash feel like a page load.
+   * Each is one request per loaded page, and the two are asked for together: a screen that had to
+   * fetch on every switch would make the simple act of looking in the trash feel like a page
+   * load. The whole library is *not* read: a page is what the grid renders, and the rest arrives
+   * when the reader asks (`loadMore`).
    */
   private load() {
-    this.images.listImages().subscribe({
-      next: (images) => this.library.set(images),
+    const offsets = Array.from(
+      { length: Math.max(1, this.loadedPages) },
+      (_, index) => index * IMAGE_PAGE_SIZE,
+    );
+    forkJoin(offsets.map((offset) => this.images.listImages(offset))).subscribe({
+      next: (pages) => {
+        this.library.set(pages.flatMap((page) => page.images));
+        this.libraryTotal.set(pages[pages.length - 1]?.total ?? 0);
+      },
       error: (e) => this.error.set(failure('content.failedToLoadImages', e)),
     });
-    this.images.listTrash().subscribe({
-      next: (images) => this.trashed.set(images),
+    forkJoin(offsets.map((offset) => this.images.listTrash(offset))).subscribe({
+      next: (pages) => {
+        this.trashed.set(pages.flatMap((page) => page.images));
+        this.trashTotal.set(pages[pages.length - 1]?.total ?? 0);
+      },
       error: (e) => this.error.set(failure('content.failedToLoadImages', e)),
     });
   }
+
+  /** Ask for the next page of what is on screen. */
+  loadMore() {
+    if (this.loadingMore() || !this.canLoadMore()) {
+      return;
+    }
+    this.loadingMore.set(true);
+    this.loadedPages += 1;
+    const showTrash = this.showTrash();
+    const offset = (showTrash ? this.trashed() : this.library()).length;
+    const next = showTrash ? this.images.listTrash(offset) : this.images.listImages(offset);
+    next.subscribe({
+      next: (page) => {
+        this.loadingMore.set(false);
+        if (showTrash) {
+          this.trashed.update((images) => [...images, ...page.images]);
+          this.trashTotal.set(page.total);
+        } else {
+          this.library.update((images) => [...images, ...page.images]);
+          this.libraryTotal.set(page.total);
+        }
+      },
+      error: (e) => {
+        // The page did not arrive, so the screen is still holding the one before it.
+        this.loadingMore.set(false);
+        this.loadedPages -= 1;
+        this.error.set(failure('content.failedToLoadImages', e));
+      },
+    });
+  }
+
+  /** Whether there is more of the list on screen than it has been handed. */
+  public canLoadMore = () => this.visible().length < this.visibleTotal();
+
+  /** How many images the list on screen holds altogether. */
+  public visibleTotal = () => (this.showTrash() ? this.trashTotal() : this.libraryTotal());
 
   /** Look at the library, or at what has been taken out of it. */
   showLibrary(showTrash: boolean) {

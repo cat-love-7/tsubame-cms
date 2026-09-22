@@ -2590,6 +2590,7 @@ mod tests {
             Ok(Some(Image {
                 original_filename: format!("image_{}.jpg", id),
                 url: format!("/images/{}", id),
+                thumbnail_url: None,
                 uploaded_at: chrono::Utc::now(),
                 deleted_at: None,
             }))
@@ -2620,6 +2621,15 @@ mod tests {
                 file_name: format!("replacement.{ext}"),
                 upload_url: "/upload/replacement".to_string(),
             })
+        }
+        async fn set_image_thumbnail(
+            &self,
+            _id: &ImageId,
+            _ext: &str,
+            _data: &[u8],
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+            // The bytes are storage's business, and nothing this service decides depends on them.
+            Ok(())
         }
         async fn image_bytes_exist(
             &self,

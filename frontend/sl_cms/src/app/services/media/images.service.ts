@@ -1,15 +1,19 @@
 import { Injectable, inject } from '@angular/core';
 import { Message } from 'app/core/i18n/message';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
-import { map, Observable, switchMap, throwError } from 'rxjs';
+import { makeThumbnail, thumbnailExtension } from 'app/core/image-thumbnail';
+import { Observable, catchError, from, map, of, switchMap, throwError } from 'rxjs';
 
 import {
-  ImageEntry,
   ImageOwner,
+  ImagePage,
   ImageRepository,
   NewImageInfo,
   ReplacementInfo,
 } from 'app/repositories/media/images.repository';
+
+/** How many tiles one page of the library holds. */
+export const IMAGE_PAGE_SIZE = 60;
 
 @Injectable({
   providedIn: 'root',
@@ -32,7 +36,32 @@ export class ImagesService {
     }
     return this.images
       .requestUploadUrl({ original_filename: file.name, ext: extension, size: file.size })
-      .pipe(switchMap((info) => this.images.upload(info.upload_url, file).pipe(map(() => info))));
+      .pipe(
+        switchMap((info) =>
+          this.images
+            .upload(info.upload_url, file)
+            .pipe(switchMap(() => this.sendThumbnail(info.id, file).pipe(map(() => info)))),
+        ),
+      );
+  }
+
+  /**
+   * Make the small copy of `file` and store it against `id`.
+   *
+   * Deliberately best-effort: the picture is uploaded and usable either way, and only the tiles
+   * are heavier without it. A browser that cannot decode the file (`makeThumbnail` answers `null`),
+   * or a server that refuses the copy, must not turn a successful upload into a failure an editor
+   * sees - so every failure here becomes "no small copy".
+   */
+  private sendThumbnail(id: number, file: File): Observable<void> {
+    return from(makeThumbnail(file)).pipe(
+      switchMap((thumbnail) =>
+        thumbnail
+          ? this.images.putThumbnail(id, thumbnailExtension(thumbnail), thumbnail)
+          : of(undefined),
+      ),
+      catchError(() => of(undefined)),
+    );
   }
 
   /**
@@ -56,7 +85,9 @@ export class ImagesService {
             .upload(info.upload_url, file)
             .pipe(
               switchMap(() =>
-                this.images.applyReplacement(id, info.file_name).pipe(map(() => info)),
+                this.images
+                  .applyReplacement(id, info.file_name)
+                  .pipe(switchMap(() => this.sendThumbnail(id, file).pipe(map(() => info)))),
               ),
             ),
         ),
@@ -87,9 +118,9 @@ export class ImagesService {
     return this.images.imageLinkPath(id);
   }
 
-  /** The image library, newest first. */
-  listImages(): Observable<ImageEntry[]> {
-    return this.images.listImages();
+  /** One page of the image library, newest first. */
+  listImages(offset = 0, limit = IMAGE_PAGE_SIZE): Observable<ImagePage> {
+    return this.images.listImages({ limit, offset });
   }
 
   /** Rename an image in the library: the label, not the file behind it. */
@@ -107,9 +138,9 @@ export class ImagesService {
     return this.images.references(id);
   }
 
-  /** The trash: images taken out of the library, most recently trashed first. */
-  listTrash(): Observable<ImageEntry[]> {
-    return this.images.listTrash();
+  /** One page of the trash, most recently trashed first. */
+  listTrash(offset = 0, limit = IMAGE_PAGE_SIZE): Observable<ImagePage> {
+    return this.images.listTrash({ limit, offset });
   }
 
   /** Take an image out of the library, keeping its bytes and its references working. */

@@ -524,7 +524,12 @@
         "
         [title]="image.original_filename"
       >
-        <img [src]="imageUrl(image.url)" [alt]="image.original_filename" loading="lazy" />
+        <!-- A tile, so the small copy when there is one (see the image library). -->
+        <img
+          [src]="imageUrl(image.thumbnail_url || image.url)"
+          [alt]="image.original_filename"
+          loading="lazy"
+        />
         @if (pickerMulti() && isSelected(image.id)) {
           <mat-icon class="tick">check_circle</mat-icon>
         }
@@ -533,6 +538,18 @@
       <span class="note">{{ 'content.noImagesUploadFirst' | transloco }}</span>
     }
   </div>
+
+  @if (libraryCanLoadMore()) {
+    <button
+      matButton
+      type="button"
+      class="load-more"
+      (click)="loadMoreLibrary()"
+      [disabled]="libraryLoadingMore()"
+    >
+      {{ (libraryLoadingMore() ? 'content.loadingMore' : 'content.loadMore') | transloco }}
+    </button>
+  }
 
   @if (pickerMulti()) {
     <div class="picker-actions">

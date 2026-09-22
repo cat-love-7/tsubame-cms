@@ -32,6 +32,24 @@ describe('ImagesService', () => {
     return new File([new Uint8Array(sizeInBytes)], name, { type: 'image/png' });
   }
 
+  afterEach(() => {
+    // The small copy's stubs are per test: leaving a decoder behind would make the next one send a
+    // copy it never asked for.
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Let the upload's own follow-up work finish.
+   *
+   * An upload is the bytes and then the small copy of them, which the browser makes
+   * asynchronously (`image-thumbnail.ts`) even when it cannot make one at all - so the answer
+   * arrives a microtask or two after the bytes are flushed.
+   */
+  function settle(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
   it('refuses a file over the deployment’s limit without asking where to put it', async () => {
     await create(1024 * 1024);
     const failures: unknown[] = [];
@@ -60,10 +78,90 @@ describe('ImagesService', () => {
     });
     request.flush({ id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' });
     httpMock.expectOne('/api/images/one.png?key=k').flush(null);
+    await settle();
 
     expect(uploaded).toEqual([
       { id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' },
     ]);
+  });
+
+  /**
+   * The browser pieces the small copy needs: a decoder and a canvas, neither of which jsdom has.
+   *
+   * Only the service's *use* of them is under test here - what they are asked for is
+   * `image-thumbnail.spec.ts` - so this answers a fixed blob of the type a browser would make.
+   */
+  function stubThumbnail(): void {
+    const original = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag !== 'canvas') {
+        return original(tag);
+      }
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: () => undefined }),
+        toBlob: (callback: (value: Blob | null) => void) =>
+          callback(new Blob(['small'], { type: 'image/webp' })),
+      } as unknown as HTMLElement;
+    });
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(() => Promise.resolve({ width: 800, height: 600, close: () => undefined })),
+    );
+  }
+
+  // The picture is uploaded, and then the small copy of it - made here, so no adapter has to
+  // decode an image.
+  it('sends the small copy after the bytes it was made from', async () => {
+    await create(1024 * 1024);
+    stubThumbnail();
+    const uploaded: unknown[] = [];
+
+    service.uploadImage(file(2048)).subscribe((info) => uploaded.push(info));
+    httpMock
+      .expectOne('/api/models/images/get_upload_url')
+      .flush({ id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' });
+    httpMock.expectOne('/api/images/one.png?key=k').flush(null);
+    await settle();
+
+    const thumbnail = httpMock.expectOne('/api/models/images/7/thumbnail?ext=webp');
+    expect(thumbnail.request.method).toBe('PUT');
+    expect(thumbnail.request.body).toBeInstanceOf(Blob);
+    thumbnail.flush(null);
+    await settle();
+
+    expect(uploaded).toEqual([
+      { id: 7, upload_url: '/images/one.png?key=k', url: '/images/one.png' },
+    ]);
+  });
+
+  // A copy that cannot be stored is not an upload that failed: the picture is there and usable, and
+  // only the tiles are heavier without it.
+  it('keeps the upload when the small copy cannot be stored', async () => {
+    await create(1024 * 1024);
+    stubThumbnail();
+    const uploaded: unknown[] = [];
+    const failures: unknown[] = [];
+
+    service.uploadImage(file(2048)).subscribe({
+      next: (info) => uploaded.push(info),
+      error: (e) => failures.push(e),
+    });
+    httpMock
+      .expectOne('/api/models/images/get_upload_url')
+      .flush({ id: 9, upload_url: '/images/two.png?key=k', url: '/images/two.png' });
+    httpMock.expectOne('/api/images/two.png?key=k').flush(null);
+    await settle();
+    httpMock
+      .expectOne('/api/models/images/9/thumbnail?ext=webp')
+      .flush({ code: 'internal_error' }, { status: 500, statusText: 'Server Error' });
+    await settle();
+
+    expect(uploaded).toEqual([
+      { id: 9, upload_url: '/images/two.png?key=k', url: '/images/two.png' },
+    ]);
+    expect(failures).toEqual([]);
   });
 
   it('lets the server decide when the deployment never said what its limit is', async () => {
@@ -78,6 +176,7 @@ describe('ImagesService', () => {
       .expectOne('/api/models/images/get_upload_url')
       .flush({ id: 1, upload_url: '/images/big.png?key=k', url: '/images/big.png' });
     httpMock.expectOne('/api/images/big.png?key=k').flush(null);
+    await settle();
     expect(uploaded.length).toBe(1);
   });
 });
