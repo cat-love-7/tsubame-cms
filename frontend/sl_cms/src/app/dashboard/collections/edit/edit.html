@@ -79,7 +79,60 @@
 }
 
 @if (metadata()?.status === 'published' && metadata()?.has_draft) {
-  <p class="note">{{ 'content.draftNotPublished' | transloco }}</p>
+  <p class="note">
+    {{ 'content.draftNotPublished' | transloco }}
+    @if (canEdit()) {
+      <!-- The two things an editor can do with changes they do not want: look at what they would
+           be replacing, or throw them away. Both are about what is *stored*, so neither is
+           affected by edits still in the form. -->
+      <button matButton (click)="compareWithPublished()">
+        {{
+          (comparing() ? 'content.hidePublishedComparison' : 'content.compareWithPublished')
+            | transloco
+        }}
+      </button>
+      <button matButton class="discard" (click)="discardChanges()">
+        {{ 'content.discardChanges' | transloco }}
+      </button>
+    }
+  </p>
+}
+
+@if (comparing()) {
+  <!-- What the site is serving beside what the form holds, field by field: only the fields that
+       differ, because a comparison of everything is a second form to read. -->
+  <div class="comparison">
+    <h3>{{ 'content.comparisonTitle' | transloco }}</h3>
+    @if (changedFields().length === 0) {
+      <p class="note">{{ 'content.comparisonEmpty' | transloco }}</p>
+    } @else {
+      @for (change of changedFields(); track change.field.name) {
+        <div class="comparison-field">
+          <h4>{{ change.field.name }}</h4>
+          <div class="comparison-sides">
+            <div class="side">
+              <span class="side-label">{{ 'content.publishedSide' | transloco }}</span>
+              <app-value-field
+                [field]="change.field"
+                [value]="change.published"
+                [siblings]="publishedValues() ?? {}"
+                [disabled]="true"
+              />
+            </div>
+            <div class="side">
+              <span class="side-label">{{ 'content.draftSide' | transloco }}</span>
+              <app-value-field
+                [field]="change.field"
+                [value]="change.draft"
+                [siblings]="values()"
+                [disabled]="true"
+              />
+            </div>
+          </div>
+        </div>
+      }
+    }
+  </div>
 }
 
 @if (!loaded()) {

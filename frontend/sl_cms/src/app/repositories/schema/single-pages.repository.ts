@@ -74,6 +74,16 @@ export class SinglePageRepository {
     return this.http.get<ItemMetadata>(apiUrl(`/models/single_pages/${name}/item/metadata`));
   }
 
+  /** What the site serves for this page (see `getPublishedCollectionItem`). */
+  getPublishedPageItem(name: string): Observable<ContentValue> {
+    return this.http.get<ContentValue>(apiUrl(`/models/single_pages/${name}/published`));
+  }
+
+  /** Throw the working copy away: the page goes back to what the site is serving. */
+  discardPageDraft(name: string): Observable<void> {
+    return this.http.delete<void>(apiUrl(`/models/single_pages/${name}/draft`));
+  }
+
   /**
    * The state of every page, keyed by name, in one request.
    *

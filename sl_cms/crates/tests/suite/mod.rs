@@ -392,6 +392,8 @@ mod single_pages;
 mod slugs;
 /// When content changed, and the publication date the delivery API reports.
 mod timestamps;
+/// Undoing unpublished work: what the site serves, and discarding the working copy.
+mod undoing;
 /// The uniqueness contract: the index, what is reserved, and what a value resolves to.
 mod unique_fields;
 /// What a schema accepts, what a value is on the wire, and how a refusal points at a field.

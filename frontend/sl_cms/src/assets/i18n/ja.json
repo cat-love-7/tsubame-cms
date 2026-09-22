@@ -288,7 +288,18 @@
     "noElements": "まだ要素がありません。",
     "publishChanges": "変更を公開",
     "loadMore": "もっと見る",
-    "loadingMore": "読み込み中…"
+    "loadingMore": "読み込み中…",
+    "compareWithPublished": "公開中との違いを見る",
+    "hidePublishedComparison": "比較を閉じる",
+    "comparisonTitle": "公開中の内容と、保存した変更",
+    "comparisonEmpty": "保存した内容は公開中と同じです。",
+    "publishedSide": "公開中",
+    "draftSide": "保存した変更",
+    "discardChanges": "変更を取り消す",
+    "discardChangesConfirm": "保存した変更を破棄して公開中の内容に戻しますか? サイトは変わりません。",
+    "changesDiscarded": "保存した変更を破棄しました。いま公開中の内容です。",
+    "failedToDiscardChanges": "変更を取り消せませんでした。",
+    "failedToLoadPublished": "公開中の内容を読めませんでした。"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",

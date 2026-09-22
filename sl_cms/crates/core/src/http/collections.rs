@@ -67,6 +67,17 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/collections/{collection_name}/items/{id}/preview",
             get(preview_collection_item::<R>),
         )
+        // What the site serves right now, for an editor deciding what to do with the changes they
+        // are holding. The admin read above answers with the *working* copy.
+        .route(
+            "/models/collections/{collection_name}/items/{id}/published",
+            get(get_published_collection_item::<R>),
+        )
+        // And throwing those changes away, which is the undoable half of an edit.
+        .route(
+            "/models/collections/{collection_name}/items/{id}/draft",
+            delete(discard_collection_item_draft::<R>),
+        )
         .route(
             "/models/collections/{collection_name}/items/{id}/preview-link",
             post(create_collection_item_preview_link::<R>),
@@ -196,6 +207,42 @@ async fn get_collection_item_by_unique_value<R: Storage>(
 struct ItemLookup {
     id: u64,
     values: crate::models::collection::CollectionItemResponse,
+}
+
+/// What the site serves for this item, as opposed to the working copy the editor saves into.
+///
+/// Any signed-in reader: everyone who may read the working copy (which is more than what is live)
+/// may read this.
+async fn get_published_collection_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    // The same shape the ordinary read answers with, so a client compares two values and not two
+    // envelopes.
+    Ok(Json(
+        module
+            .collection_service
+            .get_published_collection_item(&name, CollectionItemId::from_u64(id))
+            .await?,
+    ))
+}
+
+/// Throw the working copy away: the item goes back to what the site is serving.
+///
+/// The middleware's `can_edit` is the whole rule: this removes pending work from the working copy,
+/// which anyone who may edit this collection can already overwrite, and nothing about it releases
+/// or hides content (see [`require_publish`]).
+async fn discard_collection_item_draft<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path((collection_name, id)): Path<(String, u64)>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = CollectionName::from(collection_name.as_str());
+    module
+        .collection_service
+        .discard_collection_item_draft(&name, CollectionItemId::from_u64(id))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn preview_collection_item<R: Storage>(

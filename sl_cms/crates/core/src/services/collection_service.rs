@@ -1510,6 +1510,67 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .is_some())
     }
 
+    /// What the site serves for this item right now.
+    ///
+    /// The admin screens read the *working* copy (`working_item` prefers it), which means an item
+    /// with unpublished changes is shown to an editor as it is about to be - and what is live is
+    /// not visible anywhere in the CMS. This is that other half: the published copy as stored, for
+    /// an editor who wants to see what they would be replacing.
+    ///
+    /// An item whose status is not published has nothing live, whatever is in the item store (a
+    /// new item is created with its initial values there), so that is a 404: the answer is "the
+    /// site is not serving this", not "here are some values the site might be serving".
+    pub async fn get_published_collection_item(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<CollectionItemResponse, HttpError> {
+        self.require_item(collection_name, &item_id).await?;
+        if !self
+            .get_item_metadata(collection_name, item_id)
+            .await?
+            .is_published()
+        {
+            return Err(HttpError::NotFound(
+                "this item is not published, so the site is not serving it",
+            ));
+        }
+        match self
+            .collection_repository
+            .get_collection_item(collection_name, &item_id)
+            .await
+            .map_err(map_internal_error)?
+        {
+            Some(item) => self.format_item(collection_name, &item).await,
+            None => Err(HttpError::NotFound(&format!(
+                "Item with id '{}' not found in collection '{}'",
+                item_id.to_string(),
+                collection_name
+            ))),
+        }
+    }
+
+    /// Throw the working copy away, leaving the item as the site serves it.
+    ///
+    /// The undoable half of an edit: an item that was published and then changed can go back to
+    /// what is live, without publishing the change (which is not a way to discard one) and without
+    /// unpublishing (which takes the page off the site and keeps the working copy anyway).
+    ///
+    /// Idempotent: an item with nothing pending is already in the state this asks for. What the
+    /// item *references* is re-indexed from the published copy, which is what the adapters do with
+    /// the working copy's entries.
+    pub async fn discard_collection_item_draft(
+        &self,
+        collection_name: &CollectionName,
+        item_id: CollectionItemId,
+    ) -> Result<(), HttpError> {
+        self.require_item(collection_name, &item_id).await?;
+        self.collection_repository
+            .delete_collection_item_draft(collection_name, &item_id)
+            .await
+            .map_err(map_internal_error)
+    }
+
     /// Ids of the items with an unpublished working copy, for the admin list.
     pub async fn draft_item_ids(
         &self,

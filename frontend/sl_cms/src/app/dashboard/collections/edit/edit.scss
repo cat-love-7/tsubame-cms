@@ -5,3 +5,48 @@
   flex-direction: column;
   gap: 16px;
 }
+
+/// The comparison of what is live against what the form holds: two columns per changed field, so
+/// the same field can be read across rather than looked up twice.
+.comparison {
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  padding: 16px;
+
+  h3 {
+    margin: 0 0 12px;
+    font: var(--mat-sys-title-small);
+  }
+}
+
+.comparison-field {
+  & + & {
+    margin-top: 16px;
+    border-top: 1px solid var(--mat-sys-outline-variant);
+    padding-top: 16px;
+  }
+
+  h4 {
+    margin: 0 0 8px;
+    font: var(--mat-sys-label-large);
+  }
+}
+
+.comparison-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.side-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+/// Taking the site down and taking the changes back are different, and only one of them is
+/// destructive: it reads as the warning it is.
+.discard {
+  color: var(--mat-sys-error);
+}

@@ -1204,6 +1204,64 @@ try {
     `${afterSaveAndPublish.values.title}`,
   );
 
+  // ------------------------------------------------- what is live, and taking changes back
+  // The form holds the working copy, so the content the changes would replace is not visible
+  // anywhere else in the CMS: it is read on demand, and the changes can be thrown away.
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await titleField.waitFor({ timeout: 15000 });
+  const discardWording = `discard wording ${Date.now()}`;
+  await titleField.fill(discardWording);
+  await save().click();
+  await page.waitForTimeout(500);
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await titleField.waitFor({ timeout: 15000 });
+
+  await page.locator('button:has-text("Compare with what is published")').click();
+  const comparison = page.locator('.comparison');
+  await comparison.waitFor({ timeout: 10000 });
+  const sides = await comparison
+    .locator('input')
+    .evaluateAll((inputs) => inputs.map((input) => input.value));
+  check(
+    '公開中と保存した変更を並べて見られる',
+    sides.length === 2 && sides[0] !== discardWording && sides[1] === discardWording,
+    sides.join(' / '),
+  );
+
+  await page.locator('button:has-text("Discard the changes")').click();
+  await page
+    .waitForFunction(
+      // Plain DOM again: the wording is what the form holds, so the form has been re-read.
+      (wording) =>
+        Array.from(document.querySelectorAll('app-value-field input')).every(
+          (input) => input.value !== wording,
+        ),
+      discardWording,
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  const afterDiscard = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1`,
+    undefined,
+    token,
+  );
+  check(
+    '取り消すと公開中の内容に戻る',
+    afterDiscard.title !== discardWording && afterDiscard.title === publishWording,
+    `${afterDiscard.title}`,
+  );
+  check(
+    '取り消してもサイトは変わらない',
+    (await api('GET', `/content/collections/${COLLECTION}/items/1`)).values.title ===
+      publishWording,
+  );
+  check(
+    '取り消したので保留中の変更は無い',
+    (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token))
+      .has_draft === false,
+  );
+
   // Leaving with unsaved edits asks first: the answer is the person's.
   await titleField.fill(`left behind ${Date.now()}`);
   dialogAnswer = 'dismiss';

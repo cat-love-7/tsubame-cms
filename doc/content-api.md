@@ -40,6 +40,14 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 - 状態・日時は値とは**別のストア**(`item_metadata`)に入る。スキーマに `status` や
   `published_at` というフィールドがあっても衝突しない。
 - コレクション / 単一ページ / アイテムを削除すると、作業コピーとメタデータも一緒に消える。
+- **作業コピーは取り消せる**(2026-09 追加)。`DELETE .../draft` が作業コピーを消すだけで、公開
+  コピーには触れない。管理画面は「変更を公開」の隣に出す。**未公開の変更が9件溜まっていた**
+  実デプロイがあり、それまでは「公開する」以外に片付ける方法が無かった(作業コピーを消す保存層の
+  操作は最初からあったが、呼び出し元が無かった)。
+- **いま公開中の内容は別に読む**。管理画面の読み取りは作業コピー優先なので、変更を抱えた
+  アイテムでは「サイトが出している内容」が CMS から見えない。`GET .../published` がそれを返し、
+  編集画面は「公開中との違いを見る」で**違うフィールドだけ**を並べて見せる(取り消す前に確かめる
+  ため)。未公開のアイテムは 404: サイトは何も出していない。
 - 未公開の内容への `/api/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
 - `published_at` は**最初に公開した日時**。再公開では動かさず、unpublish しても保持する
   (「この記事を公開した日」は現在の状態ではなくアイテムの事実のため)。**更新を公開した日時**は
@@ -83,6 +91,10 @@ Gatsby などの静的サイトビルドが CMS の内容を読むための契�
 | GET | `/api/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
 | POST | `/api/models/single_pages/{name}/publish` | 更新後のメタデータ |
 | POST | `/api/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
+| GET | `/api/models/collections/{name}/items/{id}/published` | **いまサイトに出ている内容**(公開コピー)。`GET .../items/{id}` が返すのは作業コピーなので、これがその反対側。未公開のアイテムは 404 |
+| GET | `/api/models/single_pages/{name}/published` | 同上(単一ページ) |
+| DELETE | `/api/models/collections/{name}/items/{id}/draft` | **作業コピーを破棄**して公開中の内容に戻す(`204`。要 `can_edit`)。冪等。サイトは変わらない |
+| DELETE | `/api/models/single_pages/{name}/draft` | 同上(単一ページ) |
 | GET | `/api/models/collections/{name}/items/{id}/api/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
 | GET | `/api/models/single_pages/{name}/api/preview` | `{ "schema": [...], "values": {...} }`(作業コピー。要トークン) |
 | GET | `/api/models/images` | `[{ "id": 1, "url": "/api/images/...", "thumbnail_url": "/api/images/thumb-...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順。`thumbnail_url` はタイル用の小さなコピーで、無ければ `url` を表示する。`?limit=`/`?offset=` と `X-Total-Count` は §5.9) |

@@ -88,6 +88,16 @@ export class CollectionsService {
     return this.collectionRepository.getItemMetadata(name, id);
   }
 
+  /** What the site serves for this item, as opposed to the working copy the editor holds. */
+  getPublishedItem(name: string, id: number): Observable<CollectionValue> {
+    return this.collectionRepository.getPublishedCollectionItem(name, id);
+  }
+
+  /** Throw the working copy away: the item goes back to what the site is serving. */
+  discardItemDraft(name: string, id: number): Observable<void> {
+    return this.collectionRepository.discardCollectionItemDraft(name, id);
+  }
+
   /** Publish or unpublish a batch of items, answering per item. */
   setItemsStatus(name: string, ids: number[], status: ItemStatus): Observable<ItemStatusOutcome[]> {
     return this.collectionRepository.setItemsStatus(name, ids, status);

@@ -126,6 +126,28 @@ export class CollectionRepository {
     return this.http.get<ItemMetadata>(apiUrl(`/models/collections/${name}/items/${id}/metadata`));
   }
 
+  /**
+   * What the site serves for this item right now.
+   *
+   * {@link getCollectionItem} answers with the *working* copy, which is what the editor is holding;
+   * this is the other side of it, for an editor deciding what to do with their changes. A 404 means
+   * the item is not published, so there is nothing live to compare against.
+   */
+  getPublishedCollectionItem(name: string, id: number): Observable<CollectionValue> {
+    return this.http.get<CollectionValue>(
+      apiUrl(`/models/collections/${name}/items/${id}/published`),
+    );
+  }
+
+  /**
+   * Throw the working copy away: the item goes back to what the site is serving.
+   *
+   * Idempotent, and it changes nothing that is live - see `discard_collection_item_draft`.
+   */
+  discardCollectionItemDraft(name: string, id: number): Observable<void> {
+    return this.http.delete<void>(apiUrl(`/models/collections/${name}/items/${id}/draft`));
+  }
+
   /** Makes the item visible in the public content API. */
   /** Publish or unpublish a batch, answering per item (see `ItemStatusOutcome` on the server). */
   setItemsStatus(name: string, ids: number[], status: ItemStatus): Observable<ItemStatusOutcome[]> {

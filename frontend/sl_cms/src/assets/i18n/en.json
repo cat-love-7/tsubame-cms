@@ -288,7 +288,18 @@
     "noElements": "No elements yet.",
     "publishChanges": "Publish changes",
     "loadMore": "Show more images",
-    "loadingMore": "Loading…"
+    "loadingMore": "Loading…",
+    "compareWithPublished": "Compare with what is published",
+    "hidePublishedComparison": "Hide the comparison",
+    "comparisonTitle": "What is published, and what is saved",
+    "comparisonEmpty": "The saved content is the same as what is published.",
+    "publishedSide": "Published",
+    "draftSide": "Saved changes",
+    "discardChanges": "Discard the changes",
+    "discardChangesConfirm": "Discard the saved changes and go back to what is published? The site is not affected.",
+    "changesDiscarded": "The saved changes were discarded; this is what is published.",
+    "failedToDiscardChanges": "Could not discard the changes.",
+    "failedToLoadPublished": "Could not read what is published."
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",

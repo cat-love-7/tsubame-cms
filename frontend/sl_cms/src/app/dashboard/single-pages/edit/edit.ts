@@ -2,7 +2,7 @@ import { Component, DestroyRef, HostListener, computed, inject, signal } from '@
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { TranslocoPipe } from '@jsverse/transloco';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
@@ -55,6 +55,8 @@ export class SinglePageEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
   /** When this screen goes away, so does everything it still has in flight (see the constructor). */
   private destroyRef = inject(DestroyRef);
+  /** Asked for the wording of the questions this screen puts to the editor (see `discardChanges`). */
+  private i18n = inject(TranslocoService);
   private pages = inject(SinglePagesService);
   private capabilities = inject(CapabilitiesService);
   private dates = inject(DateTimeFormat);
@@ -110,6 +112,10 @@ export class SinglePageEdit implements HasUnsavedChanges {
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
   public notice = signal<Message | null>(null);
+  /** What the site serves for this page, once an editor has asked to see it (see the collection
+   * item editor). */
+  public publishedValues = signal<ContentValue | null>(null);
+  public comparing = signal(false);
   public cellStyle = fieldCellStyle;
 
   /** Per-field problems reported by the value fields; saving is refused while any remain. */
@@ -141,6 +147,8 @@ export class SinglePageEdit implements HasUnsavedChanges {
     this.metadata.set(null);
     this.error.set(null);
     this.notice.set(null);
+    this.publishedValues.set(null);
+    this.comparing.set(false);
     this.previewAllowed.set(null);
     this.previewUrl.set('');
     this.problemField.set(null);
@@ -279,6 +287,80 @@ export class SinglePageEdit implements HasUnsavedChanges {
       problem.startsWith(`${field.name}.`) ||
       problem.startsWith(`${field.name}[`)
     );
+  }
+
+  /** Show what the site is serving next to what the form holds (see the collection item editor). */
+  compareWithPublished() {
+    const started = this.start();
+    if (this.comparing()) {
+      this.comparing.set(false);
+      return;
+    }
+    this.error.set(null);
+    this.pages
+      .getPublishedPageItem(started.name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (values) => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          this.publishedValues.set(values);
+          this.comparing.set(true);
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToLoadPublished', e));
+          }
+        },
+      });
+  }
+
+  /** The fields this form would change, each with what is live and what is not. */
+  public changedFields = computed(() => {
+    const published = this.publishedValues();
+    if (published === null) {
+      return [];
+    }
+    const schema = this.schema();
+    const live = withDefaults(schema, published);
+    const draft = this.values();
+    return schema
+      .filter((field) => fingerprint(draft[field.name]) !== fingerprint(live[field.name]))
+      .map((field) => ({
+        field,
+        published: live[field.name] ?? null,
+        draft: draft[field.name] ?? null,
+      }));
+  });
+
+  /** Throw the saved changes away: the page goes back to what the site is serving. */
+  discardChanges() {
+    const started = this.start();
+    if (!confirm(this.i18n.translate('content.discardChangesConfirm'))) {
+      return;
+    }
+    this.error.set(null);
+    this.notice.set(null);
+    this.pages
+      .discardPageDraft(started.name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          // The notice is set *after* the load, which starts by clearing whatever the last act
+          // said.
+          this.load(started.name);
+          this.notice.set(t('content.changesDiscarded'));
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToDiscardChanges', e));
+          }
+        },
+      });
   }
 
   /** Mint a link that shows this working copy to someone without an account, and copy it

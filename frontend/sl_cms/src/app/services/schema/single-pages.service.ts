@@ -65,6 +65,16 @@ export class SinglePagesService {
     return this.pages.getPageMetadata(name);
   }
 
+  /** What the site serves for this page, as opposed to the working copy the editor holds. */
+  getPublishedPageItem(name: string): Observable<ContentValue> {
+    return this.pages.getPublishedPageItem(name);
+  }
+
+  /** Throw the working copy away: the page goes back to what the site is serving. */
+  discardPageDraft(name: string): Observable<void> {
+    return this.pages.discardPageDraft(name);
+  }
+
   /** The state of every page, keyed by name, for the list screen. */
   listItemMetadata(): Observable<{ [name: string]: ItemMetadata }> {
     return this.pages.listItemMetadata();

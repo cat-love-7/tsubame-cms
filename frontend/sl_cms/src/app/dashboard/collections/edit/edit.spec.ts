@@ -17,6 +17,20 @@ import { TypedFixture } from 'app/core/testing/fixture';
 import { CollectionItemEdit } from './edit';
 import { formatDateTime } from 'app/core/i18n/date-format';
 
+/** A metadata record with the fields a test cares about, and the rest as a draft. */
+function metadataWith(overrides: Partial<ItemMetadata>): ItemMetadata {
+  return {
+    status: 'draft',
+    published_at: null,
+    last_published_at: null,
+    published_by: null,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    has_draft: false,
+    ...overrides,
+  };
+}
+
 class StubCollectionsService {
   /** The items the screen asked about, so a switch can be told from a first load. */
   public requested: number[] = [];
@@ -87,6 +101,20 @@ class StubCollectionsService {
     return of(this.metadata);
   }
 
+  /** What the site is serving, for the comparison. `null` means the item is not published. */
+  public publishedItem: unknown = { title: 'Hello' };
+  /** Every draft this screen asked to discard. */
+  public discarded: number[] = [];
+
+  getPublishedItem(_name: string, _id: number): Observable<unknown> {
+    return of(this.publishedItem);
+  }
+
+  discardItemDraft(_name: string, id: number): Observable<void> {
+    this.discarded.push(id);
+    return of(void 0);
+  }
+
   publishItem(_name: string, id: number): Observable<ItemMetadata> {
     this.published.push(id);
     this.publishedTargets.push({ name: _name, id });
@@ -151,6 +179,22 @@ function saveButton(element: HTMLElement): HTMLButtonElement {
     throw new Error('no Save button');
   }
   return button;
+}
+
+/** The button that shows what is published beside what is saved. */
+function compareButton(element: HTMLElement): HTMLButtonElement {
+  return buttonWith(element, 'Compare with what is published');
+}
+
+/** The button that throws the saved changes away. */
+function discardButton(element: HTMLElement): HTMLButtonElement {
+  return buttonWith(element, 'Discard the changes');
+}
+
+function buttonWith(element: HTMLElement, label: string): HTMLButtonElement {
+  return Array.from(element.querySelectorAll('button')).find((button) =>
+    button.textContent?.includes(label),
+  ) as HTMLButtonElement;
 }
 
 function previewButton(element: HTMLElement): HTMLButtonElement {
@@ -622,6 +666,106 @@ describe('CollectionItemEdit', () => {
       key: 'content.previewNotCopied',
       params: { expires: formatDateTime('2026-09-13T12:00:00Z', 'en') },
     });
+  });
+
+  // The form holds the working copy, so without this the content the changes would replace is not
+  // visible anywhere in the CMS.
+  it('compares the saved changes with what is published, field by field', async () => {
+    stub.metadata = metadataWith({ status: 'published', has_draft: true });
+    stub.schema = [
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      { name: 'subtitle', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+    ];
+    stub.item = { title: 'Changed', subtitle: 'Same' };
+    stub.publishedItem = { title: 'Hello', subtitle: 'Same' };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    compareButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    const component = fresh.componentInstance;
+    // Only what would change: a comparison of everything is a second form to read.
+    expect(component.changedFields().map((change) => change.field.name)).toEqual(['title']);
+    expect(component.changedFields()[0].published).toBe('Hello');
+    expect(component.changedFields()[0].draft).toBe('Changed');
+    // Rendered by the same read-only value widget the form uses, so the two sides are what an
+    // editor would see if either were live.
+    const panel = fresh.nativeElement.querySelector('.comparison');
+    const sides = Array.from(panel?.querySelectorAll('input') ?? [], (input) => input.value);
+    expect(sides).toEqual(['Hello', 'Changed']);
+    expect(panel?.textContent).toContain('Published');
+    expect(panel?.textContent).toContain('Saved changes');
+  });
+
+  it('says so when the saved changes match what is published', async () => {
+    stub.metadata = metadataWith({ status: 'published', has_draft: true });
+    stub.item = { title: 'Hello' };
+    stub.publishedItem = { title: 'Hello' };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    compareButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(fresh.componentInstance.changedFields()).toEqual([]);
+    expect(fresh.nativeElement.querySelector('.comparison')?.textContent).toContain(
+      'the same as what is published',
+    );
+  });
+
+  // The undo: the site is not touched, and the form goes back to what is being served.
+  it('discards the saved changes and shows what is published', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stub.metadata = metadataWith({ status: 'published', has_draft: true });
+    stub.item = { title: 'Changed' };
+    stub.publishedItem = { title: 'Hello' };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    discardButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Discard the saved changes and go back to what is published? The site is not affected.',
+    );
+    expect(stub.discarded).toEqual([7]);
+    // The item is read again, which is what puts the published content back on the screen.
+    expect(stub.requested[stub.requested.length - 1]).toBe(7);
+    expect(fresh.componentInstance.notice()).toEqual({ key: 'content.changesDiscarded' });
+  });
+
+  it('leaves the changes alone when the discard is declined', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    stub.metadata = metadataWith({ status: 'published', has_draft: true });
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    discardButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(stub.discarded).toEqual([]);
+    expect(stub.requested).toEqual([7]);
+  });
+
+  // Neither control is about an item that has nothing published to go back to, and neither is
+  // offered to an account that may not edit this collection.
+  it('offers no comparison or discard when there is nothing published', async () => {
+    stub.metadata = metadataWith({ status: 'draft', has_draft: true });
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(compareButton(fresh.nativeElement)).toBeUndefined();
+    expect(discardButton(fresh.nativeElement)).toBeUndefined();
   });
 
   // A schema with previews turned off has no link to hand out, so the button is not offered at

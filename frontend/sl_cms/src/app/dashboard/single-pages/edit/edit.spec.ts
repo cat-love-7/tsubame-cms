@@ -73,6 +73,20 @@ class StubSinglePagesService {
     return of(this.metadata);
   }
 
+  /** What the site is serving, for the comparison. */
+  public publishedItem: unknown = { title: 'Live' };
+  /** Every page whose draft this screen asked to discard. */
+  public discarded: string[] = [];
+
+  getPublishedPageItem(): Observable<unknown> {
+    return of(this.publishedItem);
+  }
+
+  discardPageDraft(name: string): Observable<void> {
+    this.discarded.push(name);
+    return of(void 0);
+  }
+
   /** When set, a save waits for the test to complete it (see the delayed-answer tests). */
   public heldSave?: Subject<void>;
   /** Set to refuse the next save. */
@@ -393,6 +407,47 @@ describe('SinglePageEdit', () => {
 
     expect(component.error()).toBeNull();
     expect(component.problemField()).toBeNull();
+  });
+
+  // The same comparison and undo as the collection item editor, against this page's own routes.
+  it('compares the saved changes with what is published, and can discard them', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    stub.metadata = {
+      ...stub.metadata,
+      status: 'published',
+      published_at: '2024-01-01T00:00:00Z',
+      last_published_at: '2024-01-01T00:00:00Z',
+      has_draft: true,
+    };
+    stub.content = { title: 'Changed' };
+    stub.publishedItem = { title: 'Live' };
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+    const component = fresh.componentInstance;
+
+    const button = (label: string): HTMLButtonElement | undefined =>
+      Array.from(fresh.nativeElement.querySelectorAll('button')).find((candidate) =>
+        candidate.textContent?.includes(label),
+      );
+    button('Compare with what is published')?.click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(component.changedFields().map((change) => change.field.name)).toEqual(['title']);
+    const sides = Array.from(
+      fresh.nativeElement.querySelectorAll<HTMLInputElement>('.comparison input'),
+      (input) => input.value,
+    );
+    expect(sides).toEqual(['Live', 'Changed']);
+
+    button('Discard the changes')?.click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(stub.discarded).toEqual(['home']);
+    expect(component.notice()).toEqual({ key: 'content.changesDiscarded' });
   });
 
   // A schema with previews turned off offers no button at all (see the collection item editor).

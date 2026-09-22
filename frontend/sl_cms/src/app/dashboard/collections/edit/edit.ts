@@ -2,7 +2,7 @@ import { Component, DestroyRef, HostListener, computed, inject, signal } from '@
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { TranslocoPipe } from '@jsverse/transloco';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
@@ -68,6 +68,8 @@ export class CollectionItemEdit implements HasUnsavedChanges {
   private collectionsService = inject(CollectionsService);
   private capabilities = inject(CapabilitiesService);
   private dates = inject(DateTimeFormat);
+  /** Asked for the wording of the questions this screen puts to the editor (see `discardChanges`). */
+  private i18n = inject(TranslocoService);
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
@@ -116,6 +118,15 @@ export class CollectionItemEdit implements HasUnsavedChanges {
    * the server refuses the link anyway if it is. Only a `false` the server stated hides it.
    */
   public previewAllowed = signal<boolean | null>(null);
+  /**
+   * What the site serves for this item, once an editor has asked to see it, and whether the
+   * comparison is open.
+   *
+   * Read when the question is asked rather than with the item: it is a second read, and most visits
+   * to an item are not about what is live.
+   */
+  public publishedValues = signal<CollectionValue | null>(null);
+  public comparing = signal(false);
   /** The shareable preview link, once one has been minted. */
   public previewUrl = signal('');
   /** What happened to the preview link: copied, or made but not copied. */
@@ -190,6 +201,8 @@ export class CollectionItemEdit implements HasUnsavedChanges {
     this.metadata.set(null);
     this.error.set(null);
     this.notice.set(null);
+    this.publishedValues.set(null);
+    this.comparing.set(false);
     this.previewAllowed.set(null);
     this.previewUrl.set('');
     this.problemField.set(null);
@@ -398,6 +411,104 @@ export class CollectionItemEdit implements HasUnsavedChanges {
       problem.startsWith(`${field.name}.`) ||
       problem.startsWith(`${field.name}[`)
     );
+  }
+
+  /**
+   * Show what the site is serving next to what is in the form.
+   *
+   * The form holds the working copy (that is what an editor saves into), so without this the one
+   * thing an editor cannot see anywhere in the CMS is the content their changes are replacing.
+   */
+  compareWithPublished() {
+    const started = this.start();
+    if (started.id === null) {
+      return;
+    }
+    if (this.comparing()) {
+      this.comparing.set(false);
+      return;
+    }
+    this.error.set(null);
+    this.collectionsService
+      .getPublishedItem(started.name, started.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (values) => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          this.publishedValues.set(values);
+          this.comparing.set(true);
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToLoadPublished', e));
+          }
+        },
+      });
+  }
+
+  /**
+   * The fields this form would change, each with what is live and what is not.
+   *
+   * Compared as renderings (`fingerprint`), because the widgets rebuild their values as they are
+   * edited: two values that differ only in key order are not a change. The published copy goes
+   * through `withDefaults` first, so a field the form filled in with its default is not counted as
+   * a difference against a copy stored before that default existed.
+   */
+  public changedFields = computed(() => {
+    const published = this.publishedValues();
+    if (published === null) {
+      return [];
+    }
+    const schema = this.schema();
+    const live = withDefaults(schema, published);
+    const draft = this.values();
+    return schema
+      .filter((field) => fingerprint(draft[field.name]) !== fingerprint(live[field.name]))
+      .map((field) => ({
+        field,
+        published: live[field.name] ?? null,
+        draft: draft[field.name] ?? null,
+      }));
+  });
+
+  /**
+   * Throw the saved changes away: the item goes back to what the site is serving.
+   *
+   * Not publishing and not unpublishing: the site is not touched at all, and what is lost is only
+   * the work nobody has seen.
+   */
+  discardChanges() {
+    const started = this.start();
+    if (started.id === null) {
+      return;
+    }
+    if (!confirm(this.i18n.translate('content.discardChangesConfirm'))) {
+      return;
+    }
+    this.error.set(null);
+    this.notice.set(null);
+    this.collectionsService
+      .discardItemDraft(started.name, started.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (!this.stillOn(started)) {
+            return;
+          }
+          // The form was showing the working copy, which is gone: read the item again so the
+          // screen shows what the site serves. The notice is set *after* the load, which starts by
+          // clearing whatever the last act said.
+          this.load(started.name, started.id);
+          this.notice.set(t('content.changesDiscarded'));
+        },
+        error: (e) => {
+          if (this.stillOn(started)) {
+            this.error.set(failure('content.failedToDiscardChanges', e));
+          }
+        },
+      });
   }
 
   /**

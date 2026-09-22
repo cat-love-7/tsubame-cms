@@ -628,6 +628,44 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .is_some())
     }
 
+    /// What the site serves for this page right now; a 404 while the page is not published, as for
+    /// a collection item (see [`CollectionService::get_published_collection_item`]).
+    pub async fn get_published_single_page_item(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<SinglePageItemResponse, HttpError> {
+        if !self.get_page_metadata(name).await?.is_published() {
+            return Err(HttpError::NotFound(
+                "this page is not published, so the site is not serving it",
+            ));
+        }
+        match self
+            .single_page_repository
+            .get_single_page_item(name)
+            .await
+            .map_err(map_internal_error)?
+        {
+            Some(item) => self.format_page_item(name, Some(item)).await,
+            None => Err(HttpError::NotFound(&format!(
+                "Single page with id '{}' not found",
+                name
+            ))),
+        }
+    }
+
+    /// Throw the working copy away, leaving the page as the site serves it (see
+    /// [`CollectionService::discard_collection_item_draft`]). Idempotent.
+    pub async fn discard_single_page_item_draft(
+        &self,
+        name: &SinglePageName,
+    ) -> Result<(), HttpError> {
+        self.get_single_page_schema(name).await?;
+        self.single_page_repository
+            .delete_single_page_item_draft(name)
+            .await
+            .map_err(map_internal_error)
+    }
+
     /// Publish or unpublish a single page, recording when it happened and who did it
     /// (see [`CollectionService::set_item_status`] for why `actor` is required).
     pub async fn set_page_status(

@@ -61,6 +61,16 @@ pub fn routes<R: Storage>() -> Router<AppState<R>> {
             "/models/single_pages/{page_name}/preview",
             get(preview_single_page::<R>),
         )
+        // What the site serves right now, and throwing the working copy away (see the collection
+        // equivalents in `http::collections`).
+        .route(
+            "/models/single_pages/{page_name}/published",
+            get(get_published_single_page_item::<R>),
+        )
+        .route(
+            "/models/single_pages/{page_name}/draft",
+            delete(discard_single_page_item_draft::<R>),
+        )
         .route(
             "/models/single_pages/{page_name}/preview-link",
             post(create_single_page_preview_link::<R>),
@@ -180,6 +190,33 @@ async fn update_single_page_settings<R: Storage>(
         .update_single_page_settings(&name, &settings)
         .await?;
     Ok(StatusCode::OK)
+}
+
+/// What the site serves for this page, as opposed to the working copy the editor saves into.
+async fn get_published_single_page_item<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    Ok(Json(
+        module
+            .single_page_service
+            .get_published_single_page_item(&name)
+            .await?,
+    ))
+}
+
+/// Throw the working copy away: the page goes back to what the site is serving.
+async fn discard_single_page_item_draft<R: Storage>(
+    State(module): State<AppState<R>>,
+    Path(page_name): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    let name = SinglePageName::from(page_name.as_str());
+    module
+        .single_page_service
+        .discard_single_page_item_draft(&name)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// What the page would look like if it were published now: the working copy, with the
