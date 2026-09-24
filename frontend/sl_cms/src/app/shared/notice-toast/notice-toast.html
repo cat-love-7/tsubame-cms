@@ -1,0 +1,23 @@
+@if (message(); as shown) {
+  <div
+    class="toast"
+    [class.failure]="isFailure()"
+    [attr.role]="isFailure() ? null : 'status'"
+    [attr.aria-hidden]="isFailure() ? 'true' : null"
+  >
+    @if (isFailure()) {
+      <mat-icon class="icon">error</mat-icon>
+    }
+    <span class="text">{{ shown | message }}</span>
+    <button
+      matIconButton
+      type="button"
+      class="close"
+      (click)="dismiss()"
+      [attr.aria-label]="'common.dismiss' | transloco"
+      [matTooltip]="'common.dismiss' | transloco"
+    >
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+}

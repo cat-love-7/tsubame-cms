@@ -106,6 +106,17 @@ pub struct SlugOptions {
 pub struct TextFieldOptions {
     pub max_length: Option<usize>,
     pub min_length: Option<usize>,
+    /// Whether a `Text` field is written over several lines.
+    ///
+    /// A one-line box is the right default for a title, a name or a label, and the wrong one for a
+    /// paragraph; the type cannot tell which it is, so the schema says. Markdown is multi-line by
+    /// nature and ignores it. `height` (the layout minimum) is what says *how* tall the box may
+    /// grow; this only says whether it is a box at all.
+    ///
+    /// Omitted from the wire when false, so a schema that never sets it reads exactly as it did
+    /// before this existed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub multiline: bool,
 }
 
 /// What a relation points at.
@@ -858,11 +869,39 @@ mod tests {
 
     /// The limits are characters, not bytes: a twenty-character Japanese title fits a schema
     /// that says 20, and the refusal names the path the caller gave.
+    /// The multi-line choice is a schema's, and a schema that never made it is the one-line field
+    /// it always was.
+    #[test]
+    fn a_multi_line_text_field_round_trips_and_defaults_to_one_line() {
+        let parsed: Vec<FieldSchema> = serde_json::from_str(
+            r#"[{"name":"title","field_type":{"Text":{}},"required":false,"width":12,"height":1},
+                {"name":"lede","field_type":{"Text":{"multiline":true}},"required":false,"width":12,"height":1}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed[0].field_type,
+            FieldType::Text(TextFieldOptions::default()),
+            "指定の無いスキーマは今までどおり"
+        );
+        assert!(matches!(
+            &parsed[1].field_type,
+            FieldType::Text(options) if options.multiline
+        ));
+
+        // And it is left out of the wire when false, so a schema that does not use it reads
+        // exactly as it did before the option existed.
+        let written = serde_json::to_string(&parsed[0]).unwrap();
+        assert!(!written.contains("multiline"), "{written}");
+        let written = serde_json::to_string(&parsed[1]).unwrap();
+        assert!(written.contains(r#""multiline":true"#), "{written}");
+    }
+
     #[test]
     fn a_text_limit_counts_characters() {
         let options = TextFieldOptions {
             max_length: Some(20),
             min_length: Some(4),
+            multiline: false,
         };
         let field = field("title", FieldType::Text(options));
 

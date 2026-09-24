@@ -38,16 +38,32 @@
 @switch (kind()) {
   @case ('Text') {
     <mat-form-field appearance="fill" class="full-width">
-      <input
-        matInput
-        [name]="field.name"
-        [disabled]="disabled"
-        [attr.maxlength]="maxLength()"
-        [attr.minlength]="minLength()"
-        [ngModel]="value"
-        (ngModelChange)="update($event)"
-        [attr.aria-labelledby]="labelId"
-      />
+      @if (multiline()) {
+        <!-- A box, because the schema asked for one: the height it asks for is a minimum the box
+             grows into (see `field-layout`), and `rows` is the floor it never goes under. -->
+        <textarea
+          matInput
+          [attr.rows]="rows()"
+          [name]="field.name"
+          [disabled]="disabled"
+          [attr.maxlength]="maxLength()"
+          [attr.minlength]="minLength()"
+          [ngModel]="value"
+          (ngModelChange)="update($event)"
+          [attr.aria-labelledby]="labelId"
+        ></textarea>
+      } @else {
+        <input
+          matInput
+          [name]="field.name"
+          [disabled]="disabled"
+          [attr.maxlength]="maxLength()"
+          [attr.minlength]="minLength()"
+          [ngModel]="value"
+          (ngModelChange)="update($event)"
+          [attr.aria-labelledby]="labelId"
+        />
+      }
       @if (lengthHintKey(); as key) {
         <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
       }
@@ -87,25 +103,113 @@
     </div>
   }
   @case ('Markdown') {
-    <mat-form-field appearance="fill" class="full-width">
-      <textarea
-        matInput
-        rows="6"
-        [name]="field.name"
-        [disabled]="disabled"
-        [attr.maxlength]="maxLength()"
-        [attr.minlength]="minLength()"
-        [ngModel]="value"
-        (ngModelChange)="update($event)"
-        [attr.aria-labelledby]="labelId"
-      ></textarea>
-      @if (lengthHintKey(); as key) {
-        <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+    <div class="markdown-field">
+      @if (!disabled) {
+        <!-- Buttons for the syntax, instead of a syntax reference beside the box: an editor who
+             does not write Markdown should not have to remember which bracket is which. Each one
+             acts on the selection, and the parser is the site's, not ours. -->
+        <div
+          class="markdown-toolbar"
+          role="toolbar"
+          [attr.aria-label]="'content.mdToolbar' | transloco"
+        >
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownWrap(markdownInput, '**', '**', 'content.mdBoldPlaceholder')"
+            [attr.aria-label]="'content.mdBold' | transloco"
+            [matTooltip]="'content.mdBold' | transloco"
+          >
+            <mat-icon>format_bold</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownWrap(markdownInput, '*', '*', 'content.mdItalicPlaceholder')"
+            [attr.aria-label]="'content.mdItalic' | transloco"
+            [matTooltip]="'content.mdItalic' | transloco"
+          >
+            <mat-icon>format_italic</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownPrefix(markdownInput, '## ')"
+            [attr.aria-label]="'content.mdHeading' | transloco"
+            [matTooltip]="'content.mdHeading' | transloco"
+          >
+            <mat-icon>title</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownLink(markdownInput)"
+            [attr.aria-label]="'content.mdLink' | transloco"
+            [matTooltip]="'content.mdLink' | transloco"
+          >
+            <mat-icon>link</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownImage(markdownInput)"
+            [attr.aria-label]="'content.mdImage' | transloco"
+            [matTooltip]="'content.mdImage' | transloco"
+          >
+            <mat-icon>image</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownPrefix(markdownInput, '- ')"
+            [attr.aria-label]="'content.mdBulletList' | transloco"
+            [matTooltip]="'content.mdBulletList' | transloco"
+          >
+            <mat-icon>format_list_bulleted</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownPrefix(markdownInput, '1. ')"
+            [attr.aria-label]="'content.mdNumberedList' | transloco"
+            [matTooltip]="'content.mdNumberedList' | transloco"
+          >
+            <mat-icon>format_list_numbered</mat-icon>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            (click)="markdownPrefix(markdownInput, '> ')"
+            [attr.aria-label]="'content.mdQuote' | transloco"
+            [matTooltip]="'content.mdQuote' | transloco"
+          >
+            <mat-icon>format_quote</mat-icon>
+          </button>
+        </div>
       }
-      @if (maxLength() !== null) {
-        <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
-      }
-    </mat-form-field>
+      <mat-form-field appearance="fill" class="full-width">
+        <!-- The number of lines comes from the height the schema asked for (see `rows`), so the
+             handle in the schema editor changes the box the content editor draws. -->
+        <textarea
+          #markdownInput
+          matInput
+          [attr.rows]="rows()"
+          [name]="field.name"
+          [disabled]="disabled"
+          [attr.maxlength]="maxLength()"
+          [attr.minlength]="minLength()"
+          [ngModel]="value"
+          (ngModelChange)="update($event)"
+          [attr.aria-labelledby]="labelId"
+        ></textarea>
+        @if (lengthHintKey(); as key) {
+          <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+        }
+        @if (maxLength() !== null) {
+          <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
+        }
+      </mat-form-field>
+    </div>
   }
   @case ('Number') {
     <mat-form-field appearance="fill" class="full-width">

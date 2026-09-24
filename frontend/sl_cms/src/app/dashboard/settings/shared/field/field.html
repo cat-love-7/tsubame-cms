@@ -86,7 +86,11 @@
   </mat-form-field>
 </div>
 @if (field.field_type | isTextFieldSchema) {
-  <app-text-field [(fieldOptions)]="field.field_type.Text"></app-text-field>
+  <!-- A plain text field may be a box rather than a line; Markdown already is one. -->
+  <app-text-field
+    [(fieldOptions)]="field.field_type.Text"
+    [multilineAllowed]="true"
+  ></app-text-field>
 }
 @if (field.field_type | isMarkdownFieldSchema) {
   <app-text-field [(fieldOptions)]="field.field_type.Markdown"></app-text-field>

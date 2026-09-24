@@ -11,10 +11,11 @@ import { ActivatedRoute } from '@angular/router';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
 import { fingerprint } from 'app/core/value-changes';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
 @Component({
   selector: 'app-collection-schema-edit',
-  imports: [EditSchema, MessagePipe, TranslocoPipe],
+  imports: [EditSchema, MessagePipe, NoticeToast, TranslocoPipe],
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })

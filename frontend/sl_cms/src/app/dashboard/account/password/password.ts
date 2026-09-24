@@ -9,6 +9,7 @@ import { AuthService } from 'app/core/auth/auth.service';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { UsersService } from 'app/services/auth/users.service';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
 /**
  * Change your own password.
@@ -25,6 +26,7 @@ import { UsersService } from 'app/services/auth/users.service';
     MatInputModule,
     MessagePipe,
     TranslocoPipe,
+    NoticeToast,
   ],
   templateUrl: './password.html',
   styleUrl: './password.scss',

@@ -11,11 +11,12 @@ import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { EditSchema } from '../../shared/edit-schema/edit-schema';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
 /** Schema editor for one single page. Reuses the schema editor the collections use. */
 @Component({
   selector: 'app-single-page-schema',
-  imports: [EditSchema, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe],
+  imports: [EditSchema, MatButtonModule, MessagePipe, NoticeToast, RouterLink, TranslocoPipe],
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })

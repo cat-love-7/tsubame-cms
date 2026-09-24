@@ -3,6 +3,13 @@ import { Pipe, PipeTransform } from '@angular/core';
 export type TextFieldOptions = {
   max_length?: number;
   min_length?: number;
+  /**
+   * Whether a `Text` field is written over several lines.
+   *
+   * A one-line box is right for a title and wrong for a paragraph; the type cannot tell which it
+   * is, so the schema says. Markdown is multi-line by nature and ignores it.
+   */
+  multiline?: boolean;
 };
 
 export type TextFieldSchema = {

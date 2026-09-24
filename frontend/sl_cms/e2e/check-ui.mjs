@@ -258,7 +258,15 @@ page.on('console', (message) => {
  * to be silent now raises one; the checks that are *about* that ask for `dismiss`.
  */
 let dialogAnswer = 'accept';
-const answerDialog = (dialog) => (dialogAnswer === 'accept' ? dialog.accept() : dialog.dismiss());
+/**
+ * What a prompt is answered with, when the check is about one.
+ *
+ * A `confirm` ignores it; a `prompt` is answered with it, which is how the Markdown toolbar's
+ * "where should the link go?" is driven.
+ */
+let dialogText;
+const answerDialog = (dialog) =>
+  dialogAnswer === 'accept' ? dialog.accept(dialogText) : dialog.dismiss();
 page.on('dialog', answerDialog);
 
 /**
@@ -777,7 +785,9 @@ try {
   // The record of what happened arrives where the link is handed out.
   await cardAfterReplace.locator('button[aria-label^="copy the link of image"]').click();
   await page.waitForTimeout(400);
-  const linkNotice = ((await page.locator('.notice').first().textContent()) ?? '').trim();
+  const linkNotice = (
+    (await page.locator('.notice-toast .text').first().textContent()) ?? ''
+  ).trim();
   check('リンクをコピーできる', linkNotice.includes(`/api/images/by-id/`), linkNotice);
 
   // -------------------------------------------------------------- pick images while editing
@@ -1047,9 +1057,28 @@ try {
   await previewToggle.waitFor({ timeout: 15000 });
   check('既定ではプレビューは許可されていない', !(await previewToggle.isChecked()));
   await previewToggle.check();
+  // Save from the bottom of the page, which is where the button is on a schema of any length: the
+  // message used to be printed at the top of the page and left there, 1900 pixels above the
+  // reader's eyes (measured on a schema of four fields).
+  await page.evaluate(() => {
+    const pane = document.querySelector('main.content');
+    if (pane) pane.scrollTop = pane.scrollHeight;
+  });
+  await page.waitForTimeout(200);
   await page.getByRole('button', { name: 'Save schema' }).click();
-  await page.locator('.status').first().waitFor({ timeout: 15000 });
+  await page.locator('.notice-toast .text').first().waitFor({ timeout: 15000 });
   check('スキーマの保存でプレビューが許可される', await previewToggle.isChecked(), 'checked');
+
+  const scrolled = await page.evaluate(
+    () => (document.querySelector('main.content')?.scrollTop ?? 0) > 100,
+  );
+  const toastBox = await page.locator('.notice-toast .text').first().boundingBox();
+  const viewport = page.viewportSize();
+  check(
+    '下端から保存してもメッセージが画面の上に出る',
+    scrolled && Boolean(toastBox) && toastBox.y >= 0 && toastBox.y < (viewport?.height ?? 0),
+    `scrolled=${scrolled} y=${Math.round(toastBox?.y ?? -1)} viewport=${viewport?.height}`,
+  );
 
   // ------------------------------------------------- a link shows unpublished work to a guest
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
@@ -1390,10 +1419,13 @@ try {
   await viewer.page.fill('input[name=repeated]', 'role-password-2');
   await viewer.page.click('button:has-text("Change password")');
   await viewer.page
-    .locator('.status')
+    .locator('.notice-toast .text')
     .waitFor({ timeout: 10000 })
     .catch(() => {});
-  check('パスワード変更が完了と表示される', (await viewer.page.locator('.status').count()) === 1);
+  check(
+    'パスワード変更が完了と表示される',
+    (await viewer.page.locator('.notice-toast .text').count()) === 1,
+  );
 
   // The token from before the change is refused by the API. The call is made from here
   // rather than from the page: a refused request is a console error in the browser, and the
@@ -1464,7 +1496,7 @@ try {
   await page.locator('mat-option', { hasText: 'Publisher' }).click();
   await page.click('button:has-text("Save permissions")');
   await page
-    .locator('.status')
+    .locator('.notice-toast .text')
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   const scopedAfterSave = (await api('GET', '/auth/users', undefined, token)).find(
@@ -1664,7 +1696,7 @@ try {
 
   await page.click('button:has-text("Save schema")');
   await page
-    .locator('.status')
+    .locator('.notice-toast .text')
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   const builtSchema = await api(
@@ -2353,7 +2385,9 @@ try {
   await save().click();
   await page.waitForTimeout(800);
   const stayedOnPage = page.url().includes(`/single-pages/${pageB}`);
-  const savedNotice = ((await page.locator('.notice').first().textContent()) ?? '').trim();
+  const savedNotice = (
+    (await page.locator('.notice-toast .text').first().textContent()) ?? ''
+  ).trim();
   const badgeAppeared = await page.locator('app-item-status .badge').count();
   check(
     '単一ページの保存後も画面に留まる',
@@ -2542,6 +2576,128 @@ try {
     '他のアカウントは影響を受けない',
     otherAccount.status() === 200,
     `status=${otherAccount.status()}`,
+  );
+
+  // ------------------------------- writing Markdown without knowing Markdown, and box heights
+  // A collection of its own, so the checks are about the widgets and not about the data the rest of
+  // the suite drives.
+  const WRITING = 'e2e_writing';
+  await deleteIfPresent(`/models/collections/${WRITING}`, token);
+  await api(
+    'POST',
+    `/models/collections/${WRITING}/schema`,
+    [
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      {
+        name: 'lede',
+        field_type: { Text: { multiline: true } },
+        required: false,
+        width: 12,
+        height: 3,
+      },
+      { name: 'body', field_type: { Markdown: {} }, required: false, width: 12, height: 5 },
+    ],
+    token,
+  );
+  await api(
+    'POST',
+    `/models/collections/${WRITING}/item`,
+    { title: 'Writing', lede: 'first', body: 'plain text' },
+    token,
+  );
+
+  await page.goto(`${BASE}/collections/${WRITING}/edit/1`, { waitUntil: 'networkidle' });
+  await page.locator('app-value-field textarea').first().waitFor({ timeout: 15000 });
+
+  const sizes = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.field-grid .field-cell')).map((cell) => {
+      const widget = cell.querySelector('input, textarea');
+      return {
+        label: cell.querySelector('.field-label')?.textContent?.trim().split('\n')[0] ?? '?',
+        kind: widget?.tagName.toLowerCase() ?? 'none',
+        rows: widget?.getAttribute('rows') ?? null,
+      };
+    }),
+  );
+  check(
+    '高さが入力欄の行数になる',
+    sizes[1]?.kind === 'textarea' &&
+      sizes[1]?.rows === '9' &&
+      sizes[2]?.kind === 'textarea' &&
+      sizes[2]?.rows === '15' &&
+      sizes[0]?.kind === 'input',
+    JSON.stringify(sizes.map((size) => `${size.label}:${size.kind}:${size.rows}`)),
+  );
+
+  // The text field with "several lines" is a box; the one without is still a line.
+  check(
+    '複数行のテキストだけが箱になる',
+    sizes[0]?.kind === 'input' && sizes[1]?.kind === 'textarea',
+    `${sizes[0]?.kind} / ${sizes[1]?.kind}`,
+  );
+
+  // The Markdown buttons write the syntax for an editor who does not know it.
+  const body = page.locator('app-value-field textarea').nth(1);
+  await body.click();
+  await body.press('Control+A');
+  await body.pressSequentially('the docs');
+  await body.evaluate((element) => element.setSelectionRange(0, 8));
+  await page.locator('.markdown-toolbar button[aria-label="Bold"]').click();
+  // The value travels through the screen's own state, so the box is read after it has been written.
+  await page.waitForTimeout(300);
+  const bolded = await body.inputValue();
+  check('太字ボタンが選択範囲を囲む', bolded === '**the docs**', JSON.stringify(bolded));
+
+  dialogText = 'https://example.test/';
+  await body.evaluate((element) => element.setSelectionRange(0, element.value.length));
+  await page.locator('.markdown-toolbar button[aria-label="Link"]').click();
+  await page.waitForTimeout(300);
+  dialogText = undefined;
+  const linked = await body.inputValue();
+  check(
+    'リンクボタンが URL を聞いて貼る',
+    linked === '[**the docs**](https://example.test/)',
+    JSON.stringify(linked),
+  );
+
+  // And an image goes in from the same library the image fields use. One is put there first: by
+  // this point in the suite the library is whatever the earlier checks left behind.
+  const bytes = Buffer.from(PNG_BASE64, 'base64');
+  const upload = await api(
+    'POST',
+    '/models/images/get_upload_url',
+    { original_filename: 'writing.png', ext: 'png', size: bytes.length },
+    token,
+  );
+  await request.fetch(`${BASE}${upload.upload_url}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    data: bytes,
+  });
+
+  await body.evaluate((element) =>
+    element.setSelectionRange(element.value.length, element.value.length),
+  );
+  await page.locator('.markdown-toolbar button[aria-label="Image"]').click();
+  const firstThumb = page.locator('.library .thumb').first();
+  await firstThumb.waitFor({ timeout: 15000 });
+  await firstThumb.click();
+  await page.waitForTimeout(300);
+  const withImage = await body.inputValue();
+  check(
+    '画像ボタンがライブラリから差し込む',
+    /!\[[^\]]+\]\(http[^)]*\/api\/images\/by-id\/\d+\)$/.test(withImage),
+    withImage.slice(-60),
+  );
+
+  await save().click();
+  await page.waitForTimeout(600);
+  const written = await api('GET', `/models/collections/${WRITING}/items/1`, undefined, token);
+  check(
+    '書式つきの Markdown がそのまま保存される',
+    String(written.body).includes('https://example.test/') &&
+      String(written.body).includes('/api/images/by-id/'),
+    String(written.body).slice(0, 80),
   );
 
   const unexpectedErrors = consoleErrors.filter((text) => {

@@ -69,9 +69,7 @@
   </p>
 }
 
-@if (notice(); as happened) {
-  <p class="notice" role="status">{{ happened | message }}</p>
-}
+<app-notice-toast [notice]="notice()" [error]="error()" />
 @if (previewUrl()) {
   <p class="preview-link">
     <a [href]="previewUrl()" target="_blank" rel="noopener">{{ previewUrl() }}</a>

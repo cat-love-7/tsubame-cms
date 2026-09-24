@@ -25,6 +25,7 @@ import { DateTimeFormat } from 'app/core/i18n/date-format';
 import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { PasswordReset } from 'app/models/links';
 import { UsersService } from 'app/services/auth/users.service';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 import { copyToClipboard, passwordResetUrl } from 'app/shared/share-link';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
@@ -56,6 +57,7 @@ interface RoleOption {
     MatSelectModule,
     MessagePipe,
     TranslocoPipe,
+    NoticeToast,
   ],
   templateUrl: './list.html',
   styleUrl: './list.scss',

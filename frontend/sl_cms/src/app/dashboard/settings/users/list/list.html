@@ -12,9 +12,7 @@
 @if (error(); as problem) {
   <p class="error" role="alert">{{ problem | message }}</p>
 }
-@if (status(); as note) {
-  <p class="status" role="status">{{ note | message }}</p>
-}
+<app-notice-toast [notice]="status()" [error]="error()" />
 @if (resetValue()) {
   <p class="reset-link">
     {{ resetFor() }}:

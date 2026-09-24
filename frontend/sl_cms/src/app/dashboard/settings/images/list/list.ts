@@ -12,6 +12,7 @@ import { Message, MessagePipe, failure, t } from 'app/core/i18n/message';
 import { ImageEntry, ImageOwner } from 'app/repositories/media/images.repository';
 import { IMAGE_PAGE_SIZE, ImagesService } from 'app/services/media/images.service';
 import { Observable, forkJoin } from 'rxjs';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
 
 /**
@@ -30,6 +31,7 @@ import { absoluteApiUrl, copyToClipboard } from 'app/shared/share-link';
     MatIconModule,
     MessagePipe,
     TranslocoPipe,
+    NoticeToast,
   ],
   templateUrl: './list.html',
   styleUrl: './list.scss',

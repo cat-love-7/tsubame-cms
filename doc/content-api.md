@@ -434,6 +434,7 @@ DELETE /api/models/collections/authors/items/1?detach=true
 | 文字数の下限に足りない(空は除く) | `{"Text":{"min_length":N}}` | `field_too_short` |
 | 値の型が合わない(配列要素を含む) | `Array` の要素型 | `field_type_mismatch` |
 | 選択肢にない値 | `{"TextEnum":[...]}` | `invalid_enum_value` |
+| (拒否ではない)複数行の入力欄 | `{"Text":{"multiline":true}}` | — |
 | 参照先の複合フィールドが無い | `{"CompositeField":{"id":"..."}}` | `unknown_composite_field` |
 | 複合の id がスキーマと違う | 同上 | `composite_id_mismatch` |
 | 配列の中に配列 | `Array` | `nested_arrays` |
@@ -441,6 +442,12 @@ DELETE /api/models/collections/authors/items/1?detach=true
 
 - **文字数は文字(コードポイント)で数える**。バイト数ではないので、`max_length: 20` は日本語
   20 文字もラテン文字 20 文字も通す。画面側も同じ数え方をする(`[...value].length`)。
+- **`multiline` は Text の見た目**(2026-09 追加)。`true` なら1行の入力欄ではなく複数行の箱に
+  なる。Markdown は元から箱なので指定しない(あっても無視される)。**省略時は `false`** で、古い
+  スキーマは今までどおり1行。箱の**高さ**はフィールドの `height`(レイアウトの最小の高さ。
+  72px 単位)から決まり、1単位 = テキスト3行として `rows` になる(最小は Text が3行、Markdown が
+  6行 = 変更前と同じ見た目)。**サーバーは値の改行を制限しない**: `multiline` は入力欄の話で、
+  検証の話ではない。
 - **`field` は入力への経路**: `title`、`tags[2]`、`seo.description`。入れ子の中の拒否でも、
   画面がどの入力欄を強調すればよいか分かる(`.field-cell.problem`)。
 - **「必須」は公開のときに問う**(2026-09 変更)。保存が書くのは**作業コピー**で、それは編集者が

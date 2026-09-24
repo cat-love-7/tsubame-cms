@@ -122,7 +122,8 @@
     "updated": "更新",
     "id": "ID",
     "page": "ページ",
-    "full": "全体"
+    "full": "全体",
+    "dismiss": "閉じる"
   },
   "content": {
     "collection": "コレクション",
@@ -299,7 +300,20 @@
     "discardChangesConfirm": "保存した変更を破棄して公開中の内容に戻しますか? サイトは変わりません。",
     "changesDiscarded": "保存した変更を破棄しました。いま公開中の内容です。",
     "failedToDiscardChanges": "変更を取り消せませんでした。",
-    "failedToLoadPublished": "公開中の内容を読めませんでした。"
+    "failedToLoadPublished": "公開中の内容を読めませんでした。",
+    "mdToolbar": "Markdown の書式",
+    "mdBold": "太字",
+    "mdItalic": "斜体",
+    "mdHeading": "見出し",
+    "mdLink": "リンク",
+    "mdImage": "画像",
+    "mdBulletList": "箇条書き",
+    "mdNumberedList": "番号付きリスト",
+    "mdQuote": "引用",
+    "mdBoldPlaceholder": "太字のテキスト",
+    "mdItalicPlaceholder": "斜体のテキスト",
+    "mdLinkPlaceholder": "リンクのテキスト",
+    "mdLinkPrompt": "リンク先の URL"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",
@@ -384,7 +398,9 @@
     "slugNoSource": "指定しない",
     "slugGenerateHint": "内容編集で「〜から生成」に使う項目です(自動では動きません)。",
     "previewAllowed": "プレビューリンクを許可する",
-    "previewAllowedHint": "プレビューリンクは、このスキーマの未公開の作業コピーを、アカウントを持たない相手に URL だけで見せます。開くにはプレビューサイトが必要です。"
+    "previewAllowedHint": "プレビューリンクは、このスキーマの未公開の作業コピーを、アカウントを持たない相手に URL だけで見せます。開くにはプレビューサイトが必要です。",
+    "multiline": "複数行",
+    "multilineHint": "1行の入力欄ではなく、複数行の入力欄にします。高さは上の「最小の高さ」で決まります。"
   },
   "labels": {
     "toggleNavigation": "ナビゲーションを開閉",

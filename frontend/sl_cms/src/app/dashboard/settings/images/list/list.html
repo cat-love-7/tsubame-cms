@@ -31,9 +31,7 @@
   <p class="error" role="alert">{{ problem | message }}</p>
 }
 
-@if (notice(); as happened) {
-  <p class="notice" role="status">{{ happened | message }}</p>
-}
+<app-notice-toast [notice]="notice()" [error]="error()" />
 
 @if (showTrash()) {
   <p class="note">{{ 'content.trashHint' | transloco }}</p>

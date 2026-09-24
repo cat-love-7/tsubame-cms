@@ -1425,6 +1425,9 @@ impl FieldValue {
                                 (Some(len1), Some(len2)) => Some(len1.min(len2)),
                                 (_, None) | (None, _) => None,
                             },
+                            // Multi-line is the looser of the two: an array whose items are edited
+                            // in boxes is a box.
+                            multiline: existing_options.multiline || options.multiline,
                         };
                         acc = Some(merged_options);
                     }
@@ -3186,6 +3189,7 @@ mod tests {
                 FieldType::Text(TextFieldOptions {
                     max_length: Some(10),
                     min_length: Some(5),
+                    multiline: false,
                 }),
                 HashMap::new(),
                 FieldValue::Text("Hello".to_string()),
@@ -3196,6 +3200,7 @@ mod tests {
                 FieldType::Text(TextFieldOptions {
                     max_length: Some(10),
                     min_length: Some(5),
+                    multiline: false,
                 }),
                 HashMap::new(),
                 FieldValue::Text("Hi".to_string()),
@@ -3206,6 +3211,7 @@ mod tests {
                 FieldType::Text(TextFieldOptions {
                     max_length: Some(10),
                     min_length: Some(5),
+                    multiline: false,
                 }),
                 HashMap::new(),
                 FieldValue::Text("Hello, World!".to_string()),
@@ -3216,6 +3222,7 @@ mod tests {
                 FieldType::Text(TextFieldOptions {
                     max_length: Some(10),
                     min_length: Some(5),
+                    multiline: false,
                 }),
                 HashMap::new(),
                 FieldValue::Text("".to_string()),
@@ -3226,6 +3233,7 @@ mod tests {
                 FieldType::Text(TextFieldOptions {
                     max_length: Some(10),
                     min_length: Some(5),
+                    multiline: false,
                 }),
                 HashMap::new(),
                 FieldValue::Text("".to_string()),
@@ -3394,10 +3402,12 @@ mod tests {
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(10),
                         min_length: Some(5),
+                        multiline: false,
                     }),
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(8),
                         min_length: Some(3),
+                        multiline: false,
                     }),
                 ]),
                 HashMap::new(),
@@ -3413,10 +3423,12 @@ mod tests {
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(10),
                         min_length: Some(5),
+                        multiline: false,
                     }),
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(15),
                         min_length: Some(7),
+                        multiline: false,
                     }),
                 ]),
                 HashMap::new(),
@@ -3432,10 +3444,12 @@ mod tests {
                     FieldType::Text(TextFieldOptions {
                         max_length: None,
                         min_length: Some(5),
+                        multiline: false,
                     }),
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(10),
                         min_length: Some(7),
+                        multiline: false,
                     }),
                 ]),
                 HashMap::new(),
@@ -3451,10 +3465,12 @@ mod tests {
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(10),
                         min_length: None,
+                        multiline: false,
                     }),
                     FieldType::Text(TextFieldOptions {
                         max_length: Some(10),
                         min_length: Some(7),
+                        multiline: false,
                     }),
                 ]),
                 HashMap::new(),
@@ -3469,6 +3485,7 @@ mod tests {
                 FieldType::Array(vec![FieldType::Text(TextFieldOptions {
                     max_length: Some(5),
                     min_length: Some(3),
+                    multiline: false,
                 })]),
                 HashMap::new(),
                 FieldValue::Array(vec![FieldValue::Text("1".to_string())]),
@@ -3479,6 +3496,7 @@ mod tests {
                 FieldType::Array(vec![FieldType::Text(TextFieldOptions {
                     max_length: Some(5),
                     min_length: Some(3),
+                    multiline: false,
                 })]),
                 HashMap::new(),
                 FieldValue::Array(vec![FieldValue::Text("length is 12".to_string())]),
@@ -3523,10 +3541,12 @@ mod tests {
                     FieldType::Markdown(TextFieldOptions {
                         max_length: Some(10),
                         min_length: None,
+                        multiline: false,
                     }),
                     FieldType::Markdown(TextFieldOptions {
                         max_length: Some(10),
                         min_length: Some(7),
+                        multiline: false,
                     }),
                 ]),
                 HashMap::new(),
@@ -3541,6 +3561,7 @@ mod tests {
                 FieldType::Array(vec![FieldType::Markdown(TextFieldOptions {
                     max_length: Some(5),
                     min_length: Some(3),
+                    multiline: false,
                 })]),
                 HashMap::new(),
                 FieldValue::Array(vec![FieldValue::Markdown("1".to_string())]),
@@ -3551,6 +3572,7 @@ mod tests {
                 FieldType::Array(vec![FieldType::Markdown(TextFieldOptions {
                     max_length: Some(5),
                     min_length: Some(3),
+                    multiline: false,
                 })]),
                 HashMap::new(),
                 FieldValue::Array(vec![FieldValue::Markdown("length is 12".to_string())]),

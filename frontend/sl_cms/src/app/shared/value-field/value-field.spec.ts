@@ -80,6 +80,8 @@ class StubImagesService {
     });
   };
   deleteImage = () => of(void 0);
+  /** The durable link to an image, which is what the Markdown toolbar inserts. */
+  imageLink = (id: number) => `/images/by-id/${id}`;
 }
 
 /** A change event for a file input that was given several files. */
@@ -232,6 +234,161 @@ describe('ValueField', () => {
     component.setCompositeValue(field('description', { Text: {} }), 'changed');
 
     expect(emitted).toEqual([{ description: 'changed' }]);
+  });
+
+  // The height a schema asks for is a layout minimum (72px units), and a line of text is about
+  // 24px: a box that ignored it stayed six rows tall however the schema was drawn.
+  it('sizes a text box from the height the schema asked for', () => {
+    create(field('body', { Markdown: {} }, { height: 1 }));
+    expect((query('textarea') as HTMLTextAreaElement).getAttribute('rows')).toBe('6');
+
+    create(field('body', { Markdown: {} }, { height: 5 }));
+    expect((query('textarea') as HTMLTextAreaElement).getAttribute('rows')).toBe('15');
+
+    // A multi-line text field: three lines at the smallest, and the height on top of that.
+    create(field('lede', { Text: { multiline: true } }, { height: 1 }));
+    expect((query('textarea') as HTMLTextAreaElement).getAttribute('rows')).toBe('3');
+
+    create(field('lede', { Text: { multiline: true } }, { height: 4 }));
+    expect((query('textarea') as HTMLTextAreaElement).getAttribute('rows')).toBe('12');
+  });
+
+  // A title is one line and a paragraph is a box; the type cannot tell which it is, so the schema
+  // says, and a field without the option stays the one-line input it always was.
+  it('draws a multi-line text field as a box, and a plain one as a line', () => {
+    create(field('title', { Text: {} }));
+    expect(query('input[matinput]')).toBeTruthy();
+    expect(query('textarea')).toBeNull();
+
+    create(field('lede', { Text: { multiline: true } }));
+    expect(query('textarea')).toBeTruthy();
+    expect(query('input[matinput]')).toBeNull();
+  });
+
+  // The buttons write the syntax an editor who does not know Markdown would otherwise have to
+  // remember. Each acts on what is selected in the box.
+  describe('the Markdown toolbar', () => {
+    /**
+     * A Markdown box with a value in it, and the textarea it drew.
+     *
+     * The text and the selection are put into the element the way the browser has them: `NgModel`
+     * does not write the model into the DOM in this environment, and a range only exists on an
+     * element that has text.
+     */
+    function markdown(value: string, selection?: [number, number]) {
+      const component = create(field('body', { Markdown: {} }), value);
+      const textarea = query('textarea') as HTMLTextAreaElement;
+      const emitted: FieldValue[] = [];
+      component.valueChange.subscribe((next) => emitted.push(next));
+      textarea.value = value;
+      if (selection) {
+        textarea.setSelectionRange(selection[0], selection[1]);
+      }
+      return { component, textarea, emitted, pressed: (label: string) => press(label) };
+    }
+
+    /** Press the toolbar button with this accessible name. */
+    function press(label: string): void {
+      const button = Array.from(
+        fixture.nativeElement.querySelectorAll<HTMLButtonElement>('.markdown-toolbar button'),
+      ).find((candidate) => candidate.getAttribute('aria-label') === label);
+      expect(button, `no ${label} button`).toBeTruthy();
+      button?.click();
+    }
+
+    it('offers the buttons for Markdown only', () => {
+      create(field('body', { Markdown: {} }));
+      expect(fixture.nativeElement.querySelectorAll('.markdown-toolbar button').length).toBe(8);
+
+      // A single-line text field has no Markdown to write.
+      create(field('title', { Text: {} }));
+      expect(fixture.nativeElement.querySelector('.markdown-toolbar')).toBeNull();
+
+      // Read-only (the schema editor's preview) offers nothing to press.
+      fixture.componentRef.setInput('disabled', true);
+      fixture.componentRef.setInput('field', field('body', { Markdown: {} }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.markdown-toolbar')).toBeNull();
+    });
+
+    it('wraps what is selected', () => {
+      const { emitted, pressed } = markdown('a bold word', [2, 6]);
+
+      pressed('Bold');
+
+      expect(emitted).toEqual(['a **bold** word']);
+    });
+
+    it('leaves a placeholder selected when nothing is', () => {
+      const { emitted, pressed } = markdown('say ');
+
+      pressed('Italic');
+
+      // The placeholder is there to be typed over, which is what the selection is for.
+      expect(emitted).toEqual(['say *italic text*']);
+    });
+
+    it('puts a link around the selection, asking for the address', () => {
+      const prompt = vi.spyOn(window, 'prompt').mockReturnValue('https://example.test/');
+      const { emitted, pressed } = markdown('the docs', [0, 8]);
+
+      pressed('Link');
+
+      expect(prompt).toHaveBeenCalled();
+      expect(emitted).toEqual(['[the docs](https://example.test/)']);
+      prompt.mockRestore();
+    });
+
+    it('leaves the text alone when the link prompt is cancelled', () => {
+      const prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
+      const { emitted, pressed } = markdown('the docs', [0, 8]);
+
+      pressed('Link');
+
+      expect(emitted).toEqual([]);
+      prompt.mockRestore();
+    });
+
+    it('prefixes every line the selection touches', () => {
+      const { emitted, pressed } = markdown('one\ntwo\nthree', [0, 7]);
+
+      pressed('Bulleted list');
+
+      expect(emitted).toEqual(['- one\n- two\nthree']);
+    });
+
+    // Pressing it twice should not make "- - one": an editor fixing a list should not have to
+    // undo what the button just did.
+    it('does not prefix a line that already has it', () => {
+      const { emitted, pressed } = markdown('- one');
+
+      pressed('Bulleted list');
+
+      expect(emitted).toEqual(['- one']);
+    });
+
+    // The image comes from the same library the image fields use, and goes in as the durable link
+    // the library's own copy button hands out.
+    it('inserts a library image at the caret', () => {
+      const { emitted, pressed } = markdown('before after', [7, 7]);
+
+      pressed('Image');
+      fixture.detectChanges();
+      const thumbnail = fixture.nativeElement.querySelector('.library .thumb') as HTMLButtonElement;
+      expect(thumbnail, 'the library picker').toBeTruthy();
+      thumbnail.click();
+
+      expect(emitted.length).toBe(1);
+      // A Markdown value is a string on the wire; the cast is what says so.
+      const inserted = emitted[0] as string;
+      // The durable link, as the address a browser can reach it at: the same one the library's
+      // copy button hands out.
+      expect(inserted).toContain('![logo.png](');
+      expect(inserted).toMatch(/\/api\/images\/by-id\/3\)/);
+      // Where the caret was, not at the end.
+      expect(inserted.startsWith('before ![logo.png](')).toBe(true);
+      expect(inserted.endsWith(')after')).toBe(true);
+    });
   });
 
   it('emits a new value when the input changes', () => {

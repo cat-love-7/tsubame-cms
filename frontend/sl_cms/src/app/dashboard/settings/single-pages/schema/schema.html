@@ -9,9 +9,7 @@
   </button>
 </div>
 
-@if (status(); as note) {
-  <p class="status">{{ note | message }}</p>
-}
+<app-notice-toast [notice]="status()" [error]="error()" />
 @if (error(); as problem) {
   <p class="error" role="alert">{{ problem | message }}</p>
 }

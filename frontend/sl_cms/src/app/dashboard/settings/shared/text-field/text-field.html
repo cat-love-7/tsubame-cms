@@ -6,3 +6,11 @@
   <mat-label>{{ 'schema.minLength' | transloco }}</mat-label>
   <input matInput type="number" min="0" [(ngModel)]="fieldOptions.min_length" name="minLength" />
 </mat-form-field>
+@if (multilineAllowed) {
+  <div class="multiline">
+    <mat-checkbox [(ngModel)]="fieldOptions.multiline" name="multiline">
+      {{ 'schema.multiline' | transloco }}
+    </mat-checkbox>
+    <p class="hint">{{ 'schema.multilineHint' | transloco }}</p>
+  </div>
+}

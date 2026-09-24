@@ -122,7 +122,8 @@
     "updated": "Updated",
     "id": "ID",
     "page": "Page",
-    "full": "Full"
+    "full": "Full",
+    "dismiss": "Dismiss"
   },
   "content": {
     "collection": "Collection",
@@ -299,7 +300,20 @@
     "discardChangesConfirm": "Discard the saved changes and go back to what is published? The site is not affected.",
     "changesDiscarded": "The saved changes were discarded; this is what is published.",
     "failedToDiscardChanges": "Could not discard the changes.",
-    "failedToLoadPublished": "Could not read what is published."
+    "failedToLoadPublished": "Could not read what is published.",
+    "mdToolbar": "Markdown formatting",
+    "mdBold": "Bold",
+    "mdItalic": "Italic",
+    "mdHeading": "Heading",
+    "mdLink": "Link",
+    "mdImage": "Image",
+    "mdBulletList": "Bulleted list",
+    "mdNumberedList": "Numbered list",
+    "mdQuote": "Quote",
+    "mdBoldPlaceholder": "bold text",
+    "mdItalicPlaceholder": "italic text",
+    "mdLinkPlaceholder": "link text",
+    "mdLinkPrompt": "Where should the link go?"
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",
@@ -384,7 +398,9 @@
     "slugNoSource": "No suggestion",
     "slugGenerateHint": "The field the content editor may fill the slug from, when asked.",
     "previewAllowed": "Allow preview links",
-    "previewAllowedHint": "A preview link shows this schema's unpublished working copies, without an account, to whoever holds the URL. It needs a preview site to open."
+    "previewAllowedHint": "A preview link shows this schema's unpublished working copies, without an account, to whoever holds the URL. It needs a preview site to open.",
+    "multiline": "Several lines",
+    "multilineHint": "The field is written in a box instead of one line. How tall the box may be is the field height above."
   },
   "labels": {
     "toggleNavigation": "Toggle navigation",

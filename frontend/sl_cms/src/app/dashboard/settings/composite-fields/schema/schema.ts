@@ -10,6 +10,7 @@ import { fingerprint } from 'app/core/value-changes';
 import { FieldSchema } from 'app/models/schema/fields';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { EditSchema } from '../../shared/edit-schema/edit-schema';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
 /**
  * Schema editor for one composite field definition.
@@ -20,7 +21,7 @@ import { EditSchema } from '../../shared/edit-schema/edit-schema';
  */
 @Component({
   selector: 'app-composite-field-schema',
-  imports: [EditSchema, MatButtonModule, MessagePipe, RouterLink, TranslocoPipe],
+  imports: [EditSchema, MatButtonModule, MessagePipe, NoticeToast, RouterLink, TranslocoPipe],
   templateUrl: './schema.html',
   styleUrl: './schema.scss',
 })

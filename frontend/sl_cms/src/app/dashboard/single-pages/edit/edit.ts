@@ -23,6 +23,7 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 import { copyToClipboard, previewSiteUrl } from 'app/shared/share-link';
 import { RelationReferences } from 'app/shared/relation-references/relation-references';
 import { ValueField } from 'app/shared/value-field/value-field';
+import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
 /** The page a request was started for (see the collection item editor). */
 interface StartedPage {
@@ -43,6 +44,7 @@ interface StartedPage {
     ItemStatusBadge,
     MatButtonModule,
     MessagePipe,
+    NoticeToast,
     RelationReferences,
     RouterLink,
     TranslocoPipe,

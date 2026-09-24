@@ -2,9 +2,7 @@
   <h2>{{ collectionName() }}</h2>
 </div>
 
-@if (status(); as note) {
-  <p class="status">{{ note | message }}</p>
-}
+<app-notice-toast [notice]="status()" [error]="error()" />
 @if (error(); as problem) {
   <p class="error">{{ problem | message }}</p>
 }
