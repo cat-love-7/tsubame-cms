@@ -2715,6 +2715,15 @@ try {
   );
 } catch (error) {
   check('検証スクリプトが最後まで走る', false, String(error).split('\n')[0]);
+  // Where it stopped, since a locator timeout says what was not found and not what was on screen.
+  // Diagnosing a wrong navigation this way took one run instead of three.
+  console.log('failure context:');
+  console.log(`  url: ${page.url()}`);
+  const visible = await page
+    .locator('body')
+    .textContent()
+    .catch(() => null);
+  console.log(`  screen: ${(visible ?? '(unreadable)').replace(/\s+/g, ' ').slice(0, 400)}`);
 } finally {
   await browser.close();
 }
