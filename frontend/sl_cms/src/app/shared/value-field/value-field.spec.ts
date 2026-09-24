@@ -12,6 +12,7 @@ import { CompositeFieldsService } from 'app/services/schema/composite-fields.ser
 import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { TypedFixture } from 'app/core/testing/fixture';
+import { ImageField } from 'app/shared/image-field/image-field';
 import { ValueField } from './value-field';
 
 function field(
@@ -832,42 +833,18 @@ describe('ValueField', () => {
     expect(component.value).toBeNull();
   });
 
-  it('loads the image library when the picker is opened, and only then', () => {
-    const component = create(field('photo', 'Image'));
-    expect(images.listCalls).toBe(0);
+  it('hands an image value to the image field, which owns the controls for it', () => {
+    // The single image widget has a spec of its own; what matters here is that this component
+    // renders it and passes the value on, the way it does for every other kind.
+    const component = create(field('photo', 'Image'), { id: 3, url: '/images/logo.png' });
+    const image = fixture.debugElement.query(By.directive(ImageField))
+      ?.componentInstance as ImageField;
 
-    // The picker reads the library when it is shown, which is a change detection away: what the
-    // parent does is open it.
-    component.openLibrary(false);
-    fixture.detectChanges();
-    expect(images.listCalls).toBe(1);
+    expect(image).toBeTruthy();
+    expect(image?.value).toEqual({ id: 3, url: '/images/logo.png' });
 
-    // Closing and reopening reuses what was already fetched.
-    component.closePicker();
-    fixture.detectChanges();
-    component.openLibrary(false);
-    fixture.detectChanges();
-    expect(images.listCalls).toBe(1);
-  });
-
-  it('picks an already uploaded image instead of uploading a new one', () => {
-    const component = create(field('photo', 'Image'));
-    const changes: FieldValue[] = [];
-    component.valueChange.subscribe((value) => changes.push(value));
-
-    component.openLibrary(false);
-    fixture.detectChanges();
-
-    const thumbs = fixture.nativeElement.querySelectorAll<HTMLElement>('.thumb');
-    expect(thumbs.length).toBe(2);
-
-    thumbs[0].click();
-    fixture.detectChanges();
-
-    // The value keeps the shape an upload produces, so the server cannot tell them apart.
-    expect(changes).toEqual([{ id: 3, url: '/images/logo.png' }]);
-    expect(component.value).toEqual({ id: 3, url: '/images/logo.png' });
-    expect(component.pickerOpen()).toBe(false);
+    image?.valueChange.emit({ id: 4, url: '/images/photo.png' });
+    expect(component.value).toEqual({ id: 4, url: '/images/photo.png' });
   });
 
   it('shows an image array as thumbnails, not as JSON', () => {
@@ -905,7 +882,9 @@ describe('ValueField', () => {
     thumbs[1].click();
     fixture.detectChanges();
 
-    expect(component.selected()).toEqual([3, 4]);
+    // Tick marks are the picker's own state: what matters to the editor is only that ticking
+    // has not chosen anything yet.
+    expect(fixture.nativeElement.querySelectorAll('.thumb.selected').length).toBe(2);
     expect(changes).toEqual([]);
 
     (query('button.array-add-selected') as HTMLButtonElement).click();

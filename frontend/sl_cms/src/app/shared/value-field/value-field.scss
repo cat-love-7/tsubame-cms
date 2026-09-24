@@ -30,28 +30,6 @@
   width: 100%;
 }
 
-.image-field {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.image-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-
-  /// The browser's own file control cannot be restyled, only made to look like it belongs.
-  input[type='file'] {
-    max-width: 100%;
-    color: var(--mat-sys-on-surface-variant);
-    font: var(--mat-sys-body-small);
-  }
-}
-
 /* An image array: the chosen images in order, with the controls for each. */
 .image-array {
   margin-bottom: 12px;
@@ -96,17 +74,6 @@
 
 .array-actions {
   margin-top: 8px;
-}
-
-.preview {
-  max-height: 96px;
-  max-width: 160px;
-  object-fit: contain;
-}
-
-.image-id {
-  color: var(--mat-sys-on-surface-variant);
-  font: var(--mat-sys-body-medium);
 }
 
 .composite {
@@ -181,30 +148,5 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-  }
-}
-
-/// The Markdown box and the buttons that write its syntax.
-.markdown-field {
-  display: flex;
-  flex-direction: column;
-}
-
-.markdown-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-bottom: 4px;
-
-  // Icon buttons are square and small: the row reads as one control rather than eight.
-  button {
-    --mat-icon-button-touch-target-display: none;
-    --mat-icon-button-state-layer-size: 32px;
-  }
-
-  mat-icon {
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
   }
 }

@@ -8,10 +8,8 @@ import {
   OnInit,
   Output,
   SimpleChanges,
-  computed,
   inject,
   signal,
-  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,8 +25,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
+import { ImageField } from 'app/shared/image-field/image-field';
 import { LibraryPicker } from 'app/shared/library-picker/library-picker';
-import { absoluteApiUrl } from 'app/shared/share-link';
+import { MarkdownField } from 'app/shared/markdown-field/markdown-field';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
@@ -49,7 +48,6 @@ import { ContentValue } from 'app/models/values/single-page';
 import {
   FieldValue,
   RelationRef,
-  imageIdOf,
   referenceKey,
   referenceName,
   relationRefsOf,
@@ -103,7 +101,9 @@ let nextValueFieldId = 0;
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    ImageField,
     LibraryPicker,
+    MarkdownField,
     NgTemplateOutlet,
     TranslocoPipe,
     ValueField,
@@ -157,24 +157,6 @@ export class ValueField implements OnInit, OnChanges {
   public cellStyle = fieldCellStyle;
 
   public pickerOpen = signal(false);
-  /** True when the open picker collects several images (for an image array). */
-  public pickerMulti = signal(false);
-  /** The picker on screen, for the one thing this widget has to ask it: what is ticked. */
-  private readonly picker = viewChild(LibraryPicker);
-  /** Ids ticked in the multi-image mode, which the picker holds. */
-  public selected = computed(() => this.picker()?.selected() ?? []);
-  /**
-   * Where an image chosen from the library goes, when the picker was opened from a Markdown box.
-   *
-   * The textarea and the range that was selected when the button was pressed: the picker is an
-   * overlay over the form, so the range cannot change while it is open, and an image is inserted
-   * where the caret was rather than replacing the field's value.
-   */
-  private readonly markdownImageTarget = signal<{
-    input: HTMLTextAreaElement;
-    start: number;
-    end: number;
-  } | null>(null);
   /** An image array is shown as thumbnails unless the JSON view is asked for. */
   public jsonMode = signal(false);
 
@@ -279,17 +261,15 @@ export class ValueField implements OnInit, OnChanges {
   }
 
   /**
-   * How many lines the box shows, from the height the schema asked for.
+   * How many lines a multi-line text box shows, from the height the schema asked for.
    *
    * `height` is a layout minimum in row units of 72px (see `field-layout`), and a line of text is
-   * about 24px in this theme - so one unit is three lines, and a field the schema editor drew three
-   * units tall is a box of nine lines. The floors are what each kind had before the height meant
-   * anything: a Markdown field is never a one-line box, and a multi-line text field is never a
-   * two-line one.
+   * about 24px in this theme - so one unit is three lines, and a field the schema editor drew four
+   * units tall is a box of twelve. The floor is what a text box was before the height meant
+   * anything: never a two-line one. (Markdown has its own, in `MarkdownField`.)
    */
   rows(): number {
-    const lines = Math.max(1, this.field.height) * 3;
-    return isMarkdownFieldSchema(this.field.field_type) ? Math.max(6, lines) : Math.max(3, lines);
+    return Math.max(3, Math.max(1, this.field.height) * 3);
   }
 
   /**
@@ -440,21 +420,6 @@ export class ValueField implements OnInit, OnChanges {
       return 'content.lengthAtMost';
     }
     return min !== null ? 'content.lengthAtLeast' : null;
-  }
-
-  imageId(): number | null {
-    return imageIdOf(this.value);
-  }
-
-  imagePreviewUrl(): string {
-    const value = this.value;
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const url = (value as { url?: unknown }).url;
-      if (typeof url === 'string') {
-        return url;
-      }
-    }
-    return '';
   }
 
   update(value: FieldValue) {
@@ -787,157 +752,13 @@ export class ValueField implements OnInit, OnChanges {
     this.reportSubError(subField.name, problem);
   }
 
-  onFileSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) {
-      return;
-    }
-    this.uploading.set(true);
-    this.errorChange.emit(null);
-    this.images.uploadImage(file).subscribe({
-      next: (info) => {
-        this.uploading.set(false);
-        // Mirror the shape the API returns for an image value.
-        // The stable URL, which the server knows and the client cannot derive: on AWS the
-        // upload URL names a signature, not the object's public address.
-        this.update({ id: info.id, url: info.url });
-        input.value = '';
-      },
-      error: (e) => {
-        this.uploading.set(false);
-        this.errorChange.emit(failure('content.uploadFailed', e));
-      },
-    });
-  }
-
-  /** Show the library: `multi` collects several images at once (an image array). */
-  openLibrary(multi: boolean) {
-    this.pickerMulti.set(multi);
+  /** Show the library, to add images to an image array. */
+  openLibrary() {
     this.pickerOpen.set(true);
   }
 
   closePicker() {
     this.pickerOpen.set(false);
-    this.markdownImageTarget.set(null);
-  }
-
-  // ---- the Markdown toolbar --------------------------------------------------
-  // Every button acts on what is selected in the box, which is the only thing that makes a
-  // toolbar better than typing the syntax by hand.
-
-  /** The text in the box, as the buttons see it. */
-  private markdownValue(): string {
-    return typeof this.value === 'string' ? this.value : '';
-  }
-
-  /**
-   * Put `before` and `after` around the selection, or around a placeholder when nothing is
-   * selected.
-   *
-   * What was inserted (or the placeholder) is left selected, so pressing a button and typing
-   * replaces the placeholder rather than landing after it.
-   */
-  markdownWrap(input: HTMLTextAreaElement, before: string, after: string, placeholderKey: string) {
-    const value = this.markdownValue();
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    const chosen = value.slice(start, end) || this.i18n.translate(placeholderKey);
-    this.insertMarkdown(input, { start, end }, `${before}${chosen}${after}`, {
-      start: start + before.length,
-      end: start + before.length + chosen.length,
-    });
-  }
-
-  /**
-   * Put `prefix` at the start of every line the selection touches.
-   *
-   * Whole lines, so highlighting the middle of a paragraph and pressing "list" makes a list of
-   * that paragraph rather than of its middle. A line that is already the prefix is left alone,
-   * which is what makes the button safe to press twice.
-   */
-  markdownPrefix(input: HTMLTextAreaElement, prefix: string) {
-    const value = this.markdownValue();
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    const from = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
-    const to = value.indexOf('\n', end);
-    const lineEnd = to === -1 ? value.length : to;
-    const lines = value.slice(from, lineEnd).split('\n');
-    const prefixed = lines
-      .map((line) => (line.startsWith(prefix) ? line : prefix + line))
-      .join('\n');
-    this.insertMarkdown(input, { start: from, end: lineEnd }, prefixed, {
-      start: from,
-      end: from + prefixed.length,
-    });
-  }
-
-  /** The link button: ask for the address, then wrap the selection (or a placeholder) with it. */
-  markdownLink(input: HTMLTextAreaElement) {
-    const url = window.prompt(this.i18n.translate('content.mdLinkPrompt'), 'https://');
-    const address = url?.trim() ?? '';
-    if (address === '') {
-      return;
-    }
-    this.markdownWrap(input, '[', `](${address})`, 'content.mdLinkPlaceholder');
-  }
-
-  /** The image button: pick from the library, and put the durable link where the caret is. */
-  markdownImage(input: HTMLTextAreaElement) {
-    this.markdownImageTarget.set({
-      input,
-      start: input.selectionStart,
-      end: input.selectionEnd,
-    });
-    // One image, so a click in the picker chooses it (see `chooseImage`).
-    this.openLibrary(false);
-  }
-
-  /**
-   * Replace `range` with `text`, and put the selection where the button meant it to be.
-   *
-   * The value travels to the parent and comes back through the binding, which writes the whole box
-   * and leaves the caret at the end; the range is set after that, once the framework has written
-   * it. Without a `selected` range the caret goes after what was inserted.
-   */
-  private insertMarkdown(
-    input: HTMLTextAreaElement,
-    range: { start: number; end: number },
-    text: string,
-    selected?: { start: number; end: number },
-  ) {
-    const value = this.markdownValue();
-    this.update(`${value.slice(0, range.start)}${text}${value.slice(range.end)}`);
-    const from = selected?.start ?? range.start + text.length;
-    const to = selected?.end ?? from;
-    setTimeout(() => {
-      input.focus();
-      input.setSelectionRange(from, to);
-    });
-  }
-
-  /** Use a library image; the value keeps the same shape an upload produces. */
-  chooseImage(image: ImageEntry) {
-    const target = this.markdownImageTarget();
-    if (target !== null) {
-      // The durable link, as an absolute address: Markdown is rendered by the site, which may be
-      // somewhere else entirely, and the id is what survives a replacement (see
-      // `doc/content-api.md`). It is the same link the library's copy button hands out.
-      const url = absoluteApiUrl(this.images.imageLink(image.id));
-      this.markdownImageTarget.set(null);
-      this.insertMarkdown(
-        target.input,
-        { start: target.start, end: target.end },
-        `![${image.original_filename}](${url})`,
-      );
-      this.closePicker();
-      this.errorChange.emit(null);
-      return;
-    }
-    this.update({ id: image.id, url: image.url });
-    this.closePicker();
-    this.errorChange.emit(null);
   }
 
   /** Append the images the picker confirmed, in the order it listed them. */

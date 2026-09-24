@@ -103,113 +103,14 @@
     </div>
   }
   @case ('Markdown') {
-    <div class="markdown-field">
-      @if (!disabled) {
-        <!-- Buttons for the syntax, instead of a syntax reference beside the box: an editor who
-             does not write Markdown should not have to remember which bracket is which. Each one
-             acts on the selection, and the parser is the site's, not ours. -->
-        <div
-          class="markdown-toolbar"
-          role="toolbar"
-          [attr.aria-label]="'content.mdToolbar' | transloco"
-        >
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownWrap(markdownInput, '**', '**', 'content.mdBoldPlaceholder')"
-            [attr.aria-label]="'content.mdBold' | transloco"
-            [matTooltip]="'content.mdBold' | transloco"
-          >
-            <mat-icon>format_bold</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownWrap(markdownInput, '*', '*', 'content.mdItalicPlaceholder')"
-            [attr.aria-label]="'content.mdItalic' | transloco"
-            [matTooltip]="'content.mdItalic' | transloco"
-          >
-            <mat-icon>format_italic</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownPrefix(markdownInput, '## ')"
-            [attr.aria-label]="'content.mdHeading' | transloco"
-            [matTooltip]="'content.mdHeading' | transloco"
-          >
-            <mat-icon>title</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownLink(markdownInput)"
-            [attr.aria-label]="'content.mdLink' | transloco"
-            [matTooltip]="'content.mdLink' | transloco"
-          >
-            <mat-icon>link</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownImage(markdownInput)"
-            [attr.aria-label]="'content.mdImage' | transloco"
-            [matTooltip]="'content.mdImage' | transloco"
-          >
-            <mat-icon>image</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownPrefix(markdownInput, '- ')"
-            [attr.aria-label]="'content.mdBulletList' | transloco"
-            [matTooltip]="'content.mdBulletList' | transloco"
-          >
-            <mat-icon>format_list_bulleted</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownPrefix(markdownInput, '1. ')"
-            [attr.aria-label]="'content.mdNumberedList' | transloco"
-            [matTooltip]="'content.mdNumberedList' | transloco"
-          >
-            <mat-icon>format_list_numbered</mat-icon>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            (click)="markdownPrefix(markdownInput, '> ')"
-            [attr.aria-label]="'content.mdQuote' | transloco"
-            [matTooltip]="'content.mdQuote' | transloco"
-          >
-            <mat-icon>format_quote</mat-icon>
-          </button>
-        </div>
-      }
-      <mat-form-field appearance="fill" class="full-width">
-        <!-- The number of lines comes from the height the schema asked for (see `rows`), so the
-             handle in the schema editor changes the box the content editor draws. -->
-        <textarea
-          #markdownInput
-          matInput
-          [attr.rows]="rows()"
-          [name]="field.name"
-          [disabled]="disabled"
-          [attr.maxlength]="maxLength()"
-          [attr.minlength]="minLength()"
-          [ngModel]="value"
-          (ngModelChange)="update($event)"
-          [attr.aria-labelledby]="labelId"
-        ></textarea>
-        @if (lengthHintKey(); as key) {
-          <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
-        }
-        @if (maxLength() !== null) {
-          <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
-        }
-      </mat-form-field>
-    </div>
+    <app-markdown-field
+      [field]="field"
+      [value]="value"
+      [disabled]="disabled"
+      [labelId]="labelId"
+      (valueChange)="update($event)"
+      (errorChange)="errorChange.emit($event)"
+    />
   }
   @case ('Number') {
     <mat-form-field appearance="fill" class="full-width">
@@ -346,7 +247,7 @@
               (change)="onFilesSelected($event)"
               [attr.aria-labelledby]="labelId"
             />
-            <button matButton type="button" class="array-add" (click)="openLibrary(true)">
+            <button matButton type="button" class="array-add" (click)="openLibrary()">
               <mat-icon>photo_library</mat-icon>
               {{ 'content.addImages' | transloco }}
             </button>
@@ -557,30 +458,13 @@
     </div>
   }
   @case ('Image') {
-    <div class="image-field">
-      @if (imagePreviewUrl()) {
-        <img [src]="imageUrl(imagePreviewUrl())" alt="" class="preview" />
-      }
-      <span class="image-id">id: {{ imageId() ?? '—' }}</span>
-      @if (!disabled) {
-        <div class="image-actions">
-          <input
-            type="file"
-            accept="image/*"
-            [disabled]="uploading()"
-            (change)="onFileSelected($event)"
-            [attr.aria-labelledby]="labelId"
-          />
-          <button matButton type="button" (click)="openLibrary(false)">
-            <mat-icon>photo_library</mat-icon>
-            {{ 'content.chooseExisting' | transloco }}
-          </button>
-        </div>
-      }
-      @if (uploading()) {
-        <span>{{ 'content.uploading' | transloco }}</span>
-      }
-    </div>
+    <app-image-field
+      [value]="value"
+      [disabled]="disabled"
+      [labelId]="labelId"
+      (valueChange)="update($event)"
+      (errorChange)="errorChange.emit($event)"
+    />
   }
   @case ('CompositeField') {
     @if (compositeSchema(); as subSchema) {
@@ -614,13 +498,12 @@
   }
 }
 
-<!-- The library, shared by the single image field, the image array and the Markdown image
-     button: the picker owns what is only about picking, and this widget decides what a chosen
-     image means. -->
+<!-- The library, for adding images to an image array: the picker owns what is only about
+     picking, and this widget decides what a chosen image means. (The single image field and the
+     Markdown toolbar each carry a picker of their own.) -->
 <app-library-picker
   [open]="pickerOpen()"
-  [multi]="pickerMulti()"
-  (chosen)="chooseImage($event)"
+  [multi]="true"
   (chosenMany)="addChosenImages($event)"
   (closed)="closePicker()"
   (failed)="errorChange.emit($event)"

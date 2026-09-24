@@ -1,0 +1,31 @@
+<div class="image-field">
+  @if (imagePreviewUrl()) {
+    <img [src]="imageUrl(imagePreviewUrl())" alt="" class="preview" />
+  }
+  <span class="image-id">id: {{ imageId() ?? '—' }}</span>
+  @if (!disabled) {
+    <div class="image-actions">
+      <input
+        type="file"
+        accept="image/*"
+        [disabled]="uploading()"
+        (change)="onFileSelected($event)"
+        [attr.aria-labelledby]="labelId"
+      />
+      <button matButton type="button" (click)="openLibrary()">
+        <mat-icon>photo_library</mat-icon>
+        {{ 'content.chooseExisting' | transloco }}
+      </button>
+    </div>
+  }
+  @if (uploading()) {
+    <span>{{ 'content.uploading' | transloco }}</span>
+  }
+</div>
+
+<app-library-picker
+  [open]="pickerOpen()"
+  (chosen)="chooseImage($event)"
+  (closed)="closePicker()"
+  (failed)="errorChange.emit($event)"
+/>

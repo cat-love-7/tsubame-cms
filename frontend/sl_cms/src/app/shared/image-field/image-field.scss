@@ -1,0 +1,34 @@
+/// One image value: the picture, its id, and the controls that set it.
+
+.image-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  /// The browser's own file control cannot be restyled, only made to look like it belongs.
+  input[type='file'] {
+    max-width: 100%;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+  }
+}
+
+.preview {
+  max-height: 96px;
+  max-width: 160px;
+  object-fit: contain;
+}
+
+.image-id {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
+}
