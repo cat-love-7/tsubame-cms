@@ -1777,10 +1777,18 @@ try {
   // A multiple select keeps its panel open; the Save button is behind it until it closes.
   await page.keyboard.press('Escape');
 
-  // The composite array is edited element by element, each by the definition it holds.
-  await page.click('button:has-text("Add element")');
-  await page.click('button:has-text("Add element")');
+  // The composite array is edited element by element, each by the definition it holds. An element
+  // holds an array of the same definition, so it grows an "Add element" of its own the moment the
+  // first element appears - and that one comes *before* the array's own button in the document.
+  // `.last()` is the outer array's, which is the one this scenario means, whatever has rendered
+  // by the time the click is dispatched.
+  const addElement = page.locator('button.array-add:has-text("Add element")').last();
+  await addElement.click();
+  await addElement.click();
   const elements = page.locator('.composite-element');
+  // The elements follow the value, which the next render writes out: the second fill is what
+  // needs the second element on screen, not the click that added it.
+  await elements.nth(1).waitFor({ timeout: 15000 });
   await elements.nth(0).locator('input').first().fill('first block');
   await elements.nth(1).locator('input').first().fill('second block');
   check(

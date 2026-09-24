@@ -1,0 +1,84 @@
+// The array widget: the thumbnails of an image array, the elements of a composite array, and the
+// JSON box. The shared shapes - `.note`, `.array-actions` (spacing aside), `.element-actions` -
+// come from `src/styles.scss`; what is left here is the layout that is particular to a list.
+
+.full-width {
+  width: 100%;
+}
+
+/* An image array: the chosen images in order, with the controls for each. */
+.image-array {
+  margin-bottom: 12px;
+}
+
+.array-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.array-item {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+  overflow: hidden;
+
+  img,
+  .placeholder {
+    display: block;
+    width: 96px;
+    height: 72px;
+    object-fit: cover;
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  .placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-small);
+  }
+
+  figcaption {
+    display: flex;
+    justify-content: center;
+    background: var(--mat-sys-surface-container);
+  }
+}
+
+.array-actions {
+  margin-top: 8px;
+}
+
+.composite-array {
+  margin-bottom: 12px;
+}
+
+.composite-element {
+  margin: 0 0 8px;
+  padding: 4px 12px 0;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+
+  legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .element-name {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-medium);
+  }
+
+  .element-actions {
+    display: inline-flex;
+  }
+}
+
+.element-type {
+  width: 12rem;
+}

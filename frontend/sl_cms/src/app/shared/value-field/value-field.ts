@@ -1,4 +1,3 @@
-import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   EventEmitter,
@@ -19,18 +18,14 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe } from '@jsverse/transloco';
-import { concatMap, from, toArray } from 'rxjs';
 
-import { apiUrl } from 'app/core/api-url';
 import { ImageField } from 'app/shared/image-field/image-field';
-import { LibraryPicker } from 'app/shared/library-picker/library-picker';
 import { MarkdownField } from 'app/shared/markdown-field/markdown-field';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
   TextFieldOptions,
-  isArrayFieldSchema,
   isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
@@ -41,10 +36,10 @@ import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/
 import { ContentValue } from 'app/models/values/single-page';
 
 import { FieldValue, withDefaults } from 'app/models/values/fields';
-import { RelationField } from 'app/shared/relation-field/relation-field';
-import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
-import { ImagesService } from 'app/services/media/images.service';
+import { ArrayField } from 'app/shared/array-field/array-field';
+import { RelationField } from 'app/shared/relation-field/relation-field';
+import { ProblemCollector } from 'app/shared/value-field/problem-collector';
 
 type FieldKind =
   | 'Text'
@@ -78,6 +73,7 @@ let nextValueFieldId = 0;
 @Component({
   selector: 'app-value-field',
   imports: [
+    ArrayField,
     RelationField,
     MatTooltipModule,
     FormsModule,
@@ -88,9 +84,7 @@ let nextValueFieldId = 0;
     MatInputModule,
     MatSelectModule,
     ImageField,
-    LibraryPicker,
     MarkdownField,
-    NgTemplateOutlet,
     TranslocoPipe,
     ValueField,
   ],
@@ -128,33 +122,10 @@ export class ValueField implements OnInit, OnChanges {
    */
   public readonly labelId = `value-field-${(nextValueFieldId += 1)}`;
 
-  private images = inject(ImagesService);
   private compositeFields = inject(CompositeFieldsService);
 
-  public uploading = signal(false);
-  /** JSON buffer for Array fields, which are edited as raw JSON. */
-  public arrayText = '';
-  public imageUrl = apiUrl;
   /** Places a composite's sub-fields in the same grid the top level uses. */
   public cellStyle = fieldCellStyle;
-
-  public pickerOpen = signal(false);
-  /** An image array is shown as thumbnails unless the JSON view is asked for. */
-  public jsonMode = signal(false);
-
-  /**
-   * The elements of a composite array, each with the definition it names and the value the
-   * child editor reads. Rebuilt when a value arrives from outside; kept as it is while the
-   * user edits, so a keystroke in one element cannot reset another.
-   */
-  public elementItems: { id: string; value: FieldValue }[] = [];
-  /** The schema each element editor needs, one per element and stable between rebuilds. */
-  public elementSchemas: FieldSchema[] = [];
-  /** The definition a new element uses, when the array allows more than one. */
-  public newElementType = signal('');
-  /** The composite definitions, for the defaults of a new element. */
-  private definitions = new Map<string, FieldSchema[]>();
-  private definitionsLoaded = false;
 
   /** The referenced composite's sub-schema, or null when it is not defined. */
   public compositeSchema = signal<FieldSchema[] | null>(null);
@@ -166,25 +137,18 @@ export class ValueField implements OnInit, OnChanges {
   private lastEmitted: FieldValue = null;
 
   /** Problems reported by sub-fields, so one clearing does not clear another's. */
-  private subErrors: { [field: string]: Message } = {};
+  private problems = new ProblemCollector((problem) => this.errorChange.emit(problem));
 
   ngOnInit() {
-    this.syncArrayBuffer();
-    this.loadDefinitions();
-    this.syncElements();
     this.reportTextLength(this.value);
   }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['field']) {
       this.loadCompositeSchema();
-      this.loadDefinitions();
-      this.syncElements();
     } else if (changes['value']) {
       this.reportTextLength(this.value);
-      this.syncArrayBuffer();
       this.syncCompositeValues();
-      this.syncElements();
     }
   }
 
@@ -250,82 +214,6 @@ export class ValueField implements OnInit, OnChanges {
    */
   rows(): number {
     return Math.max(3, Math.max(1, this.field.height) * 3);
-  }
-
-  /**
-   * The item types the schema declared, named the way the schema editor names them.
-   *
-   * A plain kind is its own name; a text kind carries options and is named by its kind; a
-   * composite is named by the definition it holds. Without this the JSON box says nothing about
-   * what it accepts, which is the one thing the reader needs to know.
-   */
-  itemTypeNames(): string[] {
-    const type = this.field.field_type;
-    if (!isArrayFieldSchema(type)) {
-      return [];
-    }
-    return type.Array.map((item) => {
-      if (typeof item === 'string') {
-        return item;
-      }
-      if (isTextFieldSchema(item)) {
-        return 'Text';
-      }
-      if (isMarkdownFieldSchema(item)) {
-        return 'Markdown';
-      }
-      if (isEnumFieldSchema(item)) {
-        return 'TextEnum';
-      }
-      if (isCompositeFieldSchema(item)) {
-        return String(item.CompositeField.id);
-      }
-      return 'Unknown';
-    });
-  }
-
-  /**
-   * Whether a parsed item could be one of the declared item types.
-   *
-   * Deliberately permissive: it only rules out what *no* declared type could read - a string in
-   * an array of numbers, an object in an array of texts. The server tries each declared type in
-   * turn and its idea of "parses" is narrower than anything worth copying here, and refusing a
-   * value it would have taken is worse than letting it answer. What this buys is the obvious
-   * mistake being caught while the reader is still looking at the box.
-   */
-  private itemFitsDeclaredTypes(item: unknown): boolean {
-    const type = this.field.field_type;
-    if (!isArrayFieldSchema(type)) {
-      return true;
-    }
-    return type.Array.some((candidate) => {
-      if (typeof candidate === 'string') {
-        switch (candidate) {
-          case 'Number':
-            return typeof item === 'number';
-          case 'Boolean':
-            return typeof item === 'boolean';
-          case 'Image':
-            // An id, a response object, or nothing chosen.
-            return (
-              item === null ||
-              typeof item === 'number' ||
-              (typeof item === 'object' && item !== null && 'id' in item)
-            );
-          case 'Date':
-          case 'DateTime':
-            // Both travel as strings; a number is accepted here only because the server may.
-            return typeof item === 'string' || typeof item === 'number';
-          default:
-            return true;
-        }
-      }
-      if (isCompositeFieldSchema(candidate)) {
-        return typeof item === 'object' && item !== null;
-      }
-      // Text, Markdown and enums are all strings on the wire.
-      return typeof item === 'string';
-    });
   }
 
   /** Whether the value has to be the only one of its kind in the collection. */
@@ -491,41 +379,6 @@ export class ValueField implements OnInit, OnChanges {
     this.update(Number.isNaN(date.getTime()) ? null : date.toISOString());
   }
 
-  onArrayTextChange(text: string) {
-    this.arrayText = text;
-    const trimmed = text.trim();
-    if (trimmed === '') {
-      this.errorChange.emit(null);
-      this.update([]);
-      return;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      this.errorChange.emit(t('content.invalidJson', { field: this.field.name }));
-      return;
-    }
-    if (!Array.isArray(parsed)) {
-      this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
-      return;
-    }
-    // The declared item types are what the array accepts, so an item none of them could read is
-    // reported here rather than by the server after the whole form has been sent.
-    const unsuitable = parsed.findIndex((item) => !this.itemFitsDeclaredTypes(item));
-    if (unsuitable >= 0) {
-      this.errorChange.emit(
-        t('content.arrayItemType', {
-          field: `${this.field.name}[${unsuitable}]`,
-          types: this.itemTypeNames().join(', '),
-        }),
-      );
-      return;
-    }
-    this.errorChange.emit(null);
-    this.update(parsed as FieldValue);
-  }
-
   setCompositeValue(subField: FieldSchema, value: FieldValue) {
     this.compositeValues[subField.name] = value;
     // Emit the bare object of sub-values: that is what a composite write accepts. The
@@ -536,280 +389,7 @@ export class ValueField implements OnInit, OnChanges {
   forwardCompositeError(subField: FieldSchema, problem: Message | null) {
     // One at a time: the parent shows the first problem and refuses to save until none remain,
     // so naming the others too would only lengthen the message.
-    this.reportSubError(subField.name, problem);
-  }
-
-  /** Show the library, to add images to an image array. */
-  openLibrary() {
-    this.pickerOpen.set(true);
-  }
-
-  closePicker() {
-    this.pickerOpen.set(false);
-  }
-
-  /** Append the images the picker confirmed, in the order it listed them. */
-  addChosenImages(chosen: ImageEntry[]) {
-    const images = chosen.map((image) => ({ id: image.id, url: image.url }));
-    this.updateArray([...this.arrayItems(), ...images]);
-    this.closePicker();
-    this.errorChange.emit(null);
-  }
-
-  /**
-   * Upload files straight into an image array, without a detour through the library.
-   *
-   * They are uploaded one after another so the array keeps the order the files were
-   * chosen in. A failure part-way appends nothing (the files that did upload stay in the
-   * library, so they can be picked from there); retrying is the editor's decision.
-   */
-  onFilesSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    if (files.length === 0) {
-      return;
-    }
-    this.uploading.set(true);
-    this.errorChange.emit(null);
-    from(files)
-      .pipe(
-        concatMap((file) => this.images.uploadImage(file)),
-        toArray(),
-      )
-      .subscribe({
-        next: (uploaded) => {
-          this.uploading.set(false);
-          input.value = '';
-          this.updateArray([
-            ...this.arrayItems(),
-            // Mirror the shape an image value has.
-            ...uploaded.map((info) => ({ id: info.id, url: info.url })),
-          ]);
-        },
-        error: (e) => {
-          this.uploading.set(false);
-          input.value = '';
-          this.errorChange.emit(failure('content.uploadFailed', e));
-        },
-      });
-  }
-
-  /** The composite definitions this array declares as item types. */
-  compositeItemTypes(): string[] {
-    const type = this.field.field_type;
-    if (!isArrayFieldSchema(type)) {
-      return [];
-    }
-    return type.Array.filter(isCompositeFieldSchema).map((item) => item.CompositeField.id);
-  }
-
-  /**
-   * A composite array is edited element by element.
-   *
-   * Only when *every* declared item type is a composite: an element carries no type tag, so a
-   * mixed array (say a text and a composite) has nothing that says which editor an element
-   * needs. Those keep the JSON view, which does accept composite elements.
-   */
-  isCompositeArray(): boolean {
-    const type = this.field.field_type;
-    return (
-      isArrayFieldSchema(type) &&
-      type.Array.length > 0 &&
-      type.Array.every((item) => isCompositeFieldSchema(item))
-    );
-  }
-
-  /** Add an element of the chosen definition, with that definition's defaults. */
-  addElement() {
-    const id = this.newElementType() || this.compositeItemTypes()[0];
-    if (!id) {
-      return;
-    }
-    const schema = this.definitions.get(id);
-    const values = schema ? withDefaults(schema, {}) : {};
-    this.setElements([...this.arrayItems(), { id, values }]);
-  }
-
-  removeElementAt(index: number) {
-    const items = this.arrayItems();
-    items.splice(index, 1);
-    // The reported problems are keyed by position, so they mean nothing after this.
-    this.clearElementErrors();
-    this.setElements(items);
-  }
-
-  moveElement(index: number, delta: number) {
-    const items = this.arrayItems();
-    const target = index + delta;
-    if (target < 0 || target >= items.length) {
-      return;
-    }
-    [items[index], items[target]] = [items[target], items[index]];
-    this.clearElementErrors();
-    this.setElements(items);
-  }
-
-  /** One element changed: keep the definition it names and store the new sub-values. */
-  setElementValues(index: number, values: FieldValue) {
-    const items = this.arrayItems();
-    const id = this.elementItems[index]?.id ?? this.compositeItemTypes()[0] ?? '';
-    items[index] = { id, values };
-    this.elementItems[index] = { id, value: { id, values } };
-    this.arrayText = JSON.stringify(items);
-    this.update(items as FieldValue);
-  }
-
-  reportElementError(index: number, problem: Message | null) {
-    this.reportSubError(`element:${index}`, problem);
-  }
-
-  /** An array of images, which is edited with thumbnails instead of raw JSON. */
-  isImageArray(): boolean {
-    const type = this.field.field_type;
-    return (
-      isArrayFieldSchema(type) &&
-      type.Array.length > 0 &&
-      type.Array.every((item) => item === 'Image')
-    );
-  }
-
-  /**
-   * The current array value as images.
-   *
-   * A bare id (which the JSON view accepts, since an image id is a number) has no URL to
-   * show until the item is saved and read back, so it renders as a placeholder.
-   */
-  arrayImages(): { id: number | null; url: string }[] {
-    return this.arrayItems().map((element) => {
-      if (typeof element === 'number') {
-        return { id: element, url: '' };
-      }
-      if (element !== null && typeof element === 'object') {
-        const record = element as { id?: unknown; url?: unknown };
-        return {
-          id: typeof record.id === 'number' ? record.id : null,
-          url: typeof record.url === 'string' ? record.url : '',
-        };
-      }
-      return { id: null, url: '' };
-    });
-  }
-
-  removeImageAt(index: number) {
-    const items = this.arrayItems();
-    items.splice(index, 1);
-    this.updateArray(items);
-  }
-
-  moveImage(index: number, delta: number) {
-    const items = this.arrayItems();
-    const target = index + delta;
-    if (target < 0 || target >= items.length) {
-      return;
-    }
-    [items[index], items[target]] = [items[target], items[index]];
-    this.updateArray(items);
-  }
-
-  private arrayItems(): unknown[] {
-    return Array.isArray(this.value) ? [...(this.value as unknown[])] : [];
-  }
-
-  /** Replace a composite array's value and keep the JSON view and the element editors in step. */
-  private setElements(items: unknown[]) {
-    this.elementItems = items.map((item, index) => ({
-      id: this.idOf(item, index),
-      value: (item ?? null) as FieldValue,
-    }));
-    this.elementSchemas = this.elementItems.map((element) => this.schemaFor(element));
-    this.arrayText = JSON.stringify(items);
-    this.update(items as FieldValue);
-  }
-
-  /** Rebuild the element editors from `value`, unless they already match it. */
-  private syncElements() {
-    if (!this.isCompositeArray()) {
-      return;
-    }
-    // The chosen definition for a new element: the first one until the user picks otherwise.
-    this.newElementType.update((current) => current || this.compositeItemTypes()[0] || '');
-    const items = this.arrayItems();
-    const matches =
-      this.elementItems.length === items.length &&
-      this.elementItems.every((element, index) => element.value === items[index]);
-    if (matches) {
-      return;
-    }
-    this.elementItems = items.map((item, index) => ({
-      id: this.idOf(item, index),
-      value: (item ?? null) as FieldValue,
-    }));
-    this.elementSchemas = this.elementItems.map((element) => this.schemaFor(element));
-  }
-
-  /**
-   * The definition an element uses: the one it names, or the first the array declares.
-   *
-   * A read names it (`{id, values}`); a value written by an older client may be the bare object
-   * of sub-values, which leaves the first declared definition as the only reading.
-   */
-  private idOf(item: unknown, _index: number): string {
-    const record = (item ?? {}) as { id?: unknown };
-    const declared = typeof record.id === 'string' && record.id ? record.id : '';
-    return declared || this.compositeItemTypes()[0] || '';
-  }
-
-  /** The schema an element editor needs: the composite it names, at the array's height. */
-  private schemaFor(element: { id: string; value: FieldValue }): FieldSchema {
-    return {
-      name: `${this.field.name}[${element.id}]`,
-      field_type: { CompositeField: { id: element.id } },
-      required: false,
-      width: 12,
-      height: this.field.height || 1,
-    };
-  }
-
-  /** The definitions an element may use, for a new element's defaults. */
-  private loadDefinitions() {
-    if (this.definitionsLoaded || this.compositeItemTypes().length === 0) {
-      return;
-    }
-    // The service caches the list, so a form with several composite arrays asks for it once.
-    this.compositeFields.getAllCompositeFields().subscribe({
-      next: (all) => {
-        this.definitions = new Map(Object.entries(all));
-        this.definitionsLoaded = true;
-      },
-      // An element editor loads the definition it needs and reports it if it is missing, so a
-      // failure here is not a reason to hide values that are already stored.
-      error: () => {},
-    });
-  }
-
-  /** One place for the problems the sub-editors report, so one clearing does not clear another. */
-  private reportSubError(key: string, problem: Message | null) {
-    if (problem) {
-      this.subErrors[key] = problem;
-    } else {
-      delete this.subErrors[key];
-    }
-    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
-  }
-
-  private clearElementErrors() {
-    for (const key of Object.keys(this.subErrors)) {
-      if (key.startsWith('element:')) {
-        delete this.subErrors[key];
-      }
-    }
-    this.errorChange.emit(Object.values(this.subErrors)[0] ?? null);
-  }
-
-  /** Replace the array value and keep the JSON view in step with it. */
-  private updateArray(items: unknown[]) {
-    this.arrayText = JSON.stringify(items);
-    this.update(items as FieldValue);
+    this.problems.set(subField.name, problem);
   }
 
   private loadCompositeSchema() {
@@ -861,18 +441,5 @@ export class ValueField implements OnInit, OnChanges {
       return wrapped;
     }
     return record;
-  }
-
-  private syncArrayBuffer() {
-    const type = this.field.field_type;
-    if (!isArrayFieldSchema(type)) {
-      return;
-    }
-    // Our own emission comes straight back as `value`; re-seeding then would fight the
-    // user's typing.
-    if (this.value === this.lastEmitted) {
-      return;
-    }
-    this.arrayText = JSON.stringify(this.value ?? []);
   }
 }

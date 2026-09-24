@@ -1,0 +1,201 @@
+<!-- Array values are edited as JSON: always for the plain array types, and for an image array as
+     a fallback next to the thumbnails. -->
+<ng-template #jsonArray>
+  <mat-form-field appearance="fill" class="full-width">
+    <textarea
+      matInput
+      rows="3"
+      [name]="field.name"
+      [disabled]="disabled"
+      [ngModel]="arrayText"
+      (ngModelChange)="onJsonChange($event)"
+      [placeholder]="'content.jsonArrayPlaceholder' | transloco"
+      [attr.aria-labelledby]="labelId"
+    ></textarea>
+    <mat-hint>{{ 'content.jsonArrayHint' | transloco }}</mat-hint>
+    @if (itemTypeNames().length > 0) {
+      <mat-hint align="end">
+        {{ 'content.arrayItemTypes' | transloco: { types: itemTypeNames().join(', ') } }}
+      </mat-hint>
+    }
+  </mat-form-field>
+</ng-template>
+
+@if (isImageArray()) {
+  <!-- An image array is edited with thumbnails and the library, since typing image ids by hand is
+       what the JSON editor was for and nobody should have to. -->
+  <div class="image-array">
+    <div class="array-items">
+      @for (image of arrayImages(); track $index) {
+        <figure class="array-item">
+          @if (image.url) {
+            <img
+              [src]="imageUrl(image.url)"
+              [alt]="'labels.imageAlt' | transloco: { id: image.id }"
+              loading="lazy"
+            />
+          } @else {
+            <!-- A bare id has no URL to show until the item is saved and read back. -->
+            <span class="placeholder">id {{ image.id ?? '?' }}</span>
+          }
+          @if (!disabled) {
+            <figcaption>
+              <button
+                matIconButton
+                type="button"
+                (click)="moveImage($index, -1)"
+                [disabled]="$first"
+                [attr.aria-label]="'labels.moveImageEarlier' | transloco: { index: $index }"
+                [matTooltip]="'labels.moveImageEarlier' | transloco: { index: $index }"
+              >
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <button
+                matIconButton
+                type="button"
+                (click)="moveImage($index, 1)"
+                [disabled]="$last"
+                [attr.aria-label]="'labels.moveImageLater' | transloco: { index: $index }"
+                [matTooltip]="'labels.moveImageLater' | transloco: { index: $index }"
+              >
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+              <button
+                matIconButton
+                type="button"
+                (click)="removeImageAt($index)"
+                [attr.aria-label]="'labels.removeImage' | transloco: { index: $index }"
+                [matTooltip]="'labels.removeImage' | transloco: { index: $index }"
+              >
+                <mat-icon>close</mat-icon>
+              </button>
+            </figcaption>
+          }
+        </figure>
+      } @empty {
+        <span class="note">{{ 'content.noImages' | transloco }}</span>
+      }
+    </div>
+
+    @if (!disabled) {
+      <div class="array-actions">
+        <!-- Uploading straight into the array saves a detour through the library. -->
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          class="array-upload"
+          [disabled]="uploading()"
+          (change)="onFilesSelected($event)"
+          [attr.aria-labelledby]="labelId"
+        />
+        <button matButton type="button" class="array-add" (click)="openLibrary()">
+          <mat-icon>photo_library</mat-icon>
+          {{ 'content.addImages' | transloco }}
+        </button>
+        <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
+          {{ (jsonMode() ? 'content.hideJson' : 'content.editAsJson') | transloco }}
+        </button>
+      </div>
+      @if (uploading()) {
+        <span class="note">{{ 'content.uploading' | transloco }}</span>
+      }
+    }
+
+    @if (jsonMode()) {
+      <ng-container *ngTemplateOutlet="jsonArray" />
+    }
+  </div>
+} @else if (isCompositeArray()) {
+  <!-- Each element is edited by the field above, which renders one editor per element through the
+       template it handed down: that is what lets a composite array nest to any depth. -->
+  <div class="composite-array">
+    @for (element of elementItems; track $index) {
+      <fieldset class="composite-element">
+        <legend>
+          <span class="element-name">
+            {{ 'content.element' | transloco: { index: $index + 1 } }}
+          </span>
+          @if (!disabled) {
+            <span class="element-actions">
+              <button
+                matIconButton
+                type="button"
+                (click)="moveElement($index, -1)"
+                [disabled]="$first"
+                [attr.aria-label]="'labels.moveElementEarlier' | transloco: { index: $index }"
+                [matTooltip]="'labels.moveElementEarlier' | transloco: { index: $index }"
+              >
+                <mat-icon>arrow_upward</mat-icon>
+              </button>
+              <button
+                matIconButton
+                type="button"
+                (click)="moveElement($index, 1)"
+                [disabled]="$last"
+                [attr.aria-label]="'labels.moveElementLater' | transloco: { index: $index }"
+                [matTooltip]="'labels.moveElementLater' | transloco: { index: $index }"
+              >
+                <mat-icon>arrow_downward</mat-icon>
+              </button>
+              <button
+                matIconButton
+                type="button"
+                (click)="removeElementAt($index)"
+                [attr.aria-label]="'labels.removeElement' | transloco: { index: $index }"
+                [matTooltip]="'labels.removeElement' | transloco: { index: $index }"
+              >
+                <mat-icon>close</mat-icon>
+              </button>
+            </span>
+          }
+        </legend>
+        <ng-container *ngTemplateOutlet="elementTemplate; context: elementContext($index)" />
+      </fieldset>
+    } @empty {
+      <span class="note">{{ 'content.noElements' | transloco }}</span>
+    }
+
+    @if (!disabled) {
+      <div class="array-actions">
+        @if (compositeItemTypes().length > 1) {
+          <mat-form-field appearance="fill" class="element-type">
+            <mat-label>{{ 'content.elementType' | transloco }}</mat-label>
+            <mat-select
+              name="newElementType"
+              [ngModel]="newElementType()"
+              (ngModelChange)="newElementType.set($event)"
+            >
+              @for (id of compositeItemTypes(); track id) {
+                <mat-option [value]="id">{{ id }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        }
+        <button matButton type="button" class="array-add" (click)="addElement()">
+          <mat-icon>add</mat-icon>
+          {{ 'content.addElement' | transloco }}
+        </button>
+        <button matButton type="button" (click)="jsonMode.set(!jsonMode())">
+          {{ (jsonMode() ? 'content.hideJson' : 'content.editAsJson') | transloco }}
+        </button>
+      </div>
+    }
+
+    @if (jsonMode()) {
+      <ng-container *ngTemplateOutlet="jsonArray" />
+    }
+  </div>
+} @else {
+  <ng-container *ngTemplateOutlet="jsonArray" />
+}
+
+<!-- The library, for adding images to an image array: the picker owns what is only about picking,
+     and this widget decides what a chosen image means. -->
+<app-library-picker
+  [open]="pickerOpen()"
+  [multi]="true"
+  (chosenMany)="addChosenImages($event)"
+  (closed)="closePicker()"
+  (failed)="errorChange.emit($event)"
+/>

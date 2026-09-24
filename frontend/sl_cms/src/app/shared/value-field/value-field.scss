@@ -1,6 +1,7 @@
-// The widgets a field can be rendered with. The shared shapes - `.note`, `.array-actions`,
-// `.picker-actions`, `.element-actions` - come from `src/styles.scss`; what is left here is
-// the layout that is particular to editing one value.
+// The widgets a field can be rendered with. The shared shapes - `.note`, `.picker-actions` - come
+// from `src/styles.scss`, and each kind that brings a shape of its own is a component of its own
+// (`markdown-field`, `image-field`, `relation-field`, `array-field`); what is left here is the
+// label above the widget, the grid a composite's sub-fields sit in, and the two text widgets.
 
 .field-label {
   display: block;
@@ -30,52 +31,6 @@
   width: 100%;
 }
 
-/* An image array: the chosen images in order, with the controls for each. */
-.image-array {
-  margin-bottom: 12px;
-}
-
-.array-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.array-item {
-  position: relative;
-  margin: 0;
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: 8px;
-  overflow: hidden;
-
-  img,
-  .placeholder {
-    display: block;
-    width: 96px;
-    height: 72px;
-    object-fit: cover;
-    background: var(--mat-sys-surface-container-high);
-  }
-
-  .placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--mat-sys-on-surface-variant);
-    font: var(--mat-sys-body-small);
-  }
-
-  figcaption {
-    display: flex;
-    justify-content: center;
-    background: var(--mat-sys-surface-container);
-  }
-}
-
-.array-actions {
-  margin-top: 8px;
-}
-
 .composite {
   margin: 0 0 8px;
   padding: 8px 12px 0;
@@ -92,37 +47,6 @@
   border-radius: 0;
 }
 
-.composite-array {
-  margin-bottom: 12px;
-}
-
-.composite-element {
-  margin: 0 0 8px;
-  padding: 4px 12px 0;
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: 8px;
-
-  legend {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 4px;
-  }
-
-  .element-name {
-    color: var(--mat-sys-on-surface-variant);
-    font: var(--mat-sys-body-medium);
-  }
-
-  .element-actions {
-    display: inline-flex;
-  }
-}
-
-.element-type {
-  width: 12rem;
-}
-
 /// A slug: the input, and the button that fills it from another field.
 .slug-field {
   display: flex;
@@ -131,22 +55,5 @@
 
   .generate-slug {
     margin-top: -4px;
-  }
-}
-
-/* The relation chips hold small controls (the two arrows and the remove button), and Material's
- * icon button carries a 48px touch target - which overflows a chip and turns it into a scroll
- * area, so every chip grew a scrollbar. The touch target is what has to go; the buttons stay
- * tappable at the chip's own height. */
-.relation-field mat-chip-row {
-  --mat-icon-button-touch-target-display: none;
-  --mat-icon-button-state-layer-size: 24px;
-
-  /* One flex row of our own: the controls and the name are centred against each other here, so
-   * the name's place does not depend on how Material's chip row aligns its items. */
-  .reference-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
   }
 }
