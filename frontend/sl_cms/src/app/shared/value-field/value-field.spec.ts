@@ -836,12 +836,17 @@ describe('ValueField', () => {
     const component = create(field('photo', 'Image'));
     expect(images.listCalls).toBe(0);
 
+    // The picker reads the library when it is shown, which is a change detection away: what the
+    // parent does is open it.
     component.openLibrary(false);
+    fixture.detectChanges();
     expect(images.listCalls).toBe(1);
 
     // Closing and reopening reuses what was already fetched.
     component.closePicker();
+    fixture.detectChanges();
     component.openLibrary(false);
+    fixture.detectChanges();
     expect(images.listCalls).toBe(1);
   });
 

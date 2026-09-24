@@ -8,8 +8,10 @@ import {
   OnInit,
   Output,
   SimpleChanges,
+  computed,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -25,6 +27,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
+import { LibraryPicker } from 'app/shared/library-picker/library-picker';
 import { absoluteApiUrl } from 'app/shared/share-link';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
@@ -100,6 +103,7 @@ let nextValueFieldId = 0;
     MatIconModule,
     MatInputModule,
     MatSelectModule,
+    LibraryPicker,
     NgTemplateOutlet,
     TranslocoPipe,
     ValueField,
@@ -152,19 +156,13 @@ export class ValueField implements OnInit, OnChanges {
   /** Places a composite's sub-fields in the same grid the top level uses. */
   public cellStyle = fieldCellStyle;
 
-  /** Images already uploaded, so one can be reused instead of uploaded again. */
-  public library = signal<ImageEntry[]>([]);
-  /** How many the library holds altogether, which is more than the picker shows at once. */
-  public libraryTotal = signal(0);
-  /** Whether the picker is fetching the next page. */
-  public libraryLoadingMore = signal(false);
   public pickerOpen = signal(false);
   /** True when the open picker collects several images (for an image array). */
   public pickerMulti = signal(false);
-  /** Ids ticked in the multi-image picker. */
-  public selected = signal<number[]>([]);
-  /** The library is fetched when the picker is first opened, and not before. */
-  private libraryLoaded = false;
+  /** The picker on screen, for the one thing this widget has to ask it: what is ticked. */
+  private readonly picker = viewChild(LibraryPicker);
+  /** Ids ticked in the multi-image mode, which the picker holds. */
+  public selected = computed(() => this.picker()?.selected() ?? []);
   /**
    * Where an image chosen from the library goes, when the picker was opened from a Markdown box.
    *
@@ -816,46 +814,11 @@ export class ValueField implements OnInit, OnChanges {
   /** Show the library: `multi` collects several images at once (an image array). */
   openLibrary(multi: boolean) {
     this.pickerMulti.set(multi);
-    this.selected.set([]);
     this.pickerOpen.set(true);
-    if (this.libraryLoaded) {
-      return;
-    }
-    this.images.listImages().subscribe({
-      next: (page) => {
-        this.libraryLoaded = true;
-        this.library.set(page.images);
-        this.libraryTotal.set(page.total);
-      },
-      error: (e) => this.errorChange.emit(failure('content.failedToLoadImages', e)),
-    });
-  }
-
-  /** Whether the library holds images the picker has not been handed yet. */
-  public libraryCanLoadMore = () => this.library().length < this.libraryTotal();
-
-  /** Ask for the next page of the library, without closing the picker. */
-  loadMoreLibrary() {
-    if (this.libraryLoadingMore() || !this.libraryCanLoadMore()) {
-      return;
-    }
-    this.libraryLoadingMore.set(true);
-    this.images.listImages(this.library().length).subscribe({
-      next: (page) => {
-        this.libraryLoadingMore.set(false);
-        this.library.set([...this.library(), ...page.images]);
-        this.libraryTotal.set(page.total);
-      },
-      error: (e) => {
-        this.libraryLoadingMore.set(false);
-        this.errorChange.emit(failure('content.failedToLoadImages', e));
-      },
-    });
   }
 
   closePicker() {
     this.pickerOpen.set(false);
-    this.selected.set([]);
     this.markdownImageTarget.set(null);
   }
 
@@ -954,21 +917,6 @@ export class ValueField implements OnInit, OnChanges {
     });
   }
 
-  /** A thumbnail click: single mode uses it, multi mode ticks it. */
-  onThumbnail(image: ImageEntry) {
-    if (!this.pickerMulti()) {
-      this.chooseImage(image);
-      return;
-    }
-    this.selected.update((ids) =>
-      ids.includes(image.id) ? ids.filter((id) => id !== image.id) : [...ids, image.id],
-    );
-  }
-
-  isSelected(id: number): boolean {
-    return this.selected().includes(id);
-  }
-
   /** Use a library image; the value keeps the same shape an upload produces. */
   chooseImage(image: ImageEntry) {
     const target = this.markdownImageTarget();
@@ -992,9 +940,8 @@ export class ValueField implements OnInit, OnChanges {
     this.errorChange.emit(null);
   }
 
-  /** Append the ticked images, keeping the order the library lists them in. */
-  addSelectedImages() {
-    const chosen = this.library().filter((image) => this.selected().includes(image.id));
+  /** Append the images the picker confirmed, in the order it listed them. */
+  addChosenImages(chosen: ImageEntry[]) {
     const images = chosen.map((image) => ({ id: image.id, url: image.url }));
     this.updateArray([...this.arrayItems(), ...images]);
     this.closePicker();

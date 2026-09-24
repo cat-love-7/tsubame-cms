@@ -370,13 +370,13 @@ export class ContentEditor {
       then?.();
     };
 
-    const create = this.source.create;
-    if (!this.source.exists() && create) {
+    const source = this.source;
+    if (!source.exists() && source.create !== undefined) {
       // A new item: the create answers the id it was given, and the screen adopts it - which is
       // what makes the next save an update, and what lets the publish below name the item that was
       // just created.
-      create
-        .call(this.source, values)
+      source
+        .create(values)
         .pipe(takeUntilDestroyed(this.deps.destroyRef))
         .subscribe({
           next: (created) => {
@@ -386,7 +386,7 @@ export class ContentEditor {
             // The screen adopts the id *after* the guard: the address this act was started for
             // names "new", and adopting the id changes it, so checking afterwards would always say
             // the reader had moved on.
-            this.source.created?.(created);
+            source.created?.(created);
             this.editsSaved(values);
             then?.();
           },
@@ -581,9 +581,7 @@ export class ContentEditor {
     }
     const expires = this.deps.dates.format(link.expires_at);
     this.notice.set(
-      copied
-        ? t('content.previewCopied', { expires })
-        : t('content.previewNotCopied', { expires }),
+      copied ? t('content.previewCopied', { expires }) : t('content.previewNotCopied', { expires }),
     );
   }
 

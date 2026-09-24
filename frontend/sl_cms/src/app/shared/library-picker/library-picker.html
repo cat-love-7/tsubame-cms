@@ -1,0 +1,60 @@
+@if (open) {
+  <div class="library" [class.multi]="multi">
+    @for (image of library(); track image.id) {
+      <button
+        type="button"
+        class="thumb"
+        [class.selected]="isSelected(image.id)"
+        (click)="onThumbnail(image)"
+        [attr.aria-label]="
+          (multi ? 'labels.selectImage' : 'labels.useImage') | transloco: { id: image.id }
+        "
+        [title]="image.original_filename"
+      >
+        <!-- A tile, so the small copy when there is one (see the image library). -->
+        <img
+          [src]="imageUrl(image.thumbnail_url || image.url)"
+          [alt]="image.original_filename"
+          loading="lazy"
+        />
+        @if (multi && isSelected(image.id)) {
+          <mat-icon class="tick">check_circle</mat-icon>
+        }
+      </button>
+    } @empty {
+      <span class="note">{{ 'content.noImagesUploadFirst' | transloco }}</span>
+    }
+  </div>
+
+  @if (canLoadMore()) {
+    <button
+      matButton
+      type="button"
+      class="load-more"
+      (click)="loadMore()"
+      [disabled]="loadingMore()"
+    >
+      {{ (loadingMore() ? 'content.loadingMore' : 'content.loadMore') | transloco }}
+    </button>
+  }
+
+  @if (multi) {
+    <div class="picker-actions">
+      <button
+        matButton
+        type="button"
+        class="array-add-selected"
+        [disabled]="selected().length === 0"
+        (click)="addSelected()"
+      >
+        {{
+          (selected().length === 1 ? 'content.addImageOne' : 'content.addImageOther')
+            | transloco: { count: selected().length }
+        }}
+      </button>
+      <button matButton type="button" (click)="close()">
+        {{ 'common.cancel' | transloco }}
+      </button>
+    </div>
+  }
+}

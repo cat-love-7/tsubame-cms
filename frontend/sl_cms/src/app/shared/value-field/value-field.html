@@ -614,64 +614,14 @@
   }
 }
 
-<!-- The library, shared by the single image field and the image array. -->
-@if (pickerOpen()) {
-  <div class="library" [class.multi]="pickerMulti()">
-    @for (image of library(); track image.id) {
-      <button
-        type="button"
-        class="thumb"
-        [class.selected]="isSelected(image.id)"
-        (click)="onThumbnail(image)"
-        [attr.aria-label]="
-          (pickerMulti() ? 'labels.selectImage' : 'labels.useImage') | transloco: { id: image.id }
-        "
-        [title]="image.original_filename"
-      >
-        <!-- A tile, so the small copy when there is one (see the image library). -->
-        <img
-          [src]="imageUrl(image.thumbnail_url || image.url)"
-          [alt]="image.original_filename"
-          loading="lazy"
-        />
-        @if (pickerMulti() && isSelected(image.id)) {
-          <mat-icon class="tick">check_circle</mat-icon>
-        }
-      </button>
-    } @empty {
-      <span class="note">{{ 'content.noImagesUploadFirst' | transloco }}</span>
-    }
-  </div>
-
-  @if (libraryCanLoadMore()) {
-    <button
-      matButton
-      type="button"
-      class="load-more"
-      (click)="loadMoreLibrary()"
-      [disabled]="libraryLoadingMore()"
-    >
-      {{ (libraryLoadingMore() ? 'content.loadingMore' : 'content.loadMore') | transloco }}
-    </button>
-  }
-
-  @if (pickerMulti()) {
-    <div class="picker-actions">
-      <button
-        matButton
-        type="button"
-        class="array-add-selected"
-        [disabled]="selected().length === 0"
-        (click)="addSelectedImages()"
-      >
-        {{
-          (selected().length === 1 ? 'content.addImageOne' : 'content.addImageOther')
-            | transloco: { count: selected().length }
-        }}
-      </button>
-      <button matButton type="button" (click)="closePicker()">
-        {{ 'common.cancel' | transloco }}
-      </button>
-    </div>
-  }
-}
+<!-- The library, shared by the single image field, the image array and the Markdown image
+     button: the picker owns what is only about picking, and this widget decides what a chosen
+     image means. -->
+<app-library-picker
+  [open]="pickerOpen()"
+  [multi]="pickerMulti()"
+  (chosen)="chooseImage($event)"
+  (chosenMany)="addChosenImages($event)"
+  (closed)="closePicker()"
+  (failed)="errorChange.emit($event)"
+/>
