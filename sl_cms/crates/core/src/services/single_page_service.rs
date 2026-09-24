@@ -858,366 +858,29 @@ mod tests {
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
 
-    use crate::models::image::{Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo};
-    use crate::models::schema::{CompositeFieldId, RelationOptions, SchemaSettings};
-    use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
+    use crate::models::schema::{RelationOptions};
+    use crate::models::values::{TextFieldOptions};
     use crate::models::values::{
         FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
     };
-    use crate::repositories::image_repository::Replacement;
-
+    
     use super::*;
+
+    use crate::repositories::memory::MemorySinglePageRepository;
+    use crate::repositories::memory::MemoryCompositeFieldRepository;
+    use crate::repositories::memory::MemoryImageRepository;
     use crate::repositories::content_reader::NoContent;
     use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
 
-    struct MockSinglePageRepository {
-        schemas: Arc<RwLock<HashMap<SinglePageName, SinglePageSchema>>>,
-        items: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
-        page_metadata: Arc<RwLock<HashMap<SinglePageName, ItemMetadata>>>,
-        drafts: Arc<RwLock<HashMap<SinglePageName, SinglePageItem>>>,
-        /// Every whole-record metadata write. A save must not make one: it stamps the record
-        /// through `touch_page_metadata` (see the trait).
-        metadata_writes: Arc<std::sync::atomic::AtomicUsize>,
-    }
-    impl SinglePageRepository for MockSinglePageRepository {
-        async fn get_single_page_schema(
-            &self,
-            name: &SinglePageName,
-        ) -> Result<Option<SinglePageSchema>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.schemas.read().unwrap().get(name).cloned())
-        }
-        async fn list_all_page_names(
-            &self,
-        ) -> Result<Vec<SinglePageName>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.schemas.read().unwrap().keys().cloned().collect())
-        }
-        async fn get_single_page_settings(
-            &self,
-            _page_name: &SinglePageName,
-        ) -> Result<SchemaSettings, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // As in the collection mock: the answer is storage's, and the adapters' suite covers it.
-            Ok(SchemaSettings::default())
-        }
-        async fn set_single_page_settings(
-            &self,
-            _page_name: &SinglePageName,
-            _settings: &SchemaSettings,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-        async fn add_single_page_schema(
-            &self,
-            _single_page_name: &SinglePageName,
-            _schema: &SinglePageSchema,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas
-                .write()
-                .unwrap()
-                .insert(_single_page_name.clone(), _schema.clone());
-            Ok(())
-        }
-        async fn delete_single_page(
-            &self,
-            _single_page_name: &SinglePageName,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas.write().unwrap().remove(_single_page_name);
-            self.page_metadata
-                .write()
-                .unwrap()
-                .remove(_single_page_name);
-            Ok(())
-        }
-        async fn get_single_page_item(
-            &self,
-            single_page_name: &SinglePageName,
-        ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            if let Some(item) = self.items.read().unwrap().get(single_page_name) {
-                Ok(Some(item.clone()))
-            } else {
-                Ok(None)
-            }
-        }
-        async fn update_single_page_item(
-            &self,
-            single_page_name: &SinglePageName,
-            item_data: &SinglePageItem,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.items
-                .write()
-                .unwrap()
-                .insert(single_page_name.clone(), item_data.clone());
-            Ok(())
-        }
-        async fn get_single_page_item_draft(
-            &self,
-            page_name: &SinglePageName,
-        ) -> Result<Option<SinglePageItem>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.drafts.read().unwrap().get(page_name).cloned())
-        }
-        async fn set_single_page_item_draft(
-            &self,
-            page_name: &SinglePageName,
-            item_data: &SinglePageItem,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.drafts
-                .write()
-                .unwrap()
-                .insert(page_name.clone(), item_data.clone());
-            Ok(())
-        }
-        async fn delete_single_page_item_draft(
-            &self,
-            page_name: &SinglePageName,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.drafts.write().unwrap().remove(page_name);
-            Ok(())
-        }
-        async fn get_page_metadata(
-            &self,
-            page_name: &SinglePageName,
-        ) -> Result<Option<ItemMetadata>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.page_metadata.read().unwrap().get(page_name).cloned())
-        }
-        async fn touch_page_metadata(
-            &self,
-            page_name: &SinglePageName,
-            now: chrono::DateTime<chrono::Utc>,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // One lock for the read and the write, as the adapters promise (see
-            // `CollectionRepository::touch_item_metadata`).
-            let mut all = self.page_metadata.write().unwrap();
-            let metadata = all.get(page_name).cloned().unwrap_or_default().touched(now);
-            all.insert(page_name.clone(), metadata);
-            Ok(())
-        }
-        async fn set_page_dates(
-            &self,
-            page_name: &SinglePageName,
-            dates: &ItemDates,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // A patch applied under the one lock, like the adapters.
-            let mut all = self.page_metadata.write().unwrap();
-            let metadata = all
-                .get(page_name)
-                .cloned()
-                .unwrap_or_default()
-                .with_dates(dates);
-            all.insert(page_name.clone(), metadata);
-            Ok(())
-        }
-        async fn set_page_metadata(
-            &self,
-            page_name: &SinglePageName,
-            metadata: &ItemMetadata,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.metadata_writes
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            self.page_metadata
-                .write()
-                .unwrap()
-                .insert(page_name.clone(), metadata.clone());
-            Ok(())
-        }
-        async fn apply_page_status(
-            &self,
-            page_name: &SinglePageName,
-            draft: Option<&SinglePageItem>,
-            metadata: &ItemMetadata,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // Nothing here can fail half-way, so the steps the real adapters combine are done
-            // in a row (see `CollectionRepository::apply_item_status`).
-            if let Some(draft) = draft {
-                self.items
-                    .write()
-                    .unwrap()
-                    .insert(page_name.clone(), draft.clone());
-                self.drafts.write().unwrap().remove(page_name);
-            }
-            self.page_metadata
-                .write()
-                .unwrap()
-                .insert(page_name.clone(), metadata.clone());
-            Ok(())
-        }
-    }
-
-    struct MockCompositeFieldRepository {
-        schemas: Arc<RwLock<HashMap<CompositeFieldId, CompositeFieldSchema>>>,
-    }
-    impl CompositeFieldRepository for MockCompositeFieldRepository {
-        async fn list_composite_field_schemas(
-            &self,
-        ) -> Result<
-            HashMap<CompositeFieldId, CompositeFieldSchema>,
-            Box<dyn std::error::Error + Send + Sync + 'static>,
-        > {
-            Ok(self.schemas.read().unwrap().clone())
-        }
-        async fn get_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-        ) -> Result<Option<CompositeFieldSchema>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.schemas.read().unwrap().get(id).cloned())
-        }
-        async fn add_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-            schema: &CompositeFieldSchema,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas
-                .write()
-                .unwrap()
-                .insert(id.clone(), schema.clone());
-            Ok(())
-        }
-        async fn delete_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas.write().unwrap().remove(id);
-            Ok(())
-        }
-    }
-
-    /// The image store a service test needs: what exists, and which file each record names.
-    ///
-    /// `image_file_name` answers from `file_names` rather than from the URLs this double invents,
-    /// which is the same rule the adapters follow: the file name is a fact about the record, not
-    /// something to be read back out of however the image happens to be served.
-    #[derive(Default)]
-    struct MockImageRepository {
-        file_names: std::sync::RwLock<std::collections::HashMap<ImageId, String>>,
-    }
-    impl ImageRepository for MockImageRepository {
-        async fn get_image(
-            &self,
-            id: &ImageId,
-        ) -> Result<Option<Image>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(Some(Image {
-                original_filename: format!("image_{}.jpg", id),
-                url: format!("/images/{}", id),
-                thumbnail_url: None,
-                uploaded_at: chrono::Utc::now(),
-                deleted_at: None,
-            }))
-        }
-        async fn list_images(
-            &self,
-        ) -> Result<Vec<(ImageId, Image)>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(vec![])
-        }
-        async fn generate_image_upload_url(
-            &self,
-            _upload_info: &NewImageRequest,
-        ) -> Result<NewImageInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(NewImageInfo {
-                id: ImageId::from_u64(1),
-                upload_url: "/upload/1".to_string(),
-                url: "/images/1".to_string(),
-            })
-        }
-        async fn generate_replacement_upload_url(
-            &self,
-            _id: &ImageId,
-            request: &crate::models::image::ReplaceImageRequest,
-        ) -> Result<ReplacementInfo, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            let ext = request.ext.as_str();
-            Ok(ReplacementInfo {
-                file_name: format!("replacement.{ext}"),
-                upload_url: "/upload/replacement".to_string(),
-            })
-        }
-        async fn set_image_thumbnail(
-            &self,
-            _id: &ImageId,
-            _ext: &str,
-            _data: &[u8],
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // The bytes are storage's business, and nothing this service decides depends on them.
-            Ok(())
-        }
-        async fn image_bytes_exist(
-            &self,
-            _file_name: &str,
-        ) -> Result<bool, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(true)
-        }
-        async fn replace_image(
-            &self,
-            _id: &ImageId,
-            _file_name: &str,
-        ) -> Result<Replacement, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            // These tests never go through a replacement; answering `Applied` keeps the double
-            // out of the way of the content they are about.
-            Ok(Replacement::Applied)
-        }
-        async fn rename_image(
-            &self,
-            _id: &ImageId,
-            _original_filename: &str,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-        async fn set_image_uploaded_at(
-            &self,
-            _id: &ImageId,
-            _uploaded_at: chrono::DateTime<chrono::Utc>,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-        async fn delete_image(
-            &self,
-            _id: &ImageId,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-        async fn image_file_name(
-            &self,
-            id: &ImageId,
-        ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(self.file_names.read().unwrap().get(id).cloned())
-        }
-
-        async fn set_image_references(
-            &self,
-            _owner: &crate::models::owner::ItemOwner,
-            _images: &[ImageId],
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-        async fn get_image_references(
-            &self,
-            _id: &ImageId,
-        ) -> Result<
-            Vec<crate::models::owner::ItemOwner>,
-            Box<dyn std::error::Error + Send + Sync + 'static>,
-        > {
-            Ok(Vec::new())
-        }
-        async fn set_image_deleted_at(
-            &self,
-            _id: &ImageId,
-            _at: Option<chrono::DateTime<chrono::Utc>>,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            Ok(())
-        }
-    }
 
     // Test helper functions
     fn create_test_service() -> SinglePageService<
-        MockSinglePageRepository,
-        MockCompositeFieldRepository,
-        MockImageRepository,
+        MemorySinglePageRepository,
+        MemoryCompositeFieldRepository,
+        MemoryImageRepository,
     > {
         create_test_service_with_targets(Vec::new())
     }
@@ -1226,21 +889,21 @@ mod tests {
     fn create_test_service_with_targets(
         targets: Vec<RelationTarget>,
     ) -> SinglePageService<
-        MockSinglePageRepository,
-        MockCompositeFieldRepository,
-        MockImageRepository,
+        MemorySinglePageRepository,
+        MemoryCompositeFieldRepository,
+        MemoryImageRepository,
     > {
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository::default();
+        let image_repository = MemoryImageRepository::default();
         SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
@@ -1270,17 +933,17 @@ mod tests {
         let notifier = Arc::new(RecordingNotifier::default());
         let mut schemas = HashMap::new();
         schemas.insert("home".into(), create_test_schema());
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository::default();
+        let image_repository = MemoryImageRepository::default();
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
@@ -1636,17 +1299,17 @@ mod tests {
     async fn create_single_page_item_success() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository::default();
+        let image_repository = MemoryImageRepository::default();
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
@@ -1672,7 +1335,7 @@ mod tests {
     async fn a_page_save_stamps_the_metadata_without_writing_it_back() {
         use crate::models::item_status::ItemStatus;
 
-        let repository = Arc::new(MockSinglePageRepository {
+        let repository = Arc::new(MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(HashMap::from([(
                 "home".into(),
                 create_test_schema(),
@@ -1691,10 +1354,10 @@ mod tests {
         });
         let service = SinglePageService::new(
             repository.clone(),
-            Arc::new(MockCompositeFieldRepository {
+            Arc::new(MemoryCompositeFieldRepository {
                 schemas: Arc::new(RwLock::new(HashMap::new())),
             }),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),
@@ -1751,17 +1414,17 @@ mod tests {
     async fn a_page_working_copy_may_be_missing_a_required_field() {
         let mut schemas = HashMap::new();
         schemas.insert("test_composite".into(), create_test_schema());
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository::default();
+        let image_repository = MemoryImageRepository::default();
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
@@ -1792,17 +1455,17 @@ mod tests {
         schemas.insert("test_schema".into(), create_test_schema());
         let mut items = HashMap::new();
         items.insert("test_schema".into(), create_test_item("Sample Title", 10.0));
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
-        let image_repository = MockImageRepository::default();
+        let image_repository = MemoryImageRepository::default();
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
@@ -1825,20 +1488,20 @@ mod tests {
     async fn get_single_page_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_schema".into(), create_test_schema());
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),
@@ -1875,20 +1538,20 @@ mod tests {
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();
         items.insert("test_page".into(), create_test_item("Original Title", 10.0));
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),
@@ -1914,20 +1577,20 @@ mod tests {
     async fn update_single_page_item_not_found() {
         let mut schemas = HashMap::new();
         schemas.insert("test_page".into(), create_test_schema());
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(HashMap::new())),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),
@@ -1970,20 +1633,20 @@ mod tests {
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();
         items.insert("test_page".into(), create_test_item("Original Title", 10.0));
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),
@@ -2010,20 +1673,20 @@ mod tests {
         schemas.insert("test_page".into(), create_test_schema());
         let mut items = HashMap::new();
         items.insert("test_page".into(), create_test_item("Sample Title", 10.0));
-        let single_page_repository = MockSinglePageRepository {
+        let single_page_repository = MemorySinglePageRepository {
             schemas: Arc::new(RwLock::new(schemas)),
             items: Arc::new(RwLock::new(items)),
             page_metadata: Arc::new(RwLock::new(HashMap::new())),
             metadata_writes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             drafts: Arc::new(RwLock::new(HashMap::new())),
         };
-        let composite_field_repository = MockCompositeFieldRepository {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         let service = SinglePageService::new(
             Arc::new(single_page_repository),
             Arc::new(composite_field_repository),
-            Arc::new(MockImageRepository::default()),
+            Arc::new(MemoryImageRepository::default()),
             Arc::new(StaticRelationTargets::none()),
             Arc::new(NoRelations),
             Arc::new(NoContent),

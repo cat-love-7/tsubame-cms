@@ -9,3 +9,7 @@ pub mod relation_rules;
 pub mod relation_targets;
 pub mod single_page_repository;
 pub mod user_repository;
+
+/// In-memory storage, for the service tests (see the module for why it is shared).
+#[cfg(test)]
+pub mod memory;

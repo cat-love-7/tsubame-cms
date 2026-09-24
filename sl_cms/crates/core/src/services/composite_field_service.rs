@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::schema::{
-    CompositeFieldId, RelationTarget, SchemaScope, referenced_relation_targets,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, referenced_relation_targets,
     validate_composite_references, validate_no_composite_cycles, validate_relation_targets,
     validate_schema,
 };
-use crate::models::values::{CompositeFieldSchema, FieldSchema};
+use crate::models::values::{FieldSchema};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
 
@@ -181,61 +181,25 @@ mod tests {
     use std::sync::{Arc, RwLock};
     use std::vec;
 
-    use crate::models::values::{CompositeFieldSchema, TextFieldOptions};
+    use crate::models::values::{TextFieldOptions};
     use crate::models::values::{FieldSchema, FieldType, RelationOptions};
     use crate::repositories::relation_targets::StaticRelationTargets;
 
     use super::*;
 
-    struct MockCompositeFieldRepository {
-        schemas: Arc<RwLock<HashMap<CompositeFieldId, CompositeFieldSchema>>>,
-    }
-    impl CompositeFieldRepository for MockCompositeFieldRepository {
-        async fn list_composite_field_schemas(
-            &self,
-        ) -> Result<
-            HashMap<CompositeFieldId, CompositeFieldSchema>,
-            Box<dyn std::error::Error + Send + Sync + 'static>,
-        > {
-            Ok(self.schemas.read().unwrap().clone())
-        }
-        async fn get_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-        ) -> Result<Option<CompositeFieldSchema>, Box<dyn std::error::Error + Send + Sync + 'static>>
-        {
-            Ok(self.schemas.read().unwrap().get(id).cloned())
-        }
-        async fn add_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-            schema: &CompositeFieldSchema,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas
-                .write()
-                .unwrap()
-                .insert(id.clone(), schema.clone());
-            Ok(())
-        }
-        async fn delete_composite_field_schema(
-            &self,
-            id: &CompositeFieldId,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-            self.schemas.write().unwrap().remove(id);
-            Ok(())
-        }
-    }
+    use crate::repositories::memory::MemoryCompositeFieldRepository;
+
 
     // Test helper functions
-    fn create_test_service() -> CompositeFieldService<MockCompositeFieldRepository> {
+    fn create_test_service() -> CompositeFieldService<MemoryCompositeFieldRepository> {
         create_test_service_over(Vec::new())
     }
 
     /// The same, for a site that has something a relation could point at.
     fn create_test_service_over(
         targets: Vec<RelationTarget>,
-    ) -> CompositeFieldService<MockCompositeFieldRepository> {
-        let composite_field_repository = MockCompositeFieldRepository {
+    ) -> CompositeFieldService<MemoryCompositeFieldRepository> {
+        let composite_field_repository = MemoryCompositeFieldRepository {
             schemas: Arc::new(RwLock::new(HashMap::new())),
         };
         CompositeFieldService::new(
