@@ -13,6 +13,7 @@ import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { TypedFixture } from 'app/core/testing/fixture';
 import { ImageField } from 'app/shared/image-field/image-field';
+import { RelationField } from 'app/shared/relation-field/relation-field';
 import { ValueField } from './value-field';
 
 function field(
@@ -621,107 +622,9 @@ describe('ValueField', () => {
     expect(values.at(-1)).toEqual([]);
   });
 
-  // A relation is a set of references, so it is array-shaped too - but what an element may hold
-  // comes from the field's own target, not from array item types.
-  it('edits a relation as the references its target accepts', () => {
-    const component = create(
-      field('authors', { Relation: { target: { kind: 'collection', name: 'authors' } } }),
-      [{ target: 'authors', item: 1 }],
-    );
-    const values: FieldValue[] = [];
-    const errors: (Message | null)[] = [];
-    component.valueChange.subscribe((value) => values.push(value));
-    component.errorChange.subscribe((error) => errors.push(error));
-
-    // Seeded from the value the server sent, so a load-then-save keeps what was there.
-    expect(component.arrayText).toBe('[{"target":"authors","item":1}]');
-    expect(component.kind()).toBe('Relation');
-
-    component.onArrayTextChange('[{"target":"categories","item":1}]');
-    expect(errors.at(-1)).toEqual(
-      t('content.relationTargetMismatch', { field: 'authors[0]', target: 'authors' }),
-    );
-    expect(values).toHaveLength(0);
-
-    component.onArrayTextChange('[{"target":"authors"}]');
-    expect(errors.at(-1)).toEqual(t('content.relationItemId', { field: 'authors[0]' }));
-
-    component.onArrayTextChange('[{"item":1}]');
-    expect(errors.at(-1)).toEqual(
-      t('content.relationTargetMismatch', { field: 'authors[0]', target: 'authors' }),
-    );
-
-    component.onArrayTextChange('["authors"]');
-    expect(errors.at(-1)).toEqual(t('content.relationShape', { field: 'authors[0]' }));
-
-    component.onArrayTextChange('[{"target":"authors","item":2}]');
-    expect(errors.at(-1)).toBeNull();
-    expect(values).toEqual([[{ target: 'authors', item: 2 }]]);
-  });
-
-  it('holds one reference unless the field asks for several', () => {
-    const single = create(
-      field('author', {
-        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
-      }),
-    );
-    const singleErrors: (Message | null)[] = [];
-    single.errorChange.subscribe((error) => singleErrors.push(error));
-
-    single.onArrayTextChange('[{"target":"authors","item":1},{"target":"authors","item":2}]');
-    expect(singleErrors.at(-1)).toEqual(t('content.relationSingle', { field: 'author' }));
-    // Nothing is emitted, so the parent keeps the value it had.
-    expect(single.value).toBeNull();
-
-    const many = create(
-      field('authors', {
-        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
-      }),
-    );
-    many.onArrayTextChange('[{"target":"authors","item":1},{"target":"authors","item":2}]');
-    expect(many.value).toEqual([
-      { target: 'authors', item: 1 },
-      { target: 'authors', item: 2 },
-    ]);
-  });
-
-  // The box edits the references, and the screen says which items they are: an id says nothing to
-  // a reader, and the target's schema is what names an item.
-  it('says what the references it holds are called', async () => {
-    const http = TestBed.inject(HttpTestingController);
-    const component = create(
-      field('category', { Relation: { target: { kind: 'collection', name: 'categories' } } }),
-      [
-        { target: 'categories', item: 3 },
-        { target: 'categories', item: 9 },
-      ],
-    );
-    await fixture.whenStable();
-
-    http
-      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
-      .flush({ 3: '技術' });
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    // The chips are the value, and they read as the item: the reference the target cannot name
-    // keeps the reference, which is all that is knowable about it.
-    const chips = Array.from(
-      fixture.nativeElement.querySelectorAll<HTMLElement>('mat-chip-row .reference-label'),
-      (chip: HTMLElement) => chip.textContent?.trim(),
-    );
-    expect(chips).toEqual(['技術', 'categories #9']);
-
-    // The JSON box says the names too, for an author working in it.
-    component.jsonMode.set(true);
-    fixture.detectChanges();
-    expect(component.referenceNames()).toEqual(['技術']);
-    expect(fixture.nativeElement.textContent).toContain('References: 技術');
-  });
-
-  // A relation may live inside a composite definition. The sub-field is edited by this same
-  // component, so the chips and the picker come with it, and choosing there is choosing for the
-  // composite that holds it.
+  // A relation may live inside a composite definition. The sub-field is edited by a widget of its
+  // own, which the nested editor brings with it, so choosing there is choosing for the composite
+  // that holds it.
   it('edits a relation that lives inside a composite', async () => {
     const http = TestBed.inject(HttpTestingController);
     const component = create(field('cta', { CompositeField: { id: 'cta' } }), {
@@ -742,7 +645,9 @@ describe('ValueField', () => {
     const nested = fixture.debugElement.queryAll(By.directive(ValueField)).at(-1)
       ?.componentInstance as ValueField;
     expect(nested.kind()).toBe('Relation');
-    expect(nested.relationRefs()).toEqual([{ target: 'authors', item: 1 }]);
+    const relation = fixture.debugElement.queryAll(By.directive(RelationField)).at(-1)
+      ?.componentInstance as RelationField;
+    expect(relation.value).toEqual([{ target: 'authors', item: 1 }]);
     expect(query('fieldset.composite button.relation-add')).toBeTruthy();
     const chips = Array.from(
       fixture.nativeElement.querySelectorAll<HTMLElement>(
@@ -753,7 +658,7 @@ describe('ValueField', () => {
     expect(chips).toEqual(['Ada']);
 
     // A set, so it grows; the emitted value is the whole composite, not the nested field alone.
-    nested.toggleReference({ target: 'authors', item: 2 });
+    relation.toggleReference({ target: 'authors', item: 2 });
     expect(emitted.at(-1)).toEqual({
       author: [
         { target: 'authors', item: 1 },
@@ -762,60 +667,20 @@ describe('ValueField', () => {
     });
   });
 
-  // A relation is a list now: the order is what a site shows, so it can be changed from the chips
-  // and the change is a change to the value.
-  it('moves a reference, and only when there is more than one', () => {
-    const many = create(
-      field('authors', {
-        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
-      }),
-      [
-        { target: 'authors', item: 1 },
-        { target: 'authors', item: 2 },
-        { target: 'authors', item: 3 },
-      ],
-    );
-    const emitted: FieldValue[] = [];
-    many.valueChange.subscribe((value) => emitted.push(value));
-
-    many.moveReference(2, -1);
-    expect(emitted.at(-1)).toEqual([
-      { target: 'authors', item: 1 },
-      { target: 'authors', item: 3 },
-      { target: 'authors', item: 2 },
-    ]);
-    // Off the end is nothing to do, not a wrap-around.
-    many.moveReference(0, -1);
-    expect(emitted).toHaveLength(1);
-
-    // One reference has no order to change, so the controls are not offered.
-    create(
-      field('author', {
-        Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
-      }),
+  // The relation widget has specs of its own; what matters here is that this component renders it
+  // and passes the value on, the way it does for every other kind.
+  it('hands a relation value to the relation field', () => {
+    const component = create(
+      field('authors', { Relation: { target: { kind: 'collection', name: 'authors' } } }),
       [{ target: 'authors', item: 1 }],
     );
-    expect(fixture.nativeElement.querySelector('button[aria-label*="move reference"]')).toBeFalsy();
-  });
+    const relation = fixture.debugElement.query(By.directive(RelationField))
+      ?.componentInstance as RelationField;
 
-  it('names a page reference without an item id', () => {
-    const component = create(
-      field('landing', { Relation: { target: { kind: 'single_page', name: 'home' } } }),
-      [{ target: 'home' }],
-    );
-    const errors: (Message | null)[] = [];
-    component.errorChange.subscribe((error) => errors.push(error));
+    expect(relation?.value).toEqual([{ target: 'authors', item: 1 }]);
 
-    expect(component.arrayText).toBe('[{"target":"home"}]');
-    expect(component.relationHint()?.key).toBe('content.relationJsonHintPage');
-
-    // A page has no id, so one sent anyway is a value the schema has nowhere to keep.
-    component.onArrayTextChange('[{"target":"home","item":1}]');
-    expect(errors.at(-1)).toEqual(t('content.relationPageHasNoItem', { field: 'landing[0]' }));
-
-    component.onArrayTextChange('[{"target":"home"}]');
-    expect(errors.at(-1)).toBeNull();
-    expect(component.value).toEqual([{ target: 'home' }]);
+    relation?.valueChange.emit([{ target: 'authors', item: 2 }]);
+    expect(component.value).toEqual([{ target: 'authors', item: 2 }]);
   });
 
   it('converts date-times between local input and RFC 3339', () => {

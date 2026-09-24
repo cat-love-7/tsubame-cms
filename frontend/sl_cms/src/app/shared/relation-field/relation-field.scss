@@ -1,0 +1,22 @@
+// A relation: the chips that are the value, and the JSON box behind the toggle.
+
+/// The chips hold small controls (the two arrows and the remove button), and Material's icon
+/// button carries a 48px touch target - which overflows a chip and turns it into a scroll area,
+/// so every chip grew a scrollbar. The touch target is what has to go; the buttons stay tappable
+/// at the chip's own height.
+.relation-field mat-chip-row {
+  --mat-icon-button-touch-target-display: none;
+  --mat-icon-button-state-layer-size: 24px;
+
+  /* One flex row of our own: the controls and the name are centred against each other here, so
+   * the name's place does not depend on how Material's chip row aligns its items. */
+  .reference-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+}
+
+.full-width {
+  width: 100%;
+}

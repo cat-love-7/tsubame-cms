@@ -1,7 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
-  DestroyRef,
   EventEmitter,
   Input,
   OnChanges,
@@ -14,14 +13,12 @@ import {
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { TranslocoPipe } from '@jsverse/transloco';
 import { concatMap, from, toArray } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
@@ -32,29 +29,19 @@ import { fieldCellStyle } from 'app/core/field-layout';
 import { Message, failure, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
-  RelationTarget,
   TextFieldOptions,
   isArrayFieldSchema,
   isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
-  isRelationFieldSchema,
   isSlugFieldSchema,
   isTextFieldSchema,
 } from 'app/models/schema/fields';
 import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
 import { ContentValue } from 'app/models/values/single-page';
 
-import {
-  FieldValue,
-  RelationRef,
-  referenceKey,
-  referenceName,
-  relationRefsOf,
-  withDefaults,
-} from 'app/models/values/fields';
-import { RelationLabelsService } from 'app/services/relations/relation-labels.service';
-import { RelationPicker } from 'app/shared/relation-picker/relation-picker';
+import { FieldValue, withDefaults } from 'app/models/values/fields';
+import { RelationField } from 'app/shared/relation-field/relation-field';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { ImagesService } from 'app/services/media/images.service';
@@ -91,8 +78,7 @@ let nextValueFieldId = 0;
 @Component({
   selector: 'app-value-field',
   imports: [
-    RelationPicker,
-    MatChipsModule,
+    RelationField,
     MatTooltipModule,
     FormsModule,
     MatButtonModule,
@@ -143,11 +129,7 @@ export class ValueField implements OnInit, OnChanges {
   public readonly labelId = `value-field-${(nextValueFieldId += 1)}`;
 
   private images = inject(ImagesService);
-  /** The wording of the placeholders and prompts the Markdown buttons put up. */
-  private i18n = inject(TranslocoService);
   private compositeFields = inject(CompositeFieldsService);
-  private relationLabels = inject(RelationLabelsService);
-  private destroyRef = inject(DestroyRef);
 
   public uploading = signal(false);
   /** JSON buffer for Array fields, which are edited as raw JSON. */
@@ -187,7 +169,6 @@ export class ValueField implements OnInit, OnChanges {
   private subErrors: { [field: string]: Message } = {};
 
   ngOnInit() {
-    this.loadReferenceNames(this.value);
     this.syncArrayBuffer();
     this.loadDefinitions();
     this.syncElements();
@@ -201,7 +182,6 @@ export class ValueField implements OnInit, OnChanges {
       this.syncElements();
     } else if (changes['value']) {
       this.reportTextLength(this.value);
-      this.loadReferenceNames(this.value);
       this.syncArrayBuffer();
       this.syncCompositeValues();
       this.syncElements();
@@ -427,7 +407,6 @@ export class ValueField implements OnInit, OnChanges {
     this.lastEmitted = value;
     this.valueChange.emit(value);
     this.reportTextLength(value);
-    this.loadReferenceNames(value);
   }
 
   /**
@@ -531,16 +510,6 @@ export class ValueField implements OnInit, OnChanges {
       this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
       return;
     }
-    // A relation is a set of references, so it is array-shaped too - but what an element may hold
-    // is what its own target says, not the array item types.
-    if (isRelationFieldSchema(this.field.field_type)) {
-      const problem = this.relationProblem(parsed);
-      this.errorChange.emit(problem);
-      if (problem === null) {
-        this.update(parsed as FieldValue);
-      }
-      return;
-    }
     // The declared item types are what the array accepts, so an item none of them could read is
     // reported here rather than by the server after the whole form has been sent.
     const unsuitable = parsed.findIndex((item) => !this.itemFitsDeclaredTypes(item));
@@ -555,188 +524,6 @@ export class ValueField implements OnInit, OnChanges {
     }
     this.errorChange.emit(null);
     this.update(parsed as FieldValue);
-  }
-
-  /**
-   * The names of the references this field holds, when the target's schema names them.
-   *
-   * The box edits the references themselves, so this is what tells an editor what they just wrote:
-   * `categories #3` is a reference, and `技術` is the item it points at.
-   */
-  public referenceNames = signal<string[]>([]);
-
-  /** Whether the reference picker is open under this field. */
-  public relationPickerOpen = signal(false);
-
-  /** What this relation points at, as the picker wants it. */
-  public relationTarget(): RelationTarget | null {
-    const type = this.field.field_type;
-    return isRelationFieldSchema(type) ? type.Relation.target : null;
-  }
-
-  /** The labels the target's schema answered, by reference. */
-  private labels = signal<ReadonlyMap<string, string>>(new Map());
-
-  /**
-   * The references this field holds, as a set.
-   *
-   * Read from the value rather than kept beside it: the chips, the picker and the JSON box all edit
-   * the one value, and a second copy is how the two drift apart.
-   */
-  public relationRefs(): RelationRef[] {
-    return relationRefsOf(this.value);
-  }
-
-  /** Whether this field holds one reference, which is what a pick replaces rather than adds to. */
-  public relationIsSingle(): boolean {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
-      return true;
-    }
-    return type.Relation.target.kind === 'single_page' || !type.Relation.has_many;
-  }
-
-  /**
-   * Add the reference the picker chose, or take it away when it was already there.
-   *
-   * A set: the order does not matter, and clicking what is picked is how it is unpicked. A single
-   * reference replaces what it held rather than refusing the pick - the picker has already said
-   * which one it wants.
-   */
-  public toggleReference(reference: RelationRef) {
-    const refs = this.relationRefs();
-    const key = referenceKey(reference);
-    const without = refs.filter((candidate) => referenceKey(candidate) !== key);
-    const alreadyPicked = refs.length !== without.length;
-    const next = alreadyPicked
-      ? without
-      : this.relationIsSingle()
-        ? [reference]
-        : [...without, reference];
-    this.errorChange.emit(null);
-    this.update(next);
-  }
-
-  /**
-   * Move a reference one place.
-   *
-   * The order is the value: a site showing "featured articles" shows them in the order the editor
-   * put them in, so this is a change to the value like any other - and the index does not care
-   * (it holds a set of references), so nothing else has to move.
-   */
-  public moveReference(index: number, delta: number) {
-    const references = [...this.relationRefs()];
-    const target = index + delta;
-    if (target < 0 || target >= references.length) {
-      return;
-    }
-    [references[index], references[target]] = [references[target], references[index]];
-    this.errorChange.emit(null);
-    this.update(references);
-  }
-
-  /** The key a reference is tracked by, exposed for the template. */
-  public referenceKey = referenceKey;
-
-  /** What to call a reference in a chip: the target's title, or the reference itself. */
-  public referenceLabel(reference: RelationRef): string {
-    return referenceName(reference, this.labels());
-  }
-
-  /**
-   * Ask what this field's references are called.
-   *
-   * Of the value as it is now, not of what was loaded: an editor who has just typed a reference
-   * should see it named, not wait for the next save.
-   */
-  private loadReferenceNames(value: FieldValue) {
-    const references = relationRefsOf(value);
-    if (references.length === 0) {
-      this.referenceNames.set([]);
-      return;
-    }
-    this.relationLabels
-      .labelsFor(references)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (labels: Map<string, string>) => {
-          this.labels.set(labels);
-          // Only what the target's schema names is worth a hint: the box already says the rest (and
-          // a chip says the reference itself when there is no name).
-          const named = references
-            .map((reference) => referenceName(reference, labels))
-            .filter((name, index) => labels.has(referenceKey(references[index])));
-          this.referenceNames.set(named);
-        },
-        // A name that cannot be fetched leaves the box as it was: the references are right there.
-        error: () => {
-          this.labels.set(new Map());
-          this.referenceNames.set([]);
-        },
-      });
-  }
-
-  /**
-   * The wording a relation's JSON box carries: which key, and what to fill in.
-   *
-   * Three wordings rather than one with flags: whether it holds one or several, and whether the
-   * target is a page (which has no id), are each a different sentence.
-   */
-  relationHint(): { key: string; params: Record<string, unknown> } | null {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
-      return null;
-    }
-    const { target, has_many } = type.Relation;
-    const key =
-      target.kind === 'single_page'
-        ? 'content.relationJsonHintPage'
-        : has_many
-          ? 'content.relationJsonHintMany'
-          : 'content.relationJsonHintOne';
-    return { key, params: { target: target.name } };
-  }
-
-  /**
-   * What is wrong with a relation's references, or null when the server would take them.
-   *
-   * The same rules the server applies (`FieldValue::from_untyped` and the schema save): every
-   * reference names this field's target, a collection reference carries the id of an item, a page
-   * reference carries no id, and a single reference holds at most one. Saying so here means the
-   * reader is told in their own language while still looking at the box, rather than by a 400
-   * after the whole form has been sent.
-   */
-  private relationProblem(refs: unknown[]): Message | null {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
-      return null;
-    }
-    const { target, has_many } = type.Relation;
-    // A page is one item, and a single reference holds one: the server calls either "one".
-    if ((target.kind === 'single_page' || !has_many) && refs.length > 1) {
-      return t('content.relationSingle', { field: this.field.name });
-    }
-    for (const [index, ref] of refs.entries()) {
-      const field = `${this.field.name}[${index}]`;
-      if (ref === null || typeof ref !== 'object' || Array.isArray(ref)) {
-        return t('content.relationShape', { field });
-      }
-      const record = ref as { target?: unknown; item?: unknown };
-      if (record.target !== target.name) {
-        return t('content.relationTargetMismatch', { field, target: target.name });
-      }
-      if (target.kind === 'single_page') {
-        if (record.item !== undefined && record.item !== null) {
-          return t('content.relationPageHasNoItem', { field });
-        }
-        continue;
-      }
-      const item = record.item;
-      if (typeof item !== 'number' || !Number.isInteger(item) || item < 1) {
-        return t('content.relationItemId', { field });
-      }
-    }
-    return null;
   }
 
   setCompositeValue(subField: FieldSchema, value: FieldValue) {
@@ -1078,7 +865,7 @@ export class ValueField implements OnInit, OnChanges {
 
   private syncArrayBuffer() {
     const type = this.field.field_type;
-    if (!isArrayFieldSchema(type) && !isRelationFieldSchema(type)) {
+    if (!isArrayFieldSchema(type)) {
       return;
     }
     // Our own emission comes straight back as `value`; re-seeding then would fight the
