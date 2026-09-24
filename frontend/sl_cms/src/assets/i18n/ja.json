@@ -231,7 +231,6 @@
     "failedToLoadImages": "画像を読み込めませんでした: {{message}}",
     "failedToLoadSchema": "スキーマを読み込めませんでした: {{message}}",
     "failedToLoadPages": "ページ一覧を読み込めませんでした: {{message}}",
-    "failedToLoadItem": "アイテムを読み込めませんでした: {{message}}",
     "failedToLoadItems": "アイテムを読み込めませんでした: {{message}}",
     "failedToLoadContent": "内容を読み込めませんでした: {{message}}",
     "failedToLoadPublishedState": "公開状態を読み込めませんでした: {{message}}",

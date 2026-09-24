@@ -1,42 +1,41 @@
-import { Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  HostListener,
+  WritableSignal,
+  computed,
+  inject,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
+import { map } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
 import { CapabilitiesService } from 'app/core/capabilities/capabilities.service';
 import { fieldCellStyle } from 'app/core/field-layout';
 import { HasUnsavedChanges } from 'app/core/unsaved-changes.guard';
-import { fingerprint } from 'app/core/value-changes';
 import { DateTimeFormat } from 'app/core/i18n/date-format';
-import { Message, MessagePipe, failure, fieldOf, t } from 'app/core/i18n/message';
-import { ItemMetadata } from 'app/models/item-status';
-import { PreviewLink } from 'app/models/links';
-import { CollectionSchema } from 'app/models/schema/collection';
+import { Message, MessagePipe } from 'app/core/i18n/message';
 import { FieldSchema } from 'app/models/schema/fields';
-import { ContentValue } from 'app/models/values/single-page';
-
-import { FieldValue, withDefaults } from 'app/models/values/fields';
+import { FieldValue } from 'app/models/values/fields';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
-import { copyToClipboard, previewSiteUrl } from 'app/shared/share-link';
 import { RelationReferences } from 'app/shared/relation-references/relation-references';
 import { ValueField } from 'app/shared/value-field/value-field';
 import { NoticeToast } from 'app/shared/notice-toast/notice-toast';
 
-/** The page a request was started for (see the collection item editor). */
-interface StartedPage {
-  name: string;
-  generation: number;
-}
+import { ContentEditor, ContentSource } from '../../shared/content-editor/content-editor';
 
 /**
  * Edit the content of one single page.
  *
- * A single page has exactly one item, so there is no list and no create/delete here —
- * only the form. It shares `ValueField` and the layout grid with the collection editor,
- * and publishing is a separate act from saving just as it is for a collection item.
+ * A single page has exactly one item, so there is no list and no create/delete here — only the
+ * form. The screen itself is thin: everything it does to the content (load it, save it, publish
+ * it, compare it with what is live, discard the working copy, mint a preview link) is
+ * [`ContentEditor`], which the collection item editor uses too. What is here is what makes this a
+ * *page*: the name in the address, and which service the acts go to.
  */
 @Component({
   selector: 'app-single-page-edit',
@@ -55,482 +54,137 @@ interface StartedPage {
 })
 export class SinglePageEdit implements HasUnsavedChanges {
   private route = inject(ActivatedRoute);
-  /** When this screen goes away, so does everything it still has in flight (see the constructor). */
   private destroyRef = inject(DestroyRef);
-  /** Asked for the wording of the questions this screen puts to the editor (see `discardChanges`). */
-  private i18n = inject(TranslocoService);
   private pages = inject(SinglePagesService);
+  private i18n = inject(TranslocoService);
   private capabilities = inject(CapabilitiesService);
   private dates = inject(DateTimeFormat);
   /** A read-only account sees the form but cannot change it. */
   public auth = inject(AuthService);
 
   /**
+   * The screen's own acts and state, over this page.
+   *
+   * The source reads the page name when it is *called* rather than capturing it, so a switch that
+   * happens while a request is in flight is what the answer is judged against.
+   */
+  private readonly editor = new ContentEditor(
+    {
+      address: () => this.pageName(),
+      // A page exists as soon as it has a schema, so a save never creates one and there is no
+      // `create` here (see `ContentSource.exists`).
+      exists: () => true,
+      update: (values) => this.pages.updatePageItem(this.pageName(), values),
+      loadSchema: () => this.pages.getPageSchema(this.pageName()),
+      loadValues: () => this.pages.getPageItem(this.pageName()),
+      loadMetadata: () => this.pages.getPageMetadata(this.pageName()),
+      loadPublishedValues: () => this.pages.getPublishedPageItem(this.pageName()),
+      loadPreviewAllowed: () =>
+        this.pages.getPageSettings(this.pageName()).pipe(map((settings) => settings.preview)),
+      setPublished: (published) =>
+        published
+          ? this.pages.publishPage(this.pageName())
+          : this.pages.unpublishPage(this.pageName()),
+      discardDraft: () => this.pages.discardPageDraft(this.pageName()),
+      createPreviewLink: () => this.pages.createPreviewLink(this.pageName()),
+    } satisfies ContentSource,
+    {
+      i18n: this.i18n,
+      capabilities: this.capabilities,
+      dates: this.dates,
+      destroyRef: this.destroyRef,
+    },
+  );
+
+  /**
    * The page being edited.
    *
-   * A signal, and read from the parameter stream rather than once: the sidebar switches pages
-   * without leaving this route, and the router reuses the component, so a parameter read at
-   * construction would leave the previous page on screen.
+   * The editor's own signal, exposed under the name this screen and its template use. The sidebar
+   * switches pages without leaving this route and the router reuses the component, so the name is
+   * read from the parameter stream in the constructor rather than once here.
    */
-  public pageName = signal('');
-  /** Signals, for the reason given in the collection item editor: both arrive from
-   * asynchronous loads that would otherwise trip the dev-mode change check. */
-  public schema = signal<CollectionSchema>([]);
-  public values = signal<ContentValue>({});
-  /** The failure to show, as a key or as the server's own words. */
-  public error = signal<Message | null>(null);
-  /** The field the last refusal was about, so the form can mark that one input. */
-  public problemField = signal<string | null>(null);
-  public metadata = signal<ItemMetadata | null>(null);
-  public published = computed(() => this.metadata()?.status === 'published');
-  /** A published page with an unpublished working copy: the site is behind the editor. */
-  public hasDraft = computed(() => this.metadata()?.has_draft ?? false);
+  public pageName: WritableSignal<string> = this.editor.name;
+  public schema = this.editor.schema;
+  public values = this.editor.values;
+  public error = this.editor.error;
+  public problemField = this.editor.problemField;
+  public metadata = this.editor.metadata;
+  public published = this.editor.published;
+  public hasDraft = this.editor.hasDraft;
+  public loaded = this.editor.loaded;
+  public unsavedChanges = this.editor.unsavedChanges;
+  public previewAllowed = this.editor.previewAllowed;
+  public previewUrl = this.editor.previewUrl;
+  public notice = this.editor.notice;
+  public publishedValues = this.editor.publishedValues;
+  public comparing = this.editor.comparing;
+  public changedFields = this.editor.changedFields;
 
-  /** What the form held when it was last in step with the server (see the collection editor). */
-  private saved = signal('');
-  /**
-   * Whether the page's content has arrived (see the collection item editor): saving before it has
-   * would write the empty form over what nobody touched, so the form waits for it.
-   */
-  public loaded = signal(false);
-  /** Whether the form holds edits that have never been saved. */
-  public unsavedChanges = computed(
-    () => this.loaded() && fingerprint(this.values()) !== this.saved(),
-  );
-  /**
-   * Guards against a response for a page that is no longer the one on screen: the sidebar
-   * switches pages without leaving this route, so a slow answer used to arrive after the switch.
-   */
-  private loadToken = 0;
   /** What this account may do *with this page*, overrides included. */
   public canEdit = computed(() => this.auth.canEditIn('single_pages', this.pageName()));
   public canPublish = computed(() => this.auth.canPublishIn('single_pages', this.pageName()));
-  /**
-   * Whether this page allows preview links, or `null` while that is not known yet (see the
-   * collection editor).
-   */
-  public previewAllowed = signal<boolean | null>(null);
-  /** The shareable preview link, once one has been minted. */
-  public previewUrl = signal('');
-  /** What happened to the preview link: copied, or made but not copied. */
-  public notice = signal<Message | null>(null);
-  /** What the site serves for this page, once an editor has asked to see it (see the collection
-   * item editor). */
-  public publishedValues = signal<ContentValue | null>(null);
-  public comparing = signal(false);
+  /** Places each field on the shared 12-column grid, mirroring the schema editor. */
   public cellStyle = fieldCellStyle;
 
-  /** Per-field problems reported by the value fields; saving is refused while any remain. */
-  private fieldErrors: { [field: string]: Message } = {};
-
   constructor() {
-    // A destroyed screen is nobody's screen: the answers still on their way belong to a load that
-    // no longer exists, so the generation moves on and every guard that compares it - `stillOn`,
-    // and the token checks in the loads below - answers "no". Without this, a save and publish that
-    // landed after the reader had gone elsewhere still released the page.
-    this.destroyRef.onDestroy(() => {
-      this.loadToken += 1;
-    });
+    // A destroyed screen is nobody's screen: the editor lets go of everything in flight, so a save
+    // that landed after the reader had gone elsewhere does not touch what is on screen now.
+    this.destroyRef.onDestroy(() => this.editor.destroy());
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const name = params.get('name') ?? '';
       if (name !== this.pageName()) {
-        this.load(name);
+        this.editor.load(name);
       }
-    });
-  }
-
-  /** Everything the screen shows belongs to one page, so switching starts from nothing. */
-  private load(name: string) {
-    const token = ++this.loadToken;
-    this.loaded.set(false);
-    this.pageName.set(name);
-    this.schema.set([]);
-    this.values.set({});
-    this.metadata.set(null);
-    this.error.set(null);
-    this.notice.set(null);
-    this.publishedValues.set(null);
-    this.comparing.set(false);
-    this.previewAllowed.set(null);
-    this.previewUrl.set('');
-    this.problemField.set(null);
-    this.fieldErrors = {};
-
-    // Whether the schema allows preview links at all, asked for on every visit (see the collection
-    // editor for why it is not cached).
-    this.pages
-      .getPageSettings(name)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (settings) => {
-          if (token === this.loadToken) {
-            this.previewAllowed.set(settings.preview);
-          }
-        },
-        // Left unknown, which keeps the button offering what the server can still refuse.
-        error: () => undefined,
-      });
-
-    this.pages
-      .getPageSchema(name)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (schema) => {
-          if (token !== this.loadToken) {
-            return;
-          }
-          this.schema.set(schema);
-          this.loadItem(schema, token);
-        },
-        error: (e) => {
-          if (token === this.loadToken) {
-            this.error.set(failure('content.failedToLoadSchema', e));
-          }
-        },
-      });
-
-    this.loadMetadata(token);
-  }
-
-  private loadItem(schema: CollectionSchema, token: number) {
-    this.pages
-      .getPageItem(this.pageName())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (values) => {
-          if (token !== this.loadToken) {
-            return;
-          }
-          const filled = withDefaults(schema, values);
-          this.values.set(filled);
-          this.saved.set(fingerprint(filled));
-          // Only now can the form be edited and saved: before this, what it holds is not the page.
-          this.loaded.set(true);
-        },
-        error: (e) => {
-          if (token === this.loadToken) {
-            this.error.set(failure('content.failedToLoadContent', e));
-          }
-        },
-      });
-  }
-
-  /**
-   * Publish, or release the changes waiting on a published page.
-   *
-   * Publishing is the copy on the server, so publishing a published page again is exactly
-   * "make the site match the editor" - no need to take the page down first.
-   */
-  publish() {
-    this.setPublished(true);
-  }
-
-  /** Take the page off the site. Its working copy is kept. */
-  unpublish() {
-    this.setPublished(false);
-  }
-
-  private setPublished(published: boolean, started = this.start()) {
-    const name = started.name;
-    const request = published ? this.pages.publishPage(name) : this.pages.unpublishPage(name);
-
-    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (metadata) => {
-        // The answer belongs to the page that was on screen when the button was pressed.
-        if (!this.stillOn(started)) {
-          return;
-        }
-        this.error.set(null);
-        this.metadata.set(metadata);
-      },
-      error: (e) => {
-        if (this.stillOn(started)) {
-          // Publishing is where required fields are asked about, so a refusal names one: mark the
-          // input, exactly as a refused save does.
-          this.problemField.set(fieldOf(e));
-          this.error.set(failure('content.failedToChangePublished', e));
-        }
-      },
     });
   }
 
   setValue(field: FieldSchema, value: FieldValue) {
-    // Replaced rather than mutated: the template reads the signal.
-    this.values.update((values) => ({ ...values, [field.name]: value }));
+    this.editor.setValue(field, value);
   }
 
   setFieldError(field: FieldSchema, message: Message | null) {
-    if (message) {
-      this.fieldErrors[field.name] = message;
-      // A problem the widget itself found (a text outside its lengths, unparseable JSON) marks
-      // its input exactly like a refusal from the server does.
-      this.problemField.set(field.name);
-    } else {
-      delete this.fieldErrors[field.name];
-      if (this.problemField() === field.name) {
-        this.problemField.set(null);
-      }
-    }
+    this.editor.setFieldError(field, message);
   }
 
-  /**
-   * Whether this cell is the one a refusal named.
-   *
-   * The server names the input as a path (`title`, `tags[2]`, `seo.description`), so a refusal
-   * about something inside a composite still marks the composite's cell rather than nothing.
-   */
   isProblem(field: FieldSchema): boolean {
-    const problem = this.problemField();
-    if (problem === null) {
-      return false;
-    }
-    return (
-      problem === field.name ||
-      problem.startsWith(`${field.name}.`) ||
-      problem.startsWith(`${field.name}[`)
-    );
+    return this.editor.isProblem(field);
   }
 
-  /** Show what the site is serving next to what the form holds (see the collection item editor). */
-  compareWithPublished() {
-    const started = this.start();
-    if (this.comparing()) {
-      this.comparing.set(false);
-      return;
-    }
-    this.error.set(null);
-    this.pages
-      .getPublishedPageItem(started.name)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (values) => {
-          if (!this.stillOn(started)) {
-            return;
-          }
-          this.publishedValues.set(values);
-          this.comparing.set(true);
-        },
-        error: (e) => {
-          if (this.stillOn(started)) {
-            this.error.set(failure('content.failedToLoadPublished', e));
-          }
-        },
-      });
-  }
-
-  /** The fields this form would change, each with what is live and what is not. */
-  public changedFields = computed(() => {
-    const published = this.publishedValues();
-    if (published === null) {
-      return [];
-    }
-    const schema = this.schema();
-    const live = withDefaults(schema, published);
-    const draft = this.values();
-    return schema
-      .filter((field) => fingerprint(draft[field.name]) !== fingerprint(live[field.name]))
-      .map((field) => ({
-        field,
-        published: live[field.name] ?? null,
-        draft: draft[field.name] ?? null,
-      }));
-  });
-
-  /** Throw the saved changes away: the page goes back to what the site is serving. */
-  discardChanges() {
-    const started = this.start();
-    if (!confirm(this.i18n.translate('content.discardChangesConfirm'))) {
-      return;
-    }
-    this.error.set(null);
-    this.notice.set(null);
-    this.pages
-      .discardPageDraft(started.name)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          if (!this.stillOn(started)) {
-            return;
-          }
-          // The notice is set *after* the load, which starts by clearing whatever the last act
-          // said.
-          this.load(started.name);
-          this.notice.set(t('content.changesDiscarded'));
-        },
-        error: (e) => {
-          if (this.stillOn(started)) {
-            this.error.set(failure('content.failedToDiscardChanges', e));
-          }
-        },
-      });
-  }
-
-  /** Mint a link that shows this working copy to someone without an account, and copy it
-   * (see the collection item editor for the reasoning). */
-  sharePreview() {
-    // The page this is about, captured now: the sidebar switches pages without leaving the route,
-    // so the screen may be showing a different one by the time the link comes back.
-    const started = this.start();
-    this.error.set(null);
-    this.notice.set(null);
-    // The API's own preview answer is JSON, so without a preview site there is nothing readable
-    // to hand a reviewer (see the collection item editor).
-    const site = this.capabilities.previewSiteUrl();
-    if (site === null) {
-      this.previewUrl.set('');
-      this.error.set(t('content.previewSiteNotConfigured'));
-      return;
-    }
-    this.pages
-      .createPreviewLink(started.name)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (link) => {
-          // The clipboard write is asynchronous and nothing waits for it (see the collection item
-          // editor).
-          void this.copyPreviewLink(link, started, site);
-        },
-        error: (e) => {
-          if (this.stillOn(started)) {
-            this.error.set(failure('content.failedToCreatePreviewLink', e));
-          }
-        },
-      });
-  }
-
-  /**
-   * Put a minted link on the clipboard, and report how that went (see the collection item
-   * editor).
-   */
-  private async copyPreviewLink(link: PreviewLink, started: StartedPage, site: string) {
-    if (!this.stillOn(started)) {
-      return;
-    }
-    const url = previewSiteUrl(link.path, site);
-    this.previewUrl.set(url);
-    const copied = await copyToClipboard(url);
-    if (!this.stillOn(started)) {
-      return;
-    }
-    const expires = this.dates.format(link.expires_at);
-    this.notice.set(
-      copied ? t('content.previewCopied', { expires }) : t('content.previewNotCopied', { expires }),
-    );
-  }
-
-  /** Ask again after a load that failed (see the collection item editor). */
-  retry() {
-    this.load(this.pageName());
-  }
-
-  /**
-   * Save the working copy, and stay here.
-   *
-   * A single page is one item with a publish control beside it, so leaving the screen after a
-   * save only meant finding the page again to publish it. Saving used to navigate to the schema
-   * list, which has no publish control at all. The metadata is re-read so the status and the
-   * publish controls appear as soon as the page exists on the server.
-   */
   save() {
-    this.saveThen();
+    this.editor.save();
   }
 
-  /** Save and take the page live in one act: the two steps an editor always does in sequence. */
   saveAndPublish() {
-    this.saveThen(() => this.setPublished(true));
+    this.editor.saveAndPublish();
   }
 
-  private saveThen(then?: (name: string) => void) {
-    const problems = Object.values(this.fieldErrors);
-    if (problems.length > 0) {
-      this.error.set(problems[0]);
-      return;
-    }
-
-    this.error.set(null);
-    this.notice.set(null);
-    this.problemField.set(null);
-    const values = { ...this.values() };
-    // Captured before the request: everything after this point is about the page the button was
-    // pressed for, whatever the sidebar shows by the time the answer arrives.
-    const start = this.start();
-    const name = start.name;
-    this.pages
-      .updatePageItem(name, values)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          // Everything below describes *this* form - what it holds, what it was, what it is told -
-          // so none of it may be written once the screen is on another page, or on the same page
-          // opened afresh.
-          if (!this.stillOn(start)) {
-            return;
-          }
-          this.error.set(null);
-          this.notice.set(t('common.saved'));
-          // The form and the server agree again, so leaving no longer needs asking about.
-          this.saved.set(fingerprint(values));
-          // A page that has never been saved has no status on screen yet; this is what puts the
-          // badge and the publish controls there without a reload.
-          this.loadMetadata(this.loadToken);
-          then?.(name);
-        },
-        error: (e) => {
-          if (!this.stillOn(start)) {
-            return;
-          }
-          this.problemField.set(fieldOf(e));
-          this.error.set(failure('content.saveFailed', e));
-        },
-      });
+  publish() {
+    this.editor.publish();
   }
 
-  private loadMetadata(token: number) {
-    this.pages
-      .getPageMetadata(this.pageName())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (metadata) => {
-          if (token === this.loadToken) {
-            this.metadata.set(metadata);
-          }
-        },
-        error: (e) => {
-          if (token === this.loadToken) {
-            this.error.set(failure('content.failedToLoadPublishedState', e));
-          }
-        },
-      });
+  unpublish() {
+    this.editor.unpublish();
   }
 
-  /**
-   * The page an act is about, and the load it belongs to, captured when the act starts.
-   *
-   * A single page has no id, so the name is the whole address; the load generation is what tells
-   * "the same page, still as it was" from "the same page, opened again since" - a save that
-   * answers after a reload must not decide that the reloaded form has been saved.
-   */
-  private start(): StartedPage {
-    return { name: this.pageName(), generation: this.loadToken };
+  compareWithPublished() {
+    this.editor.compareWithPublished();
   }
 
-  /**
-   * Whether the screen is still on the page a slow answer was about, as it was then.
-   *
-   * A screen that has been destroyed is not that screen: the generation moves on when it goes (see
-   * the constructor), so nothing it asked for is ever answered into it.
-   */
-  private stillOn(start: StartedPage): boolean {
-    return this.pageName() === start.name && this.loadToken === start.generation;
+  discardChanges() {
+    this.editor.discardChanges();
   }
 
-  /**
-   * Whether the form holds edits that would be lost by leaving.
-   *
-   * Asked by `unsavedChangesGuard`, and by the screen to decide what the publish button means.
-   */
+  sharePreview() {
+    this.editor.sharePreview();
+  }
+
+  retry() {
+    this.editor.reload();
+  }
+
+  /** Whether the form holds edits that would be lost by leaving. */
   hasUnsavedChanges(): boolean {
-    return this.unsavedChanges();
+    return this.editor.hasUnsavedChanges();
   }
 
   /** Warn before a reload or a closed tab, which no route guard can see. */
