@@ -106,17 +106,17 @@ impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
     fn declares_inverse<'a>(&'a self, name: &'a str) -> DeclaresInverseFuture<'a> {
         Box::pin(async move {
             for collection in self.list_collection_names().await? {
-                if let Some(schema) = self.get_collection_schema(&collection).await? {
-                    if schema_declares_inverse(&schema, name) {
-                        return Ok(true);
-                    }
+                if let Some(schema) = self.get_collection_schema(&collection).await?
+                    && schema_declares_inverse(&schema, name)
+                {
+                    return Ok(true);
                 }
             }
             for page in self.list_all_page_names().await? {
-                if let Some(schema) = self.get_single_page_schema(&page).await? {
-                    if schema_declares_inverse(&schema, name) {
-                        return Ok(true);
-                    }
+                if let Some(schema) = self.get_single_page_schema(&page).await?
+                    && schema_declares_inverse(&schema, name)
+                {
+                    return Ok(true);
                 }
             }
             Ok(false)

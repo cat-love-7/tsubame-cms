@@ -40,13 +40,13 @@ impl RkvRepository {
         let read_draft = |reader| -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync>> {
             let key = collection_item_draft_key(collection_name.as_str(), item_id);
             match draft_store.get(reader, key.as_bytes())? {
-                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(stored)?)),
                 _ => Ok(None),
             }
         };
         let read_item = |reader| -> Result<Option<CollectionItem>, Box<dyn Error + Send + Sync>> {
             match item_store.get(reader, &item_id.to_le_bytes())? {
-                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(stored)?)),
                 _ => Ok(None),
             }
         };
@@ -80,7 +80,7 @@ impl CollectionRepository for RkvRepository {
         let reader = env.read()?;
         match store.get(&reader, collection_name.as_bytes())? {
             Some(Value::Str(s)) => {
-                let schema: CollectionSchema = serde_json::from_str(&s)?;
+                let schema: CollectionSchema = serde_json::from_str(s)?;
                 Ok(Some(schema))
             }
             _ => Ok(None),
@@ -96,7 +96,7 @@ impl CollectionRepository for RkvRepository {
         let mut collections = Vec::new();
         for result in store.iter_start(&reader)? {
             if let Ok((key, Value::Str(_s))) = result {
-                collections.push(str::from_utf8(&key)?.into());
+                collections.push(str::from_utf8(key)?.into());
             }
         }
         Ok(collections)
@@ -128,7 +128,7 @@ impl CollectionRepository for RkvRepository {
         let store = env.open_single(COLLECTION_SETTINGS_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, collection_name.as_bytes())? {
-            Some(Value::Str(stored)) => Ok(serde_json::from_str(&stored)?),
+            Some(Value::Str(stored)) => Ok(serde_json::from_str(stored)?),
             // A collection that was never given any settings answers the default, which is what
             // every collection did before settings existed.
             _ => Ok(SchemaSettings::default()),
@@ -254,7 +254,7 @@ impl CollectionRepository for RkvRepository {
         for result in collection_store.iter_start(&reader)? {
             if let Ok((key, Value::Str(s))) = result {
                 let item_id = CollectionItemId::from_le_bytes(key.try_into()?);
-                let item: CollectionItem = serde_json::from_str(&s)?;
+                let item: CollectionItem = serde_json::from_str(s)?;
                 items.push((item_id, item));
             }
         }
@@ -274,7 +274,7 @@ impl CollectionRepository for RkvRepository {
         let key_bytes = item_id.to_le_bytes();
         match collection_store.get(&reader, &key_bytes)? {
             Some(Value::Str(s)) => {
-                let item: CollectionItem = serde_json::from_str(&s)?;
+                let item: CollectionItem = serde_json::from_str(s)?;
                 Ok(Some(item))
             }
             _ => Ok(None),
@@ -414,7 +414,7 @@ impl CollectionRepository for RkvRepository {
         let reader = env.read()?;
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(s)?)),
             _ => Ok(None),
         }
     }
@@ -467,14 +467,14 @@ impl CollectionRepository for RkvRepository {
             let Ok((key, Value::Str(s))) = result else {
                 continue;
             };
-            let key = str::from_utf8(&key)?;
+            let key = str::from_utf8(key)?;
             let Some(id) = key.strip_prefix(&prefix) else {
                 break;
             };
             let Ok(id) = id.parse::<u64>() else {
                 continue;
             };
-            let metadata: ItemMetadata = serde_json::from_str(&s)?;
+            let metadata: ItemMetadata = serde_json::from_str(s)?;
             if !metadata.is_published() {
                 continue;
             }
@@ -483,7 +483,7 @@ impl CollectionRepository for RkvRepository {
                 let item_id = CollectionItemId::from_u64(id);
                 match collection_store.get(&reader, &item_id.to_le_bytes())? {
                     Some(Value::Str(item)) => {
-                        window.push((item_id, serde_json::from_str(&item)?, metadata))
+                        window.push((item_id, serde_json::from_str(item)?, metadata))
                     }
                     // A status with no content behind it: the item is gone, and counting it
                     // would make `total` a number the pages cannot add up to.
@@ -529,7 +529,7 @@ impl CollectionRepository for RkvRepository {
             };
             // Readable in either shape: records written before the canonical rendering existed were
             // saved in hash order, and comparing their content is what matters.
-            let stored: CollectionItem = serde_json::from_str(&stored)?;
+            let stored: CollectionItem = serde_json::from_str(stored)?;
             if canonical_draft(&stored) != canonical_draft(draft) {
                 return Err(Box::new(ApplyStatusError::DraftChanged));
             }
@@ -593,7 +593,7 @@ impl CollectionRepository for RkvRepository {
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         let reader = env.read()?;
         let metadata = match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(s)?,
             _ => ItemMetadata::default(),
         }
         .touched(now);
@@ -621,7 +621,7 @@ impl CollectionRepository for RkvRepository {
         let key = collection_item_metadata_key(collection_name.as_str(), **item_id);
         let reader = env.read()?;
         let metadata = match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(s)?,
             _ => ItemMetadata::default(),
         }
         .with_dates(dates);
@@ -649,14 +649,14 @@ impl CollectionRepository for RkvRepository {
         // Keys are sorted, so everything with this prefix is contiguous.
         for result in store.iter_from(&reader, prefix.as_bytes())? {
             if let Ok((key, Value::Str(s))) = result {
-                let key = str::from_utf8(&key)?;
+                let key = str::from_utf8(key)?;
                 let Some(id) = key.strip_prefix(&prefix) else {
                     break;
                 };
                 let Ok(id) = id.parse::<u64>() else {
                     continue;
                 };
-                items.push((CollectionItemId::from_u64(id), serde_json::from_str(&s)?));
+                items.push((CollectionItemId::from_u64(id), serde_json::from_str(s)?));
             }
         }
         Ok(items)
@@ -673,7 +673,7 @@ impl CollectionRepository for RkvRepository {
         let reader = env.read()?;
         let key = collection_item_draft_key(collection_name.as_str(), **item_id);
         match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(s)?)),
             _ => Ok(None),
         }
     }
@@ -693,14 +693,14 @@ impl CollectionRepository for RkvRepository {
         // Keys are sorted, so everything with this prefix is contiguous.
         for result in store.iter_from(&reader, prefix.as_bytes())? {
             if let Ok((key, Value::Str(s))) = result {
-                let key = str::from_utf8(&key)?;
+                let key = str::from_utf8(key)?;
                 let Some(id) = key.strip_prefix(&prefix) else {
                     break;
                 };
                 let Ok(id) = id.parse::<u64>() else {
                     continue;
                 };
-                items.push((CollectionItemId::from_u64(id), serde_json::from_str(&s)?));
+                items.push((CollectionItemId::from_u64(id), serde_json::from_str(s)?));
             }
         }
         Ok(items)
@@ -799,7 +799,7 @@ impl CollectionRepository for RkvRepository {
             let Ok((key, Value::Str(owner))) = result else {
                 continue;
             };
-            let key = str::from_utf8(&key)?;
+            let key = str::from_utf8(key)?;
             let Some(value) = key.strip_prefix(&prefix) else {
                 break;
             };

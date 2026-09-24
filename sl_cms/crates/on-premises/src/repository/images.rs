@@ -56,7 +56,7 @@ impl RkvRepository {
         let reader = env.read()?;
         match store.get(&reader, id.to_le_bytes())? {
             Some(Value::Str(s)) => {
-                let image_data: ImageData = serde_json::from_str(&s)?;
+                let image_data: ImageData = serde_json::from_str(s)?;
                 Ok(Some(image_data))
             }
             _ => Ok(None),
@@ -118,7 +118,7 @@ impl ImageRepository for RkvRepository {
                     continue;
                 };
                 let id = ImageId::from_u64(u64::from_le_bytes(raw_id));
-                let image_data: ImageData = serde_json::from_str(&s)?;
+                let image_data: ImageData = serde_json::from_str(s)?;
                 let image = Image {
                     original_filename: image_data.original_filename,
                     url: format!(
@@ -200,7 +200,7 @@ impl ImageRepository for RkvRepository {
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut data = match store.get(&reader, id.to_le_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
             _ => return Err("Image not found".into()),
         };
         data.original_filename = original_filename.to_string();
@@ -226,7 +226,7 @@ impl ImageRepository for RkvRepository {
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut data = match store.get(&reader, id.to_le_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
             _ => return Err("Image not found".into()),
         };
         data.uploaded_at = uploaded_at;
@@ -271,7 +271,7 @@ impl ImageRepository for RkvRepository {
             let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
             let reader = env.read()?;
             let mut data = match store.get(&reader, id.to_le_bytes())? {
-                Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+                Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
                 _ => return Err("Image not found".into()),
             };
             data.pending_replacement = Some(file_name.clone());
@@ -313,7 +313,7 @@ impl ImageRepository for RkvRepository {
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let previous = match store.get(&reader, id.to_le_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
             _ => return Err("Image not found".into()),
         };
 
@@ -351,16 +351,16 @@ impl ImageRepository for RkvRepository {
 
         // What it used to name is now unreferenced. A missing file is not an error: the previous
         // upload may never have completed.
-        if previous.file_name != file_name {
-            if let Ok(path) = self.image_path(&previous.file_name) {
-                fs::remove_file(path).ok();
-            }
+        if previous.file_name != file_name
+            && let Ok(path) = self.image_path(&previous.file_name)
+        {
+            fs::remove_file(path).ok();
         }
         // The small copy of the picture that was just replaced goes with it.
-        if let Some(thumbnail_file_name) = &previous.thumbnail_file_name {
-            if let Ok(path) = self.image_path(thumbnail_file_name) {
-                fs::remove_file(path).ok();
-            }
+        if let Some(thumbnail_file_name) = &previous.thumbnail_file_name
+            && let Ok(path) = self.image_path(thumbnail_file_name)
+        {
+            fs::remove_file(path).ok();
         }
         Ok(Replacement::Applied)
     }
@@ -386,7 +386,7 @@ impl ImageRepository for RkvRepository {
         let mut before = Vec::new();
         for result in store.iter_from(&reader, owner_prefix.as_bytes())? {
             let Ok((key, _)) = result else { continue };
-            let key = str::from_utf8(&key)?;
+            let key = str::from_utf8(key)?;
             let Some(rest) = key.strip_prefix(&owner_prefix) else {
                 break;
             };
@@ -432,7 +432,7 @@ impl ImageRepository for RkvRepository {
         let mut owners = Vec::new();
         for result in store.iter_from(&reader, prefix.as_bytes())? {
             let Ok((key, _)) = result else { continue };
-            let key = str::from_utf8(&key)?;
+            let key = str::from_utf8(key)?;
             let Some(rest) = key.strip_prefix(&prefix) else {
                 break;
             };
@@ -454,7 +454,7 @@ impl ImageRepository for RkvRepository {
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut data = match store.get(&reader, id.to_le_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
             _ => return Err("Image not found".into()),
         };
         data.deleted_at = at;
@@ -479,7 +479,7 @@ impl ImageRepository for RkvRepository {
         let store = env.open_single(IMAGE_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let previous = match store.get(&reader, id.to_le_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ImageData>(s)?,
             _ => return Err("Image not found".into()),
         };
 
@@ -513,10 +513,10 @@ impl ImageRepository for RkvRepository {
         writer.commit()?;
 
         // What it showed before is unreferenced now.
-        if let Some(previous_thumbnail) = &previous.thumbnail_file_name {
-            if let Ok(path) = self.image_path(previous_thumbnail) {
-                fs::remove_file(path).ok();
-            }
+        if let Some(previous_thumbnail) = &previous.thumbnail_file_name
+            && let Ok(path) = self.image_path(previous_thumbnail)
+        {
+            fs::remove_file(path).ok();
         }
         Ok(())
     }
@@ -531,10 +531,10 @@ impl ImageRepository for RkvRepository {
         }
         // The small copy is the image's too: leaving it behind would keep a deleted picture on
         // disk under a name nothing can reach any more.
-        if let Some(thumbnail_file_name) = &image.thumbnail_file_name {
-            if let Ok(path) = self.image_path(thumbnail_file_name) {
-                fs::remove_file(path).ok();
-            }
+        if let Some(thumbnail_file_name) = &image.thumbnail_file_name
+            && let Ok(path) = self.image_path(thumbnail_file_name)
+        {
+            fs::remove_file(path).ok();
         }
 
         let env = self.rkv.read().map_err(|e| e.to_string())?;

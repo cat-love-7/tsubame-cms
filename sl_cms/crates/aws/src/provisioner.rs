@@ -208,14 +208,13 @@ impl CognitoAdmin for CognitoApi {
                     .name("email")
                     .value(email)
                     .build()
-                    .map_err(|e| describe(e))?;
+                    .map_err(describe)?;
                 request = request.user_attributes(attribute);
             }
             match request.send().await {
                 Ok(response) => Ok(response
                     .user()
-                    .map(|user| subject_of(user.attributes()))
-                    .flatten()),
+                    .and_then(|user| subject_of(user.attributes()))),
                 // Already there: still not a failure, but its identifier has to be found rather
                 // than skipped, or the record the CMS is about to write could never sign in.
                 Err(error) => match error.as_service_error() {

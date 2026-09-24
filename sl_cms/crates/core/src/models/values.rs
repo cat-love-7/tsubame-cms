@@ -378,10 +378,10 @@ fn parse_array_element(
     // `CompositeFieldId` is a named string, so the comparison is on the string it holds.
     let declared_id = raw.get("id").and_then(|id| id.as_str());
     for candidate in allowed {
-        if let (Some(id), FieldType::CompositeField(reference)) = (declared_id, candidate) {
-            if reference.id.as_str() != id {
-                continue;
-            }
+        if let (Some(id), FieldType::CompositeField(reference)) = (declared_id, candidate)
+            && reference.id.as_str() != id
+        {
+            continue;
         }
         let probe = FieldSchema {
             is_title: false,
@@ -684,11 +684,10 @@ mod untyped_parsing_tests {
             );
         }
         assert!(
-            FieldValueMap::from_untyped(&json!({}), &HashMap::new(), &schema)
+            !FieldValueMap::from_untyped(&json!({}), &HashMap::new(), &schema)
                 .unwrap()
                 .0
-                .get("author")
-                .is_none()
+                .contains_key("author")
         );
     }
 
@@ -1352,7 +1351,7 @@ impl FieldValue {
             FieldValue::Image(img_id) => {
                 let img_response = img_id.as_ref().and_then(|id| {
                     images.get(id).map(|img| ImageResponse {
-                        id: id.clone(),
+                        id: *id,
                         url: img.url.clone(),
                     })
                 });
@@ -1414,7 +1413,7 @@ impl FieldValue {
         schemas.iter().fold(None, |mut acc, ft| {
             if let Some(options) = matcher(ft) {
                 match acc {
-                    None => acc = Some(options.clone()),
+                    None => acc = Some(*options),
                     Some(existing_options) => {
                         let merged_options = TextFieldOptions {
                             max_length: match (existing_options.max_length, options.max_length) {
@@ -1459,14 +1458,14 @@ impl FieldValue {
         match (&schema.field_type, self) {
             (FieldType::Text(field_params), FieldValue::Text(text))
             | (FieldType::Markdown(field_params), FieldValue::Markdown(text)) => {
-                if schema.required && schema.field_type.test_required(self) == false {
+                if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
-                schema.validate_text_length(text, &field_params, &path)?;
+                schema.validate_text_length(text, field_params, &path)?;
                 Ok(())
             }
             (FieldType::Slug(_), FieldValue::Text(slug)) => {
-                if schema.required && schema.field_type.test_required(self) == false {
+                if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
                 if slug.chars().count() > crate::models::slug::SLUG_MAX_LENGTH {
@@ -1492,13 +1491,13 @@ impl FieldValue {
             | (FieldType::DateTime, FieldValue::DateTime(_))
             | (FieldType::Image, FieldValue::Image(_))
             | (FieldType::Relation(_), FieldValue::Relation(_)) => {
-                if schema.required && schema.field_type.test_required(self) == false {
+                if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
                 Ok(())
             }
             (FieldType::CompositeField(s), FieldValue::CompositeField(field_value)) => {
-                if schema.required && schema.field_type.test_required(self) == false {
+                if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
                 if let Some(v) = field_value {
@@ -1511,7 +1510,7 @@ impl FieldValue {
                     v.values.validate_at(
                         &format!("{path}."),
                         composite_schemas,
-                        &composite_schema,
+                        composite_schema,
                     )?;
                     Ok(())
                 } else {
@@ -1519,7 +1518,7 @@ impl FieldValue {
                 }
             }
             (FieldType::Array(schemas), FieldValue::Array(values)) => {
-                if schema.required && schema.field_type.test_required(self) == false {
+                if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
                 for (index, value) in values.iter().enumerate() {
@@ -1527,7 +1526,7 @@ impl FieldValue {
                     let item = format!("{path}[{index}]");
                     match value {
                         FieldValue::Text(value) => {
-                            let option = Self::extract_text_options(&schemas, |ft| {
+                            let option = Self::extract_text_options(schemas, |ft| {
                                 if let FieldType::Text(options) = ft {
                                     Some(options)
                                 } else {
@@ -1544,7 +1543,7 @@ impl FieldValue {
                             }
                         }
                         FieldValue::Markdown(value) => {
-                            let option = Self::extract_text_options(&schemas, |ft| {
+                            let option = Self::extract_text_options(schemas, |ft| {
                                 if let FieldType::Markdown(options) = ft {
                                     Some(options)
                                 } else {
@@ -1566,10 +1565,10 @@ impl FieldValue {
                         | FieldValue::DateTime(_)
                         | FieldValue::Image(_) => {
                             let value_type = value.get_type();
-                            if schemas.contains(&value_type) == false {
+                            if !schemas.contains(&value_type) {
                                 return Err(FieldRefusal::type_mismatch(&item));
                             }
-                            if value_type.test_required(value) == false {
+                            if !value_type.test_required(value) {
                                 return Err(FieldRefusal::required(&item));
                             }
                         }
@@ -1595,7 +1594,7 @@ impl FieldValue {
                                         cv.values.validate_at(
                                             &format!("{item}."),
                                             composite_schemas,
-                                            &composite_schema,
+                                            composite_schema,
                                         )?;
                                     }
                                     None => {
@@ -1666,27 +1665,23 @@ impl FieldValue {
             | (FieldType::DateTime, FieldValue::DateTime(_))
             | (FieldType::Image, FieldValue::Image(_))
             | (FieldType::Relation(_), FieldValue::Relation(_)) => self.clone(),
-            (FieldType::CompositeField(s), FieldValue::CompositeField(value)) => match value {
-                Some(v) => {
-                    if s.id != v.id {
-                        schema.get_default_value()
-                    } else {
-                        let composite_schema = composite_schemas.get(&s.id);
-                        match composite_schema {
-                            None => schema.get_default_value(),
-                            Some(cs) => {
-                                let formatted_values =
-                                    v.values.format_to_schema(composite_schemas, &cs);
-                                FieldValue::CompositeField(Some(CompositeFieldValue {
-                                    id: s.id.clone(),
-                                    values: formatted_values,
-                                }))
-                            }
-                        }
+            (FieldType::CompositeField(s), FieldValue::CompositeField(Some(v))) => {
+                // A composite of another definition is not this field's value: the schema's own
+                // default stands in for it, as for a value that is missing entirely.
+                match composite_schemas.get(&s.id).filter(|_| s.id == v.id) {
+                    None => schema.get_default_value(),
+                    Some(cs) => {
+                        let formatted_values = v.values.format_to_schema(composite_schemas, cs);
+                        FieldValue::CompositeField(Some(CompositeFieldValue {
+                            id: s.id.clone(),
+                            values: formatted_values,
+                        }))
                     }
                 }
-                None => schema.get_default_value(),
-            },
+            }
+            (FieldType::CompositeField(_), FieldValue::CompositeField(None)) => {
+                schema.get_default_value()
+            }
             (FieldType::Array(schemas), FieldValue::Array(values)) => {
                 let mut formatted_values = Vec::new();
                 for value in values {
@@ -1726,7 +1721,7 @@ impl FieldValue {
                                             Some(cs) => {
                                                 let formatted_values_map = cv
                                                     .values
-                                                    .format_to_schema(composite_schemas, &cs);
+                                                    .format_to_schema(composite_schemas, cs);
                                                 formatted_values.push(FieldValue::CompositeField(
                                                     Some(CompositeFieldValue {
                                                         id: schema.id.clone(),

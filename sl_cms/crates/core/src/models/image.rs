@@ -80,7 +80,7 @@ fn collect_images(
     use crate::models::values::FieldValue;
     match value {
         FieldValue::Image(Some(id)) => {
-            found.insert(id.clone());
+            found.insert(*id);
         }
         FieldValue::Array(items) => {
             for item in items {

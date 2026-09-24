@@ -85,10 +85,10 @@ impl User {
     /// The storage adapters call this on the way out, so an existing installation can be
     /// upgraded without anyone being locked out.
     pub fn adopt_legacy_identifier(&mut self) {
-        if self.username.trim().is_empty() {
-            if let Some(email) = self.email.as_deref() {
-                self.username = normalize_username(email);
-            }
+        if self.username.trim().is_empty()
+            && let Some(email) = self.email.as_deref()
+        {
+            self.username = normalize_username(email);
         }
     }
 

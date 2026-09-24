@@ -1650,7 +1650,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
     let (_, delivered) = send(
         &app.router,
         Method::GET,
-        &format!("/api/content/collections/posts/items/1"),
+        "/api/content/collections/posts/items/1",
         None,
         None,
     )

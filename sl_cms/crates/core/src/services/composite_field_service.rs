@@ -106,16 +106,14 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
         self.validate_composite_graph(field_name, schema).await?;
         let s = self
             .composite_field_repository
-            .get_composite_field_schema(&field_name)
+            .get_composite_field_schema(field_name)
             .await
             .map_err(map_internal_error)?;
         match s {
-            Some(_) => {
-                return Err(HttpError::Conflict(&format!(
-                    "Composite field schema already exists: {}",
-                    field_name
-                )));
-            }
+            Some(_) => Err(HttpError::Conflict(&format!(
+                "Composite field schema already exists: {}",
+                field_name
+            ))),
             None => self
                 .composite_field_repository
                 .add_composite_field_schema(field_name, schema)
@@ -142,12 +140,10 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
                 .add_composite_field_schema(field_name, schema)
                 .await
                 .map_err(map_internal_error),
-            None => {
-                return Err(HttpError::NotFound(&format!(
-                    "Composite field schema not found: {}",
-                    field_name
-                )));
-            }
+            None => Err(HttpError::NotFound(&format!(
+                "Composite field schema not found: {}",
+                field_name
+            ))),
         }
     }
     pub async fn delete_composite_field_schema(
@@ -165,12 +161,10 @@ impl<CFR: CompositeFieldRepository> CompositeFieldService<CFR> {
                 .delete_composite_field_schema(field_name)
                 .await
                 .map_err(map_internal_error),
-            None => {
-                return Err(HttpError::NotFound(&format!(
-                    "Composite field schema not found: {}",
-                    field_name
-                )));
-            }
+            None => Err(HttpError::NotFound(&format!(
+                "Composite field schema not found: {}",
+                field_name
+            ))),
         }
     }
 }

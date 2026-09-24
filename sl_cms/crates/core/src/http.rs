@@ -346,10 +346,10 @@ impl IntoResponse for HttpError {
         let mut response = (status, axum::Json(body)).into_response();
         // Only the 429 answers set this, and a client that knows when to come back does not
         // have to guess.
-        if let Some(seconds) = retry_after {
-            if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
-                response.headers_mut().insert(header::RETRY_AFTER, value);
-            }
+        if let Some(seconds) = retry_after
+            && let Ok(value) = HeaderValue::from_str(&seconds.to_string())
+        {
+            response.headers_mut().insert(header::RETRY_AFTER, value);
         }
         response
     }

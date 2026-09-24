@@ -83,16 +83,18 @@ async fn change_own_password<R: Storage + LocalCredentials>(
 /// which deployment this is, so the answer is actionable.
 pub fn unavailable_public<R: Storage>(message: &'static str) -> Router<AppState<R>> {
     Router::new()
-        .route("/auth/login", post(unavailable::<R>(message)))
-        .route("/auth/password-reset", post(unavailable::<R>(message)))
+        .route("/auth/login", post(unavailable(message)))
+        .route("/auth/password-reset", post(unavailable(message)))
 }
 
 /// The one account route that touches a credential's *value*: changing your own password.
 pub fn unavailable_protected<R: Storage>(message: &'static str) -> Router<AppState<R>> {
-    Router::new().route("/auth/me/password", post(unavailable::<R>(message)))
+    Router::new().route("/auth/me/password", post(unavailable(message)))
 }
 
-fn unavailable<R: Storage>(
+/// Always refuses: this deployment's password lives with its identity provider, so there is
+/// nothing here to change.
+fn unavailable(
     message: &'static str,
 ) -> impl Fn() -> std::future::Ready<Result<StatusCode, HttpError>> + Clone + Send + Sync + 'static
 {

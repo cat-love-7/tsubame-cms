@@ -73,6 +73,22 @@ impl TokenIssuer {
     }
 }
 
+impl TokenVerifier for TokenIssuer {
+    fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a> {
+        Box::pin(async move {
+            let claims = TokenIssuer::verify(self, token).map_err(|e| {
+                // Do not echo the verifier's reason to the client.
+                tracing::debug!("rejected token: {e}");
+                HttpError::Unauthorized("invalid or expired token")
+            })?;
+            Ok(Identity::Local {
+                user_id: UserId::from(claims.sub.as_str()),
+                token_version: claims.ver,
+            })
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,21 +162,5 @@ mod tests {
         let issuer = TokenIssuer::new(b"secret", 0);
         let (token, _) = issuer.issue(&user()).unwrap();
         assert!(issuer.verify(&token).is_ok());
-    }
-}
-
-impl TokenVerifier for TokenIssuer {
-    fn verify<'a>(&'a self, token: &'a str) -> VerifyFuture<'a> {
-        Box::pin(async move {
-            let claims = TokenIssuer::verify(self, token).map_err(|e| {
-                // Do not echo the verifier's reason to the client.
-                tracing::debug!("rejected token: {e}");
-                HttpError::Unauthorized("invalid or expired token")
-            })?;
-            Ok(Identity::Local {
-                user_id: UserId::from(claims.sub.as_str()),
-                token_version: claims.ver,
-            })
-        })
     }
 }

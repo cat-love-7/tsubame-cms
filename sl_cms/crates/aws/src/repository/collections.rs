@@ -550,7 +550,7 @@ impl CollectionRepository for AwsRepository {
         let inner = self.inner.clone();
         let collection = collection_name.clone();
         let unique = unique.clone();
-        let id = item_id.clone();
+        let id = *item_id;
         let partition = key::unique(collection.as_str(), &unique.field);
         // One write, and what it means depends on what was there: creating the entry is a claim
         // this caller can give back, while finding it already ours is not. The write is conditional
@@ -679,7 +679,7 @@ impl CollectionRepository for AwsRepository {
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
-        let id = item_id.clone();
+        let id = *item_id;
         let draft = draft.cloned();
         let data = AwsRepository::encode(metadata)?;
         let partition = key::collection(&name);

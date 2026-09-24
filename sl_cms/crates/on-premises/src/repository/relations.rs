@@ -57,7 +57,7 @@ pub(crate) fn entries_of(
     let mut found = Vec::new();
     for result in store.iter_from(reader, prefix.as_bytes())? {
         let Ok((key, _)) = result else { continue };
-        let key = std::str::from_utf8(&key)?;
+        let key = std::str::from_utf8(key)?;
         let Some(rest) = key.strip_prefix(&prefix) else {
             break;
         };
@@ -123,7 +123,7 @@ pub(crate) fn referring(
     let mut found = Vec::new();
     for result in store.iter_from(reader, prefix.as_bytes())? {
         let Ok((key, _)) = result else { continue };
-        let key = std::str::from_utf8(&key)?;
+        let key = std::str::from_utf8(key)?;
         let Some(rest) = key.strip_prefix(&prefix) else {
             break;
         };

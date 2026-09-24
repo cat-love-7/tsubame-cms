@@ -344,6 +344,9 @@ pub trait CollectionRepository: Send + Sync + 'static {
     /// [`Self::list_collection_items_page`] because the set being paged is the published one:
     /// the delivery API may only ever see published content, and its pages have to be pages
     /// *of that set*, not of the items with some of them filtered out afterwards.
+    // The tuple is the contract: one page of published items with their metadata, and how many
+    // there are. A type alias for a shape that appears once would only move the reading.
+    #[allow(clippy::type_complexity)]
     fn list_published_items_page(
         &self,
         collection_name: &CollectionName,
@@ -360,10 +363,10 @@ pub trait CollectionRepository: Send + Sync + 'static {
                 .collect();
             let mut published: Vec<(CollectionItemId, CollectionItem, ItemMetadata)> = Vec::new();
             for (id, item) in self.list_collection_items(collection_name).await? {
-                if let Some(metadata) = metadata.get(&id) {
-                    if metadata.is_published() {
-                        published.push((id.clone(), item, metadata.clone()));
-                    }
+                if let Some(metadata) = metadata.get(&id)
+                    && metadata.is_published()
+                {
+                    published.push((id, item, metadata.clone()));
                 }
             }
             published.sort_by_key(|(id, _, _)| **id);

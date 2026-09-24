@@ -169,6 +169,24 @@ impl RelationIndexChanges {
     }
 }
 
+/// An empty index, for tests that are not about references.
+///
+/// A deployment always reads the real one; this exists so a service test can be built without a
+/// storage behind it, the way `StaticRelationTargets::none()` does for the schema save.
+#[cfg(test)]
+pub struct NoRelations;
+
+#[cfg(test)]
+impl RelationRepository for NoRelations {
+    fn get_relation_references(&self, _target: &ItemOwner) -> RelationReferencesFuture<'_> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn detach_references(&self, _target: &ItemOwner) -> DetachFuture<'_> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,23 +234,5 @@ mod tests {
 
         assert!(changes.added.is_empty());
         assert_eq!(changes.removed.len(), 2);
-    }
-}
-
-/// An empty index, for tests that are not about references.
-///
-/// A deployment always reads the real one; this exists so a service test can be built without a
-/// storage behind it, the way `StaticRelationTargets::none()` does for the schema save.
-#[cfg(test)]
-pub struct NoRelations;
-
-#[cfg(test)]
-impl RelationRepository for NoRelations {
-    fn get_relation_references(&self, _target: &ItemOwner) -> RelationReferencesFuture<'_> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
-    fn detach_references(&self, _target: &ItemOwner) -> DetachFuture<'_> {
-        Box::pin(async { Ok(Vec::new()) })
     }
 }

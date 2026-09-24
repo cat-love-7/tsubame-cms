@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn collection_item_deserialization_from_json() {
         let json = r#"{"tags":{"TextEnum":["news","blog"]},"title":{"Text":"Hello World"}}"#;
-        let deserialized: CollectionItem = serde_json::from_str(&json).unwrap();
+        let deserialized: CollectionItem = serde_json::from_str(json).unwrap();
 
         let expected = create_test_item();
         assert_eq!(deserialized, expected);

@@ -81,12 +81,11 @@ impl<J: JwksSource> CognitoVerifier<J> {
     async fn key(&self, kid: &str) -> Result<DecodingKey, HttpError> {
         {
             let cache = self.cache.lock().map_err(|_| unauthorized())?;
-            if let Some(cache) = cache.as_ref() {
-                if let Some(key) = cache.keys.get(kid) {
-                    if cache.fetched_at.elapsed() < cache.ttl {
-                        return Ok(key.clone());
-                    }
-                }
+            if let Some(cache) = cache.as_ref()
+                && let Some(key) = cache.keys.get(kid)
+                && cache.fetched_at.elapsed() < cache.ttl
+            {
+                return Ok(key.clone());
             }
         }
 
@@ -149,7 +148,7 @@ impl<J: JwksSource> CognitoVerifier<J> {
 
         let mut validation = Validation::new(Algorithm::RS256);
         validation.set_issuer(&[self.settings.issuer()]);
-        validation.set_audience(&[self.settings.client_id.clone()]);
+        validation.set_audience(std::slice::from_ref(&self.settings.client_id));
         validation.required_spec_claims.insert("exp".to_string());
         // Ten seconds of clock skew between Cognito and this process. The default is sixty,
         // which is a minute of a token that should have expired.

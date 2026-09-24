@@ -161,27 +161,27 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let mut config = Config::default();
 
-        if let Ok(host) = std::env::var("HOST") {
-            if !host.is_empty() {
-                config.host = host;
-            }
+        if let Ok(host) = std::env::var("HOST")
+            && !host.is_empty()
+        {
+            config.host = host;
         }
-        if let Ok(port) = std::env::var("PORT") {
-            if !port.is_empty() {
-                config.port = port
-                    .parse()
-                    .map_err(|e| format!("invalid PORT {port:?}: {e}"))?;
-            }
+        if let Ok(port) = std::env::var("PORT")
+            && !port.is_empty()
+        {
+            config.port = port
+                .parse()
+                .map_err(|e| format!("invalid PORT {port:?}: {e}"))?;
         }
-        if let Ok(root) = std::env::var("DATA_ROOT") {
-            if !root.is_empty() {
-                config.data_root = PathBuf::from(root);
-            }
+        if let Ok(root) = std::env::var("DATA_ROOT")
+            && !root.is_empty()
+        {
+            config.data_root = PathBuf::from(root);
         }
-        if let Ok(origins) = std::env::var("CORS_ALLOWED_ORIGINS") {
-            if !origins.trim().is_empty() {
-                config.cors_allowed_origins = parse_origins(&origins);
-            }
+        if let Ok(origins) = std::env::var("CORS_ALLOWED_ORIGINS")
+            && !origins.trim().is_empty()
+        {
+            config.cors_allowed_origins = parse_origins(&origins);
         }
         match std::env::var("JWT_SECRET") {
             Ok(secret) if secret.len() >= MIN_JWT_SECRET_LEN => {
@@ -197,47 +197,47 @@ impl Config {
             // No secret configured: keep the generated one and warn at startup.
             Err(_) => {}
         }
-        if let Ok(ttl) = std::env::var("TOKEN_TTL_HOURS") {
-            if !ttl.trim().is_empty() {
-                let hours: i64 = ttl
-                    .trim()
-                    .parse()
-                    .map_err(|e| format!("invalid TOKEN_TTL_HOURS {ttl:?}: {e}"))?;
-                if hours < 1 {
-                    return Err(format!("TOKEN_TTL_HOURS must be at least 1 (got {hours})"));
-                }
-                config.token_ttl_hours = hours;
+        if let Ok(ttl) = std::env::var("TOKEN_TTL_HOURS")
+            && !ttl.trim().is_empty()
+        {
+            let hours: i64 = ttl
+                .trim()
+                .parse()
+                .map_err(|e| format!("invalid TOKEN_TTL_HOURS {ttl:?}: {e}"))?;
+            if hours < 1 {
+                return Err(format!("TOKEN_TTL_HOURS must be at least 1 (got {hours})"));
             }
+            config.token_ttl_hours = hours;
         }
-        if let Ok(ttl) = std::env::var("PREVIEW_LINK_TTL_MINUTES") {
-            if !ttl.trim().is_empty() {
-                let minutes: i64 = ttl
-                    .trim()
-                    .parse()
-                    .map_err(|e| format!("invalid PREVIEW_LINK_TTL_MINUTES {ttl:?}: {e}"))?;
-                if minutes < 1 {
-                    return Err(format!(
-                        "PREVIEW_LINK_TTL_MINUTES must be at least 1 (got {minutes})"
-                    ));
-                }
-                config.preview_link_ttl_minutes = minutes;
+        if let Ok(ttl) = std::env::var("PREVIEW_LINK_TTL_MINUTES")
+            && !ttl.trim().is_empty()
+        {
+            let minutes: i64 = ttl
+                .trim()
+                .parse()
+                .map_err(|e| format!("invalid PREVIEW_LINK_TTL_MINUTES {ttl:?}: {e}"))?;
+            if minutes < 1 {
+                return Err(format!(
+                    "PREVIEW_LINK_TTL_MINUTES must be at least 1 (got {minutes})"
+                ));
             }
+            config.preview_link_ttl_minutes = minutes;
         }
         // An identifier can be anything (see `is_plausible_username`), so the old name of this
         // setting is only a fallback: `ADMIN_EMAIL` alone still bootstraps the same account.
-        if let Ok(ttl) = std::env::var("PASSWORD_RESET_TTL_MINUTES") {
-            if !ttl.trim().is_empty() {
-                let minutes: i64 = ttl
-                    .trim()
-                    .parse()
-                    .map_err(|e| format!("invalid PASSWORD_RESET_TTL_MINUTES {ttl:?}: {e}"))?;
-                if minutes < 1 {
-                    return Err(format!(
-                        "PASSWORD_RESET_TTL_MINUTES must be at least 1 (got {minutes})"
-                    ));
-                }
-                config.password_reset_ttl_minutes = minutes;
+        if let Ok(ttl) = std::env::var("PASSWORD_RESET_TTL_MINUTES")
+            && !ttl.trim().is_empty()
+        {
+            let minutes: i64 = ttl
+                .trim()
+                .parse()
+                .map_err(|e| format!("invalid PASSWORD_RESET_TTL_MINUTES {ttl:?}: {e}"))?;
+            if minutes < 1 {
+                return Err(format!(
+                    "PASSWORD_RESET_TTL_MINUTES must be at least 1 (got {minutes})"
+                ));
             }
+            config.password_reset_ttl_minutes = minutes;
         }
         if let Some(url) = non_empty_env("PREVIEW_SITE_URL") {
             config.preview_site_url = Some(parse_preview_site_url(&url)?);

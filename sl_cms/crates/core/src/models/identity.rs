@@ -33,7 +33,8 @@ impl<T> Hash for UintId<T> {
 
 impl<T> PartialOrd for UintId<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        // Through `cmp`: the two cannot say different things about the same pair.
+        Some(self.cmp(other))
     }
 }
 
@@ -65,7 +66,7 @@ impl<T> Debug for UintId<T> {
 }
 impl<T> Clone for UintId<T> {
     fn clone(&self) -> Self {
-        UintId(self.0, std::marker::PhantomData)
+        *self
     }
 }
 impl<T> Serialize for UintId<T> {
@@ -106,7 +107,8 @@ impl<T> Hash for StringId<T> {
 }
 impl<T> PartialOrd for StringId<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        // Through `cmp`: the two cannot say different things about the same pair.
+        Some(self.cmp(other))
     }
 }
 impl<T> Ord for StringId<T> {

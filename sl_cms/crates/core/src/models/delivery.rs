@@ -61,7 +61,7 @@ impl Populate {
     pub fn relates_through(&self, schema: &[FieldSchema], name: &str) -> bool {
         schema
             .iter()
-            .any(|field| &field.name == name && matches!(field.field_type, FieldType::Relation(_)))
+            .any(|field| field.name == name && matches!(field.field_type, FieldType::Relation(_)))
     }
 
     /// The names asked for, one by one, so a caller can split them itself.

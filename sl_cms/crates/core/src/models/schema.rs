@@ -257,15 +257,16 @@ impl FieldSchema {
         path: &str,
     ) -> Result<(), FieldRefusal> {
         let length = value.chars().count();
-        if let Some(max_length) = options.max_length {
-            if length > max_length {
-                return Err(FieldRefusal::too_long(path, max_length));
-            }
+        if let Some(max_length) = options.max_length
+            && length > max_length
+        {
+            return Err(FieldRefusal::too_long(path, max_length));
         }
-        if let Some(min_length) = options.min_length {
-            if length < min_length && !value.is_empty() {
-                return Err(FieldRefusal::too_short(path, min_length));
-            }
+        if let Some(min_length) = options.min_length
+            && length < min_length
+            && !value.is_empty()
+        {
+            return Err(FieldRefusal::too_short(path, min_length));
         }
         Ok(())
     }
@@ -782,11 +783,10 @@ mod tests {
         marked.show_in_list = true;
         let json = serde_json::to_value(&marked).expect("a field");
         assert_eq!(json["show_in_list"], serde_json::json!(true));
-        assert_eq!(
+        assert!(
             serde_json::from_value::<FieldSchema>(json)
                 .expect("the field back")
-                .show_in_list,
-            true
+                .show_in_list
         );
 
         // Omitted when false, like `unique`, so a schema that uses neither is unchanged on the wire.
@@ -1454,7 +1454,7 @@ mod tests {
         all.insert(CompositeFieldId::from("b"), vec![]);
         assert!(validate_no_composite_cycles(&id, &chain, &all).is_ok());
         assert!(
-            validate_no_composite_cycles(&id, &vec![field("gone", composite_ref("gone"))], &all)
+            validate_no_composite_cycles(&id, &[field("gone", composite_ref("gone"))], &all)
                 .is_ok()
         );
     }

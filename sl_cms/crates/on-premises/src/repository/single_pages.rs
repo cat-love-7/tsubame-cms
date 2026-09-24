@@ -33,13 +33,13 @@ impl RkvRepository {
         let read_draft = |reader| -> Result<Option<SinglePageItem>, Box<dyn Error + Send + Sync>> {
             let key = page_draft_key(page_name.as_str());
             match draft_store.get(reader, key.as_bytes())? {
-                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(stored)?)),
                 _ => Ok(None),
             }
         };
         let read_item = |reader| -> Result<Option<SinglePageItem>, Box<dyn Error + Send + Sync>> {
             match item_store.get(reader, page_name.as_bytes())? {
-                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(&stored)?)),
+                Some(Value::Str(stored)) => Ok(Some(serde_json::from_str(stored)?)),
                 _ => Ok(None),
             }
         };
@@ -73,7 +73,7 @@ impl SinglePageRepository for RkvRepository {
         let reader = env.read()?;
         match store.get(&reader, page_name.as_bytes())? {
             Some(Value::Str(s)) => {
-                let schema: SinglePageSchema = serde_json::from_str(&s)?;
+                let schema: SinglePageSchema = serde_json::from_str(s)?;
                 Ok(Some(schema))
             }
             _ => Ok(None),
@@ -89,7 +89,7 @@ impl SinglePageRepository for RkvRepository {
         let mut pages = Vec::new();
         for result in store.iter_start(&reader)? {
             if let Ok((key, Value::Str(_s))) = result {
-                pages.push(str::from_utf8(&key)?.into());
+                pages.push(str::from_utf8(key)?.into());
             }
         }
         Ok(pages)
@@ -117,7 +117,7 @@ impl SinglePageRepository for RkvRepository {
         let store = env.open_single(SINGLE_PAGE_SETTINGS_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         match store.get(&reader, page_name.as_bytes())? {
-            Some(Value::Str(stored)) => Ok(serde_json::from_str(&stored)?),
+            Some(Value::Str(stored)) => Ok(serde_json::from_str(stored)?),
             // A page that was never given any settings answers the default, as a collection does.
             _ => Ok(SchemaSettings::default()),
         }
@@ -217,7 +217,7 @@ impl SinglePageRepository for RkvRepository {
                 Some(Value::Str(stored)) => stored,
                 _ => return Err(Box::new(ApplyStatusError::DraftChanged)),
             };
-            let stored: SinglePageItem = serde_json::from_str(&stored)?;
+            let stored: SinglePageItem = serde_json::from_str(stored)?;
             if canonical_draft(&stored) != canonical_draft(draft) {
                 return Err(Box::new(ApplyStatusError::DraftChanged));
             }
@@ -273,7 +273,7 @@ impl SinglePageRepository for RkvRepository {
         let reader = env.read()?;
         let key = page_metadata_key(page_name.as_str());
         match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(s)?)),
             _ => Ok(None),
         }
     }
@@ -308,7 +308,7 @@ impl SinglePageRepository for RkvRepository {
         let key = page_metadata_key(page_name.as_str());
         let reader = env.read()?;
         let metadata = match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(s)?,
             _ => ItemMetadata::default(),
         }
         .touched(now);
@@ -334,7 +334,7 @@ impl SinglePageRepository for RkvRepository {
         let key = page_metadata_key(page_name.as_str());
         let reader = env.read()?;
         let metadata = match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<ItemMetadata>(s)?,
             _ => ItemMetadata::default(),
         }
         .with_dates(dates);
@@ -358,7 +358,7 @@ impl SinglePageRepository for RkvRepository {
         let reader = env.read()?;
         match collection_store.get(&reader, page_name.as_bytes())? {
             Some(Value::Str(s)) => {
-                let item: SinglePageItem = serde_json::from_str(&s)?;
+                let item: SinglePageItem = serde_json::from_str(s)?;
                 Ok(Some(item))
             }
             _ => Ok(None),
@@ -408,7 +408,7 @@ impl SinglePageRepository for RkvRepository {
         let reader = env.read()?;
         let key = page_draft_key(page_name.as_str());
         match store.get(&reader, key.as_bytes())? {
-            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(&s)?)),
+            Some(Value::Str(s)) => Ok(Some(serde_json::from_str(s)?)),
             _ => Ok(None),
         }
     }

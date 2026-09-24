@@ -369,7 +369,7 @@ fn warn_about_the_environment(config: &Config, settings: &AwsSettings) {
 /// keeps the secret out of the Lambda configuration and out of Terraform's state.
 ///
 /// Split out from the call so the decision is testable without reaching AWS.
-fn secret_arn_to_fetch<'a>(has_env_secret: bool, arn: Option<&'a str>) -> Option<&'a str> {
+fn secret_arn_to_fetch(has_env_secret: bool, arn: Option<&str>) -> Option<&str> {
     if has_env_secret {
         return None;
     }

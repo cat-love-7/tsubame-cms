@@ -15,7 +15,7 @@ impl RkvRepository {
         let reader = env.read()?;
         match store.get(&reader, user_id.as_bytes())? {
             Some(Value::Str(s)) => {
-                let mut user: User = serde_json::from_str(&s)?;
+                let mut user: User = serde_json::from_str(s)?;
                 // A record written when the identifier was the email address still signs in.
                 user.adopt_legacy_identifier();
                 Ok(Some(user))
@@ -87,7 +87,7 @@ impl UserRepository for RkvRepository {
         let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let previous = match store.get(&reader, user_id.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?.external_id,
+            Some(Value::Str(s)) => serde_json::from_str::<User>(s)?.external_id,
             _ => None,
         };
         let mut writer = env.write()?;
@@ -123,7 +123,7 @@ impl UserRepository for RkvRepository {
         let store = env.open_single(USER_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let mut user = match store.get(&reader, user_id.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?,
+            Some(Value::Str(s)) => serde_json::from_str::<User>(s)?,
             _ => return Err("user not found".into()),
         };
         user.last_login = Some(at);
@@ -145,8 +145,8 @@ impl UserRepository for RkvRepository {
         let mut users = Vec::new();
         for result in store.iter_start(&reader)? {
             if let Ok((key, Value::Str(s))) = result {
-                let id = UserId::from(str::from_utf8(&key)?);
-                let mut user: User = serde_json::from_str(&s)?;
+                let id = UserId::from(str::from_utf8(key)?);
+                let mut user: User = serde_json::from_str(s)?;
                 user.adopt_legacy_identifier();
                 users.push((id, user));
             }
@@ -165,7 +165,7 @@ impl UserRepository for RkvRepository {
         let identities = env.open_single(IDENTITY_STORE, StoreOptions::create())?;
         let reader = env.read()?;
         let external_id = match store.get(&reader, user_id.as_bytes())? {
-            Some(Value::Str(s)) => serde_json::from_str::<User>(&s)?.external_id,
+            Some(Value::Str(s)) => serde_json::from_str::<User>(s)?.external_id,
             _ => None,
         };
         let mut writer = env.write()?;

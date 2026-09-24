@@ -83,6 +83,9 @@ impl<R: Storage> AppModule<R> {
     ///
     /// `verifier` replaces the CMS's own token check, and `bootstrap_admins` are the names an
     /// operator allowed to become the first administrators by signing in.
+    // Eight arguments, and each is a different collaborator this module cannot work without: a
+    // builder would be eight setters with eight chances to forget one.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_verifier(
         repository: Arc<R>,
         token_issuer: TokenIssuer,

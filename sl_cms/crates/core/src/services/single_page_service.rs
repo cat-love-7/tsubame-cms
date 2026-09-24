@@ -283,10 +283,8 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if let Some(effective) = working.as_ref().or(published.as_ref()) {
             images.extend(crate::models::image::referenced_images(effective));
         }
-        if is_published {
-            if let Some(published) = published.as_ref() {
-                images.extend(crate::models::image::referenced_images(published));
-            }
+        if is_published && let Some(published) = published.as_ref() {
+            images.extend(crate::models::image::referenced_images(published));
         }
         images.sort();
         images.dedup();
@@ -480,12 +478,10 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await
             .map_err(map_internal_error)?;
         match schema {
-            None => {
-                return Err(HttpError::NotFound(&format!(
-                    "Single page with id '{}' does not exist",
-                    name
-                )));
-            }
+            None => Err(HttpError::NotFound(&format!(
+                "Single page with id '{}' does not exist",
+                name
+            ))),
             Some(schema) => {
                 // A working copy may be incomplete; publishing is what asks for the required
                 // fields (see `FieldValueMap::validate_draft`).

@@ -20,8 +20,8 @@ impl CompositeFieldRepository for RkvRepository {
         let mut schemas = HashMap::new();
         for result in store.iter_start(&reader)? {
             if let Ok((key, Value::Str(s))) = result {
-                let id = str::from_utf8(&key)?.into();
-                let schema: CompositeFieldSchema = serde_json::from_str(&s)?;
+                let id = str::from_utf8(key)?.into();
+                let schema: CompositeFieldSchema = serde_json::from_str(s)?;
                 schemas.insert(id, schema);
             }
         }
@@ -37,7 +37,7 @@ impl CompositeFieldRepository for RkvRepository {
         let reader = env.read()?;
         match store.get(&reader, id.as_bytes())? {
             Some(Value::Str(s)) => {
-                let schema: CompositeFieldSchema = serde_json::from_str(&s)?;
+                let schema: CompositeFieldSchema = serde_json::from_str(s)?;
                 Ok(Some(schema))
             }
             _ => Ok(None),
@@ -84,7 +84,7 @@ mod tests {
     use std::{fs, vec};
 
     thread_local! {
-        static THREAD_ID: RefCell<u32> = RefCell::new(0);
+        static THREAD_ID: RefCell<u32> = const { RefCell::new(0) };
     }
 
     fn setup_repository() -> RkvRepository {
@@ -113,7 +113,7 @@ mod tests {
         RkvRepository::new(Arc::clone(&created_arc), path.join("images"))
     }
     fn teardown_repository() {
-        let id = THREAD_ID.with(|p| p.borrow().clone());
+        let id = THREAD_ID.with(|p| *p.borrow());
         let path = std::env::temp_dir().join(format!(
             "sl-cms-test-composite-{}-{}",
             std::process::id(),

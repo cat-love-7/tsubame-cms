@@ -469,8 +469,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             Some(item) => self.format_item(collection_name, &item).await,
             None => Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
-                item_id.to_string(),
-                collection_name
+                item_id, collection_name
             ))),
         }
     }
@@ -491,15 +490,15 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         let mut outcomes = Vec::with_capacity(item_ids.len());
         for item_id in item_ids {
             let outcome = match self
-                .set_item_status(collection_name, item_id.clone(), status, actor.clone())
+                .set_item_status(collection_name, *item_id, status, actor.clone())
                 .await
             {
                 Ok(metadata) => ItemStatusOutcome::Changed {
-                    id: item_id.clone(),
+                    id: *item_id,
                     metadata,
                 },
                 Err(error) => ItemStatusOutcome::Refused {
-                    id: item_id.clone(),
+                    id: *item_id,
                     code: error.code.to_string(),
                     message: error.message.clone(),
                 },
@@ -630,12 +629,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await
             .map_err(map_internal_error)?;
         match schema {
-            None => {
-                return Err(HttpError::NotFound(&format!(
-                    "Collection with id '{}' does not exist",
-                    collection_name
-                )));
-            }
+            None => Err(HttpError::NotFound(&format!(
+                "Collection with id '{}' does not exist",
+                collection_name
+            ))),
             Some(schema) => {
                 if self
                     .collection_repository
@@ -646,8 +643,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 {
                     return Err(HttpError::NotFound(&format!(
                         "Item with id '{}' not found in collection '{}'",
-                        item_id.to_string(),
-                        collection_name
+                        item_id, collection_name
                     )));
                 }
                 // The same normalisation as a create: a save stores the canonical slug, so the
@@ -987,17 +983,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         claimed: &mut Vec<(CollectionItemId, UniqueValue)>,
     ) -> Result<(), HttpError> {
         for (item_id, published) in items {
-            let working = drafts.get(&item_id);
+            let working = drafts.get(item_id);
             let is_published = statuses
-                .get(&item_id)
+                .get(item_id)
                 .map(|metadata| metadata.is_published())
                 .unwrap_or(false);
-            let held = Self::held_unique_values_for_status(
-                schema,
-                is_published,
-                Some(&published),
-                working,
-            );
+            let held =
+                Self::held_unique_values_for_status(schema, is_published, Some(published), working);
 
             // A slug is only a slug if what is held is canonical: the index would otherwise carry
             // a spelling no lookup asks for, and the item would be invisible under its own address.
@@ -1020,13 +1012,13 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             for value in held {
                 match self
                     .collection_repository
-                    .reserve_unique_value(collection_name, &item_id, &value)
+                    .reserve_unique_value(collection_name, item_id, &value)
                     .await
                     .map_err(map_internal_error)?
                 {
                     // Only what this attempt claimed: a value the item held before the schema
                     // was saved has to survive a rollback untouched.
-                    Reservation::Claimed => claimed.push((item_id.clone(), value)),
+                    Reservation::Claimed => claimed.push((*item_id, value)),
                     Reservation::AlreadyHeld => {}
                     Reservation::Taken { owner } => {
                         return Err(HttpError::Conflict(&format!(
@@ -1109,8 +1101,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         if published.is_none() {
             return Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
-                item_id.to_string(),
-                collection_name
+                item_id, collection_name
             )));
         }
         let owner = ItemOwner::collection_item(collection_name.as_str(), *item_id);
@@ -1544,8 +1535,7 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             Some(item) => self.format_item(collection_name, &item).await,
             None => Err(HttpError::NotFound(&format!(
                 "Item with id '{}' not found in collection '{}'",
-                item_id.to_string(),
-                collection_name
+                item_id, collection_name
             ))),
         }
     }
@@ -1655,25 +1645,25 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         // Publishing is where completeness is asked for. A working copy may be missing a required
         // field (a draft is what an editor is in the middle of), and the site must not be served
         // one: the refusal names the field, so the editor knows which one to fill in.
-        if metadata.is_published() {
-            if let Some(copy) = working.as_ref() {
-                let composite_schemas = self
-                    .composite_field_repository
-                    .list_composite_field_schemas()
-                    .await
-                    .map_err(map_internal_error)?;
-                copy.validate_to_schema(&composite_schemas, &schema)
-                    .map_err(|e| e.into_http_error())?;
-                // Filled in is not the same as served: a required relation whose targets are all
-                // still drafts would leave the site with a reference to nothing (§4).
-                relation_rules::ensure_required_relations_are_published(
-                    &schema,
-                    copy,
-                    &composite_schemas,
-                    &*self.content,
-                )
-                .await?;
-            }
+        if metadata.is_published()
+            && let Some(copy) = working.as_ref()
+        {
+            let composite_schemas = self
+                .composite_field_repository
+                .list_composite_field_schemas()
+                .await
+                .map_err(map_internal_error)?;
+            copy.validate_to_schema(&composite_schemas, &schema)
+                .map_err(|e| e.into_http_error())?;
+            // Filled in is not the same as served: a required relation whose targets are all
+            // still drafts would leave the site with a reference to nothing (§4).
+            relation_rules::ensure_required_relations_are_published(
+                &schema,
+                copy,
+                &composite_schemas,
+                &*self.content,
+            )
+            .await?;
         }
         // Taking the item off the site is the same rule from the other end: it must not leave
         // published content with a required relation pointing at nothing.
@@ -2818,7 +2808,7 @@ mod tests {
             .entry(name.clone())
             .or_default()
             .insert(CollectionItemId::from_u64(1), item);
-        repository.item_counter.write().unwrap().clone_from(&mut 1);
+        repository.item_counter.write().unwrap().clone_from(&1);
         let service = service_over(repository.clone());
 
         let adding_slug = vec![

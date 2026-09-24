@@ -134,11 +134,13 @@ mod tests {
     use crate::repositories::content_reader::{OwnedContent, ReadContentFuture};
     use crate::repositories::relation_repository::RelationReferencesFuture;
 
+    /// What the fake site knows about one piece of content: its schema, whether it is published,
+    /// and its values.
+    type FakeItem = (Vec<FieldSchema>, bool, FieldValueMap<Vec<FieldSchema>>);
+
     /// A site of content: what exists, and whether it is published.
     #[derive(Default)]
-    struct FakeContent(
-        HashMap<ItemOwner, (Vec<FieldSchema>, bool, FieldValueMap<Vec<FieldSchema>>)>,
-    );
+    struct FakeContent(HashMap<ItemOwner, FakeItem>);
 
     impl FakeContent {
         fn published(

@@ -28,14 +28,20 @@ use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::image_repository::{ImageRepository, Replacement};
 use crate::repositories::single_page_repository::SinglePageRepository;
 
+/// One collection's items, by id: the inner half of the item store.
+pub type ItemsByCollection = HashMap<CollectionName, HashMap<CollectionItemId, CollectionItem>>;
+
+/// The unique-value index: which item holds (collection, field, value).
+pub type UniqueIndex = HashMap<(CollectionName, String, String), CollectionItemId>;
+
 pub struct MemoryCollectionRepository {
     pub schemas: Arc<RwLock<HashMap<CollectionName, CollectionSchema>>>,
-    pub items: Arc<RwLock<HashMap<CollectionName, HashMap<CollectionItemId, CollectionItem>>>>,
+    pub items: Arc<RwLock<ItemsByCollection>>,
     pub item_counter: Arc<RwLock<u64>>,
     pub item_metadata: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), ItemMetadata>>>,
     pub drafts: Arc<RwLock<HashMap<(CollectionName, CollectionItemId), CollectionItem>>>,
     /// The unique index: (collection, field, value) to the item that holds it.
-    pub unique: Arc<RwLock<HashMap<(CollectionName, String, String), CollectionItemId>>>,
+    pub unique: Arc<RwLock<UniqueIndex>>,
     /// A store that refuses to write a schema, for the rollback a failed save has to do.
     pub fail_schema_save: bool,
     /// A store that answers "the working copy moved" to a promotion, for the refusal the
@@ -117,7 +123,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .map_or(vec![], |items_map| {
                 items_map
                     .iter()
-                    .map(|(id, item)| (id.clone(), item.clone()))
+                    .map(|(id, item)| (*id, item.clone()))
                     .collect()
             }))
     }
@@ -138,9 +144,7 @@ impl CollectionRepository for MemoryCollectionRepository {
         item_data: &CollectionItem,
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync + 'static>> {
         let mut items_map = self.items.write().unwrap();
-        let collection_items = items_map
-            .entry(collection_name.clone())
-            .or_insert_with(HashMap::new);
+        let collection_items = items_map.entry(collection_name.clone()).or_default();
         let new_id = {
             let mut counter = self.item_counter.write().unwrap();
             *counter += 1;
@@ -156,7 +160,7 @@ impl CollectionRepository for MemoryCollectionRepository {
         item_data: &CollectionItem,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         if let Some(items_map) = self.items.write().unwrap().get_mut(collection_name) {
-            items_map.insert(item_id.clone(), item_data.clone());
+            items_map.insert(*item_id, item_data.clone());
         }
         Ok(())
     }
@@ -171,7 +175,7 @@ impl CollectionRepository for MemoryCollectionRepository {
         self.item_metadata
             .write()
             .unwrap()
-            .remove(&(collection_name.clone(), item_id.clone()));
+            .remove(&(collection_name.clone(), *item_id));
         Ok(())
     }
     async fn get_item_metadata(
@@ -183,7 +187,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .item_metadata
             .read()
             .unwrap()
-            .get(&(collection_name.clone(), item_id.clone()))
+            .get(&(collection_name.clone(), *item_id))
             .cloned())
     }
     async fn touch_item_metadata(
@@ -196,11 +200,11 @@ impl CollectionRepository for MemoryCollectionRepository {
         // same promise is kept by doing both here.
         let mut all = self.item_metadata.write().unwrap();
         let metadata = all
-            .get(&(collection_name.clone(), item_id.clone()))
+            .get(&(collection_name.clone(), *item_id))
             .cloned()
             .unwrap_or_default()
             .touched(now);
-        all.insert((collection_name.clone(), item_id.clone()), metadata);
+        all.insert((collection_name.clone(), *item_id), metadata);
         Ok(())
     }
     async fn set_item_dates(
@@ -212,11 +216,11 @@ impl CollectionRepository for MemoryCollectionRepository {
         // A patch applied under the one lock, like the adapters.
         let mut all = self.item_metadata.write().unwrap();
         let metadata = all
-            .get(&(collection_name.clone(), item_id.clone()))
+            .get(&(collection_name.clone(), *item_id))
             .cloned()
             .unwrap_or_default()
             .with_dates(dates);
-        all.insert((collection_name.clone(), item_id.clone()), metadata);
+        all.insert((collection_name.clone(), *item_id), metadata);
         Ok(())
     }
     async fn set_item_metadata(
@@ -230,7 +234,7 @@ impl CollectionRepository for MemoryCollectionRepository {
         self.item_metadata
             .write()
             .unwrap()
-            .insert((collection_name.clone(), item_id.clone()), metadata.clone());
+            .insert((collection_name.clone(), *item_id), metadata.clone());
         Ok(())
     }
     async fn get_collection_item_draft(
@@ -242,7 +246,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .drafts
             .read()
             .unwrap()
-            .get(&(collection_name.clone(), item_id.clone()))
+            .get(&(collection_name.clone(), *item_id))
             .cloned())
     }
     async fn set_collection_item_draft(
@@ -251,10 +255,10 @@ impl CollectionRepository for MemoryCollectionRepository {
         item_id: &CollectionItemId,
         item_data: &CollectionItem,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        self.drafts.write().unwrap().insert(
-            (collection_name.clone(), item_id.clone()),
-            item_data.clone(),
-        );
+        self.drafts
+            .write()
+            .unwrap()
+            .insert((collection_name.clone(), *item_id), item_data.clone());
         Ok(())
     }
     async fn delete_collection_item_draft(
@@ -265,7 +269,7 @@ impl CollectionRepository for MemoryCollectionRepository {
         self.drafts
             .write()
             .unwrap()
-            .remove(&(collection_name.clone(), item_id.clone()));
+            .remove(&(collection_name.clone(), *item_id));
         Ok(())
     }
     async fn list_collection_item_drafts(
@@ -281,7 +285,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .unwrap()
             .iter()
             .filter(|((name, _), _)| name == collection_name)
-            .map(|((_, id), item)| (id.clone(), item.clone()))
+            .map(|((_, id), item)| (*id, item.clone()))
             .collect())
     }
     async fn apply_item_status(
@@ -302,16 +306,16 @@ impl CollectionRepository for MemoryCollectionRepository {
                 .unwrap()
                 .entry(collection_name.clone())
                 .or_default()
-                .insert(item_id.clone(), draft.clone());
+                .insert(*item_id, draft.clone());
             self.drafts
                 .write()
                 .unwrap()
-                .remove(&(collection_name.clone(), item_id.clone()));
+                .remove(&(collection_name.clone(), *item_id));
         }
         self.item_metadata
             .write()
             .unwrap()
-            .insert((collection_name.clone(), item_id.clone()), metadata.clone());
+            .insert((collection_name.clone(), *item_id), metadata.clone());
         Ok(())
     }
     /// An in-memory index, so the service's bookkeeping can be tested without a backend.
@@ -335,12 +339,10 @@ impl CollectionRepository for MemoryCollectionRepository {
             unique.value.clone(),
         );
         match index.get(&key) {
-            Some(owner) if owner != item_id => Ok(Reservation::Taken {
-                owner: owner.clone(),
-            }),
+            Some(owner) if owner != item_id => Ok(Reservation::Taken { owner: *owner }),
             Some(_) => Ok(Reservation::AlreadyHeld),
             None => {
-                index.insert(key, item_id.clone());
+                index.insert(key, *item_id);
                 Ok(Reservation::Claimed)
             }
         }
@@ -362,7 +364,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .filter(|((name, held_field, _), _)| name == collection_name && held_field == field)
             .map(|((_, held_field, value), owner)| {
                 (
-                    owner.clone(),
+                    *owner,
                     UniqueValue {
                         field: held_field.clone(),
                         value: value.clone(),
@@ -417,7 +419,7 @@ impl CollectionRepository for MemoryCollectionRepository {
             .unwrap()
             .iter()
             .filter(|((name, _), _)| name == collection_name)
-            .map(|((_, id), metadata)| (id.clone(), metadata.clone()))
+            .map(|((_, id), metadata)| (*id, metadata.clone()))
             .collect())
     }
 }
