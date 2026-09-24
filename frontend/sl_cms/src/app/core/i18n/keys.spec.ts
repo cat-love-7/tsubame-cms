@@ -93,6 +93,42 @@ describe('translation keys used by the code', () => {
     expect(unknown, 'keys used by the code but missing from en.json').toEqual([]);
   });
 
+  // The other direction: a key nobody asks for is a sentence that will drift out of date in two
+  // languages, and the screen it was written for is gone. The exception is the family the *server*
+  // names: an error code arrives as data, so `errors.<code>` is looked up with a value the source
+  // cannot contain (see `http-error.ts`).
+  it('asks for every key the catalogs hold', () => {
+    const dynamic = [/^errors\./];
+    // Any dotted literal in the sources counts, not only the ones a pipe or `t()` reads directly:
+    // a screen hands keys to helpers (`confirmRemoval(image, 'content.trashConfirm')`), picks one
+    // with a ternary, or keeps them in a table, and a key named that way is very much still asked
+    // for. A key nobody names anywhere is what this is looking for.
+    const named = new Set<string>();
+    for (const [, source] of CODE) {
+      for (const match of source.matchAll(/'([A-Za-z][\w]*(?:\.[\w]+)+)'/g)) {
+        named.add(match[1]);
+      }
+    }
+    const unused: string[] = [];
+    const walk = (prefix: string, node: Record<string, unknown>) => {
+      for (const [name, value] of Object.entries(node)) {
+        const key = prefix === '' ? name : `${prefix}.${name}`;
+        if (value !== null && typeof value === 'object') {
+          walk(key, value as Record<string, unknown>);
+        } else if (
+          !used.has(key) &&
+          !named.has(key) &&
+          !dynamic.some((pattern) => pattern.test(key))
+        ) {
+          unused.push(key);
+        }
+      }
+    };
+    walk('', catalogs['en']);
+
+    expect(unused, 'keys in en.json that no code asks for').toEqual([]);
+  });
+
   it('names only keys the Japanese catalog holds as well', () => {
     const unknown = [...used.keys()].filter((key) => !keyExists(catalogs['ja'], key));
 
