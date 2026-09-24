@@ -1,0 +1,19 @@
+@if (compositeSchema(); as subSchema) {
+  <!-- Sub-fields sit in the same 12-column grid as the top level: a composite definition has
+       widths and heights of its own, and the schema editor draws them, so the content editor has
+       to honour them or the two screens disagree. -->
+  <fieldset class="composite" [disabled]="disabled">
+    <div class="field-grid">
+      @for (subField of subSchema; track subField.name) {
+        @let context = subFieldContext(subField);
+        <div class="field-cell" [style]="context.style">
+          <ng-container *ngTemplateOutlet="subFieldTemplate; context: context" />
+        </div>
+      }
+    </div>
+  </fieldset>
+} @else {
+  <p class="note">
+    {{ 'content.compositeUndefined' | transloco: { id: compositeId() } }}
+  </p>
+}

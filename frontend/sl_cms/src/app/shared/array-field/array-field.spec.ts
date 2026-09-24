@@ -17,6 +17,7 @@ import {
 } from 'app/core/testing/fields';
 import { ImagesService } from 'app/services/media/images.service';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
+import { CompositeField } from 'app/shared/composite-field/composite-field';
 import { ValueField } from 'app/shared/value-field/value-field';
 import { ArrayField } from './array-field';
 
@@ -371,7 +372,11 @@ describe('ArrayField', () => {
     const editor = fixture.debugElement.queryAll(By.directive(ValueField))[0]
       .componentInstance as ValueField;
     expect(editor.field?.field_type).toEqual({ CompositeField: { id: 'seo' } });
-    expect(editor.compositeValues).toEqual({ description: 'first' });
+    // The sub-values are the composite widget's, one level below the field that names the
+    // definition.
+    const composite = fixture.debugElement.queryAll(By.directive(CompositeField))[0]
+      .componentInstance as CompositeField;
+    expect(composite.compositeValues).toEqual({ description: 'first' });
   });
 
   it('adds an element with its definition defaults, and removes it again', () => {

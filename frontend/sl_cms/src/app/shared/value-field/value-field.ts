@@ -6,8 +6,6 @@ import {
   OnInit,
   Output,
   SimpleChanges,
-  inject,
-  signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -21,25 +19,21 @@ import { TranslocoPipe } from '@jsverse/transloco';
 
 import { ImageField } from 'app/shared/image-field/image-field';
 import { MarkdownField } from 'app/shared/markdown-field/markdown-field';
-import { fieldCellStyle } from 'app/core/field-layout';
-import { Message, failure, t } from 'app/core/i18n/message';
+import { Message, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
   TextFieldOptions,
-  isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
   isSlugFieldSchema,
   isTextFieldSchema,
 } from 'app/models/schema/fields';
 import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
+import { FieldValue } from 'app/models/values/fields';
 import { ContentValue } from 'app/models/values/single-page';
-
-import { FieldValue, withDefaults } from 'app/models/values/fields';
-import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
 import { ArrayField } from 'app/shared/array-field/array-field';
+import { CompositeField } from 'app/shared/composite-field/composite-field';
 import { RelationField } from 'app/shared/relation-field/relation-field';
-import { ProblemCollector } from 'app/shared/value-field/problem-collector';
 
 type FieldKind =
   | 'Text'
@@ -74,6 +68,7 @@ let nextValueFieldId = 0;
   selector: 'app-value-field',
   imports: [
     ArrayField,
+    CompositeField,
     RelationField,
     MatTooltipModule,
     FormsModule,
@@ -122,33 +117,15 @@ export class ValueField implements OnInit, OnChanges {
    */
   public readonly labelId = `value-field-${(nextValueFieldId += 1)}`;
 
-  private compositeFields = inject(CompositeFieldsService);
-
-  /** Places a composite's sub-fields in the same grid the top level uses. */
-  public cellStyle = fieldCellStyle;
-
-  /** The referenced composite's sub-schema, or null when it is not defined. */
-  public compositeSchema = signal<FieldSchema[] | null>(null);
-  public compositeId = signal('');
-  public compositeValues: ContentValue = {};
-
-  /** The last value this component emitted, so its own output is not mistaken for new
-   * input (which would reset the JSON buffer or the sub-field state mid-typing). */
-  private lastEmitted: FieldValue = null;
-
-  /** Problems reported by sub-fields, so one clearing does not clear another's. */
-  private problems = new ProblemCollector((problem) => this.errorChange.emit(problem));
-
   ngOnInit() {
+    // What was loaded may already be outside the lengths the schema sets: the schema may have
+    // been tightened since it was written, so the reader is told before they save it back.
     this.reportTextLength(this.value);
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['field']) {
-      this.loadCompositeSchema();
-    } else if (changes['value']) {
+    if (changes['value']) {
       this.reportTextLength(this.value);
-      this.syncCompositeValues();
     }
   }
 
@@ -292,7 +269,6 @@ export class ValueField implements OnInit, OnChanges {
 
   update(value: FieldValue) {
     this.value = value;
-    this.lastEmitted = value;
     this.valueChange.emit(value);
     this.reportTextLength(value);
   }
@@ -377,69 +353,5 @@ export class ValueField implements OnInit, OnChanges {
     }
     const date = new Date(local);
     this.update(Number.isNaN(date.getTime()) ? null : date.toISOString());
-  }
-
-  setCompositeValue(subField: FieldSchema, value: FieldValue) {
-    this.compositeValues[subField.name] = value;
-    // Emit the bare object of sub-values: that is what a composite write accepts. The
-    // `{id, values}` wrapper only appears on reads.
-    this.update({ ...this.compositeValues });
-  }
-
-  forwardCompositeError(subField: FieldSchema, problem: Message | null) {
-    // One at a time: the parent shows the first problem and refuses to save until none remain,
-    // so naming the others too would only lengthen the message.
-    this.problems.set(subField.name, problem);
-  }
-
-  private loadCompositeSchema() {
-    const type = this.field.field_type;
-    if (!isCompositeFieldSchema(type)) {
-      return;
-    }
-    const id = String(type.CompositeField.id);
-    this.compositeId.set(id);
-    this.compositeFields.getAllCompositeFields().subscribe({
-      next: (all) => {
-        const schema = all[id] ?? null;
-        this.compositeSchema.set(schema);
-        this.compositeValues = schema ? withDefaults(schema, this.innerCompositeValue(schema)) : {};
-      },
-      error: (e) => this.errorChange.emit(failure('content.failedToLoadComposite', e, { id })),
-    });
-  }
-
-  private syncCompositeValues() {
-    const schema = this.compositeSchema();
-    if (!schema || this.value === this.lastEmitted) {
-      return;
-    }
-    this.compositeValues = withDefaults(schema, this.innerCompositeValue(schema));
-  }
-
-  /**
-   * A composite's own sub-values.
-   *
-   * Reads wrap them as `{id, values}`, so the wrapper is unwrapped here — except when the
-   * composite genuinely declares a sub-field called `values`, which mirrors what the
-   * server does.
-   */
-  private innerCompositeValue(schema: FieldSchema[]): ContentValue {
-    const value = this.value;
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      return {};
-    }
-    const record = value;
-    const declaresValues = schema.some((field) => field.name === 'values');
-    const wrapped = record['values'];
-    if (
-      !declaresValues &&
-      wrapped !== null &&
-      typeof wrapped === 'object' &&
-      !Array.isArray(wrapped)
-    ) {
-      return wrapped;
-    }
-    return record;
   }
 }

@@ -1,7 +1,7 @@
 // The widgets a field can be rendered with. The shared shapes - `.note`, `.picker-actions` - come
 // from `src/styles.scss`, and each kind that brings a shape of its own is a component of its own
-// (`markdown-field`, `image-field`, `relation-field`, `array-field`); what is left here is the
-// label above the widget, the grid a composite's sub-fields sit in, and the two text widgets.
+// (`markdown-field`, `image-field`, `relation-field`, `array-field`, `composite-field`); what is
+// left here is the label above the widget and the two text widgets.
 
 .field-label {
   display: block;
@@ -29,22 +29,6 @@
 
 .full-width {
   width: 100%;
-}
-
-.composite {
-  margin: 0 0 8px;
-  padding: 8px 12px 0;
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: 8px;
-}
-
-// Nesting is shown by an indent rather than a deeper border, which gets noisy fast.
-.composite .composite {
-  margin-left: 8px;
-  padding-right: 0;
-  border: none;
-  border-left: 2px solid var(--mat-sys-outline-variant);
-  border-radius: 0;
 }
 
 /// A slug: the input, and the button that fills it from another field.

@@ -11,6 +11,7 @@ import { Message, t } from 'app/core/i18n/message';
 import { ImagesService } from 'app/services/media/images.service';
 import { TypedFixture } from 'app/core/testing/fixture';
 import { COMPOSITE_DEFINITIONS, StubImagesService, field } from 'app/core/testing/fields';
+import { CompositeField } from 'app/shared/composite-field/composite-field';
 import { ImageField } from 'app/shared/image-field/image-field';
 import { RelationField } from 'app/shared/relation-field/relation-field';
 import { ValueField } from './value-field';
@@ -153,7 +154,11 @@ describe('ValueField', () => {
     const emitted: FieldValue[] = [];
     component.valueChange.subscribe((value) => emitted.push(value));
 
-    component.setCompositeValue(field('description', { Text: {} }), 'changed');
+    // The sub-fields are the composite widget's, which is what holds them; what this component
+    // does is pass the fixed value on (the card above is the spec for that).
+    const composite = fixture.debugElement.query(By.directive(CompositeField))
+      ?.componentInstance as CompositeField;
+    composite.setCompositeValue(field('description', { Text: {} }), 'changed');
 
     expect(emitted).toEqual([{ description: 'changed' }]);
   });
