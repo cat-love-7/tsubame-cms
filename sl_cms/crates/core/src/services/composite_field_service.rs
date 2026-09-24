@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use crate::models::error::{HttpError, map_internal_error};
 use crate::models::schema::{
-    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, referenced_relation_targets,
-    validate_composite_references, validate_no_composite_cycles, validate_relation_targets,
-    validate_schema,
+    CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope,
+    referenced_relation_targets, validate_composite_references, validate_no_composite_cycles,
+    validate_relation_targets, validate_schema,
 };
-use crate::models::values::{FieldSchema};
+use crate::models::values::FieldSchema;
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
 use crate::repositories::relation_targets::RelationTargetSource;
 
@@ -181,14 +181,13 @@ mod tests {
     use std::sync::{Arc, RwLock};
     use std::vec;
 
-    use crate::models::values::{TextFieldOptions};
+    use crate::models::values::TextFieldOptions;
     use crate::models::values::{FieldSchema, FieldType, RelationOptions};
     use crate::repositories::relation_targets::StaticRelationTargets;
 
     use super::*;
 
     use crate::repositories::memory::MemoryCompositeFieldRepository;
-
 
     // Test helper functions
     fn create_test_service() -> CompositeFieldService<MemoryCompositeFieldRepository> {

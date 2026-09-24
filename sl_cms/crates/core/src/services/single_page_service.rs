@@ -858,23 +858,22 @@ mod tests {
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
 
-    use crate::models::schema::{RelationOptions};
-    use crate::models::values::{TextFieldOptions};
+    use crate::models::schema::RelationOptions;
+    use crate::models::values::TextFieldOptions;
     use crate::models::values::{
         FieldSchema, FieldType, FieldValue, FieldValueMap, FieldValueResponse,
     };
-    
+
     use super::*;
 
-    use crate::repositories::memory::MemorySinglePageRepository;
+    use crate::repositories::content_reader::NoContent;
     use crate::repositories::memory::MemoryCompositeFieldRepository;
     use crate::repositories::memory::MemoryImageRepository;
-    use crate::repositories::content_reader::NoContent;
+    use crate::repositories::memory::MemorySinglePageRepository;
     use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
     use crate::webhook::NotifyFuture;
-
 
     // Test helper functions
     fn create_test_service() -> SinglePageService<

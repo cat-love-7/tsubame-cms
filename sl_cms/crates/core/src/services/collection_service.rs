@@ -27,8 +27,8 @@ use crate::models::values::{FieldType, FieldValue, FieldValueMap, FieldValueResp
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
-use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::content_reader::{ContentReader, SchemaOwner};
+use crate::repositories::image_repository::ImageRepository;
 use crate::repositories::relation_repository::RelationRepository;
 use crate::repositories::relation_rules;
 use crate::repositories::relation_targets::RelationTargetSource;
@@ -2178,19 +2178,17 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::models::collection::CollectionName;
-    use crate::models::schema::{
-        CompositeFieldId, CompositeFieldReference, RelationOptions,
-    };
+    use crate::models::schema::{CompositeFieldId, CompositeFieldReference, RelationOptions};
     use crate::models::values::{CompositeFieldSchema, FieldValueMap, TextFieldOptions};
     use crate::models::values::{FieldSchema, FieldType, FieldValue};
 
     use super::*;
 
+    use crate::models::user::UserId;
+    use crate::repositories::content_reader::NoContent;
     use crate::repositories::memory::MemoryCollectionRepository;
     use crate::repositories::memory::MemoryCompositeFieldRepository;
     use crate::repositories::memory::MemoryImageRepository;
-    use crate::models::user::UserId;
-    use crate::repositories::content_reader::NoContent;
     use crate::repositories::relation_repository::NoRelations;
     use crate::repositories::relation_targets::StaticRelationTargets;
     use crate::webhook::NoopNotifier;
