@@ -83,9 +83,11 @@ const COMPOSITE_SCHEMA = [
 ];
 
 const results = [];
+/** The scenario being run, so a result (and a failure) says which part of the suite it is from. */
+let scenario = 'start-up';
 function check(label, ok, detail = '') {
-  results.push({ label, ok });
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`);
+  results.push({ label, ok, scenario });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  [${scenario}] ${label}${detail ? `  (${detail})` : ''}`);
 }
 
 // ------------------------------------------------------------------------------ seed data
@@ -381,8 +383,27 @@ async function waitForRows(count) {
     .catch(() => {});
 }
 
-try {
-  // -------------------------------------------------------------- the language switch
+// ------------------------------------------------------------------------- the scenarios
+
+// The suite is an ordered list of scenarios, each a function: a failure then says which part
+// of the suite it came from, and a scenario can be read (or run) on its own. They share the
+// page, the signed-in token and the values just below, in the order they are listed - the
+// suite is one story told in chapters, and the order is what makes it cheap to set up.
+
+// Values one scenario leaves for the next: assigned where they are produced, read by whichever
+// scenario needs them.
+let paginator;
+let badge;
+let imagesBefore;
+let replacedImageId;
+let thumbs;
+let titleField;
+let publishWording;
+let editor;
+let viewer;
+
+/** The language switch. */
+async function theLanguageSwitch() {
   // The harness pins the interface to English; this is the one check that leaves it, and puts it
   // back, so every other check reads the language it expects.
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
@@ -402,8 +423,10 @@ try {
   check('日本語に切り替えられる', await titleSays('サインイン'));
   await page.locator('app-language-switcher button', { hasText: 'English' }).click();
   check('英語に戻せる', await titleSays('Sign in to'));
+}
 
-  // -------------------------------------------------------------- sign in through the form
+/** Sign in through the form. */
+async function signInThroughTheForm() {
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await page.fill('input[name=username]', USERNAME);
   await page.fill('input[name=password]', PASSWORD);
@@ -433,8 +456,10 @@ try {
     iconFont !== null && iconFont.family.includes('Material Icons') && iconFont.loaded,
     JSON.stringify(iconFont),
   );
+}
 
-  // ------------------------------------------------- a plain array, edited as JSON
+/** A plain array, edited as JSON. */
+async function aPlainArrayEditedAsJSON() {
   // An array's item types are decided in the schema editor and were invisible in the content
   // editor, which left the JSON box looking like it accepted anything.
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
@@ -474,8 +499,10 @@ try {
     JSON.stringify(savedScores?.scores) === '[1,2]',
     JSON.stringify(savedScores?.scores),
   );
+}
 
-  // -------------------------------------------------------------- first page
+/** First page. */
+async function firstPage() {
   await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });
 
@@ -498,7 +525,7 @@ try {
   const firstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   check(`新しい順で id ${TOTAL} から始まる`, firstId === String(TOTAL), `id=${firstId}`);
 
-  const paginator = page.locator('mat-paginator');
+  paginator = page.locator('mat-paginator');
   check('ページャが表示される', await paginator.isVisible());
 
   const rangeLabel = (
@@ -509,15 +536,19 @@ try {
     new RegExp(String(TOTAL)).test(rangeLabel ?? ''),
     rangeLabel,
   );
+}
 
-  // -------------------------------------------------------------- status and updated columns
-  const badge = (await badgeOf(firstRow()).textContent())?.trim();
+/** Status and updated columns. */
+async function statusAndUpdatedColumns() {
+  badge = (await badgeOf(firstRow()).textContent())?.trim();
   check('状態バッジが出る', badge === 'Draft' || badge === 'Published', badge);
 
   const updated = (await firstRow().locator('td.updated').textContent())?.trim();
   check('Updated 列に日時が出る', Boolean(updated) && updated !== '—', updated);
+}
 
-  // -------------------------------------------------------------- next page
+/** Next page. */
+async function nextPage() {
   // Material overlays a touch target on the pager buttons, so a plain click never lands.
   await paginator.locator('.mat-mdc-paginator-navigation-next').click({ force: true });
   // Waiting for 25 rows would prove nothing (page one has 25 too), so wait for the content that
@@ -539,15 +570,19 @@ try {
     secondPageFirstId === secondPageFirst,
     `id=${secondPageFirstId}`,
   );
+}
 
-  // -------------------------------------------------------------- page size
+/** Page size. */
+async function pageSize() {
   await paginator.locator('mat-select').click({ force: true });
   await page.locator('mat-option', { hasText: '50' }).first().click({ force: true });
   await waitForRows(50);
   const rowsAtFifty = await dataRows().count();
   check('ページサイズ 50 で 50 行', rowsAtFifty === 50, `${rowsAtFifty} 行`);
+}
 
-  // -------------------------------------------------------------- ordering from the headers
+/** Ordering from the headers. */
+async function orderingFromTheHeaders() {
   // The order belongs to the screen: the id column's header asks for the other way round, and the
   // header says which way it is (`aria-sort`, and an arrow drawn in CSS).
   const idHeading = page.locator('thead th').nth(1);
@@ -590,8 +625,10 @@ try {
       (await idHeading.getAttribute('aria-sort')) === 'descending',
     `id=${await firstIdNow()} / ${(await idHeading.getAttribute('aria-sort')) ?? 'none'}`,
   );
+}
 
-  // -------------------------------------------------------------- publish a draft from the list
+/** Publish a draft from the list. */
+async function publishADraftFromTheList() {
   // Item 1 is what the rest of the scenario works with (the delivery checks and the relation
   // target), and the list is newest first: the oldest item lives on the last page, so show the
   // whole collection and name the row rather than taking the top of the list.
@@ -624,8 +661,10 @@ try {
   // The audit trail: the row now names the account that published it.
   const publisherNote = (await rowById(draftId).locator('.publisher').textContent())?.trim();
   check('誰が公開したかが一覧に出る', publisherNote === USERNAME, `${publisherNote}`);
+}
 
-  // -------------------------------------------------------------- delete the last page's only row
+/** Delete the last page's only row. */
+async function deleteTheLastPagesOnlyRow() {
   await page.goto(`${BASE}/collections/${LAST_PAGE_COLLECTION}`, { waitUntil: 'networkidle' });
   await dataRows().first().waitFor({ timeout: 15000 });
   await page.locator('mat-paginator .mat-mdc-paginator-navigation-last').click({ force: true });
@@ -642,10 +681,12 @@ try {
     rowsAfterDelete === 25,
     `${rowsAfterDelete} 行 (削除 id=${doomedId})`,
   );
+}
 
-  // -------------------------------------------------------------- the image library
+/** The image library. */
+async function theImageLibrary() {
   await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
-  const imagesBefore = await page.locator('.library .image').count();
+  imagesBefore = await page.locator('.library .image').count();
 
   // Upload twice, so the image array has something to choose between. Each upload goes
   // through the same hidden file input the button drives.
@@ -733,7 +774,7 @@ try {
   const cardBeforeReplace = page.locator('.library .image').first();
   const idBeforeReplace = (await cardBeforeReplace.locator('.meta').textContent())?.trim();
   const urlBeforeReplace = await cardBeforeReplace.locator('img').getAttribute('src');
-  const replacedImageId = Number(idBeforeReplace?.match(/id (\d+)/)?.[1]);
+  replacedImageId = Number(idBeforeReplace?.match(/id (\d+)/)?.[1]);
   const durableLink = `${BASE}/api/images/by-id/${replacedImageId}`;
   const linkBefore = await page.evaluate(async (src) => {
     const response = await fetch(src, { redirect: 'follow' });
@@ -789,11 +830,13 @@ try {
     (await page.locator('.notice-toast .text').first().textContent()) ?? ''
   ).trim();
   check('リンクをコピーできる', linkNotice.includes(`/api/images/by-id/`), linkNotice);
+}
 
-  // -------------------------------------------------------------- pick images while editing
+/** Pick images while editing. */
+async function pickImagesWhileEditing() {
   await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('button:has-text("Choose existing")').click();
-  const thumbs = page.locator('.thumb');
+  thumbs = page.locator('.thumb');
   await thumbs.first().waitFor({ timeout: 15000 });
   const thumbCount = await thumbs.count();
   check('編集中に既存画像を一覧できる', thumbCount >= 2, `${thumbCount} 件`);
@@ -871,8 +914,10 @@ try {
       saved.gallery.every((image) => image?.url?.startsWith('/api/images/')),
     JSON.stringify(saved?.gallery),
   );
+}
 
-  // -------------------------------------------------------------- saving is not publishing
+/** Saving is not publishing. */
+async function savingIsNotPublishing() {
   // The delivery API only ever sees the published copy.
   const draftsOnly = await api('GET', `/content/collections/${IMAGE_COLLECTION}`, undefined, token);
   check(
@@ -905,8 +950,10 @@ try {
     publishedItems.items.length === 1,
     `${publishedItems.items.length} 件`,
   );
+}
 
-  // -------------------------------------------------------------- an image array inside a composite
+/** An image array inside a composite. */
+async function anImageArrayInsideAComposite() {
   await page.goto(`${BASE}/collections/${COMPOSITE_COLLECTION}/edit/1`, {
     waitUntil: 'networkidle',
   });
@@ -943,8 +990,10 @@ try {
     Array.isArray(compositeImages) && compositeImages.length === 2,
     JSON.stringify(compositeImages),
   );
+}
 
-  // -------------------------------------------------------------- delete them again
+/** Delete them again. */
+async function deleteThemAgain() {
   // Everything uploaded during this run goes, whether it came from the library screen or
   // straight into an array, so the next run starts from the same place.
   await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
@@ -1036,8 +1085,10 @@ try {
     (await page.locator('.library .image').count()) === trashedBefore - 1,
     `${await page.locator('.library .image').count()} 件`,
   );
+}
 
-  // ------------------------------------------------- preview links are a schema's choice
+/** Preview links are a schema's choice. */
+async function previewLinksAreASchemasChoice() {
   // A schema that was never asked for previews offers no link at all: the button is not there, so
   // nobody is invited to mint something the server would refuse.
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
@@ -1079,10 +1130,12 @@ try {
     scrolled && Boolean(toastBox) && toastBox.y >= 0 && toastBox.y < (viewport?.height ?? 0),
     `scrolled=${scrolled} y=${Math.round(toastBox?.y ?? -1)} viewport=${viewport?.height}`,
   );
+}
 
-  // ------------------------------------------------- a link shows unpublished work to a guest
+/** A link shows unpublished work to a guest. */
+async function aLinkShowsUnpublishedWorkToAGuest() {
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
-  const titleField = page.locator('app-value-field input').first();
+  titleField = page.locator('app-value-field input').first();
   await titleField.waitFor({ timeout: 15000 });
   const previewWording = `preview wording ${Date.now()}`;
   await titleField.fill(previewWording);
@@ -1203,7 +1256,7 @@ try {
   // the *previous* version live while the screen showed the new one.
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await titleField.waitFor({ timeout: 15000 });
-  const publishWording = `publish wording ${Date.now()}`;
+  publishWording = `publish wording ${Date.now()}`;
   await titleField.fill(publishWording);
   check(
     '未保存の変更があると画面にそう出る',
@@ -1232,8 +1285,10 @@ try {
     afterSaveAndPublish.values.title === publishWording,
     `${afterSaveAndPublish.values.title}`,
   );
+}
 
-  // ------------------------------------------------- what is live, and taking changes back
+/** What is live, and taking changes back. */
+async function whatIsLiveAndTakingChangesBack() {
   // The form holds the working copy, so the content the changes would replace is not visible
   // anywhere else in the CMS: it is read on demand, and the changes can be thrown away.
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
@@ -1306,8 +1361,10 @@ try {
   await page.click('button:has-text("Cancel")');
   await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
   check('確認に同意すると移動する', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
+}
 
-  // -------------------------------------------------------------- roles decide what is offered
+/** Roles decide what is offered. */
+async function rolesDecideWhatIsOffered() {
   // Two extra accounts, recreated each run, so the screens can be looked at as each role.
   const roleAccounts = [
     {
@@ -1338,7 +1395,7 @@ try {
   );
   await expandBranch(page, 'Schemas');
 
-  const editor = await openAs('e2e-editor@example.com', 'role-password');
+  editor = await openAs('e2e-editor@example.com', 'role-password');
   await editor.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await editor.page
     .locator('table.items tbody tr:has(app-item-status)')
@@ -1383,7 +1440,7 @@ try {
       (await editor.page.locator('button:has-text("Publish")').count()) === 0,
   );
 
-  const viewer = await openAs('e2e-viewer@example.com', 'role-password');
+  viewer = await openAs('e2e-viewer@example.com', 'role-password');
   await viewer.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await viewer.page
     .locator('table.items tbody tr:has(app-item-status)')
@@ -1410,8 +1467,10 @@ try {
       .locator('a[href="/account"], button[aria-label="Change password"]')
       .count()) === 1,
   );
+}
 
-  // ------------------------------------------- a password change ends the old sessions
+/** A password change ends the old sessions. */
+async function aPasswordChangeEndsTheOldSessions() {
   await viewer.page.goto(`${BASE}/account`, { waitUntil: 'networkidle' });
   const stolenToken = await viewer.page.evaluate(() => localStorage.getItem('sl_cms.token'));
   await viewer.page.fill('input[name=current]', 'role-password');
@@ -1460,8 +1519,10 @@ try {
 
   await editor.context.close();
   await viewer.context.close();
+}
 
-  // ------------------------------------ per-resource permissions, granted from the screen
+/** Per-resource permissions, granted from the screen. */
+async function perResourcePermissionsGrantedFromTheScreen() {
   const scopedEmail = 'e2e-scoped@example.com';
   for (const account of await api('GET', '/auth/users', undefined, token)) {
     if (account.username === scopedEmail) {
@@ -1541,8 +1602,10 @@ try {
     `status=${denied.status()}`,
   );
   await scopedSession.context.close();
+}
 
-  // ------------------------------------------- the schema editor, driven from the screen
+/** The schema editor, driven from the screen. */
+async function theSchemaEditorDrivenFromTheScreen() {
   // Every collection above is created through the API, so this screen - where an author
   // builds the content model - would otherwise never be exercised in a browser.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
@@ -2335,8 +2398,10 @@ try {
 
   // Through the API rather than the screen: this collection exists only for this scenario.
   await deleteIfPresent(`/models/collections/${SCHEMA_COLLECTION}`, token);
+}
 
-  // ------------------------------------------- single pages: switching follows the URL
+/** Single pages: switching follows the URL. */
+async function singlePagesSwitchingFollowsTheURL() {
   // Two pages, so the sidebar can be used to switch from one to the other. The router reuses the
   // component when only the parameter changes, which used to leave the first page on screen.
   const stamp = Date.now();
@@ -2460,8 +2525,10 @@ try {
   for (const name of [pageA, pageB]) {
     await deleteIfPresent(`/models/single_pages/${name}`, token);
   }
+}
 
-  // ------------------------------- an administrator hands out a password reset link
+/** An administrator hands out a password reset link. */
+async function anAdministratorHandsOutAPasswordResetLink() {
   const resetUsername = `e2e-reset-${Date.now()}`;
   for (const account of await api('GET', '/auth/users', undefined, token)) {
     if (account.username.startsWith('e2e-reset-')) {
@@ -2531,8 +2598,10 @@ try {
   });
   check('同じリンクは二度使えない', reused.status() === 403, `status=${reused.status()}`);
   await resetContext.close();
+}
 
-  // ------------------------------------------- guessing a password is not free
+/** Guessing a password is not free. */
+async function guessingAPasswordIsNotFree() {
   // A throwaway account, so the lock this leaves behind touches nothing else. The API is
   // called from here rather than through the form: what matters is the status codes, and a
   // refused sign-in is a console error the check below would rightly report.
@@ -2585,8 +2654,10 @@ try {
     otherAccount.status() === 200,
     `status=${otherAccount.status()}`,
   );
+}
 
-  // ------------------------------- writing Markdown without knowing Markdown, and box heights
+/** Writing Markdown without knowing Markdown, and box heights. */
+async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   // A collection of its own, so the checks are about the widgets and not about the data the rest of
   // the suite drives.
   const WRITING = 'e2e_writing';
@@ -2721,11 +2792,54 @@ try {
     unexpectedErrors.length === 0,
     unexpectedErrors.slice(0, 2).join(' | '),
   );
+}
+
+/** The scenarios, in the order they run. */
+const SCENARIOS = [
+  ['the language switch', theLanguageSwitch],
+  ['sign in through the form', signInThroughTheForm],
+  ['a plain array, edited as JSON', aPlainArrayEditedAsJSON],
+  ['first page', firstPage],
+  ['status and updated columns', statusAndUpdatedColumns],
+  ['next page', nextPage],
+  ['page size', pageSize],
+  ['ordering from the headers', orderingFromTheHeaders],
+  ['publish a draft from the list', publishADraftFromTheList],
+  ["delete the last page's only row", deleteTheLastPagesOnlyRow],
+  ['the image library', theImageLibrary],
+  ['pick images while editing', pickImagesWhileEditing],
+  ['saving is not publishing', savingIsNotPublishing],
+  ['an image array inside a composite', anImageArrayInsideAComposite],
+  ['delete them again', deleteThemAgain],
+  ["preview links are a schema's choice", previewLinksAreASchemasChoice],
+  ['a link shows unpublished work to a guest', aLinkShowsUnpublishedWorkToAGuest],
+  ['what is live, and taking changes back', whatIsLiveAndTakingChangesBack],
+  ['roles decide what is offered', rolesDecideWhatIsOffered],
+  ['a password change ends the old sessions', aPasswordChangeEndsTheOldSessions],
+  ['per-resource permissions, granted from the screen', perResourcePermissionsGrantedFromTheScreen],
+  ['the schema editor, driven from the screen', theSchemaEditorDrivenFromTheScreen],
+  ['single pages: switching follows the URL', singlePagesSwitchingFollowsTheURL],
+  ['an administrator hands out a password reset link', anAdministratorHandsOutAPasswordResetLink],
+  ['guessing a password is not free', guessingAPasswordIsNotFree],
+  [
+    'writing Markdown without knowing Markdown, and box heights',
+    writingMarkdownWithoutKnowingMarkdownAndBoxHeights,
+  ],
+];
+
+try {
+  for (const [name, run] of SCENARIOS) {
+    scenario = name;
+    // A heading per scenario, so a long run in a log is navigable.
+    console.log(`\n== ${name} ==`);
+    await run();
+  }
 } catch (error) {
   check('検証スクリプトが最後まで走る', false, String(error).split('\n')[0]);
   // Where it stopped, since a locator timeout says what was not found and not what was on screen.
   // Diagnosing a wrong navigation this way took one run instead of three.
   console.log('failure context:');
+  console.log(`  scenario: ${scenario}`);
   console.log(`  url: ${page.url()}`);
   const visible = await page
     .locator('body')
@@ -2737,5 +2851,12 @@ try {
 }
 
 const failed = results.filter((result) => !result.ok);
+if (failed.length > 0) {
+  // Named once more at the end: a run in a log is read from the bottom.
+  console.log('\n失敗したチェック:');
+  for (const result of failed) {
+    console.log(`  [${result.scenario}] ${result.label}`);
+  }
+}
 console.log(`\n${results.length - failed.length}/${results.length} 件のチェックに成功`);
 process.exit(failed.length === 0 ? 0 : 1);
