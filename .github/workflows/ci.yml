@@ -23,8 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
-      # break a branch nobody touched. Bumping it is a commit.
+      # break a branch nobody touched. Bumping it is a commit. `rustfmt` is not part of the
+      # default profile of a pinned toolchain, and the check below needs it.
       - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
@@ -88,7 +91,7 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
-      - run: ../../scripts/test-frontend.sh
+      - run: ../scripts/test-frontend.sh
 
   migration:
     name: Migration script
