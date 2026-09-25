@@ -61,7 +61,7 @@ struct ContentQuery {
     limit: Option<usize>,
     offset: Option<usize>,
     /// Comma-separated names to expand: a relation field of this schema, or the other side's name
-    /// for the relation (`inverse_name`), one level deep (see `doc/relations-design.md` §5).
+    /// for the relation (`inverse_name`), one level deep (see `docs/relations-design.md` §5).
     populate: Option<String>,
     /// One relation to filter a collection's list by, as `<field>:<value>`: an item id for a
     /// collection target, and the page's name for a single page.

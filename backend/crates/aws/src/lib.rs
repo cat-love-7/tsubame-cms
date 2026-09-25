@@ -1,20 +1,15 @@
 //! AWS storage adapter: DynamoDB (single table) for structured data, S3 for image bytes.
 //!
-//! The shape is settled in `doc/aws-plan.md` and `doc/aws-dynamodb-design.md`.
+//! The shape is settled in `docs/aws-decisions.md` and `docs/aws-dynamodb-design.md`.
 //!
 //! The repository traits are async, which is what this adapter always wanted to be: there used
 //! to be a bridge that ran each call on a runtime thread so synchronous traits could be served,
-//! and it is gone (see `doc/aws-dynamodb-design.md` §7.1).
+//! and it is gone (see `docs/aws-dynamodb-design.md` §7.1).
 //!
 //! What is here: the composition root, all five repository traits (collections, users, single
-//! pages, composite fields, images), the DynamoDB helpers (keys, JSON records, atomic ids) and
-//! the S3 upload target. Still to come: the Lambda entry point and Cognito.
-
-// Until the Lambda entry point exists (`doc/aws-plan.md` P3) nothing in the server binary drives
-// the adapter: `run` builds the composition root and reports that it has nowhere to serve it.
-// The data path is therefore compiled but never called, which is what every "never used" in this
-// module is about; saying so once here beats a wall of them.
-#![cfg_attr(not(test), allow(dead_code))]
+//! pages, composite fields, images), the DynamoDB helpers (keys, JSON records, atomic ids), the
+//! S3 upload target, the Lambda entry point, and the Cognito half of accounts (provisioning;
+//! token verification is the core's, because the on-premises deployment verifies its own).
 
 use aws_sdk_dynamodb::Client;
 
@@ -97,7 +92,7 @@ async fn s3_client(settings: &AwsSettings) -> aws_sdk_s3::Client {
 /// Build a Cognito client for the pool this deployment manages.
 ///
 /// No endpoint override, unlike the two clients above: those exist for the emulators, and there is
-/// no Cognito emulator to point at (`doc/aws-plan.md`, P4). A *local* run therefore composes its
+/// no Cognito emulator to point at (`docs/aws-decisions.md`). A *local* run therefore composes its
 /// module without a provisioner at all ([`build_app_module`]), which is the honest reading of it -
 /// it cannot manage accounts at a pool it cannot reach.
 async fn cognito_client(settings: &AwsSettings) -> aws_sdk_cognitoidentityprovider::Client {

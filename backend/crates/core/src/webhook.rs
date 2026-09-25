@@ -15,7 +15,7 @@
 //!
 //! Delivery is best effort: three attempts with a short backoff, then the failure is
 //! logged. There is no outbox, so a CMS that is restarted mid-delivery loses that event;
-//! see `doc/content-api.md`.
+//! see `docs/content-api.md`.
 
 use std::sync::Arc;
 use std::time::Duration;

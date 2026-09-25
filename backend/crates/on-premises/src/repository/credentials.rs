@@ -136,9 +136,9 @@ mod tests {
     #[test]
     fn verifying_a_password_waits_for_another_request_instead_of_failing() {
         use crate::open_test_repository;
-        use tsubame_core::repositories::local_credentials::LocalCredentials;
         use std::sync::mpsc;
         use std::time::Duration;
+        use tsubame_core::repositories::local_credentials::LocalCredentials;
 
         let dir = std::env::temp_dir().join(format!(
             "tsubame-verify-concurrency-{}-{:?}",

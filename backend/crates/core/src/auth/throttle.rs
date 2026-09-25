@@ -16,7 +16,7 @@
 //! could count it: Cognito does not expose a failure count, and locking an account after
 //! repeated failures is its threat protection, which the Plus plan has and Essentials does not.
 //! Its documented answer to volume is AWS WAF, which this deployment deliberately leaves out
-//! (`doc/aws-plan.md`, P5). The local
+//! (`docs/aws-decisions.md`). The local
 //! password endpoints answer 501 on AWS for that reason, which is what keeps this module
 //! unreachable there rather than merely unused.
 //!

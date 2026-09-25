@@ -36,7 +36,7 @@ pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 /// used: these answers are JSON built in memory, so it would move the ceiling without improving the
 /// time to first byte, and 6MB of that would then trickle at 2MB/s. The delivery API pages by
 /// bytes instead, and streaming belongs to an endpoint that *builds* its answer as it sends it
-/// (`doc/aws-plan.md`, P3).
+/// (`docs/aws-decisions.md`).
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 /// One invocation: the event's request through the router, the router's answer back.

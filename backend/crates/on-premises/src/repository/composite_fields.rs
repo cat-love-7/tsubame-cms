@@ -1,10 +1,10 @@
 use crate::repository::{COMPOSITE_FIELD_SCHEMA_STORE, RkvRepository};
 use rkv::{StoreOptions, Value};
+use std::collections::HashMap;
+use std::error::Error;
 use tsubame_core::models::schema::CompositeFieldId;
 use tsubame_core::models::values::CompositeFieldSchema;
 use tsubame_core::repositories::composite_field_repository::CompositeFieldRepository;
-use std::collections::HashMap;
-use std::error::Error;
 
 impl CompositeFieldRepository for RkvRepository {
     async fn list_composite_field_schemas(

@@ -1,6 +1,6 @@
 //! The S3 policy a deployment gives its function, as the tests are told it.
 //!
-//! It mirrors `infra/lambda.tf`; see the note in `doc/aws-plan.md` about the two being kept in
+//! It mirrors `infra/lambda.tf`; see the note in `docs/aws-decisions.md` about the two being kept in
 //! step by hand.
 
 /// The S3 policy a deployment gives its function, as the emulator is told it.

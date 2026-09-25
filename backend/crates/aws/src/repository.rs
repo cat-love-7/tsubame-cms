@@ -1,5 +1,5 @@
 //! The DynamoDB side of the AWS adapter: one table, keys laid out as in
-//! `doc/aws-dynamodb-design.md`, values stored as JSON strings.
+//! `docs/aws-dynamodb-design.md`, values stored as JSON strings.
 //!
 //! Everything here is `async`, which is what the SDK is and what the traits now are.
 

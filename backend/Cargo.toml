@@ -1,5 +1,5 @@
 # One workspace for the CMS. Each storage backend is a package of its own, so building one never
-# compiles the other (see doc/aws-plan.md):
+# compiles the other (see docs/aws-decisions.md):
 #
 #   cargo build -p tsubame-on-premises      # rkv + local image files
 #   cargo build -p tsubame-aws              # DynamoDB + S3

@@ -18,7 +18,7 @@
 //!   above, chosen by the administrator.
 //!
 //! The Cognito calls sit behind [`CognitoAdmin`] because **there is no Cognito emulator** to point
-//! them at (`doc/aws-plan.md`, P4): what is worth testing is the mapping - which call, with which
+//! them at (`docs/aws-decisions.md`): what is worth testing is the mapping - which call, with which
 //! arguments, and which refusals mean "that was already the case" - and that is what the tests here
 //! drive with a fake. The calls themselves are thin enough to read, and a deployment is where they
 //! meet the real service.

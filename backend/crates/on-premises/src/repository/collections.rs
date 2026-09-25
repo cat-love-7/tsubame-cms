@@ -5,6 +5,7 @@ use crate::repository::{
     collection_metadata_prefix, unique_key,
 };
 use rkv::{StoreOptions, Value};
+use std::error::Error;
 use tsubame_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
@@ -16,7 +17,6 @@ use tsubame_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
 use tsubame_core::repositories::relation_repository::{RelationIndexChanges, Written};
-use std::error::Error;
 
 impl RkvRepository {
     /// What one write changes in the relation index for a collection item.

@@ -6,7 +6,7 @@
 //!   rule that a *required* relation has to have a published target is what keeps that from
 //!   silently emptying a field (see `repositories::relation_rules`);
 //! * a field a client named in `?populate=` carries the target's published values, one level deep
-//!   (see `doc/relations-design.md` §5).
+//!   (see `docs/relations-design.md` §5).
 //!
 //! A separate tree rather than `FieldValueResponse` because a reference here may hold values and
 //! there may not: the management shape is a *stored* value, and what a site is served is a
@@ -421,7 +421,7 @@ fn holds_reference_in(value: &FieldValue, owner: &ItemOwner) -> bool {
 }
 
 /// How many pieces of content an inverse expansion may bring back when the request does not say
-/// (see `doc/relations-design.md` §5: a big set is read through the filter, which pages).
+/// (see `docs/relations-design.md` §5: a big set is read through the filter, which pages).
 pub const DEFAULT_INVERSE_LIMIT: usize = 25;
 
 /// What a delivery request asked for.

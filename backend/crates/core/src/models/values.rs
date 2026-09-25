@@ -1190,7 +1190,7 @@ pub struct RelationValue<'a> {
 /// Every relation a value holds, with the schema that declares it.
 ///
 /// Composites and arrays are walked: a relation may sit inside either (see
-/// `doc/relations-design.md` §3), and a rule that only looked at the top level would let a required
+/// `docs/relations-design.md` §3), and a rule that only looked at the top level would let a required
 /// relation inside a block go live pointing at nothing.
 ///
 /// A field the value does not hold is not reported: whether a missing field is a problem is

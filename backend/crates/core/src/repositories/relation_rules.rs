@@ -1,6 +1,6 @@
 //! The rules a relation is published under.
 //!
-//! One rule, in both directions (see `doc/relations-design.md` §4): what the site serves must not
+//! One rule, in both directions (see `docs/relations-design.md` §4): what the site serves must not
 //! have a required relation that points at nothing published. Publishing is checked against the
 //! targets the copy names; unpublishing is checked against the published content that names it -
 //! the same question, asked from the other end.

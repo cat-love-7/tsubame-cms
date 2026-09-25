@@ -4,6 +4,7 @@ use crate::repository::{
     SINGLE_PAGE_SETTINGS_STORE, page_draft_key, page_metadata_key,
 };
 use rkv::{StoreOptions, Value};
+use std::error::Error;
 use tsubame_core::models::item_status::{ItemDates, ItemMetadata};
 use tsubame_core::models::owner::ItemOwner;
 use tsubame_core::models::schema::SchemaSettings;
@@ -12,7 +13,6 @@ use tsubame_core::models::values::referenced_items;
 use tsubame_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
 use tsubame_core::repositories::relation_repository::{RelationIndexChanges, Written};
 use tsubame_core::repositories::single_page_repository::SinglePageRepository;
-use std::error::Error;
 
 impl RkvRepository {
     /// What one write changes in the relation index for a page.

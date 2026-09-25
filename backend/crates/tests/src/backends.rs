@@ -138,15 +138,14 @@ impl TestBackend for Aws {
     }
 
     async fn open(hint: &str) -> Self {
-        let (repository, _table) =
-            tsubame_aws::open_test_repository(hint)
-                .await
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "could not open a DynamoDB Local table for {hint}: {e}\n\
+        let (repository, _table) = tsubame_aws::open_test_repository(hint)
+            .await
+            .unwrap_or_else(|e| {
+                panic!(
+                    "could not open a DynamoDB Local table for {hint}: {e}\n\
                      start the emulators with `docker compose -f backend/docker-compose.yml up -d`"
-                    )
-                });
+                )
+            });
         Aws { repository }
     }
 

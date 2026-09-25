@@ -29,7 +29,7 @@ pub fn test_secret_key() -> String {
 
 /// A user pool that only remembers what it was asked.
 ///
-/// There is no Cognito emulator to run against (`doc/aws-plan.md`, P4), so the contract suite needs
+/// There is no Cognito emulator to run against (`docs/aws-decisions.md`), so the contract suite needs
 /// something that answers like the admin API and writes nothing anywhere. It is deliberately not a
 /// clever fake: a call succeeds, and every call is kept, so a test can see that the provider was
 /// asked and with what. What the SDK calls themselves do is read rather than run here.

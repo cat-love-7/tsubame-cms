@@ -136,8 +136,9 @@ impl AwsSettings {
             region: required(non_empty_env("AWS_REGION"), "AWS_REGION")?,
             table: required(non_empty_env("DYNAMODB_TABLE"), "DYNAMODB_TABLE")?,
             bucket: required(non_empty_env("S3_BUCKET"), "S3_BUCKET")?,
-            // Cognito is not wired up yet (doc/aws-plan.md P4), but a deployment that names its
-            // pool now does not have to change its environment later.
+            // Required rather than optional: a deployment whose environment does not name a pool
+            // has no way to sign anybody in, and saying so at startup beats a 500 on the first
+            // sign-in (`docs/aws-decisions.md`).
             user_pool_id: required(
                 non_empty_env("COGNITO_USER_POOL_ID"),
                 "COGNITO_USER_POOL_ID",

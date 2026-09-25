@@ -313,7 +313,7 @@ impl HttpError {
 
     /// A required relation whose target is not published, refused before it goes live.
     ///
-    /// One rule in both directions (see `doc/relations-design.md` §4): what the site serves must
+    /// One rule in both directions (see `docs/relations-design.md` §4): what the site serves must
     /// not have a required reference to nothing. Publishing an item whose only target is still a
     /// draft is refused with this, and so is unpublishing the last published target of somebody
     /// else's required relation - which is [`Self::relation_required_by`], because there the
