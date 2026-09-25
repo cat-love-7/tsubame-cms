@@ -1,0 +1,15 @@
+<!-- Tsubame — primary mark. Single flat silhouette; inherits `currentColor`.
+     A swallow in flight: a flat wedge of a head, one smooth tapered wing, a forked tail.
+     Two proportions are load-bearing:
+       - the head's top edge runs LEVEL with the wing root, continuing the line of the
+         back. Raising the crown turns the head into a blob and the mark stops reading
+         as a bird. The beak is simply where that wedge comes to a point.
+       - the wing tapers as ONE smooth arc from shoulder to tip. An extra joint at the
+         wrist was tried and made it read as a paper plane, so the sweep is carried by
+         the taper alone.
+     Keep the tail's fork: it is what makes the bird a swallow rather than a bird. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Tsubame">
+  <title>Tsubame</title>
+  <path fill="currentColor" transform="translate(32 32) scale(1.15) translate(-38 -27)"
+        d="M62 28 C57 24 51 24 46 26 C38 18 28 12 14 8 C24 16 33 22 38 28 C34 33 31 35 28 37 C25 41 21 44 17 46 C20 42 23 39 26 36 C22 35 18 34 14 33 C19 33 24 33 28 34 C34 33 40 30 46 28 C51 26 57 26 62 28 Z"/>
+</svg>

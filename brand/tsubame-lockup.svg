@@ -1,0 +1,14 @@
+<!-- Tsubame — horizontal lockup for a docs header or a README banner.
+     The mark is set at 1.45× so its mass matches 40px semibold type; at 1.15× it
+     reads as a decoration next to the name rather than half of a lockup.
+     The name is live <text>: it renders in the viewer's font on purpose, so the
+     lockup never goes stale. Outline it if you need a fixed wordmark in print. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 96" width="300" height="96" role="img" aria-label="Tsubame">
+  <title>Tsubame</title>
+  <g transform="translate(10.8 16)">
+    <path fill="currentColor" transform="translate(32 32) scale(1.45) translate(-38 -27)"
+          d="M62 28 C57 24 51 24 46 26 C38 18 28 12 14 8 C24 16 33 22 38 28 C34 33 31 35 28 37 C25 41 21 44 17 46 C20 42 23 39 26 36 C22 35 18 34 14 33 C19 33 24 33 28 34 C34 33 40 30 46 28 C51 26 57 26 62 28 Z"/>
+  </g>
+  <text x="102" y="62" fill="currentColor" font-size="40" font-weight="600" letter-spacing="-1"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">Tsubame</text>
+</svg>
