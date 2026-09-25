@@ -17,6 +17,11 @@ node_modules/
 /coverage/
 .angular/cache/
 
+# --- Local configuration ---
+# The template is committed; a filled-in copy is not (it holds the signing key).
+.env
+.env.local
+
 # --- Editors / OS ---
 .DS_Store
 Thumbs.db
