@@ -20,7 +20,7 @@
     "gatsby-plugin",
     "gatsby-source",
     "gatsby-source-plugin",
-    "tsubame",
+    "tsubame"
   ],
   "peerDependencies": {
     "gatsby": "^5.0.0"
