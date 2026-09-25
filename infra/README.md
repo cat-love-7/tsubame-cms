@@ -130,6 +130,96 @@ shape. `bootstrap/` keeps its own state locally — it is the thing that makes t
 possible, so it cannot use it — and that file is worth keeping: without it the bucket still exists,
 but Terraform no longer knows it made it.
 
+## Renaming a deployment
+
+Every resource is named from `project` and `environment` (`local.name`, `locals.tf`), so changing
+`project` in `terraform.tfvars` is not a cosmetic edit: `terraform plan -var project=tsubame`
+against the staging tree of 2026-09-25 answers **13 to add, 13 to destroy, 5 to change**.
+
+**Replaced**, and so to be moved or redeployed rather than renamed:
+
+| Resource | What it holds |
+|---|---|
+| `aws_dynamodb_table.cms` | every account, collection, item, page, draft and index (2016 items, 937 kB on staging) |
+| `aws_s3_bucket.images` (+ CORS, lifecycle, policy, public-access block, encryption) | the uploads (275 objects, 162 MB) |
+| `aws_s3_bucket.app` | a build artifact - redeployed, not moved |
+| `aws_lambda_function.cms`, `aws_iam_role.function`, `aws_cloudwatch_log_group.function`, the three `aws_cloudfront_function`s | the function and its wiring |
+
+**Not replaced**, which is what keeps the rename from being an outage: the Cognito pool and its
+client (renamed in place, so the accounts stay), the hosted sign-in domain (`cognito_domain_prefix`
+is an input - the login URL is unchanged), and both CloudFront distributions (origins and function
+associations are updated in place, so `cms.example.com` and `preview.example.com` keep
+pointing where they did).
+
+Three things have to be true before the first command, and none of them is in this repository:
+
+1. **The deployer policies name the old project.** They are instantiated from the `<name>`
+   placeholder, and the attached copies say `sl-cms`, so every read against `tsubame-staging` is
+   refused - `AccessDenied ... table/tsubame-staging` is how a plan with `-var project=tsubame`
+   ends today. Attach a second copy of the four documents with `<name>` = the new project.
+2. **The table refuses to be destroyed** (`deletion_protection` defaults to true), so an apply that
+   renames would fail on it half-way through leaving both stacks standing. Either turn it off for
+   the old table, or take the old resources out of the state first (step 2 below, and the safer of
+   the two: nothing is deleted, and the old deployment keeps running as a rollback).
+3. **Someone has to read and write the data.** Copying it needs `dynamodb:Scan` and
+   `dynamodb:BatchWriteItem` on both tables and `s3:GetObject`/`s3:PutObject` on both image
+   buckets - none of which the deployer identity has: it is scoped to what Terraform calls, and a
+   `Scan` of the old table is refused today.
+
+Then, in this order, with both stacks alive while the data moves:
+
+```bash
+cd infra
+
+# 1. The new table and the new images bucket, on their own.
+terraform apply -var project=tsubame \
+  -target=aws_dynamodb_table.cms -target=aws_s3_bucket.images
+
+# 2. Everything the old table holds. One scan is one page while the table is this small; a table
+#    past 1 MB is scanned in a loop over `LastEvaluatedKey`, and `batch-write-item` takes 25.
+aws dynamodb scan --table-name sl-cms-staging --output json > /tmp/items.json
+jq -c '[.Items[] | {PutRequest: {Item: .}}]' /tmp/items.json > /tmp/puts.json
+for start in $(seq 0 25 $(($(jq length /tmp/puts.json) - 1))); do
+  jq -c --argjson s "$start" '{RequestItems: {"tsubame-staging": .[$s:$s+25]}}' /tmp/puts.json \
+    > /tmp/batch.json
+  aws dynamodb batch-write-item --request-items file:///tmp/batch.json
+done
+
+# 3. The images, then check both sides.
+aws s3 sync s3://sl-cms-staging-images s3://tsubame-staging-images
+aws s3 ls s3://tsubame-staging-images --recursive --summarize | tail -2
+
+# 4. Forget the old resources that hold data, so the apply below cannot delete them: they stay
+#    running (and billed) as the rollback, and are removed deliberately once the new deployment
+#    has been read from.
+terraform state rm aws_dynamodb_table.cms aws_s3_bucket.images \
+  aws_s3_bucket_cors_configuration.images aws_s3_bucket_lifecycle_configuration.images \
+  aws_s3_bucket_policy.images_readable[0] aws_s3_bucket_public_access_block.images \
+  aws_s3_bucket_server_side_encryption_configuration.images
+
+# 5. The rest of the new stack: the function, its role and log group, the app bucket, and the
+#    distributions' wiring. This is also what deletes what is left of the old one.
+terraform apply -var project=tsubame
+
+# 6. The app and the preview are artifacts, not infrastructure: build and deliver them into the
+#    new bucket, then ask the deployment a question.
+cd ..
+scripts/deploy-frontend.sh
+scripts/deploy-preview.sh --dist <the preview build>
+scripts/smoke-test.sh https://cms.example.com "$(terraform -chdir=infra output -raw api_url)"
+```
+
+Two traps in step 5. The old app bucket has `force_destroy = true`, so it goes with everything in
+it - including the preview site that lives under `preview/` in the same bucket, which is why the
+preview is deployed again in step 6. The old images bucket is emptied in step 3 and then taken out
+of the state in step 4, so nothing deletes it: it is the operator's to empty and delete when the
+new deployment has been verified.
+
+The state bucket keeps its name and `bootstrap/` keeps its own state: the state file does not move
+with the project. A deployment that is happy to be down for the length of an apply, and has a
+backup of the table, can skip step 4 and let one apply do both halves - at the cost of having
+nothing to roll back to.
+
 ## The identity that deploys
 
 Four files, for the two things one does with this stack:
@@ -152,6 +242,11 @@ invisible when the policy is attached** - IAM accepts the name and it grants not
 deployment fails later with `AccessDenied` on the real action, which reads like a missing
 permission rather than a misspelt one (`s3:PutBucketLifecycleConfiguration` was one; the action is
 `s3:PutLifecycleConfiguration`).
+
+The `<name>` placeholder is one project, and a rename needs two: attach a second copy of the four
+documents instantiated for the new name, and detach it once the old deployment is gone (see
+"Renaming a deployment" above). They are policies rather than one policy over both names on
+purpose - the next rename should not have to widen them again.
 
 Two S3 details worth knowing in the same area, both found by the first real `apply`:
 
