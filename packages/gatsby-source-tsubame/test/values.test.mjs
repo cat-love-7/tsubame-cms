@@ -27,7 +27,7 @@ function makeContext(overrides = {}) {
     model,
     createNodeId: (key) => `node:${key}`,
     planMarkdown: (path, raw, field) => {
-      const id = `node:sl-cms-markdown:owner:${path}`;
+      const id = `node:tsubame-markdown:owner:${path}`;
       markdown.push({ id, path, raw, field });
       return id;
     },
@@ -85,20 +85,20 @@ describe('images', () => {
 describe('markdown', () => {
   it('becomes a child node and the field holds its id', () => {
     const { context, markdown } = makeContext();
-    assert.equal(resolveFieldValue({ Markdown: {} }, '# Hello', context), 'node:sl-cms-markdown:owner:body');
-    assert.deepEqual(markdown, [{ id: 'node:sl-cms-markdown:owner:body', path: 'body', raw: '# Hello', field: 'body' }]);
+    assert.equal(resolveFieldValue({ Markdown: {} }, '# Hello', context), 'node:tsubame-markdown:owner:body');
+    assert.deepEqual(markdown, [{ id: 'node:tsubame-markdown:owner:body', path: 'body', raw: '# Hello', field: 'body' }]);
   });
 
   it('keeps an empty string as an empty node', () => {
     const { context } = makeContext();
-    assert.equal(resolveFieldValue({ Markdown: {} }, '', context), 'node:sl-cms-markdown:owner:body');
+    assert.equal(resolveFieldValue({ Markdown: {} }, '', context), 'node:tsubame-markdown:owner:body');
   });
 
   it('gives each element of an array its own node and path', () => {
     const { context, markdown } = makeContext({ path: 'body-parts', topField: 'body-parts' });
     assert.deepEqual(resolveFieldValue({ Array: [{ Markdown: {} }] }, ['one', 'two'], context), [
-      'node:sl-cms-markdown:owner:body-parts.0',
-      'node:sl-cms-markdown:owner:body-parts.1',
+      'node:tsubame-markdown:owner:body-parts.0',
+      'node:tsubame-markdown:owner:body-parts.1',
     ]);
     assert.deepEqual(
       markdown.map((entry) => entry.path),
@@ -120,14 +120,14 @@ describe('relations', () => {
   it('answers the id of the target node', () => {
     const { context } = makeContext();
     const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } };
-    assert.equal(resolveFieldValue(fieldType, [{ target: 'authors', item: 7 }], context), 'node:sl-cms-item:authors:7');
+    assert.equal(resolveFieldValue(fieldType, [{ target: 'authors', item: 7 }], context), 'node:tsubame-item:authors:7');
   });
 
   it('answers a list when the relation holds several', () => {
     const { context } = makeContext();
     const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
     assert.deepEqual(resolveFieldValue(fieldType, [{ target: 'authors', item: 7 }], context), [
-      'node:sl-cms-item:authors:7',
+      'node:tsubame-item:authors:7',
     ]);
   });
 
@@ -139,14 +139,14 @@ describe('relations', () => {
     const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
     assert.deepEqual(
       resolveFieldValue(fieldType, [{ target: 'authors', item: 9 }, { target: 'authors', item: 7 }], context),
-      ['node:sl-cms-item:authors:9', 'node:sl-cms-item:authors:7'],
+      ['node:tsubame-item:authors:9', 'node:tsubame-item:authors:7'],
     );
   });
 
   it('answers a page node id for a page reference, which has no item id', () => {
     const { context } = makeContext();
     const fieldType = { Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false } };
-    assert.equal(resolveFieldValue(fieldType, [{ target: 'home' }], context), 'node:sl-cms-page:home');
+    assert.equal(resolveFieldValue(fieldType, [{ target: 'home' }], context), 'node:tsubame-page:home');
   });
 
   it('answers null for a single relation with no reference', () => {
@@ -171,26 +171,26 @@ describe('relations', () => {
 describe('relationNodeId', () => {
   it('uses the same key the node was created with', () => {
     const createNodeId = (key) => `node:${key}`;
-    assert.equal(relationNodeId({ target: 'authors', item: 7 }, createNodeId), 'node:sl-cms-item:authors:7');
-    assert.equal(relationNodeId({ target: 'home' }, createNodeId), 'node:sl-cms-page:home');
+    assert.equal(relationNodeId({ target: 'authors', item: 7 }, createNodeId), 'node:tsubame-item:authors:7');
+    assert.equal(relationNodeId({ target: 'home' }, createNodeId), 'node:tsubame-page:home');
   });
 });
 
 describe('collectReferenceKeys', () => {
   it('finds the content a set of values points at, composites included', () => {
     const found = collectReferenceKeys(BLOG_SCHEMA, BLOG_ITEMS[0].values, composites);
-    assert.deepEqual(found.map(ownerNodeKey).sort(), ['sl-cms-item:authors:7', 'sl-cms-item:editors:2']);
+    assert.deepEqual(found.map(ownerNodeKey).sort(), ['tsubame-item:authors:7', 'tsubame-item:editors:2']);
   });
 
   it('answers each target once, however many fields point at it', () => {
     // The same author is named by `author` and by a block's `link`.
     const found = collectReferenceKeys(BLOG_SCHEMA, BLOG_ITEMS[0].values, composites);
-    assert.equal(found.filter((entry) => ownerNodeKey(entry) === 'sl-cms-item:authors:7').length, 1);
+    assert.equal(found.filter((entry) => ownerNodeKey(entry) === 'tsubame-item:authors:7').length, 1);
   });
 
   it('names a page by its name, without an item id', () => {
     const found = collectReferenceKeys(HOME_SCHEMA, HOME_PAGE.values, composites);
-    assert.deepEqual(found.map(ownerNodeKey).sort(), ['sl-cms-item:authors:7', 'sl-cms-page:home']);
+    assert.deepEqual(found.map(ownerNodeKey).sort(), ['tsubame-item:authors:7', 'tsubame-page:home']);
   });
 
   it('answers nothing for content with no references', () => {
@@ -241,11 +241,11 @@ describe('composites', () => {
 
     const resolved = resolveFieldValue({ CompositeField: { id: 'block' } }, value, context);
 
-    assert.equal(resolved.text, 'node:sl-cms-markdown:owner:blocks.0.text');
+    assert.equal(resolved.text, 'node:tsubame-markdown:owner:blocks.0.text');
     assert.equal(resolved.caption, 'cap');
-    assert.equal(resolved.link, 'node:sl-cms-item:authors:7');
+    assert.equal(resolved.link, 'node:tsubame-item:authors:7');
     assert.equal(resolved.children.length, 1);
-    assert.equal(resolved.children[0].text, 'node:sl-cms-markdown:owner:blocks.0.children.0.text');
+    assert.equal(resolved.children[0].text, 'node:tsubame-markdown:owner:blocks.0.children.0.text');
     assert.equal(resolved.children[0].caption, 'child cap');
     assert.equal(resolved.children[0].link, null);
     assert.deepEqual(resolved.children[0].children, []);

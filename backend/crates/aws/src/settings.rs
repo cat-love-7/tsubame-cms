@@ -147,7 +147,7 @@ impl AwsSettings {
             // Parsed with the core's rule rather than taken as written: the same typo has to be a
             // startup error whichever backend is reading it.
             preview_site_url: non_empty_env("PREVIEW_SITE_URL")
-                .map(|raw| sl_cms_core::config::parse_preview_site_url(&raw))
+                .map(|raw| tsubame_core::config::parse_preview_site_url(&raw))
                 .transpose()?,
             endpoint_url: non_empty_env("AWS_ENDPOINT_URL"),
             s3_endpoint_url: non_empty_env("AWS_ENDPOINT_URL_S3"),
@@ -222,7 +222,7 @@ fn non_empty_env(name: &str) -> Option<String> {
 fn parse_usernames(value: &str) -> Vec<String> {
     value
         .split(',')
-        .map(sl_cms_core::models::user::normalize_username)
+        .map(tsubame_core::models::user::normalize_username)
         .filter(|name| !name.is_empty())
         .collect()
 }

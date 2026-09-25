@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * `sl-cms-preview`: a signed working copy, rendered without a build.
+ * `tsubame-preview`: a signed working copy, rendered without a build.
  *
  * A deployment mints a preview link (`doc/content-api.md` §5.6) and an admin screen copies it. What
  * the API serves at that link is JSON, so a link worth handing to a client or a translator is one

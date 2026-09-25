@@ -10,14 +10,14 @@ use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_dynamodb::types::AttributeValue;
 
 use crate::settings::AwsSettings;
-use sl_cms_core::models::collection::{
+use tsubame_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
-use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
-use sl_cms_core::repositories::collection_repository::{
+use tsubame_core::models::item_status::{ItemDates, ItemMetadata};
+use tsubame_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
-use sl_cms_core::repositories::image_repository::BoxError;
+use tsubame_core::repositories::image_repository::BoxError;
 
 mod collections;
 mod composite_fields;
@@ -507,10 +507,10 @@ async fn next_id(inner: &Inner, pk: &str) -> Result<u64, BoxError> {
 /// Keys, in one place so a typo cannot make two features disagree.
 pub mod key {
     use super::padded;
-    use sl_cms_core::models::collection::CollectionName;
-    use sl_cms_core::models::schema::CompositeFieldId;
-    use sl_cms_core::models::single_page::SinglePageName;
-    use sl_cms_core::models::user::UserId;
+    use tsubame_core::models::collection::CollectionName;
+    use tsubame_core::models::schema::CompositeFieldId;
+    use tsubame_core::models::single_page::SinglePageName;
+    use tsubame_core::models::user::UserId;
 
     pub fn collection(name: &CollectionName) -> String {
         format!("collection#{}", name.as_str())
@@ -532,7 +532,7 @@ pub mod key {
     pub const COUNTER: &str = "counter";
     pub const SCHEMA: &str = "schema";
     /// What a collection or page is told about itself, apart from its field definitions
-    /// (see `sl_cms_core::models::schema::SchemaSettings`).
+    /// (see `tsubame_core::models::schema::SchemaSettings`).
     pub const SETTINGS: &str = "settings";
     /// Where the names of every collection are listed, so listing them is a query.
     pub const COLLECTION_INDEX: &str = "collections";
@@ -582,8 +582,8 @@ pub mod key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sl_cms_core::models::collection::{CollectionItem, CollectionSchema};
-    use sl_cms_core::models::item_status::ItemStatus;
+    use tsubame_core::models::collection::{CollectionItem, CollectionSchema};
+    use tsubame_core::models::item_status::ItemStatus;
 
     fn schema() -> CollectionSchema {
         serde_json::from_value(serde_json::json!([
@@ -825,7 +825,7 @@ mod tests {
     /// record yet, which the touch is what creates.
     #[tokio::test]
     async fn a_touch_stamps_the_record_and_leaves_the_rest_of_it() {
-        use sl_cms_core::models::item_status::ItemStatus;
+        use tsubame_core::models::item_status::ItemStatus;
 
         let endpoint = crate::test_endpoint();
         if !emulator_reachable(&endpoint) {
@@ -866,8 +866,8 @@ mod tests {
                     status: ItemStatus::Published,
                     published_at: Some(published_at),
                     last_published_at: Some(published_at),
-                    published_by: Some(sl_cms_core::models::item_status::PublishedBy {
-                        id: sl_cms_core::models::user::UserId::from("ops"),
+                    published_by: Some(tsubame_core::models::item_status::PublishedBy {
+                        id: tsubame_core::models::user::UserId::from("ops"),
                         username: "ops".to_string(),
                     }),
                     ..first.clone()

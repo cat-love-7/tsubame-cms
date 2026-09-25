@@ -69,7 +69,7 @@ async function api(page, method, path, body, token) {
   );
 }
 
-const token = (page) => page.evaluate(() => localStorage.getItem('sl_cms.token'));
+const token = (page) => page.evaluate(() => localStorage.getItem('tsubame.token'));
 
 let created = null;
 try {

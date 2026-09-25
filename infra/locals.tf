@@ -12,7 +12,7 @@ locals {
   function_zip = (
     var.function_zip != ""
     ? var.function_zip
-    : "${path.module}/build/sl-cms-aws-${var.function_architecture}.zip"
+    : "${path.module}/build/tsubame-aws-${var.function_architecture}.zip"
   )
 
   # Where the app is served from, as a browser sees it. An input rather than something derived

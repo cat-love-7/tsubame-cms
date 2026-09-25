@@ -3,7 +3,7 @@
 //! Nothing here but the choice of backend: `suite/` is the same directory the AWS runner compiles,
 //! so what passes here and what passes there are the same tests.
 
-use sl_cms_tests::backends::OnPremises;
+use tsubame_tests::backends::OnPremises;
 
 type Backend = OnPremises;
 

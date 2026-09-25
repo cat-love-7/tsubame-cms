@@ -1,7 +1,7 @@
 {
-  "name": "gatsby-source-sl-cms",
+  "name": "gatsby-source-tsubame",
   "version": "0.1.0",
-  "description": "Gatsby source plugin for the sl_cms delivery API. Markdown fields become text/markdown nodes, so gatsby-transformer-remark turns them into HTML.",
+  "description": "Gatsby source plugin for the Tsubame delivery API. Markdown fields become text/markdown nodes, so gatsby-transformer-remark turns them into HTML.",
   "license": "MIT",
   "main": "gatsby-node.js",
   "files": [
@@ -20,7 +20,7 @@
     "gatsby-plugin",
     "gatsby-source",
     "gatsby-source-plugin",
-    "sl-cms"
+    "tsubame",
   ],
   "peerDependencies": {
     "gatsby": "^5.0.0"

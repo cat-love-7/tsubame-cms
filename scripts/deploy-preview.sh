@@ -10,7 +10,7 @@
 # build: there is nothing here to run a site's build with.
 #
 # Usage: scripts/deploy-preview.sh --dist <dir>
-#        SL_CMS_PREVIEW_DIST=<dir> scripts/deploy-preview.sh
+#        TSUBAME_PREVIEW_DIST=<dir> scripts/deploy-preview.sh
 #
 # Needs: AWS credentials that may write to the bucket and invalidate the preview distribution, and
 # the deployment applied (the bucket, distribution and site URL are read from its state).
@@ -32,10 +32,10 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
-dist="${dist:-${SL_CMS_PREVIEW_DIST:-}}"
+dist="${dist:-${TSUBAME_PREVIEW_DIST:-}}"
 
 if [ -z "$dist" ]; then
-  echo "no build to deploy: pass --dist <dir> or set SL_CMS_PREVIEW_DIST." >&2
+  echo "no build to deploy: pass --dist <dir> or set TSUBAME_PREVIEW_DIST." >&2
   echo "The preview site is built by the deployment's own site, not by this repository." >&2
   exit 1
 fi

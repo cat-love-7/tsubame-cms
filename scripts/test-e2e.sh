@@ -13,7 +13,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 frontend="$root/frontend"
-data_root="$(mktemp -d /tmp/sl-cms-e2e-XXXXXX)"
+data_root="$(mktemp -d /tmp/tsubame-e2e-XXXXXX)"
 # A test fixture, not a secret: this server only ever listens on loopback and is thrown away.
 jwt_secret="0123456789012345678901234567890123456789"
 
@@ -35,11 +35,11 @@ preview_site="${PREVIEW_SITE_URL:-http://localhost:4200}"
 echo "== starting the backend on 8080 (data in $data_root) =="
 setsid env DATA_ROOT="$data_root" JWT_SECRET="$jwt_secret" PREVIEW_SITE_URL="$preview_site" \
   ADMIN_USERNAME=admin@example.com ADMIN_PASSWORD=admin-password \
-  cargo run --manifest-path "$root/backend/Cargo.toml" >/tmp/sl-cms-e2e-backend.log 2>&1 &
+  cargo run --manifest-path "$root/backend/Cargo.toml" >/tmp/tsubame-e2e-backend.log 2>&1 &
 backend_pid=$!
 
 echo "== starting the dev server on 4200 =="
-setsid npx --prefix "$frontend" ng serve --port 4200 >/tmp/sl-cms-e2e-frontend.log 2>&1 &
+setsid npx --prefix "$frontend" ng serve --port 4200 >/tmp/tsubame-e2e-frontend.log 2>&1 &
 frontend_pid=$!
 
 wait_for() {
@@ -51,7 +51,7 @@ wait_for() {
     fi
     sleep 2
   done
-  echo "$name did not come up; see /tmp/sl-cms-e2e-*.log" >&2
+  echo "$name did not come up; see /tmp/tsubame-e2e-*.log" >&2
   return 1
 }
 wait_for http://127.0.0.1:8080/ backend

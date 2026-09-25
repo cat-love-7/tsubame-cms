@@ -7,7 +7,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "sl_cms": {
+    "tsubame": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -66,10 +66,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "sl_cms:build:production"
+              "buildTarget": "tsubame:build:production"
             },
             "development": {
-              "buildTarget": "sl_cms:build:development"
+              "buildTarget": "tsubame:build:development"
             }
           },
           "options": {

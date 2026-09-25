@@ -14,7 +14,7 @@ export type Language = (typeof SUPPORTED_LANGUAGES)[number];
 export const FALLBACK_LANGUAGE: Language = 'en';
 
 /** Where the choice is kept. */
-export const LANGUAGE_STORAGE_KEY = 'sl_cms.language';
+export const LANGUAGE_STORAGE_KEY = 'tsubame.language';
 
 /** The base language of a tag: `ja-JP` → `ja`, `EN-gb` → `en`. */
 export function baseLanguage(tag: string): string {

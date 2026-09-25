@@ -105,7 +105,7 @@ async function newContext() {
   const context = await browser.newContext();
   await context.addInitScript(() => {
     try {
-      window.localStorage.setItem('sl_cms.language', 'en');
+      window.localStorage.setItem('tsubame.language', 'en');
     } catch {
       // A context that refuses storage simply keeps the browser's own language.
     }
@@ -1472,7 +1472,7 @@ async function rolesDecideWhatIsOffered() {
 /** A password change ends the old sessions. */
 async function aPasswordChangeEndsTheOldSessions() {
   await viewer.page.goto(`${BASE}/account`, { waitUntil: 'networkidle' });
-  const stolenToken = await viewer.page.evaluate(() => localStorage.getItem('sl_cms.token'));
+  const stolenToken = await viewer.page.evaluate(() => localStorage.getItem('tsubame.token'));
   await viewer.page.fill('input[name=current]', 'role-password');
   await viewer.page.fill('input[name=next]', 'role-password-2');
   await viewer.page.fill('input[name=repeated]', 'role-password-2');

@@ -3,29 +3,29 @@
 //! The runtime sets `AWS_LAMBDA_RUNTIME_API` for a function; anything else means someone ran the
 //! binary themselves, which is how the browser end-to-end suite reaches this backend.
 
-use sl_cms_core::config::Config;
+use tsubame_core::config::Config;
 
 #[tokio::main]
 async fn main() {
     init_tracing();
     // The process has to pick a rustls crypto provider before any HTTPS client is built (see
-    // `sl_cms_core::webhook::install_crypto_provider`); saying it here makes the requirement
+    // `tsubame_core::webhook::install_crypto_provider`); saying it here makes the requirement
     // visible at the entry point rather than hidden in whichever client happens to be built first.
-    sl_cms_core::webhook::install_crypto_provider();
+    tsubame_core::webhook::install_crypto_provider();
 
     let mut config = Config::from_env().unwrap_or_else(|error| fatal(error.into()));
     // A deployment may keep the signing secret in Secrets Manager and pass only its ARN: the
     // secret is then in neither the function's configuration nor Terraform's state. A deployment
     // that sets JWT_SECRET itself is left alone.
-    if let Err(error) = sl_cms_aws::resolve_jwt_secret(&mut config).await {
+    if let Err(error) = tsubame_aws::resolve_jwt_secret(&mut config).await {
         fatal(error);
     }
 
     let running_on_lambda = std::env::var("AWS_LAMBDA_RUNTIME_API").is_ok();
     let result = if running_on_lambda {
-        sl_cms_aws::run_lambda(&config).await
+        tsubame_aws::run_lambda(&config).await
     } else {
-        sl_cms_aws::run_local(&config).await
+        tsubame_aws::run_local(&config).await
     };
     if let Err(error) = result {
         fatal(error);

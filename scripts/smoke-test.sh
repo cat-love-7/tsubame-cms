@@ -38,7 +38,7 @@ fi
 app_url="${app_url%/}"
 api_url="${api_url%/}"
 
-work="$(mktemp -d /tmp/sl-cms-smoke-XXXXXX)"
+work="$(mktemp -d /tmp/tsubame-smoke-XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
 failures=0

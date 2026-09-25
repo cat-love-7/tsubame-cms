@@ -9,13 +9,13 @@ use std::sync::Arc;
 
 use axum::Router;
 
-use sl_cms_aws::AwsRepository;
-use sl_cms_core::app_module::AppModule;
-use sl_cms_core::auth::token::TokenIssuer;
-use sl_cms_core::http;
-use sl_cms_core::models::user::{Permission, User};
-use sl_cms_core::repositories::user_repository::UserRepository;
-use sl_cms_on_premises::repository::RkvRepository;
+use tsubame_aws::AwsRepository;
+use tsubame_core::app_module::AppModule;
+use tsubame_core::auth::token::TokenIssuer;
+use tsubame_core::http;
+use tsubame_core::models::user::{Permission, User};
+use tsubame_core::repositories::user_repository::UserRepository;
+use tsubame_on_premises::repository::RkvRepository;
 
 use crate::{ADMIN_EMAIL, ADMIN_PASSWORD, TEST_SECRET, TEST_TOKEN_TTL_HOURS, TestBackend};
 
@@ -50,7 +50,7 @@ impl TestBackend for OnPremises {
         let dir = scratch_root().join(hint);
         std::fs::create_dir_all(&dir).expect("could not create the scratch directory");
         OnPremises {
-            repository: sl_cms_on_premises::open_test_repository(&dir),
+            repository: tsubame_on_premises::open_test_repository(&dir),
             dir,
         }
     }
@@ -60,7 +60,7 @@ impl TestBackend for OnPremises {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        sl_cms_on_premises::build_router(
+        tsubame_on_premises::build_router(
             module,
             test_cors(),
             Some(OnPremises::PREVIEW_SITE_URL.to_string()),
@@ -132,14 +132,14 @@ impl TestBackend for Aws {
 
     fn prepare(module: AppModule<AwsRepository>) -> AppModule<AwsRepository> {
         // The pool the account screen manages. A deployment builds this over the SDK
-        // (`sl_cms_aws::build_deployed_module`); here it is the same mapping over a pool that only
+        // (`tsubame_aws::build_deployed_module`); here it is the same mapping over a pool that only
         // remembers what it was asked, because there is no Cognito emulator to point at.
-        module.with_account_provisioner(sl_cms_aws::in_memory_provisioner())
+        module.with_account_provisioner(tsubame_aws::in_memory_provisioner())
     }
 
     async fn open(hint: &str) -> Self {
         let (repository, _table) =
-            sl_cms_aws::open_test_repository(hint)
+            tsubame_aws::open_test_repository(hint)
                 .await
                 .unwrap_or_else(|e| {
                     panic!(
@@ -155,7 +155,7 @@ impl TestBackend for Aws {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        sl_cms_aws::build_router(module, test_cors(), Some(Aws::PREVIEW_SITE_URL.to_string()))
+        tsubame_aws::build_router(module, test_cors(), Some(Aws::PREVIEW_SITE_URL.to_string()))
     }
 
     async fn sign_in_admin(&self, _module: &Arc<AppModule<Self::Storage>>) -> String {
@@ -206,7 +206,7 @@ impl Drop for Aws {
     }
 }
 
-/// Where a run's scratch storage lives: `target/tmp/sl-cms-tests`, next to the test binaries.
+/// Where a run's scratch storage lives: `target/tmp/tsubame-tests`, next to the test binaries.
 fn scratch_root() -> PathBuf {
     let exe = std::env::current_exe().expect("the test binary has a path");
     // target/<profile>/deps/<binary> -> target
@@ -215,7 +215,7 @@ fn scratch_root() -> PathBuf {
         .and_then(|deps| deps.parent())
         .and_then(|profile| profile.parent())
         .expect("the test binary lives under target/<profile>/deps");
-    target.join("tmp").join("sl-cms-tests")
+    target.join("tmp").join("tsubame-tests")
 }
 
 /// The origins the Angular client uses, as a deployment would allow.

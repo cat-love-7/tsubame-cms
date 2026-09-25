@@ -303,8 +303,8 @@ async fn an_image_can_be_replaced_keeping_its_id() {
     let token = app.admin_token.clone();
 
     /// Upload `bytes` the way the UI does, answering the info the server recorded.
-    async fn upload<B: sl_cms_tests::TestBackend>(
-        app: &sl_cms_tests::TestApp<B>,
+    async fn upload<B: tsubame_tests::TestBackend>(
+        app: &tsubame_tests::TestApp<B>,
         token: &str,
         name: &str,
         bytes: &str,
@@ -537,7 +537,7 @@ async fn an_image_larger_than_two_megabytes_is_accepted() {
 async fn an_image_over_the_limit_is_refused_before_its_bytes_travel() {
     let app = test_app().await;
     let token = app.admin_token.clone();
-    let over = sl_cms_core::config::DEFAULT_MAX_IMAGE_BYTES + 1;
+    let over = tsubame_core::config::DEFAULT_MAX_IMAGE_BYTES + 1;
 
     let (status, body) = send(
         &app.router,

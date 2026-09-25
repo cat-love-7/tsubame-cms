@@ -1,7 +1,7 @@
 {
-  "name": "sl-cms-preview",
+  "name": "tsubame-preview",
   "version": "0.1.0",
-  "description": "Render a signed sl_cms preview link without a build: fetch the working copy, resolve its fields against the schema, and shape it for a page. Framework-independent.",
+  "description": "Render a signed Tsubame preview link without a build: fetch the working copy, resolve its fields against the schema, and shape it for a page. Framework-independent.",
   "license": "MIT",
   "main": "src/index.js",
   "files": [
@@ -15,7 +15,7 @@
     "node": ">=18.0.0"
   },
   "keywords": [
-    "sl-cms",
+    "tsubame",
     "preview",
     "headless-cms"
   ],

@@ -44,7 +44,7 @@ try {
   // The token has to be the CMS's own: the browser is only signed in if the CMS accepted the code
   // the provider handed back and wrote a session of its own.
   const stored = await page.evaluate(() => ({
-    token: window.localStorage.getItem('sl_cms.token'),
+    token: window.localStorage.getItem('tsubame.token'),
     keys: Object.keys(window.localStorage),
   }));
   console.log(

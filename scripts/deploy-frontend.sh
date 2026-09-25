@@ -37,7 +37,7 @@ fi
 
 # The Angular application builder writes the app into `browser/` next to its licences and
 # prerender metadata; only that directory is the site.
-dist="$frontend/dist/sl_cms/browser"
+dist="$frontend/dist/tsubame/browser"
 if [ ! -d "$dist" ]; then
   echo "no build at $dist: run without --skip-build" >&2
   exit 1

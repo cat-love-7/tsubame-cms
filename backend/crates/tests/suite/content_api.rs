@@ -641,9 +641,9 @@ async fn the_admin_item_list_can_be_paged_and_reports_the_total() {
 /// to check a subtraction.
 #[tokio::test]
 async fn a_page_is_cut_to_the_response_budget_and_says_where_to_continue() {
-    let app = TestApp::with_limits(sl_cms_core::config::Limits {
+    let app = TestApp::with_limits(tsubame_core::config::Limits {
         max_response_bytes: 400,
-        ..sl_cms_core::config::Limits::default()
+        ..tsubame_core::config::Limits::default()
     })
     .await;
 

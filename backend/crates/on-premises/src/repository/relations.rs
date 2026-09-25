@@ -16,9 +16,9 @@
 use rkv::backend::{SafeModeDatabase, SafeModeRoTransaction, SafeModeRwTransaction};
 use rkv::{Reader, StoreOptions, Value, Writer};
 
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::repositories::collection_repository::BoxError;
-use sl_cms_core::repositories::relation_repository::{
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::repositories::collection_repository::BoxError;
+use tsubame_core::repositories::relation_repository::{
     DetachFuture, RelationIndexChanges, RelationReferencesFuture, RelationRepository,
 };
 
@@ -154,7 +154,7 @@ impl RelationRepository for RkvRepository {
         Box::pin(async move {
             // The rule is the same whichever store holds the referrers, so it lives in the core;
             // this adapter supplies the storage the writes go to.
-            sl_cms_core::repositories::relation_repository::detach_references(self, &target).await
+            tsubame_core::repositories::relation_repository::detach_references(self, &target).await
         })
     }
 }

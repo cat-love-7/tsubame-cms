@@ -38,7 +38,7 @@ async fn capabilities_say_how_this_deployment_signs_users_in() {
     // so this is also what a deployment that sets nothing reports.
     assert_eq!(
         body["max_image_bytes"].as_u64(),
-        Some(sl_cms_core::config::DEFAULT_MAX_IMAGE_BYTES as u64),
+        Some(tsubame_core::config::DEFAULT_MAX_IMAGE_BYTES as u64),
     );
 }
 

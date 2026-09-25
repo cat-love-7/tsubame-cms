@@ -1,7 +1,7 @@
 /**
  * Prefix a backend-relative URL with the API prefix.
  *
- * Nothing strips it: the CMS serves its API under `/api` (`sl_cms_core::API_PREFIX` nests every
+ * Nothing strips it: the CMS serves its API under `/api` (`tsubame_core::API_PREFIX` nests every
  * route), so the path a client asks for is the path the server has - the dev proxy, nginx, and
  * CloudFront all pass it through unchanged.
  *

@@ -1,12 +1,12 @@
 //! The on-premises CMS server: rkv (LMDB) storage and image files on disk.
 //!
-//! Everything shared is in `sl-cms-core`; this binary is the composition root — read the
+//! Everything shared is in `tsubame-core`; this binary is the composition root — read the
 //! configuration, build the module, add the routes only this backend has, and serve.
 
 use std::sync::Arc;
 
-use sl_cms_core::config::{self, Config};
-use sl_cms_core::http;
+use tsubame_core::config::{self, Config};
+use tsubame_core::http;
 
 #[tokio::main]
 async fn main() {
@@ -36,13 +36,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let module = Arc::new(sl_cms_on_premises::build_app_module(&config));
+    let module = Arc::new(tsubame_on_premises::build_app_module(&config));
     bootstrap_admin(&module, &config).await?;
 
     // The shared router, plus the routes for serving and accepting image bytes: this backend
     // keeps them itself, so they are part of what it composes rather than of what every
     // backend has.
-    let router = sl_cms_on_premises::build_router(
+    let router = tsubame_on_premises::build_router(
         module,
         http::cors_layer(&config.cors_allowed_origins),
         config.preview_site_url.clone(),
@@ -61,7 +61,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// The server refuses to start in that state without credentials, rather than coming up with
 /// an unauthenticated CMS.
 async fn bootstrap_admin(
-    module: &sl_cms_core::app_module::AppModule<sl_cms_on_premises::repository::RkvRepository>,
+    module: &tsubame_core::app_module::AppModule<tsubame_on_premises::repository::RkvRepository>,
     config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(user) = module

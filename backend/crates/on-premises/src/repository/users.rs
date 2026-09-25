@@ -1,8 +1,8 @@
 use rkv::{StoreOptions, Value};
 
 use crate::repository::{IDENTITY_STORE, RkvRepository, USER_STORE};
-use sl_cms_core::models::user::{User, UserId, normalize_username};
-use sl_cms_core::repositories::user_repository::{BoxError, UserRepository};
+use tsubame_core::models::user::{User, UserId, normalize_username};
+use tsubame_core::repositories::user_repository::{BoxError, UserRepository};
 
 impl RkvRepository {
     /// The lookup itself, without the storage lock.

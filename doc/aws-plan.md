@@ -94,7 +94,7 @@ Cognito を入れると「配備によってできることが違う」状態に
       無いため未検証**。
 - [x] AWS アダプタの置き場を作った。**その後ワークスペース分割で形が変わった**(下記 P7):
       バックエンドは feature ではなく **パッケージ**(`crates/aws`)になり、「1 つだけ選べ」
-      ガードも `compile_error!` も無くなった。選ぶのは `-p sl-cms-aws` / `-p sl-cms-on-premises`
+      ガードも `compile_error!` も無くなった。選ぶのは `-p tsubame-aws` / `-p tsubame-on-premises`
       という**ビルド対象の選択**そのものになる。
 - [x] AWS 用の設定を整理した。`Config` が `AWS_REGION` / `DYNAMODB_TABLE` / `S3_BUCKET` /
       `COGNITO_USER_POOL_ID` / `BOOTSTRAP_ADMIN_USERNAMES` を読み、`aws_settings()` が
@@ -208,14 +208,14 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
 | パッケージ | 中身 | バイナリ |
 |---|---|---|
 | `crates/core` | models / repositories / services / http / auth / config / webhook | — |
-| `crates/on-premises` | rkv + ローカル画像 | `sl-cms` |
-| `crates/aws` | DynamoDB + S3(設定もここ) | `sl-cms-aws` |
+| `crates/on-premises` | rkv + ローカル画像 | `tsubame` |
+| `crates/aws` | DynamoDB + S3(設定もここ) | `tsubame-aws` |
 | `crates/tests` | 契約スイート(両アダプタに依存) | — |
 
 - **core に `cfg(feature = ...)` は 1 つも無い**。能力は feature ではなく**トレイト**と
   **合成**で表す: `LocalImageBytes` は普通のトレイト、バイトを扱うルートは
   `http::local_images` にあり、各バックエンドの `build_router` が載せるかどうかを決める。
-- 片側だけのビルドは `cargo build -p sl-cms-aws`(rkv をコンパイルしない。依存クレートは
+- 片側だけのビルドは `cargo build -p tsubame-aws`(rkv をコンパイルしない。依存クレートは
   519 ↔ 946)。`default-members` で素の `cargo build` / `cargo test` は on-premises のまま。
 - 契約スイートは `suite/`(話題ごとのファイル + `mod.rs` のハーネス)を 2 つのランナーが
   `#[path]` でモジュールとして取り込む形で、**1 コマンドで両方**に対して走る(71 × 2)。
@@ -265,7 +265,7 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
         ストリーミングでも変わらない(6MB のまま)。
       - ローカル起動(`AWS_LAMBDA_RUNTIME_API` が無いとき)も同じルーターで提供し、
         `run_local` が無ければテーブルを作る。実機確認: エミュレータに対して
-        `cargo run -p sl-cms-aws` → `/` 200、無認証は 401、テーブル自動作成のログ。
+        `cargo run -p tsubame-aws` → `/` 200、無認証は 401、テーブル自動作成のログ。
       → **完了条件**: 合成イベントを通すテスト + staging のスモーク
       → テストは達成(4 件)。**staging のスモークは P5(Terraform)待ち**。
 - [ ] 応答後凍結の対策: Webhook を SQS に載せる(1-3 の決定どおり)。`Notifier` は既に
@@ -499,7 +499,7 @@ Lambda は **arm64** で動かす。x86_64 より GB 秒あたりの単価が安
 
 | どこ | 何 |
 |---|---|
-| `scripts/build-lambda.sh` | `--arch arm64`(既定)で `aarch64-unknown-linux-gnu` 向けにビルドし、`infra/build/sl-cms-aws-arm64.zip` を書く |
+| `scripts/build-lambda.sh` | `--arch arm64`(既定)で `aarch64-unknown-linux-gnu` 向けにビルドし、`infra/build/tsubame-aws-arm64.zip` を書く |
 | `infra` | `function_architecture`(既定 `arm64`)が `architectures` に入り、`local.function_zip` が**同じ名前の zip** を指す |
 
 **アーキテクチャの食い違いは invoke するまで分からない**(デプロイは成功する)。だから
@@ -560,7 +560,7 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 **Lambda では実行ロールの一時資格情報を同じ変数名で受け取りながら、セッショントークンを落とした
 固定資格情報で署名する**状態だった(全リクエストが失敗し、ロールのローテーションも無視される)。
 判断材料を **エンドポイント上書きの有無**に変え、`AWS_SESSION_TOKEN` があれば一緒に載せる。
-エミュレータ向けの資格情報は `emulator_credentials` に閉じており、`cargo test -p sl-cms-aws` の
+エミュレータ向けの資格情報は `emulator_credentials` に閉じており、`cargo test -p tsubame-aws` の
 `credential_tests` が「上書きが無ければ使わない」「上書きがあればトークンごと使う」を固定する。
 
 ### S3 の「無い」は権限しだいで 403 になる(2026-09 修正)

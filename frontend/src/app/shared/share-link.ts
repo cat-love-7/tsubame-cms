@@ -30,12 +30,12 @@ export function passwordResetUrl(token: string, origin: string = location.origin
  *
  * The API's own preview answer is JSON, which is not something to hand someone with no account.
  * The preview site exists to render it, and its routes mirror the API's minus the `/api` prefix
- * the API adds (`sl_cms_core::API_PREFIX`): `/api/preview/collections/blog/items/7?token=…`
+ * the API adds (`tsubame_core::API_PREFIX`): `/api/preview/collections/blog/items/7?token=…`
  * becomes `<origin>/preview/collections/blog/items/7?token=…`. The token is carried through
  * untouched, because it is the whole credential and it is what the site hands back to the API.
  *
  * `siteOrigin` is an origin - scheme, host and port - which is what a deployment reports through
- * `preview_site_url` (`sl_cms_core::config::parse_preview_site_url`), so nothing here has to
+ * `preview_site_url` (`tsubame_core::config::parse_preview_site_url`), so nothing here has to
  * decide whether a base path and a route meet with one slash or two.
  */
 export function previewSiteUrl(path: string, siteOrigin: string): string {

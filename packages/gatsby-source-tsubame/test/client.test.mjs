@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import clientModule from '../src/client.js';
 import { BLOG_ITEMS, createApiFetch } from './fixtures.mjs';
 
-const { SlCmsClient, SlCmsHttpError, mapWithConcurrency } = clientModule;
+const { TsubameClient, TsubameHttpError, mapWithConcurrency } = clientModule;
 
 function options(overrides = {}) {
   return {
@@ -39,12 +39,12 @@ function jsonResponse(body, status = 200) {
 
 describe('endpoint', () => {
   it('builds an API URL under the configured prefix', () => {
-    const client = new SlCmsClient(options(), { fetchImpl: async () => jsonResponse({}) });
+    const client = new TsubameClient(options(), { fetchImpl: async () => jsonResponse({}) });
     assert.equal(client.endpoint('/content/collections'), 'https://cms.example.com/api/content/collections');
   });
 
   it('adds the query parameters it was given and no others', () => {
-    const client = new SlCmsClient(options(), { fetchImpl: async () => jsonResponse({}) });
+    const client = new TsubameClient(options(), { fetchImpl: async () => jsonResponse({}) });
     assert.equal(
       client.endpoint('/content/collections/blog', { limit: 2, offset: 0, missing: undefined }),
       'https://cms.example.com/api/content/collections/blog?limit=2&offset=0',
@@ -52,7 +52,7 @@ describe('endpoint', () => {
   });
 
   it('resolves a path the API returned against the CMS', () => {
-    const client = new SlCmsClient(options(), { fetchImpl: async () => jsonResponse({}) });
+    const client = new TsubameClient(options(), { fetchImpl: async () => jsonResponse({}) });
     assert.equal(client.absoluteUrl('/api/images/logo.png'), 'https://cms.example.com/api/images/logo.png');
     assert.equal(client.absoluteUrl(''), null);
   });
@@ -61,7 +61,7 @@ describe('endpoint', () => {
 describe('fetchCollection', () => {
   it('walks next_offset until there is none', async () => {
     const fetchImpl = createApiFetch();
-    const client = new SlCmsClient(options(), { fetchImpl });
+    const client = new TsubameClient(options(), { fetchImpl });
 
     const content = await client.fetchCollection('blog');
 
@@ -75,7 +75,7 @@ describe('fetchCollection', () => {
   });
 
   it('does not loop for ever when next_offset does not advance', async () => {
-    const client = new SlCmsClient(options(), {
+    const client = new TsubameClient(options(), {
       fetchImpl: async () =>
         jsonResponse({ schema: [], items: [{ id: 1, values: {} }], total: 2, limit: 2, offset: 0, next_offset: 0 }),
     });
@@ -84,7 +84,7 @@ describe('fetchCollection', () => {
   });
 
   it('skips a collection that disappeared before it could be read', async () => {
-    const client = new SlCmsClient(options(), { fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404) });
+    const client = new TsubameClient(options(), { fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404) });
     const content = await client.fetchCollection('blog');
     assert.deepEqual(content, { schema: null, items: [], total: 0 });
   });
@@ -92,7 +92,7 @@ describe('fetchCollection', () => {
 
 describe('requestJson', () => {
   it('answers an unpublished single page with null instead of an error', async () => {
-    const client = new SlCmsClient(options(), { fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404) });
+    const client = new TsubameClient(options(), { fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404) });
     assert.equal(await client.fetchSinglePage('gone'), null);
   });
 
@@ -102,7 +102,7 @@ describe('requestJson', () => {
       attempts += 1;
       return attempts === 1 ? jsonResponse({ code: 'busy' }, 503) : jsonResponse(['blog']);
     };
-    const client = new SlCmsClient(options({ retries: 1 }), { fetchImpl, reporter: { warn() {} } });
+    const client = new TsubameClient(options({ retries: 1 }), { fetchImpl, reporter: { warn() {} } });
 
     assert.deepEqual(await client.fetchCollectionNames(), ['blog']);
     assert.equal(attempts, 2);
@@ -114,11 +114,11 @@ describe('requestJson', () => {
       attempts += 1;
       return jsonResponse({ code: 'bad_request' }, 400);
     };
-    const client = new SlCmsClient(options({ retries: 2 }), { fetchImpl, reporter: { warn() {} } });
+    const client = new TsubameClient(options({ retries: 2 }), { fetchImpl, reporter: { warn() {} } });
 
     await assert.rejects(
       () => client.fetchCollectionNames(),
-      (error) => error instanceof SlCmsHttpError && error.status === 400,
+      (error) => error instanceof TsubameHttpError && error.status === 400,
     );
     assert.equal(attempts, 1);
   });
@@ -126,14 +126,14 @@ describe('requestJson', () => {
 
 describe('fetchCompositeFields', () => {
   it('answers the definitions by id', async () => {
-    const client = new SlCmsClient(options(), { fetchImpl: createApiFetch() });
+    const client = new TsubameClient(options(), { fetchImpl: createApiFetch() });
     const composites = await client.fetchCompositeFields();
     assert.equal(composites.get('block')[0].name, 'text');
   });
 
   it('answers an empty map when the route predates the feature', async () => {
     const warnings = [];
-    const client = new SlCmsClient(options(), {
+    const client = new TsubameClient(options(), {
       fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404),
       reporter: { warn: (message) => warnings.push(message) },
     });
@@ -147,7 +147,7 @@ describe('fetchCompositeFields', () => {
 describe('fetchSchemaSnapshot', () => {
   it('asks each collection for its schema with the smallest possible page', async () => {
     const fetchImpl = createApiFetch();
-    const client = new SlCmsClient(options(), { fetchImpl });
+    const client = new TsubameClient(options(), { fetchImpl });
 
     const snapshot = await client.fetchSchemaSnapshot();
 
@@ -159,7 +159,7 @@ describe('fetchSchemaSnapshot', () => {
 
   it('fetches the schema of a collection a relation names, even with no published items', async () => {
     const fetchImpl = createApiFetch();
-    const client = new SlCmsClient(options(), { fetchImpl });
+    const client = new TsubameClient(options(), { fetchImpl });
 
     const snapshot = await client.fetchSchemaSnapshot();
 
@@ -170,7 +170,7 @@ describe('fetchSchemaSnapshot', () => {
   });
 
   it('reports a single-page target that is not published', async () => {
-    const client = new SlCmsClient(options(), { fetchImpl: createApiFetch() });
+    const client = new TsubameClient(options(), { fetchImpl: createApiFetch() });
     const snapshot = await client.fetchSchemaSnapshot();
     // Reached through `editors.homepage`, which is a target of a target.
     assert.deepEqual(snapshot.unpublishedPageTargets, ['contact']);
@@ -178,7 +178,7 @@ describe('fetchSchemaSnapshot', () => {
   });
 
   it('reads the composite definitions the schemas name', async () => {
-    const client = new SlCmsClient(options(), { fetchImpl: createApiFetch() });
+    const client = new TsubameClient(options(), { fetchImpl: createApiFetch() });
     const snapshot = await client.fetchSchemaSnapshot();
     assert.deepEqual([...snapshot.composites.keys()].sort(), ['block', 'cta', 'seo']);
   });

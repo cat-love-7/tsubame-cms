@@ -46,12 +46,12 @@ describe('previewFieldNames', () => {
   it('follows the type prefix a site configured', () => {
     // The reserved list includes `child<Prefix>Markdown`, so the prefix decides which CMS name has
     // to be suffixed.
-    const schema = [{ name: 'childSlCmsMarkdown', field_type: { Text: {} } }];
+    const schema = [{ name: 'childTsubameMarkdown', field_type: { Text: {} } }];
     assert.deepEqual(previewFieldNames('item', schema), {
-      childSlCmsMarkdown: 'childSlCmsMarkdown_2',
+      childTsubameMarkdown: 'childTsubameMarkdown_2',
     });
     assert.deepEqual(previewFieldNames('item', schema, { typePrefix: 'X' }), {
-      childSlCmsMarkdown: 'childSlCmsMarkdown',
+      childTsubameMarkdown: 'childTsubameMarkdown',
     });
   });
 });

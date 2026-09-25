@@ -25,12 +25,12 @@ cd "$root/backend"
 export RUST_TEST_THREADS="${RUST_TEST_THREADS:-4}"
 
 echo "== core, the local adapter, and the contract suite against it =="
-cargo test -p sl-cms-core -p sl-cms-on-premises
-cargo test -p sl-cms-tests --test on_premises
+cargo test -p tsubame-core -p tsubame-on-premises
+cargo test -p tsubame-tests --test on_premises
 
 # Both binaries have to link: there are two now, and the one nothing runs is the one that rots.
 echo "== both binaries build =="
-cargo build -p sl-cms-on-premises -p sl-cms-aws
+cargo build -p tsubame-on-premises -p tsubame-aws
 
 # A TCP connect is enough: the question is only whether anything is listening.
 listening() {
@@ -39,8 +39,8 @@ listening() {
 
 if listening 8000 && listening 9000; then
   echo "== the AWS adapter and the contract suite against it =="
-  cargo test -p sl-cms-aws
-  cargo test -p sl-cms-tests --test aws
+  cargo test -p tsubame-aws
+  cargo test -p tsubame-tests --test aws
 else
   echo "skipped: nothing listening on 8000 (DynamoDB Local) / 9000 (MinIO)"
   echo "         start them with: docker compose -f backend/docker-compose.yml up -d"

@@ -1,15 +1,15 @@
 [package]
-name = "sl-cms-on-premises"
+name = "tsubame-on-premises"
 description = "The CMS with rkv (LMDB) storage and image files on local disk."
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "sl-cms"
+name = "tsubame"
 path = "src/main.rs"
 
 [dependencies]
-sl-cms-core = { path = "../core" }
+tsubame-core = { path = "../core" }
 argon2.workspace = true
 rkv.workspace = true
 serde.workspace = true

@@ -25,9 +25,9 @@ const { graphqlFieldType, schemaKey } = require('./model');
  * build produced.
  *
  * The collection type asks for `@dontInfer` and the others must not. Gatsby adds the child fields a
- * consumer uses - `childMarkdownRemark` on a markdown node, `childrenSlCmsMarkdown` on its owner -
+ * consumer uses - `childMarkdownRemark` on a markdown node, `childrenTsubameMarkdown` on its owner -
  * through inference, and `@dontInfer` takes those away with it (verified by building: the query
- * fails with "Cannot query field childMarkdownRemark on type SlCmsMarkdown"). The collection type
+ * fails with "Cannot query field childMarkdownRemark on type TsubameMarkdown"). The collection type
  * has no children and no inferred field worth having, while its `schema` is the one value that is
  * polymorphic on purpose - a field type is a string (`"Image"`) in one entry and an object
  * (`{"Text":{}}`) in the next - which is what makes Gatsby warn about conflicting field types.

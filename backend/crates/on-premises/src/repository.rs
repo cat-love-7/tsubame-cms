@@ -80,7 +80,7 @@ pub(crate) const UNIQUE_STORE: &str = "unique";
 /// cannot appear in a field name at all, so two different pairs cannot build the same key.
 pub(crate) fn unique_key(
     collection_name: &str,
-    unique: &sl_cms_core::repositories::collection_repository::UniqueValue,
+    unique: &tsubame_core::repositories::collection_repository::UniqueValue,
 ) -> String {
     format!(
         "unique:{}\u{1f}{}\u{1f}{}",

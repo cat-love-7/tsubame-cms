@@ -1,15 +1,15 @@
 [package]
-name = "sl-cms-aws"
+name = "tsubame-aws"
 description = "The CMS on DynamoDB (single table) and S3."
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "sl-cms-aws"
+name = "tsubame-aws"
 path = "src/main.rs"
 
 [dependencies]
-sl-cms-core = { path = "../core" }
+tsubame-core = { path = "../core" }
 aws-config.workspace = true
 aws-sdk-dynamodb.workspace = true
 aws-sdk-s3.workspace = true

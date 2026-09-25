@@ -2,7 +2,7 @@
 //!
 //! These drive the real router with `tower::ServiceExt::oneshot`, so routing, extractors, the
 //! auth middleware, status codes and JSON shapes are all exercised - not just the services
-//! underneath. Storage is a real adapter, built by the harness (`sl_cms_tests::TestBackend`), so
+//! underneath. Storage is a real adapter, built by the harness (`tsubame_tests::TestBackend`), so
 //! the adapter is covered too: a backend that passes this directory is interchangeable with one
 //! that does.
 //!
@@ -26,14 +26,14 @@ use axum::http::{Method, Request, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use sl_cms_core::auth::token::TokenIssuer;
-use sl_cms_core::models::collection::{CollectionItemId, CollectionName};
-use sl_cms_core::models::pagination::DEFAULT_PAGE_LIMIT;
-use sl_cms_core::models::single_page::SinglePageName;
-use sl_cms_core::models::user::Permission;
-use sl_cms_core::preview_link::PreviewTarget;
-use sl_cms_core::webhook::{Notifier, WebhookNotifier};
-use sl_cms_tests::{
+use tsubame_core::auth::token::TokenIssuer;
+use tsubame_core::models::collection::{CollectionItemId, CollectionName};
+use tsubame_core::models::pagination::DEFAULT_PAGE_LIMIT;
+use tsubame_core::models::single_page::SinglePageName;
+use tsubame_core::models::user::Permission;
+use tsubame_core::preview_link::PreviewTarget;
+use tsubame_core::webhook::{Notifier, WebhookNotifier};
+use tsubame_tests::{
     ADMIN_EMAIL, ADMIN_PASSWORD, TEST_SECRET, TEST_TOKEN_TTL_HOURS, TestBackend, VIEWER_EMAIL,
     VIEWER_PASSWORD, send, send_raw, send_with_headers,
 };
@@ -61,7 +61,7 @@ fn sample_schema() -> Value {
 /// The harness, specialised to the backend this copy of the suite runs against.
 ///
 /// Every test names `TestApp`, so which storage it drives is decided by this one line.
-type TestApp = sl_cms_tests::TestApp<Backend>;
+type TestApp = tsubame_tests::TestApp<Backend>;
 
 async fn test_app() -> TestApp {
     TestApp::new().await
@@ -158,7 +158,7 @@ async fn create_account(app: &TestApp, payload: Value) -> (StatusCode, Value) {
 /// this is for the ones that only need to be someone.
 async fn login(app: &TestApp, username: &str, password: &str) -> (StatusCode, Value) {
     if app.password_login() {
-        return sl_cms_tests::login(&app.router, username, password).await;
+        return tsubame_tests::login(&app.router, username, password).await;
     }
     // The same answer the real endpoint gives, assembled from the account record: the suite's
     // password tests are gated, and this keeps the rest reading like a sign-in.

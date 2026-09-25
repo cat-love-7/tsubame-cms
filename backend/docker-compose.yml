@@ -3,8 +3,8 @@
 # separate crates, not features of one binary.
 #
 #   docker compose -f backend/docker-compose.yml up -d
-#   cargo test -p sl-cms-aws                # the adapter's own tests
-#   cargo test -p sl-cms-tests --test aws   # the shared contract suite against it
+#   cargo test -p tsubame-aws                # the adapter's own tests
+#   cargo test -p tsubame-tests --test aws   # the shared contract suite against it
 #
 # `scripts/test-rust.sh` runs both, and skips them when nothing is listening on 8000 and 9000.
 # The tests point at these endpoints and use these credentials themselves (`test` /
@@ -26,12 +26,11 @@
 # that is not there unless the caller may list the bucket, while MinIO answers 404 either way.
 #
 # The project name is pinned rather than left to the directory: it is the prefix of the container
-# names (`sl_cms-s3-1`), and the tests that `docker compose exec` into the emulator
+# names (`tsubame-s3-1`), and the tests that `docker compose exec` into the emulator
 # (`crates/aws/src/testing.rs`) have to find the containers that are already running. Moving this
 # file would otherwise rename the project with it and leave them looking for containers nobody
-# started. It is still the old spelling on purpose: renaming it is part of naming the project
-# Tsubame, and that step recreates the containers.
-name: sl_cms
+# started. The name is the project's, so the containers are renamed with everything else.
+name: tsubame
 services:
   dynamodb:
     image: amazon/dynamodb-local:latest

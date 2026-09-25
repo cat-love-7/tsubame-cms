@@ -7,11 +7,11 @@
 
 use super::*;
 use crate::repository::relations;
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::models::schema::SchemaSettings;
-use sl_cms_core::models::values::referenced_items;
-use sl_cms_core::repositories::relation_repository::RelationIndexChanges;
-use sl_cms_core::repositories::relation_repository::Written;
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::models::schema::SchemaSettings;
+use tsubame_core::models::values::referenced_items;
+use tsubame_core::repositories::relation_repository::RelationIndexChanges;
+use tsubame_core::repositories::relation_repository::Written;
 
 impl AwsRepository {
     /// What one write changes in the relation index for a page.
@@ -50,9 +50,9 @@ impl AwsRepository {
         Ok(RelationIndexChanges::between(&current, &now))
     }
 }
-use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
-use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
-use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
+use tsubame_core::models::item_status::{ItemDates, ItemMetadata};
+use tsubame_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
+use tsubame_core::repositories::single_page_repository::SinglePageRepository;
 
 impl SinglePageRepository for AwsRepository {
     async fn get_single_page_schema(

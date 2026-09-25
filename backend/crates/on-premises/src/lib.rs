@@ -1,7 +1,7 @@
 //! On-premises storage adapter: rkv (LMDB) for structured data, local filesystem for
 //! uploaded image bytes.
 //!
-//! The HTTP layer is shared (see [`sl_cms_core::http`]); this module only provides the
+//! The HTTP layer is shared (see [`tsubame_core::http`]); this module only provides the
 //! composition root for the `on-premises` feature.
 
 use std::sync::Arc;
@@ -9,11 +9,11 @@ use std::sync::Arc;
 use rkv::backend::{SafeMode, SafeModeEnvironment};
 use rkv::{Manager, Rkv};
 
-use sl_cms_core::app_module::AppModule;
-use sl_cms_core::auth::token::TokenIssuer;
-use sl_cms_core::config::Config;
-use sl_cms_core::password_reset::PasswordResetIssuer;
-use sl_cms_core::preview_link::PreviewLinkIssuer;
+use tsubame_core::app_module::AppModule;
+use tsubame_core::auth::token::TokenIssuer;
+use tsubame_core::config::Config;
+use tsubame_core::password_reset::PasswordResetIssuer;
+use tsubame_core::preview_link::PreviewLinkIssuer;
 
 pub mod repository;
 
@@ -69,7 +69,7 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository>
 
     let repository = Arc::new(repository::RkvRepository::new(env, images_dir(config)));
     let token_issuer = TokenIssuer::new(&config.jwt_secret, config.token_ttl_hours);
-    let notifier = sl_cms_core::webhook::build_notifier(
+    let notifier = tsubame_core::webhook::build_notifier(
         config.webhook_urls.clone(),
         config.webhook_secret.clone(),
     );
@@ -105,19 +105,19 @@ pub fn build_router(
     // Everything this backend has that a deployment without local storage does not: serving and
     // accepting image bytes, and the password endpoints (it is the CMS, not an identity
     // provider, that checks a password here).
-    let extra_public = sl_cms_core::http::local_images::public_routes()
-        .merge(sl_cms_core::http::password_auth::public_routes())
-        .merge(sl_cms_core::http::capabilities::routes(
-            sl_cms_core::models::capabilities::Capabilities::on_premises(
+    let extra_public = tsubame_core::http::local_images::public_routes()
+        .merge(tsubame_core::http::password_auth::public_routes())
+        .merge(tsubame_core::http::capabilities::routes(
+            tsubame_core::models::capabilities::Capabilities::on_premises(
                 module.limits.max_image_bytes,
                 preview_site_url,
             ),
         ));
     let extra_protected =
-        sl_cms_core::http::local_images::protected_routes(module.limits.max_image_bytes)
-            .merge(sl_cms_core::http::password_auth::protected_routes());
+        tsubame_core::http::local_images::protected_routes(module.limits.max_image_bytes)
+            .merge(tsubame_core::http::password_auth::protected_routes());
 
-    sl_cms_core::http::router_with(module, cors, extra_public, extra_protected)
+    tsubame_core::http::router_with(module, cors, extra_public, extra_protected)
 }
 
 /// A fresh rkv environment plus a repository over it, for the integration tests.

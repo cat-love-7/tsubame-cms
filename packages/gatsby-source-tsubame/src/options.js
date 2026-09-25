@@ -22,7 +22,7 @@ const MAX_PAGE_SIZE = 200;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRIES = 2;
 const DEFAULT_CONCURRENCY = 4;
-const DEFAULT_TYPE_PREFIX = 'SlCms';
+const DEFAULT_TYPE_PREFIX = 'Tsubame';
 const DEFAULT_IMAGE_CONCURRENCY = 4;
 
 const noopReporter = { warn() {}, info() {}, verbose() {} };
@@ -61,7 +61,7 @@ function normalizeApiUrl(value, reporter) {
   const apiUrl = typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
   if (apiUrl === '') {
     throw new Error(
-      '[gatsby-source-sl-cms] `apiUrl` is required and must be the root of the CMS, for example ' +
+      '[gatsby-source-tsubame] `apiUrl` is required and must be the root of the CMS, for example ' +
         '`http://127.0.0.1:8000` (the `/api` prefix is added automatically).',
     );
   }
@@ -73,7 +73,7 @@ function normalizeApiPrefix(value, reporter) {
     return DEFAULT_API_PREFIX;
   }
   if (typeof value !== 'string') {
-    reporter.warn(`[gatsby-source-sl-cms] \`apiPrefix\` should be a string; using "${DEFAULT_API_PREFIX}".`);
+    reporter.warn(`[gatsby-source-tsubame] \`apiPrefix\` should be a string; using "${DEFAULT_API_PREFIX}".`);
     return DEFAULT_API_PREFIX;
   }
   let prefix = value.trim();
@@ -89,7 +89,7 @@ function normalizeTypePrefix(value, reporter) {
   const sanitized = sanitizeTypeName(raw);
   if (sanitized !== raw) {
     reporter.warn(
-      `[gatsby-source-sl-cms] \`typePrefix\` "${raw}" is not usable as a GraphQL name; using "${sanitized}".`,
+      `[gatsby-source-tsubame] \`typePrefix\` "${raw}" is not usable as a GraphQL name; using "${sanitized}".`,
     );
   }
   return sanitized;
@@ -100,7 +100,7 @@ function normalizeFetchOptions(value, reporter, name) {
     return {};
   }
   if (typeof value !== 'object' || Array.isArray(value)) {
-    reporter.warn(`[gatsby-source-sl-cms] \`${name}\` should be an object; ignoring it.`);
+    reporter.warn(`[gatsby-source-tsubame] \`${name}\` should be an object; ignoring it.`);
     return {};
   }
   return value;
@@ -117,7 +117,7 @@ function normalizeFetchOptions(value, reporter, name) {
 function normalizeImages(value, reporter) {
   const raw = value === undefined || value === null ? {} : value;
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    reporter.warn('[gatsby-source-sl-cms] `images` should be an object; ignoring it.');
+    reporter.warn('[gatsby-source-tsubame] `images` should be an object; ignoring it.');
     return { download: false, concurrency: DEFAULT_IMAGE_CONCURRENCY, requestHeaders: {} };
   }
   return {
@@ -140,12 +140,12 @@ function clampInteger(value, fallback, min, max, name, reporter) {
   }
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isInteger(parsed)) {
-    reporter.warn(`[gatsby-source-sl-cms] \`${name}\` should be an integer; using ${fallback}.`);
+    reporter.warn(`[gatsby-source-tsubame] \`${name}\` should be an integer; using ${fallback}.`);
     return fallback;
   }
   if (parsed < min || parsed > max) {
     const clamped = Math.min(Math.max(parsed, min), max);
-    reporter.warn(`[gatsby-source-sl-cms] \`${name}\` ${parsed} is outside ${min}..${max}; using ${clamped}.`);
+    reporter.warn(`[gatsby-source-tsubame] \`${name}\` ${parsed} is outside ${min}..${max}; using ${clamped}.`);
     return clamped;
   }
   return parsed;

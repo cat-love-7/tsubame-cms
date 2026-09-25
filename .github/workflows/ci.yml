@@ -63,8 +63,8 @@ jobs:
       - name: The adapter's own tests and the contract suite against it
         working-directory: backend
         run: |
-          cargo test -p sl-cms-aws
-          cargo test -p sl-cms-tests --test aws
+          cargo test -p tsubame-aws
+          cargo test -p tsubame-tests --test aws
       - name: Stop the emulators
         if: always()
         run: docker compose -f backend/docker-compose.yml down -v
@@ -162,7 +162,7 @@ jobs:
       # The script checks the binary itself; this checks what actually gets deployed.
       - name: The zip holds an arm64 bootstrap
         run: |
-          unzip -p infra/build/sl-cms-aws-arm64.zip bootstrap > /tmp/bootstrap
+          unzip -p infra/build/tsubame-aws-arm64.zip bootstrap > /tmp/bootstrap
           file /tmp/bootstrap
           file /tmp/bootstrap | grep -q 'ARM aarch64'
 
@@ -198,5 +198,5 @@ jobs:
         if: failure()
         with:
           name: e2e-logs
-          path: /tmp/sl-cms-e2e-*.log
+          path: /tmp/tsubame-e2e-*.log
           if-no-files-found: ignore

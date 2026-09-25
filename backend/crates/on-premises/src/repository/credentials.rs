@@ -1,7 +1,7 @@
 //! Passwords for the accounts this deployment owns: Argon2id hashes in their own rkv database.
 //!
 //! The credential is deliberately *not* part of the user record (see
-//! [`LocalCredentials`](sl_cms_core::repositories::local_credentials::LocalCredentials)): the
+//! [`LocalCredentials`](tsubame_core::repositories::local_credentials::LocalCredentials)): the
 //! record is what the CMS reasons about — identity, permissions, whether the account may sign
 //! in — and the password is the one thing the CMS never needs to put in a response, a log line
 //! or a debug print. Keeping them in separate places makes that structural rather than a rule
@@ -15,9 +15,9 @@
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::user::UserId;
-use sl_cms_core::repositories::local_credentials::LocalCredentials;
-use sl_cms_core::repositories::user_repository::BoxError;
+use tsubame_core::models::user::UserId;
+use tsubame_core::repositories::local_credentials::LocalCredentials;
+use tsubame_core::repositories::user_repository::BoxError;
 
 use crate::repository::{CREDENTIAL_STORE, RkvRepository};
 
@@ -136,12 +136,12 @@ mod tests {
     #[test]
     fn verifying_a_password_waits_for_another_request_instead_of_failing() {
         use crate::open_test_repository;
-        use sl_cms_core::repositories::local_credentials::LocalCredentials;
+        use tsubame_core::repositories::local_credentials::LocalCredentials;
         use std::sync::mpsc;
         use std::time::Duration;
 
         let dir = std::env::temp_dir().join(format!(
-            "sl-cms-verify-concurrency-{}-{:?}",
+            "tsubame-verify-concurrency-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));

@@ -43,7 +43,7 @@ function loadRemoteFileCreator(reporter) {
 
   if (filesystem === null || typeof filesystem.createRemoteFileNode !== 'function') {
     reporter.panic(
-      '[gatsby-source-sl-cms] `images.download` needs gatsby-source-filesystem. Install and ' +
+      '[gatsby-source-tsubame] `images.download` needs gatsby-source-filesystem. Install and ' +
         'configure it (with gatsby-plugin-sharp and gatsby-transformer-sharp): ' +
         '`npm install gatsby-source-filesystem gatsby-plugin-sharp gatsby-transformer-sharp`.',
     );
@@ -100,7 +100,7 @@ async function downloadImages({ gatsbyApi, client, images, options, createRemote
       });
       return [imageKey(image), fileNode.id];
     } catch (error) {
-      reporter.warn(`[gatsby-source-sl-cms] could not download image ${source.url}: ${error.message}`);
+      reporter.warn(`[gatsby-source-tsubame] could not download image ${source.url}: ${error.message}`);
       return null;
     }
   });

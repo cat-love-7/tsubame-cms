@@ -272,7 +272,7 @@ $ scripts/test-migration.sh          # 単体テスト(ネットワーク不要)
 # 1. CMS を空のデータで起動
 $ DATA_ROOT=/tmp/cms JWT_SECRET=0123456789012345678901234567890123456789 \
     ADMIN_USERNAME=admin@example.com ADMIN_PASSWORD=admin-password \
-    ./backend/target/debug/sl-cms &
+    ./backend/target/debug/tsubame &
 
 # 2. Strapi v3 の代わりにスタブを起動(ポート 1337)
 $ node scripts/migrate-from-strapi/test/fake-strapi-v3.mjs --port 1337 &

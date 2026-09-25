@@ -1,8 +1,8 @@
 # One workspace for the CMS. Each storage backend is a package of its own, so building one never
 # compiles the other (see doc/aws-plan.md):
 #
-#   cargo build -p sl-cms-on-premises      # rkv + local image files
-#   cargo build -p sl-cms-aws              # DynamoDB + S3
+#   cargo build -p tsubame-on-premises      # rkv + local image files
+#   cargo build -p tsubame-aws              # DynamoDB + S3
 #   cargo test --workspace                 # everything, including both contract suites
 #
 # `default-members` keeps a bare `cargo run` / `cargo build` / `cargo test` here on the

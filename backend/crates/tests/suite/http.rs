@@ -344,7 +344,7 @@ async fn concurrent_requests_do_not_break_the_storage_environment() {
 /// and the message names the size and the limit for whoever is reading a log.
 #[tokio::test]
 async fn a_body_over_the_request_limit_is_refused_in_the_cms_own_shape() {
-    use sl_cms_core::config::DEFAULT_MAX_REQUEST_BYTES;
+    use tsubame_core::config::DEFAULT_MAX_REQUEST_BYTES;
 
     let app = test_app().await;
     // The JSON around the padding counts too, so the body is measured as it is sent rather than
@@ -377,7 +377,7 @@ async fn a_body_over_the_request_limit_is_refused_in_the_cms_own_shape() {
 /// schema's own refusal), so the limit refuses what is over it and nothing else.
 #[tokio::test]
 async fn a_body_of_exactly_the_request_limit_is_read() {
-    use sl_cms_core::config::DEFAULT_MAX_REQUEST_BYTES;
+    use tsubame_core::config::DEFAULT_MAX_REQUEST_BYTES;
 
     let app = test_app().await;
     let envelope = json!({ "padding": "" }).to_string().len();

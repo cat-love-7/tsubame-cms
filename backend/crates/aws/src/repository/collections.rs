@@ -6,11 +6,11 @@
 
 use super::*;
 use crate::repository::relations;
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::models::schema::SchemaSettings;
-use sl_cms_core::models::values::referenced_items;
-use sl_cms_core::repositories::relation_repository::RelationIndexChanges;
-use sl_cms_core::repositories::relation_repository::Written;
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::models::schema::SchemaSettings;
+use tsubame_core::models::values::referenced_items;
+use tsubame_core::repositories::relation_repository::RelationIndexChanges;
+use tsubame_core::repositories::relation_repository::Written;
 
 impl AwsRepository {
     /// What one write changes in the relation index for a collection item.
@@ -179,7 +179,7 @@ impl CollectionRepository for AwsRepository {
     ) -> Result<
         Vec<(
             CollectionItemId,
-            sl_cms_core::models::collection::CollectionItem,
+            tsubame_core::models::collection::CollectionItem,
         )>,
         BoxError,
     > {
@@ -201,7 +201,7 @@ impl CollectionRepository for AwsRepository {
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
-    ) -> Result<Option<sl_cms_core::models::collection::CollectionItem>, BoxError> {
+    ) -> Result<Option<tsubame_core::models::collection::CollectionItem>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
@@ -214,7 +214,7 @@ impl CollectionRepository for AwsRepository {
     async fn add_collection_item(
         &self,
         collection_name: &CollectionName,
-        item_data: &sl_cms_core::models::collection::CollectionItem,
+        item_data: &tsubame_core::models::collection::CollectionItem,
     ) -> Result<u64, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
@@ -242,7 +242,7 @@ impl CollectionRepository for AwsRepository {
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
-        item_data: &sl_cms_core::models::collection::CollectionItem,
+        item_data: &tsubame_core::models::collection::CollectionItem,
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
@@ -306,7 +306,7 @@ impl CollectionRepository for AwsRepository {
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
-    ) -> Result<Option<sl_cms_core::models::collection::CollectionItem>, BoxError> {
+    ) -> Result<Option<tsubame_core::models::collection::CollectionItem>, BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
         let id = **item_id;
@@ -320,7 +320,7 @@ impl CollectionRepository for AwsRepository {
         &self,
         collection_name: &CollectionName,
         item_id: &CollectionItemId,
-        item_data: &sl_cms_core::models::collection::CollectionItem,
+        item_data: &tsubame_core::models::collection::CollectionItem,
     ) -> Result<(), BoxError> {
         let inner = self.inner.clone();
         let name = collection_name.clone();
@@ -372,7 +372,7 @@ impl CollectionRepository for AwsRepository {
     ) -> Result<
         Vec<(
             CollectionItemId,
-            sl_cms_core::models::collection::CollectionItem,
+            tsubame_core::models::collection::CollectionItem,
         )>,
         BoxError,
     > {

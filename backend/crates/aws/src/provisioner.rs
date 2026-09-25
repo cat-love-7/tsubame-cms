@@ -32,7 +32,7 @@ use aws_sdk_cognitoidentityprovider::operation::admin_create_user::AdminCreateUs
 use aws_sdk_cognitoidentityprovider::operation::admin_delete_user::AdminDeleteUserError;
 use aws_sdk_cognitoidentityprovider::operation::admin_disable_user::AdminDisableUserError;
 use aws_sdk_cognitoidentityprovider::types::{AttributeType, MessageActionType};
-use sl_cms_core::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionFuture};
+use tsubame_core::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionFuture};
 
 /// The four Cognito calls account management needs, as one seam.
 ///

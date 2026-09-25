@@ -15,8 +15,8 @@
  * sign-in attempt, so a second tab starting one must not overwrite them.
  */
 
-const VERIFIER_KEY = 'sl_cms.pkce_verifier';
-const STATE_KEY = 'sl_cms.pkce_state';
+const VERIFIER_KEY = 'tsubame.pkce_verifier';
+const STATE_KEY = 'tsubame.pkce_state';
 
 /** Where the provider sends the browser back to, which has to be registered on the client. */
 export function callbackUrl(): string {

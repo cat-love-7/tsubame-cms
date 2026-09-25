@@ -13,9 +13,9 @@ use super::*;
 /// a refusal rather than a promotion that deletes the newer save.
 #[tokio::test]
 async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
-    use sl_cms_core::models::item_status::ItemStatus;
-    use sl_cms_core::models::values::FieldValue;
-    use sl_cms_core::repositories::collection_repository::{
+    use tsubame_core::models::item_status::ItemStatus;
+    use tsubame_core::models::values::FieldValue;
+    use tsubame_core::repositories::collection_repository::{
         ApplyStatusError, CollectionRepository,
     };
 
@@ -129,9 +129,9 @@ async fn publishing_a_working_copy_that_changed_under_it_is_refused() {
 /// promotion to lose.
 #[tokio::test]
 async fn publishing_a_page_working_copy_that_changed_under_it_is_refused() {
-    use sl_cms_core::models::item_status::ItemStatus;
-    use sl_cms_core::repositories::collection_repository::ApplyStatusError;
-    use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
+    use tsubame_core::models::item_status::ItemStatus;
+    use tsubame_core::repositories::collection_repository::ApplyStatusError;
+    use tsubame_core::repositories::single_page_repository::SinglePageRepository;
 
     let app = test_app().await;
     let token = app.admin_token.clone();

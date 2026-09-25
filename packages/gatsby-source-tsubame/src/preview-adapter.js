@@ -8,7 +8,7 @@ const { DEFAULT_TYPE_PREFIX } = require('./options');
  *
  * A site whose presentation components were written against GraphQL data reads
  * `published-at` as `published_at`, and `お知らせ` as something else again. A preview has no GraphQL
- * layer to do that renaming, and `sl-cms-preview` deliberately answers the CMS's own snake_case
+ * layer to do that renaming, and `tsubame-preview` deliberately answers the CMS's own snake_case
  * names - so a site that wants the build's names asks for them here, from the same planner the build
  * uses (`planFieldNames`), rather than reimplementing the rule and drifting from it.
  *

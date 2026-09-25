@@ -23,17 +23,17 @@ const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 /** A stop for a walk that is not making progress; 10k pages of 200 is far past any real site. */
 const MAX_PAGES_PER_COLLECTION = 10_000;
 
-class SlCmsHttpError extends Error {
+class TsubameHttpError extends Error {
   constructor(message, { status, url, body } = {}) {
     super(message);
-    this.name = 'SlCmsHttpError';
+    this.name = 'TsubameHttpError';
     this.status = status;
     this.url = url;
     this.body = body;
   }
 }
 
-class SlCmsClient {
+class TsubameClient {
   /**
    * @param {object} options normalized plugin options (`src/options.js`)
    * @param {object} [dependencies] `reporter` for retry warnings, `fetchImpl` to replace fetch
@@ -99,7 +99,7 @@ class SlCmsClient {
       if (attempt > 0) {
         const delayMs = 250 * 2 ** (attempt - 1);
         this.reporter.warn(
-          `[gatsby-source-sl-cms] ${url} failed (${lastError.message}); retrying in ${delayMs}ms ` +
+          `[gatsby-source-tsubame] ${url} failed (${lastError.message}); retrying in ${delayMs}ms ` +
             `(attempt ${attempt + 1} of ${this.retries + 1})`,
         );
         await delay(delayMs);
@@ -127,7 +127,7 @@ class SlCmsClient {
       }
 
       const body = await readBodyText(response);
-      const error = new SlCmsHttpError(
+      const error = new TsubameHttpError(
         `GET ${url} answered ${response.status}${body ? `: ${body.slice(0, 300)}` : ''}`,
         { status: response.status, url, body },
       );
@@ -184,7 +184,7 @@ class SlCmsClient {
       const body = await this.fetchCollectionPage(name, { limit: this.pageSize, offset });
       if (body === null) {
         this.reporter.warn(
-          `[gatsby-source-sl-cms] collection "${name}" disappeared while it was being read (unpublished?); skipping it`,
+          `[gatsby-source-tsubame] collection "${name}" disappeared while it was being read (unpublished?); skipping it`,
         );
         return { schema: null, items: [], total: 0 };
       }
@@ -201,7 +201,7 @@ class SlCmsClient {
       }
       if (typeof next !== 'number' || next <= offset) {
         throw new Error(
-          `[gatsby-source-sl-cms] collection "${name}": next_offset (${JSON.stringify(next)}) does not move ` +
+          `[gatsby-source-tsubame] collection "${name}": next_offset (${JSON.stringify(next)}) does not move ` +
             `past the current offset (${offset}); refusing to loop`,
         );
       }
@@ -209,7 +209,7 @@ class SlCmsClient {
     }
 
     throw new Error(
-      `[gatsby-source-sl-cms] collection "${name}": gave up after ${MAX_PAGES_PER_COLLECTION} pages`,
+      `[gatsby-source-tsubame] collection "${name}": gave up after ${MAX_PAGES_PER_COLLECTION} pages`,
     );
   }
 
@@ -227,7 +227,7 @@ class SlCmsClient {
       // A CMS older than the route still builds: a composite stays the opaque `{id, values}` it
       // used to be, and the warning says why its fields are not typed.
       this.reporter.warn(
-        '[gatsby-source-sl-cms] /content/composite-fields answered 404; composite fields stay untyped ' +
+        '[gatsby-source-tsubame] /content/composite-fields answered 404; composite fields stay untyped ' +
           '(the CMS predates the route)',
       );
       return new Map();
@@ -355,8 +355,8 @@ async function mapWithConcurrency(values, limit, mapper) {
 }
 
 module.exports = {
-  SlCmsClient,
-  SlCmsHttpError,
+  TsubameClient,
+  TsubameHttpError,
   mapWithConcurrency,
   MAX_PAGES_PER_COLLECTION,
 };

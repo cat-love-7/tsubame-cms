@@ -5,7 +5,7 @@
 //! callers already use keep working.
 
 use super::*;
-use sl_cms_core::auth::provisioner::AccountProvisioner;
+use tsubame_core::auth::provisioner::AccountProvisioner;
 
 /// The endpoints the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT` and
 /// `CMS_TEST_S3_ENDPOINT`, or the emulators from `docker-compose.yml`.

@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 
 use super::*;
-use sl_cms_core::models::schema::CompositeFieldId;
-use sl_cms_core::models::values::CompositeFieldSchema;
-use sl_cms_core::repositories::composite_field_repository::CompositeFieldRepository;
+use tsubame_core::models::schema::CompositeFieldId;
+use tsubame_core::models::values::CompositeFieldSchema;
+use tsubame_core::repositories::composite_field_repository::CompositeFieldRepository;
 
 impl CompositeFieldRepository for AwsRepository {
     async fn list_composite_field_schemas(

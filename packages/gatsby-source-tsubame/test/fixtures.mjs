@@ -1,4 +1,4 @@
-// A miniature sl_cms delivery API, and the Gatsby API surface the plugin uses.
+// A miniature Tsubame delivery API, and the Gatsby API surface the plugin uses.
 //
 // The payloads are the shapes `doc/content-api.md` promises (`{schema, items, total, limit, offset,
 // next_offset}`, the untagged values from the Rust `FieldValueResponse`, and the composite map from
@@ -330,13 +330,13 @@ export function createGatsbyApi({ files = [] } = {}) {
   return { api, nodes, types, links, warnings, infos, touched };
 }
 
-export const BLOG_ITEM_TYPE = 'SlCmsBlogItem';
-export const BLOG_COLLECTION_TYPE = 'SlCmsCollection';
-export const HOME_PAGE_TYPE = 'SlCmsHomePage';
-export const MARKDOWN_TYPE = 'SlCmsMarkdown';
+export const BLOG_ITEM_TYPE = 'TsubameBlogItem';
+export const BLOG_COLLECTION_TYPE = 'TsubameCollection';
+export const HOME_PAGE_TYPE = 'TsubameHomePage';
+export const MARKDOWN_TYPE = 'TsubameMarkdown';
 
 /**
- * What `SlCmsClient.fetchSchemaSnapshot()` answers for the fake API above, without the requests.
+ * What `TsubameClient.fetchSchemaSnapshot()` answers for the fake API above, without the requests.
  *
  * `editors` is in `collections` although it is not in `collectionNames`: it has no published items,
  * so the index does not list it, but a relation names it and its schema is what the relation field
@@ -360,7 +360,7 @@ export function createSnapshot() {
 /** The model a build over the fake API is read against. */
 export function createModel(overrides = {}) {
   return buildContentModel(createSnapshot(), {
-    typePrefix: 'SlCms',
+    typePrefix: 'Tsubame',
     images: { download: false, concurrency: 4, requestHeaders: {} },
     ...overrides,
   });

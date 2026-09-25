@@ -2,7 +2,7 @@
 #
 # The preview package's unit tests.
 #
-# Nothing here needs a network, a Gatsby or a CMS: `sl-cms-preview` has no runtime dependency beyond
+# Nothing here needs a network, a Gatsby or a CMS: `tsubame-preview` has no runtime dependency beyond
 # `fetch` (which the tests inject), and the delivery API is faked from the shapes
 # `doc/content-api.md` promises. The contract the package implements is `doc/preview-site.md`.
 #

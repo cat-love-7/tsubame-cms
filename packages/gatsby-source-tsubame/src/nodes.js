@@ -12,8 +12,8 @@ const { collectImageValues, collectReferenceKeys, resolveFieldValue } = require(
  *
  * - one `<Collection>` node per collection with published items, holding the schema and the count
  *   (what a site iterates to build its section pages);
- * - one node per published item, of a type named after its collection (`SlCmsBlogItem`);
- * - one node per published single page, of a type named after the page (`SlCmsHomePage`).
+ * - one node per published item, of a type named after its collection (`TsubameBlogItem`);
+ * - one node per published single page, of a type named after the page (`TsubameHomePage`).
  *
  * On top of that, every Markdown value becomes a `<Markdown>` node of its own with
  * `internal.mediaType = 'text/markdown'`. That is the whole trick for gatsby-transformer-remark:
@@ -123,7 +123,7 @@ async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
 
     for (const item of collection.items) {
       if (item === null || typeof item !== 'object' || typeof item.id !== 'number') {
-        reporter.warn(`[gatsby-source-sl-cms] collection "${collection.name}": an item without a numeric id was skipped`);
+        reporter.warn(`[gatsby-source-tsubame] collection "${collection.name}": an item without a numeric id was skipped`);
         continue;
       }
       counters.markdown += createContentNode(gatsbyApi, model, client, {
@@ -280,13 +280,13 @@ function createCollectionNode({ actions, createNodeId, createContentDigest }, mo
     fieldNames: contentFieldNames(model, 'collection', name),
   };
   actions.createNode({
-    id: createNodeId(`sl-cms-collection:${name}`),
+    id: createNodeId(`tsubame-collection:${name}`),
     parent: null,
     children: [],
     ...data,
     internal: {
       type: model.names.collection,
-      description: `sl_cms collection "${name}"`,
+      description: `Tsubame collection "${name}"`,
       contentDigest: createContentDigest(data),
     },
   });
@@ -332,7 +332,7 @@ function createContentNode({ actions, createNodeId, createContentDigest }, model
 
   const markdownPlans = [];
   const planMarkdown = (path, raw, field) => {
-    const id = createNodeId(`sl-cms-markdown:${ownerId}:${path}`);
+    const id = createNodeId(`tsubame-markdown:${ownerId}:${path}`);
     markdownPlans.push({ id, path, raw, field });
     return id;
   };

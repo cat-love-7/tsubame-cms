@@ -22,7 +22,7 @@ use crate::signing;
 
 /// Prefix of the signed message. It keeps a preview signature from ever being confused with
 /// another signed message (a webhook body, say) and leaves room to change the format later.
-const PREFIX: &str = "sl-cms-preview:v1";
+const PREFIX: &str = "tsubame-preview:v1";
 
 /// What a link points at.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -19,7 +19,7 @@
                    サイトのコンポーネントで描画
 ```
 
-**ビルドを経由しません。** プレビューは公開のたびに再ビルドする必要がなく、`gatsby-source-sl-cms`
+**ビルドを経由しません。** プレビューは公開のたびに再ビルドする必要がなく、`gatsby-source-tsubame`
 のような source plugin も要りません。公開コンテンツの取得は一切行わず、レビュアーが開いた瞬間に
 ブラウザから API を読みます。
 
@@ -35,13 +35,13 @@
 
 - **`preview_site_url` は origin だけ**(scheme・host・port)。ベースパスは許しません。ルートと
   ベースパスの境目をどちらのスラッシュで繋ぐかを決めなくて済むようにするためです
-  (`sl_cms::config::parse_preview_site_url`)。
+  (`tsubame::config::parse_preview_site_url`)。
 - **`token` はそのまま運びます。** トークンは資格情報そのもので、サイトはそれを API に返すだけです。
 - 綴りは API のままです。プレビュー API は `single_pages`(アンダースコア)、**配信** API は
-  `single-pages`(ハイフン)です。取り違えないよう、両方とも `sl-cms-preview` の `routes.js` に
+  `single-pages`(ハイフン)です。取り違えないよう、両方とも `tsubame-preview` の `routes.js` に
   だけ書いてあります。
 
-`sl-cms-preview` の `parsePreviewRoute(pathname)` が自分の URL から行き先を読み、
+`tsubame-preview` の `parsePreviewRoute(pathname)` が自分の URL から行き先を読み、
 `previewSiteUrl(apiPath, origin)` が逆を行います(管理画面側が使う関数です)。
 
 ## 3. API が返すもの
@@ -137,9 +137,9 @@ export interface ArticleView {
 }
 
 // 本番: GraphQL の結果から
-export function articleFromGraphQL(node: SlCmsBlogItem): ArticleView { … }
+export function articleFromGraphQL(node: TsubameBlogItem): ArticleView { … }
 
-// プレビュー: sl-cms-preview の resolved values から
+// プレビュー: tsubame-preview の resolved values から
 export function articleFromPreview(resolved: Record<string, unknown>): ArticleView { … }
 
 // コンポーネントは view-model だけを受け取る
@@ -227,7 +227,7 @@ server {
     listen 443 ssl;
     server_name preview.cms.example.com;
 
-    root /var/www/sl-cms-preview;
+    root /var/www/tsubame-preview;
 
     # トークンがクエリにあるので、Referer で漏らさない。
     add_header Referrer-Policy "no-referrer" always;
@@ -248,7 +248,7 @@ server {
 ### ビルド
 
 本番ビルドとプレビュービルドを `BUILD_MODE` などで分け、**本番の成果物に `/preview/*` を含めない**
-でください。プレビュービルドは `gatsby-source-sl-cms` を読み込まず、クライアントオンリーの
+でください。プレビュービルドは `gatsby-source-tsubame` を読み込まず、クライアントオンリーの
 ルートだけを登録します。例は `packages/gatsby-source-tsubame/README.md` にあります。
 
 ## 9. 関連

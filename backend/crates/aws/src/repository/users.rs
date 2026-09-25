@@ -7,8 +7,8 @@
 //! settles the race.
 
 use super::*;
-use sl_cms_core::models::user::{User, UserId, normalize_username};
-use sl_cms_core::repositories::user_repository::UserRepository;
+use tsubame_core::models::user::{User, UserId, normalize_username};
+use tsubame_core::repositories::user_repository::UserRepository;
 
 impl AwsRepository {
     /// A stored account, with the legacy-identifier repair applied, so a record written when

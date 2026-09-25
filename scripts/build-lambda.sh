@@ -63,7 +63,7 @@ case "$arch" in
     ;;
 esac
 
-output="${1:-$root/infra/build/sl-cms-aws-$arch.zip}"
+output="${1:-$root/infra/build/tsubame-aws-$arch.zip}"
 
 # What the C build has to be told to use the cross tools rather than the host ones. Without this,
 # cc-rs calls the host `as`, and the build dies with "as: unrecognized option '-EL'". Zig brings its
@@ -95,7 +95,7 @@ if [[ "$arch" != "$host_arch" ]] && [[ -z "$use_zig" ]]; then
   # target's binutils are missing, and the failure then surfaces deep inside a C dependency. One
   # trivial compile says whether the toolchain works.
   if [[ -n "$cross_cc" ]]; then
-    probe="$(mktemp -d /tmp/sl-cms-cross-XXXXXX)"
+    probe="$(mktemp -d /tmp/tsubame-cross-XXXXXX)"
     printf 'int main(void){return 0;}\n' > "$probe/probe.c"
     if ! "$cross_cc" "$probe/probe.c" -o "$probe/probe" >/dev/null 2>&1; then
       echo "'$cross_cc' cannot build for $arch (the target's assembler or linker is missing)." >&2
@@ -121,17 +121,17 @@ if [[ -n "$use_zig" ]]; then
   # zig is both the C compiler and the linker, and carries its own libc: nothing has to be
   # installed for the target, and the glibc it links against is old enough for the runtime.
   cargo zigbuild --manifest-path "$root/backend/Cargo.toml" \
-    --package sl-cms-aws --bin sl-cms-aws --release --target "$target"
+    --package tsubame-aws --bin tsubame-aws --release --target "$target"
 else
   cargo build --manifest-path "$root/backend/Cargo.toml" \
-    --package sl-cms-aws --bin sl-cms-aws --release --target "$target"
+    --package tsubame-aws --bin tsubame-aws --release --target "$target"
 fi
 
 # Where cargo actually wrote it. `CARGO_TARGET_DIR` moves the artifact, and a caller who set it (a
 # CI job sharing a cache, a container with a small workspace) would otherwise get the copy left in
 # the default place - an older binary, which deploys code that looks deployed and is not.
 target_root="${CARGO_TARGET_DIR:-$root/backend/target}"
-binary="$target_root/$target/release/sl-cms-aws"
+binary="$target_root/$target/release/tsubame-aws"
 
 # The artifact and the function's `architectures` must agree, and a mismatch is invisible until the
 # function is invoked. Checking here costs nothing when `file` is available.
@@ -146,7 +146,7 @@ if command -v file >/dev/null 2>&1; then
   esac
 fi
 
-staging="$(mktemp -d /tmp/sl-cms-lambda-XXXXXX)"
+staging="$(mktemp -d /tmp/tsubame-lambda-XXXXXX)"
 trap 'rm -rf "$staging"' EXIT
 
 # Lambda hands the process to `bootstrap`; nothing else about the name matters.

@@ -3,7 +3,7 @@
 # One origin is what makes the frontend simple: `apiUrl()` asks for `/api/...`, and this
 # distribution answers `/api/*` from the function URL and everything else from the bucket - so the
 # browser sees one origin, no CORS, and the paths the CMS serves are the paths it asks for (see
-# `sl_cms_core::API_PREFIX`).
+# `tsubame_core::API_PREFIX`).
 
 resource "aws_s3_bucket" "app" {
   bucket = var.frontend_bucket != "" ? var.frontend_bucket : "${local.name}-app"

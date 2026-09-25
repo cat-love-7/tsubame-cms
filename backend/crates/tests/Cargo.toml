@@ -2,16 +2,16 @@
 # drive the same HTTP tests against *both* adapters, which is the thing a single crate with
 # features could not do.
 [package]
-name = "sl-cms-tests"
+name = "tsubame-tests"
 description = "The HTTP contract suite, run against every storage adapter."
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [dependencies]
-sl-cms-core = { path = "../core" }
-sl-cms-on-premises = { path = "../on-premises" }
-sl-cms-aws = { path = "../aws" }
+tsubame-core = { path = "../core" }
+tsubame-on-premises = { path = "../on-premises" }
+tsubame-aws = { path = "../aws" }
 tokio.workspace = true
 axum.workspace = true
 tower.workspace = true

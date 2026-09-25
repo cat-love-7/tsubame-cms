@@ -18,7 +18,7 @@
 
 1. バックエンド: `cargo run --manifest-path backend/Cargo.toml`(127.0.0.1:8080、データは
    `DATA_ROOT` の下。未設定なら起動したディレクトリの `./data`)。`--manifest-path` が指すのは
-   ワークスペースなので、`default-members` の指定で on-premises のバイナリ(`sl-cms`)が起動する。
+   ワークスペースなので、`default-members` の指定で on-premises のバイナリ(`tsubame`)が起動する。
    `scripts/test-e2e.sh` はこれに `DATA_ROOT` と `JWT_SECRET` を渡して起動する。
 2. 開発サーバ: `cd frontend && npm start`(localhost:4200、`/api` をバックエンドへ転送)
 3. Chromium(初回のみ): `npx playwright install chromium`
@@ -63,7 +63,7 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 
 ## 言語
 
-ハーネスは各ブラウザコンテキストで `localStorage['sl_cms.language'] = 'en'` を仕込んでから
+ハーネスは各ブラウザコンテキストで `localStorage['tsubame.language'] = 'en'` を仕込んでから
 ページを開く(`newContext()`)。画面の文言はカタログから来るので、固定しないと
 **ブラウザの言語設定しだいで落ちる**チェックが出る(実際、日本語環境では「閲覧のみ」の
 案内文を探すチェックが落ちる)。切り替え機能そのものは、この保存値の上から `use()` して

@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use rkv::{StoreOptions, Value};
 
 use crate::repository::{IMAGE_STORE, RkvRepository};
-use sl_cms_core::models::image::{
+use tsubame_core::models::image::{
     Image, ImageId, NewImageInfo, NewImageRequest, ReplacementInfo, is_safe_file_name, sanitize_ext,
 };
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
-use sl_cms_core::repositories::local_image_bytes::LocalImageBytes;
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::repositories::image_repository::{BoxError, ImageRepository, Replacement};
+use tsubame_core::repositories::local_image_bytes::LocalImageBytes;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ImageData {
@@ -71,7 +71,7 @@ impl RkvRepository {
     /// Resolve `file_name` to a path inside the configured images directory.
     ///
     /// Rejects anything that is not a single plain file name; see
-    /// [`sl_cms_core::models::image::is_safe_file_name`] for why this is required.
+    /// [`tsubame_core::models::image::is_safe_file_name`] for why this is required.
     fn image_path(&self, file_name: &str) -> Result<PathBuf, BoxError> {
         if !is_safe_file_name(file_name) {
             return Err(format!("invalid image file name: {file_name:?}").into());
@@ -87,7 +87,7 @@ impl RkvRepository {
 fn thumbnail_url(thumbnail_file_name: &Option<String>) -> Option<String> {
     thumbnail_file_name
         .as_ref()
-        .map(|file_name| format!("{}/images/{}", sl_cms_core::API_PREFIX, file_name))
+        .map(|file_name| format!("{}/images/{}", tsubame_core::API_PREFIX, file_name))
 }
 
 impl ImageRepository for RkvRepository {
@@ -95,7 +95,7 @@ impl ImageRepository for RkvRepository {
         match self.get_image_data(id)? {
             Some(image) => Ok(Some(Image {
                 original_filename: image.original_filename,
-                url: format!("{}/images/{}", sl_cms_core::API_PREFIX, image.file_name),
+                url: format!("{}/images/{}", tsubame_core::API_PREFIX, image.file_name),
                 thumbnail_url: thumbnail_url(&image.thumbnail_file_name),
                 uploaded_at: image.uploaded_at,
                 deleted_at: image.deleted_at,
@@ -123,7 +123,7 @@ impl ImageRepository for RkvRepository {
                     original_filename: image_data.original_filename,
                     url: format!(
                         "{}/images/{}",
-                        sl_cms_core::API_PREFIX,
+                        tsubame_core::API_PREFIX,
                         image_data.file_name
                     ),
                     thumbnail_url: thumbnail_url(&image_data.thumbnail_file_name),
@@ -185,11 +185,11 @@ impl ImageRepository for RkvRepository {
         Ok(NewImageInfo {
             upload_url: format!(
                 "{}/images/{}?key={}",
-                sl_cms_core::API_PREFIX,
+                tsubame_core::API_PREFIX,
                 save_file_name,
                 upload_key
             ),
-            url: format!("{}/images/{}", sl_cms_core::API_PREFIX, save_file_name),
+            url: format!("{}/images/{}", tsubame_core::API_PREFIX, save_file_name),
             id: image_id,
         })
     }
@@ -243,7 +243,7 @@ impl ImageRepository for RkvRepository {
     async fn generate_replacement_upload_url(
         &self,
         id: &ImageId,
-        request: &sl_cms_core::models::image::ReplaceImageRequest,
+        request: &tsubame_core::models::image::ReplaceImageRequest,
     ) -> Result<ReplacementInfo, BoxError> {
         // The size is the client's announcement, and the service has already refused one over the
         // limit. What enforces it here is the upload route's own limit
@@ -287,7 +287,7 @@ impl ImageRepository for RkvRepository {
         Ok(ReplacementInfo {
             upload_url: format!(
                 "{}/images/{}?key={}",
-                sl_cms_core::API_PREFIX,
+                tsubame_core::API_PREFIX,
                 file_name,
                 upload_key
             ),

@@ -5,17 +5,17 @@ use crate::repository::{
     collection_metadata_prefix, unique_key,
 };
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::collection::{
+use tsubame_core::models::collection::{
     CollectionItem, CollectionItemId, CollectionName, CollectionSchema,
 };
-use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::models::schema::SchemaSettings;
-use sl_cms_core::models::values::referenced_items;
-use sl_cms_core::repositories::collection_repository::{
+use tsubame_core::models::item_status::{ItemDates, ItemMetadata};
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::models::schema::SchemaSettings;
+use tsubame_core::models::values::referenced_items;
+use tsubame_core::repositories::collection_repository::{
     ApplyStatusError, CollectionRepository, Reservation, UniqueValue, canonical_draft,
 };
-use sl_cms_core::repositories::relation_repository::{RelationIndexChanges, Written};
+use tsubame_core::repositories::relation_repository::{RelationIndexChanges, Written};
 use std::error::Error;
 
 impl RkvRepository {

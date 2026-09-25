@@ -16,7 +16,7 @@
 //! `<dir>.rs` next to `<dir>/` (`core/src/auth.rs`, `repository.rs`).
 //!
 //! That is the reason this package exists. The suite is the contract, so a backend that passes
-//! it is interchangeable with one that does — and one command (`cargo test -p sl-cms-tests`)
+//! it is interchangeable with one that does — and one command (`cargo test -p tsubame-tests`)
 //! runs it against both, which is something a single crate selecting a backend with a Cargo
 //! feature cannot do, because one build has one feature set.
 //!
@@ -33,12 +33,12 @@ use axum::http::{Method, Request, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use sl_cms_core::app_module::{AppModule, Storage};
-use sl_cms_core::auth::token::TokenIssuer;
-use sl_cms_core::models::user::{Permission, User};
-use sl_cms_core::password_reset::PasswordResetIssuer;
-use sl_cms_core::preview_link::PreviewLinkIssuer;
-use sl_cms_core::webhook::{NoopNotifier, Notifier};
+use tsubame_core::app_module::{AppModule, Storage};
+use tsubame_core::auth::token::TokenIssuer;
+use tsubame_core::models::user::{Permission, User};
+use tsubame_core::password_reset::PasswordResetIssuer;
+use tsubame_core::preview_link::PreviewLinkIssuer;
+use tsubame_core::webhook::{NoopNotifier, Notifier};
 
 pub mod backends;
 
@@ -159,16 +159,16 @@ impl<B: TestBackend> TestApp<B> {
     /// A limit is a number a deployment chooses, and a test that wants to see one enforced should
     /// not have to send megabytes to do it: this is how a page budget or a body limit becomes
     /// something a test can step over with a few hundred bytes.
-    pub async fn with_limits(limits: sl_cms_core::config::Limits) -> Self {
+    pub async fn with_limits(limits: tsubame_core::config::Limits) -> Self {
         Self::build(Arc::new(NoopNotifier), limits).await
     }
 
     /// The same app, but with webhooks wired to `notifier`.
     pub async fn with_notifier(notifier: Arc<dyn Notifier>) -> Self {
-        Self::build(notifier, sl_cms_core::config::Limits::default()).await
+        Self::build(notifier, tsubame_core::config::Limits::default()).await
     }
 
-    async fn build(notifier: Arc<dyn Notifier>, limits: sl_cms_core::config::Limits) -> Self {
+    async fn build(notifier: Arc<dyn Notifier>, limits: tsubame_core::config::Limits) -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
         let backend = B::open(&format!("test_http_{id}")).await;

@@ -1,8 +1,8 @@
 use crate::repository::{COMPOSITE_FIELD_SCHEMA_STORE, RkvRepository};
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::schema::CompositeFieldId;
-use sl_cms_core::models::values::CompositeFieldSchema;
-use sl_cms_core::repositories::composite_field_repository::CompositeFieldRepository;
+use tsubame_core::models::schema::CompositeFieldId;
+use tsubame_core::models::values::CompositeFieldSchema;
+use tsubame_core::repositories::composite_field_repository::CompositeFieldRepository;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -73,7 +73,7 @@ impl CompositeFieldRepository for RkvRepository {
 
 #[cfg(test)]
 mod tests {
-    use sl_cms_core::models::values::{FieldSchema, FieldType, TextFieldOptions};
+    use tsubame_core::models::values::{FieldSchema, FieldType, TextFieldOptions};
 
     use super::*;
     use rkv::backend::{SafeMode, SafeModeEnvironment};
@@ -100,7 +100,7 @@ mod tests {
         // keeps its data leaves the repository dirty when it panics (which is exactly when nobody
         // is looking at the disk), and two checkouts on one machine would share the directory.
         let path = std::env::temp_dir().join(format!(
-            "sl-cms-test-composite-{}-{}",
+            "tsubame-test-composite-{}-{}",
             std::process::id(),
             id
         ));
@@ -115,7 +115,7 @@ mod tests {
     fn teardown_repository() {
         let id = THREAD_ID.with(|p| *p.borrow());
         let path = std::env::temp_dir().join(format!(
-            "sl-cms-test-composite-{}-{}",
+            "tsubame-test-composite-{}-{}",
             std::process::id(),
             id
         ));

@@ -1,5 +1,5 @@
 [package]
-name = "sl-cms-core"
+name = "tsubame-core"
 description = "Models, storage contracts, services and the HTTP layer: everything the CMS is, with no storage backend of its own."
 version.workspace = true
 edition.workspace = true

@@ -27,8 +27,8 @@ const ADMIN: CurrentUser = {
  * and it is removed again as soon as the service has read it, so no other spec inherits it.
  */
 function signIn(user: CurrentUser): void {
-  localStorage.setItem('sl_cms.token', 'test-token');
-  localStorage.setItem('sl_cms.user', JSON.stringify(user));
+  localStorage.setItem('tsubame.token', 'test-token');
+  localStorage.setItem('tsubame.user', JSON.stringify(user));
 }
 
 /** The link to `path`, wherever the tree keeps it. */
@@ -75,14 +75,14 @@ describe('Sidebar', () => {
   }
 
   beforeEach(async () => {
-    localStorage.removeItem('sl_cms.token');
-    localStorage.removeItem('sl_cms.user');
+    localStorage.removeItem('tsubame.token');
+    localStorage.removeItem('tsubame.user');
     await create();
   });
 
   afterEach(() => {
-    localStorage.removeItem('sl_cms.token');
-    localStorage.removeItem('sl_cms.user');
+    localStorage.removeItem('tsubame.token');
+    localStorage.removeItem('tsubame.user');
   });
 
   it('should create', () => {
@@ -114,8 +114,8 @@ describe('Sidebar', () => {
   it('keeps accounts beside the schema branch, not inside it', async () => {
     signIn(ADMIN);
     await create();
-    localStorage.removeItem('sl_cms.token');
-    localStorage.removeItem('sl_cms.user');
+    localStorage.removeItem('tsubame.token');
+    localStorage.removeItem('tsubame.user');
 
     const tree = component.toTreeNodes([[], []]);
     const schemas = nodeNamed(tree, 'Schemas');
@@ -138,8 +138,8 @@ describe('Sidebar', () => {
     signIn(ADMIN);
     await create();
     // Reading the account is what consumed the stored session.
-    localStorage.removeItem('sl_cms.token');
-    localStorage.removeItem('sl_cms.user');
+    localStorage.removeItem('tsubame.token');
+    localStorage.removeItem('tsubame.user');
 
     expect(TestBed.inject(AuthService).isAdmin()).toBe(true);
     const tree = component.toTreeNodes([[], []]);

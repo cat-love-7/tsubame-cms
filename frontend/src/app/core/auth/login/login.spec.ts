@@ -124,6 +124,6 @@ describe('Login', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('パスワード');
-    expect(localStorage.getItem('sl_cms.language')).toBe('ja');
+    expect(localStorage.getItem('tsubame.language')).toBe('ja');
   });
 });

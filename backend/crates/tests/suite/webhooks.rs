@@ -46,7 +46,7 @@ async fn publishing_notifies_the_configured_webhook() {
     // The signature has to verify over the exact bytes that were sent.
     let expected = format!(
         "sha256={}",
-        sl_cms_core::webhook::sign(&secret, &first.body)
+        tsubame_core::webhook::sign(&secret, &first.body)
     );
     assert_eq!(first.signature.as_deref(), Some(expected.as_str()));
 

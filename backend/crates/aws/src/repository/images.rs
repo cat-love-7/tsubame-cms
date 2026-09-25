@@ -11,12 +11,12 @@ use aws_sdk_s3::presigning::PresigningConfig;
 
 use super::*;
 use crate::ImageDelivery;
-use sl_cms_core::models::image::{
+use tsubame_core::models::image::{
     Image, ImageId, NewImageInfo, NewImageRequest, ReplaceImageRequest, ReplacementInfo,
     sanitize_ext,
 };
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::repositories::image_repository::{ImageRepository, Replacement};
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::repositories::image_repository::{ImageRepository, Replacement};
 
 /// How long an upload URL is good for. Long enough for a slow phone on a train, short enough
 /// that a leaked URL is not a standing invitation.
@@ -596,7 +596,7 @@ mod tests {
             .generate_image_upload_url(&request)
             .await
             .unwrap();
-        sl_cms_core::webhook::install_crypto_provider();
+        tsubame_core::webhook::install_crypto_provider();
         let client = reqwest::Client::new();
         assert_eq!(
             client
@@ -848,7 +848,7 @@ mod tests {
             .await
             .expect("a signed upload");
 
-        sl_cms_core::webhook::install_crypto_provider();
+        tsubame_core::webhook::install_crypto_provider();
         let client = reqwest::Client::new();
 
         // Four bytes against a signature for three: refused, and the URL is still good - nothing
@@ -876,7 +876,7 @@ mod tests {
 
     #[tokio::test]
     async fn finding_an_upload_needs_the_permissions_the_deployment_grants() {
-        use sl_cms_core::repositories::image_repository::ImageRepository;
+        use tsubame_core::repositories::image_repository::ImageRepository;
 
         let endpoint = crate::test_endpoint();
         if !emulator_reachable(&endpoint) {
@@ -924,7 +924,7 @@ mod tests {
             .generate_image_upload_url(&request)
             .await
             .expect("a signed upload");
-        sl_cms_core::webhook::install_crypto_provider();
+        tsubame_core::webhook::install_crypto_provider();
         let put = reqwest::Client::new()
             .put(&info.upload_url)
             .body(vec![1u8, 2, 3])
@@ -1036,7 +1036,7 @@ mod tests {
         // The browser PUTs the bytes straight to S3: image bytes never travel through the API.
         // The presigned URL is exercised the way a browser would, over plain HTTP(S), so the
         // process needs a TLS provider the same way the webhook client does.
-        sl_cms_core::webhook::install_crypto_provider();
+        tsubame_core::webhook::install_crypto_provider();
         let client = reqwest::Client::new();
         let put = client
             .put(&info.upload_url)
@@ -1135,7 +1135,7 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("could not open {bucket} for reading: {}", describe(&e)));
 
-        sl_cms_core::webhook::install_crypto_provider();
+        tsubame_core::webhook::install_crypto_provider();
         let client = reqwest::Client::new();
 
         let info = repository

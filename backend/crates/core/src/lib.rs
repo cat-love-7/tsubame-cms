@@ -4,8 +4,8 @@
 //! ([`repositories`]) that a backend package implements, and the adapters are separate
 //! packages so that building one never builds the other:
 //!
-//! - `sl-cms-on-premises` — rkv (LMDB) and image files on disk;
-//! - `sl-cms-aws` — DynamoDB and S3.
+//! - `tsubame-on-premises` — rkv (LMDB) and image files on disk;
+//! - `tsubame-aws` — DynamoDB and S3.
 //!
 //! Everything shared lives here, which is why there is not a single `#[cfg(feature = ...)]`
 //! in this crate: a capability an adapter may lack is a trait it does not implement or a

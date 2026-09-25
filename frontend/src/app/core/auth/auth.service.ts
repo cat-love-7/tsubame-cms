@@ -91,8 +91,8 @@ interface PasswordChanged {
   expires_at: string;
 }
 
-const TOKEN_KEY = 'sl_cms.token';
-const USER_KEY = 'sl_cms.user';
+const TOKEN_KEY = 'tsubame.token';
+const USER_KEY = 'tsubame.user';
 
 /**
  * Holds the bearer token and the signed-in user.

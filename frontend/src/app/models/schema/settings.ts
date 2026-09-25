@@ -1,7 +1,7 @@
 /**
  * What a schema is told about itself, as opposed to what its fields say.
  *
- * Kept apart from the fields on the server as well (`sl_cms_core::models::schema::SchemaSettings`),
+ * Kept apart from the fields on the server as well (`tsubame_core::models::schema::SchemaSettings`),
  * so a settings save never rewrites the definition the values are checked against.
  */
 export interface SchemaSettings {

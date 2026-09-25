@@ -1,6 +1,6 @@
-# sl-cms-preview
+# tsubame-preview
 
-`sl_cms` の**署名付きプレビューリンク**を、ビルドを経由せずにページとして描画するための
+`Tsubame` の**署名付きプレビューリンク**を、ビルドを経由せずにページとして描画するための
 小さなパッケージです。**Gatsby にも React にも依存しません**(依存パッケージはゼロ、
 `fetch` と普通のオブジェクトだけ)。
 
@@ -32,7 +32,7 @@ import {
   fetchPreview,
   createContentClient,
   resolvePreview,
-} from 'sl-cms-preview';
+} from 'tsubame-preview';
 
 const target = parsePreviewRoute(window.location.pathname); // {kind:'collection', collection:'blog', id:7}
 const token = new URLSearchParams(window.location.search).get('token');
@@ -105,7 +105,7 @@ const resolved = await resolvePreview({
 
 `packages/gatsby-source-tsubame` の `previewFieldNames()` を使うと、ビルドと同じ GraphQL 名
 (`published-at` → `published_at`)が得られます。アダプタはそれだけで、残りは view-model の仕事です。
-詳しくは `gatsby-source-sl-cms/README.md` の「ライブプレビュー」節を参照してください。
+詳しくは `gatsby-source-tsubame/README.md` の「ライブプレビュー」節を参照してください。
 
 ## テスト
 

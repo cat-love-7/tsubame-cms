@@ -102,7 +102,7 @@ function parsePreviewRoute(pathname) {
  * The token travels through untouched, because it is the whole credential and the preview site
  * hands it straight back to the API. `siteOrigin` is an origin - scheme, host and port - which is
  * what a deployment reports through `preview_site_url`
- * (`sl_cms_core::config::parse_preview_site_url`), so nothing here has to decide whether a base
+ * (`tsubame_core::config::parse_preview_site_url`), so nothing here has to decide whether a base
  * path and a route meet with one slash or two.
  *
  * The same rule the admin screen applies in TypeScript

@@ -8,7 +8,7 @@ with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese
 | Path | What it is |
 |---|---|
 | `backend/crates/core` | domain, HTTP layer, services - storage-agnostic |
-| `backend/crates/on-premises` | the self-hosted adapter (rkv/LMDB; bin `sl-cms`) |
+| `backend/crates/on-premises` | the self-hosted adapter (rkv/LMDB; bin `tsubame`) |
 | `backend/crates/aws` | DynamoDB + S3 + Lambda adapter |
 | `backend/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
 | `frontend/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
@@ -76,7 +76,7 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
   `payload_too_large`, and `/auth/capabilities` reports the image one so a browser can refuse a
   file before sending it. `infra/` passes each only when an operator sets it, so an unset
   deployment follows the code when a default changes.
-- **Everything the CMS serves is under `/api`** (`sl_cms_core::API_PREFIX`): `http::router_with`
+- **Everything the CMS serves is under `/api`** (`tsubame_core::API_PREFIX`): `http::router_with`
   nests the whole surface there, the paths the API hands out (preview links, image URLs) carry the
   prefix, and nothing strips it - not the dev proxy, not nginx, not CloudFront. Only liveness
   (`GET /`) is outside. The frontend mirrors the constant in `core/api-url.ts`; never hardcode the

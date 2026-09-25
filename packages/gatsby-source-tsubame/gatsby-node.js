@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * gatsby-source-sl-cms
+ * gatsby-source-tsubame
  *
- * Sources published content from an sl_cms delivery API (`/api/content/*`) and declares a GraphQL
+ * Sources published content from a Tsubame delivery API (`/api/content/*`) and declares a GraphQL
  * type per collection and per single page. Markdown values become `text/markdown` child nodes, so
  * adding `gatsby-transformer-remark` is all it takes for them to arrive as HTML.
  *
@@ -14,7 +14,7 @@
  */
 
 const { normalizeOptions } = require('./src/options');
-const { SlCmsClient } = require('./src/client');
+const { TsubameClient } = require('./src/client');
 const { buildContentModel } = require('./src/model');
 const { buildTypeDefinitions } = require('./src/types');
 const { sourceAll } = require('./src/nodes');
@@ -40,7 +40,7 @@ exports.pluginOptionsSchema = ({ Joi }) =>
       .description('Items per request while walking a collection. The CMS refuses more than 200. Defaults to 50.'),
     typePrefix: Joi.string()
       .pattern(/^[_A-Za-z][_0-9A-Za-z]*$/)
-      .description('Prefix of every generated GraphQL type. Defaults to `SlCms`.'),
+      .description('Prefix of every generated GraphQL type. Defaults to `Tsubame`.'),
     requestTimeout: Joi.number()
       .integer()
       .min(1)
@@ -86,26 +86,26 @@ exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions)
     loadRemoteFileCreator(reporter);
   }
 
-  const client = new SlCmsClient(options, { reporter });
+  const client = new TsubameClient(options, { reporter });
 
   const snapshot = await client.fetchSchemaSnapshot();
   const model = buildContentModel(snapshot, options);
 
   actions.createTypes(buildTypeDefinitions(model));
   reporter.verbose(
-    `[gatsby-source-sl-cms] declared ${snapshot.collections.size} collection type(s), ` +
+    `[gatsby-source-tsubame] declared ${snapshot.collections.size} collection type(s), ` +
       `${model.plan.pages.size} single-page type(s) and ${snapshot.composites.size} composite type(s)`,
   );
 };
 
 exports.sourceNodes = async (gatsbyApi, pluginOptions) => {
   const options = normalizeOptions(pluginOptions, gatsbyApi.reporter);
-  const client = new SlCmsClient(options, { reporter: gatsbyApi.reporter });
+  const client = new TsubameClient(options, { reporter: gatsbyApi.reporter });
 
   const counters = await sourceAll(gatsbyApi, client, options);
 
   gatsbyApi.reporter.info(
-    `[gatsby-source-sl-cms] sourced ${counters.items} item(s) from ${counters.collections} collection(s), ` +
+    `[gatsby-source-tsubame] sourced ${counters.items} item(s) from ${counters.collections} collection(s), ` +
       `${counters.pages} single page(s), and ${counters.markdown} markdown field(s)`,
   );
 };

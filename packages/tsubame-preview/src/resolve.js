@@ -25,7 +25,7 @@ const { createUrlResolver, describeFieldType, toImageValue } = require('./field-
  *
  * The result is framework-neutral on purpose: plain objects, strings and arrays, snake_case names as
  * the CMS spells them. A Gatsby site renames them through its adapter
- * (`gatsby-source-sl-cms/src/preview-adapter.js`); a Next.js or plain SPA site reads them as they
+ * (`gatsby-source-tsubame/src/preview-adapter.js`); a Next.js or plain SPA site reads them as they
  * are. See `doc/preview-site.md` for the shape and where it differs from a build.
  */
 async function resolvePreview(options = {}) {

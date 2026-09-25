@@ -22,31 +22,31 @@ const model = createModel();
 
 describe('planTypeNames', () => {
   it('names an item type after its collection, a page type after its page, and a composite after its id', () => {
-    assert.equal(model.plan.collections.get('blog'), 'SlCmsBlogItem');
-    assert.equal(model.plan.collections.get('authors'), 'SlCmsAuthorsItem');
-    assert.equal(model.plan.collections.get('editors'), 'SlCmsEditorsItem');
-    assert.equal(model.plan.pages.get('home'), 'SlCmsHomePage');
-    assert.equal(model.plan.pages.get('contact'), 'SlCmsContactPage');
-    assert.equal(model.plan.composites.get('block'), 'SlCmsCompositeBlock');
-    assert.equal(model.plan.composites.get('seo'), 'SlCmsCompositeSeo');
+    assert.equal(model.plan.collections.get('blog'), 'TsubameBlogItem');
+    assert.equal(model.plan.collections.get('authors'), 'TsubameAuthorsItem');
+    assert.equal(model.plan.collections.get('editors'), 'TsubameEditorsItem');
+    assert.equal(model.plan.pages.get('home'), 'TsubameHomePage');
+    assert.equal(model.plan.pages.get('contact'), 'TsubameContactPage');
+    assert.equal(model.plan.composites.get('block'), 'TsubameCompositeBlock');
+    assert.equal(model.plan.composites.get('seo'), 'TsubameCompositeSeo');
   });
 
   it('does not depend on the order the API listed things in', () => {
-    const first = planTypeNames(['blog', 'authors'], ['home'], ['block', 'seo'], 'SlCms');
-    const second = planTypeNames(['authors', 'blog'], ['home'], ['seo', 'block'], 'SlCms');
+    const first = planTypeNames(['blog', 'authors'], ['home'], ['block', 'seo'], 'Tsubame');
+    const second = planTypeNames(['authors', 'blog'], ['home'], ['seo', 'block'], 'Tsubame');
     assert.deepEqual([...first.collections], [...second.collections]);
     assert.deepEqual([...first.composites], [...second.composites]);
   });
 
   it('tells apart two names that become the same type', () => {
-    const plan = planTypeNames(['a-b', 'a_b'], [], [], 'SlCms');
-    assert.equal(plan.collections.get('a-b'), 'SlCmsABItem');
-    assert.equal(plan.collections.get('a_b'), 'SlCmsABItem_2');
+    const plan = planTypeNames(['a-b', 'a_b'], [], [], 'Tsubame');
+    assert.equal(plan.collections.get('a-b'), 'TsubameABItem');
+    assert.equal(plan.collections.get('a_b'), 'TsubameABItem_2');
   });
 
   it('does not hand anything the name of a static type', () => {
-    assert.notEqual(planTypeNames(['collection'], [], [], 'SlCms').collections.get('collection'), 'SlCmsCollection');
-    assert.notEqual(planTypeNames([], [], ['image'], 'SlCms').composites.get('image'), 'SlCmsImage');
+    assert.notEqual(planTypeNames(['collection'], [], [], 'Tsubame').collections.get('collection'), 'TsubameCollection');
+    assert.notEqual(planTypeNames([], [], ['image'], 'Tsubame').composites.get('image'), 'TsubameImage');
   });
 });
 
@@ -71,7 +71,7 @@ describe('buildContentModel', () => {
   });
 
   it('plans a type for a page a relation names but the index does not list', () => {
-    assert.equal(model.plan.pages.get('contact'), 'SlCmsContactPage');
+    assert.equal(model.plan.pages.get('contact'), 'TsubameContactPage');
     // No public schema, so no CMS fields - but it still answers to the inverse declared against it.
     assert.equal(model.fieldNames.pages.get('contact').size, 0);
     assert.equal(model.inverseFieldNames.get(schemaKey('page', 'contact')).get('editors'), 'editors');
@@ -80,7 +80,7 @@ describe('buildContentModel', () => {
   it('accepts a snapshot without the new composite map', () => {
     // The plugin has to survive a CMS that predates the route: an absent map, not an exception.
     const snapshot = { ...createSnapshot(), composites: new Map() };
-    const plain = buildContentModel(snapshot, { typePrefix: 'SlCms' });
+    const plain = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
     assert.equal(plain.snapshot.composites.size, 0);
   });
 });
@@ -93,14 +93,14 @@ describe('graphqlFieldType', () => {
     assert.deepEqual(graphqlFieldType(model, 'Boolean'), { type: 'Boolean', link: false });
     assert.deepEqual(graphqlFieldType(model, 'Date'), { type: 'Date', link: false });
     assert.deepEqual(graphqlFieldType(model, 'DateTime'), { type: 'Date', link: false });
-    assert.deepEqual(graphqlFieldType(model, 'Image'), { type: 'SlCmsImage', link: false });
+    assert.deepEqual(graphqlFieldType(model, 'Image'), { type: 'TsubameImage', link: false });
     assert.deepEqual(graphqlFieldType(model, { TextEnum: ['a'] }), { type: '[String]', link: false });
   });
 
   it('links a markdown field to its node', () => {
-    assert.deepEqual(graphqlFieldType(model, { Markdown: {} }), { type: 'SlCmsMarkdown', link: true });
+    assert.deepEqual(graphqlFieldType(model, { Markdown: {} }), { type: 'TsubameMarkdown', link: true });
     assert.deepEqual(graphqlFieldType(model, { Array: [{ Markdown: {} }] }), {
-      type: '[SlCmsMarkdown]',
+      type: '[TsubameMarkdown]',
       link: true,
     });
   });
@@ -108,34 +108,34 @@ describe('graphqlFieldType', () => {
   it('types a relation after its target, and links it', () => {
     const single = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } };
     const many = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
-    assert.deepEqual(graphqlFieldType(model, single), { type: 'SlCmsAuthorsItem', link: true });
-    assert.deepEqual(graphqlFieldType(model, many), { type: '[SlCmsAuthorsItem]', link: true });
+    assert.deepEqual(graphqlFieldType(model, single), { type: 'TsubameAuthorsItem', link: true });
+    assert.deepEqual(graphqlFieldType(model, many), { type: '[TsubameAuthorsItem]', link: true });
   });
 
   it('never reads a single-page relation as a list', () => {
     const relation = { Relation: { target: { kind: 'single_page', name: 'home' }, has_many: true } };
-    assert.deepEqual(graphqlFieldType(model, relation), { type: 'SlCmsHomePage', link: true });
+    assert.deepEqual(graphqlFieldType(model, relation), { type: 'TsubameHomePage', link: true });
   });
 
   it('falls back to the reference type when the target is not part of the build', () => {
     const relation = { Relation: { target: { kind: 'collection', name: 'nowhere' }, has_many: true } };
-    assert.deepEqual(graphqlFieldType(model, relation), { type: '[SlCmsRelationRef]', link: false });
+    assert.deepEqual(graphqlFieldType(model, relation), { type: '[TsubameRelationRef]', link: false });
   });
 
   it('types a composite after its definition', () => {
     assert.deepEqual(graphqlFieldType(model, { CompositeField: { id: 'seo' } }), {
-      type: 'SlCmsCompositeSeo',
+      type: 'TsubameCompositeSeo',
       link: false,
     });
     assert.deepEqual(graphqlFieldType(model, { Array: [{ CompositeField: { id: 'block' } }] }), {
-      type: '[SlCmsCompositeBlock]',
+      type: '[TsubameCompositeBlock]',
       link: false,
     });
   });
 
   it('falls back to the opaque composite type for an undefined id', () => {
     assert.deepEqual(graphqlFieldType(model, { CompositeField: { id: 'gone' } }), {
-      type: 'SlCmsComposite',
+      type: 'TsubameComposite',
       link: false,
     });
   });
@@ -149,8 +149,8 @@ describe('graphqlFieldType', () => {
 
 describe('relationTargetTypeName', () => {
   it('answers the type a relation points at', () => {
-    assert.equal(relationTargetTypeName(model, { kind: 'collection', name: 'authors' }), 'SlCmsAuthorsItem');
-    assert.equal(relationTargetTypeName(model, { kind: 'single_page', name: 'contact' }), 'SlCmsContactPage');
+    assert.equal(relationTargetTypeName(model, { kind: 'collection', name: 'authors' }), 'TsubameAuthorsItem');
+    assert.equal(relationTargetTypeName(model, { kind: 'single_page', name: 'contact' }), 'TsubameContactPage');
     assert.equal(relationTargetTypeName(model, { kind: 'collection', name: 'nowhere' }), null);
   });
 });
@@ -159,8 +159,8 @@ describe('inverse declarations', () => {
   it('reads the other side\'s name off the referring schema', () => {
     // `blog.author` says the other side calls it `articles`; `home.featured_author` says `features`.
     assert.deepEqual(model.inverseDeclarationsByTarget.get('collection:authors'), [
-      { inverseName: 'articles', declaringTypeName: 'SlCmsBlogItem' },
-      { inverseName: 'features', declaringTypeName: 'SlCmsHomePage' },
+      { inverseName: 'articles', declaringTypeName: 'TsubameBlogItem' },
+      { inverseName: 'features', declaringTypeName: 'TsubameHomePage' },
     ]);
   });
 
@@ -168,7 +168,7 @@ describe('inverse declarations', () => {
     // `editors.homepage` names the page's side `editors`, and the page type is what the referrers
     // are typed as.
     assert.deepEqual(model.inverseDeclarationsByTarget.get('page:contact'), [
-      { inverseName: 'editors', declaringTypeName: 'SlCmsEditorsItem' },
+      { inverseName: 'editors', declaringTypeName: 'TsubameEditorsItem' },
     ]);
   });
 

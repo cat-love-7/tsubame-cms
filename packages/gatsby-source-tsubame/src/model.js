@@ -40,13 +40,13 @@ function targetKey(target) {
 }
 
 /**
- * The key a piece of content's node is created with (`sl-cms-item:authors:7`, `sl-cms-page:home`).
+ * The key a piece of content's node is created with (`tsubame-item:authors:7`, `tsubame-page:home`).
  *
  * `values.js` builds the same key from a reference, which is what lets a reverse reference be
  * answered with `createNodeId` and nothing else.
  */
 function ownerNodeKey({ kind, name, item }) {
-  return kind === 'collection' ? `sl-cms-item:${name}:${item}` : `sl-cms-page:${name}`;
+  return kind === 'collection' ? `tsubame-item:${name}:${item}` : `tsubame-page:${name}`;
 }
 
 /** A relation target, with the two kinds spelled the way the rest of the model spells them. */
@@ -182,9 +182,9 @@ function relationTargetTypeName(model, target) {
  *   consumer does not have to parse strings by hand.
  * - A `Relation` field is a link to the target's type (`[Type]` when the relation holds several),
  *   which is what makes `author { name }` a query instead of a second lookup. A target that is not
- *   part of the build falls back to `[SlCmsRelationRef]`, so the schema still compiles.
+ *   part of the build falls back to `[TsubameRelationRef]`, so the schema still compiles.
  * - A `CompositeField` is typed after its definition once `/api/content/composite-fields` answers
- *   it, and by the opaque `SlCmsComposite` otherwise.
+ *   it, and by the opaque `TsubameComposite` otherwise.
  *
  * `JSON` is the last fallback that keeps an unknown or ambiguous field queryable: the whole value
  * is still there, under `values`.
@@ -343,7 +343,7 @@ function contentFieldNames(model, kind, name) {
 /**
  * The model for one build.
  *
- * `snapshot` is what `SlCmsClient.fetchSchemaSnapshot()` read: the collections with published items
+ * `snapshot` is what `TsubameClient.fetchSchemaSnapshot()` read: the collections with published items
  * (the index), every collection and page a relation names (whose schema is public whether or not
  * they have published items), the published pages, the composite definitions, and the single-page
  * targets that are not published and therefore have no public schema.

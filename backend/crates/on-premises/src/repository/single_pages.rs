@@ -4,14 +4,14 @@ use crate::repository::{
     SINGLE_PAGE_SETTINGS_STORE, page_draft_key, page_metadata_key,
 };
 use rkv::{StoreOptions, Value};
-use sl_cms_core::models::item_status::{ItemDates, ItemMetadata};
-use sl_cms_core::models::owner::ItemOwner;
-use sl_cms_core::models::schema::SchemaSettings;
-use sl_cms_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
-use sl_cms_core::models::values::referenced_items;
-use sl_cms_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
-use sl_cms_core::repositories::relation_repository::{RelationIndexChanges, Written};
-use sl_cms_core::repositories::single_page_repository::SinglePageRepository;
+use tsubame_core::models::item_status::{ItemDates, ItemMetadata};
+use tsubame_core::models::owner::ItemOwner;
+use tsubame_core::models::schema::SchemaSettings;
+use tsubame_core::models::single_page::{SinglePageItem, SinglePageName, SinglePageSchema};
+use tsubame_core::models::values::referenced_items;
+use tsubame_core::repositories::collection_repository::{ApplyStatusError, canonical_draft};
+use tsubame_core::repositories::relation_repository::{RelationIndexChanges, Written};
+use tsubame_core::repositories::single_page_repository::SinglePageRepository;
 use std::error::Error;
 
 impl RkvRepository {
