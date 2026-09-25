@@ -51,6 +51,28 @@ tier are the ones an idle site touches:
 An editor who opens the CMS in the morning pays for the requests they make; a site that is read all
 day pays for its reads and its bytes; a site nobody reads pays for its storage.
 
+## Cold starts are a rounding error
+
+The usual reason to keep a serverless API warm is that the first request after an idle spell is
+slow. This one is a Rust binary with no runtime to boot: nothing is interpreted, nothing is warmed
+up, and the storage client is one HTTP call away.
+
+Measured on this deployment (arm64, 256 MB, 2026-09-25) across three cold starts, from the
+`Init Duration` CloudWatch reports every invocation carries:
+
+| | |
+|---|---|
+| **Init** (what a cold start costs) | **238 ms, 291 ms, 284 ms** |
+| First request after a deployment, end to end | 0.56 s (TLS included, straight to the function URL) |
+| A warm request, end to end | 55-62 ms |
+| A warm request, inside the function | 1.3 ms, **billed as 2 ms** |
+| Memory used | 42 MB of the 256 MB it is given |
+
+A page of content adds a DynamoDB round trip to that, which is single-digit milliseconds in the
+same region. What a cold start costs the bill is one 300 ms invocation - a fraction of a yen-cent,
+and only when nobody has used the CMS for a while. An editor's first click of the morning is the
+worst case, and it is a third of a second.
+
 ## Where it can run
 
 AWS is the adapter that exists, and the one the contract suite is run against on every change. The
