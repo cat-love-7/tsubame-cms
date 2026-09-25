@@ -86,10 +86,22 @@ follows.
 There is no CLA and no copyright assignment: contributions are accepted under the
 [MIT licence](LICENSE), the same terms the project is released under.
 
-## Releasing the packages
+## Releasing
 
-`packages/gatsby-source-tsubame` and `packages/tsubame-preview` are published to npm on their own
-schedule, not with the CMS:
+One version covers the whole repository: the CMS, both npm packages, the admin interface and the git
+tag carry the same number, and `scripts/check-version.sh` fails the build if they drift. The Rust
+crates inherit `version.workspace = true` rather than repeating it.
+
+1. Bump the number in all four places: `backend/Cargo.toml` (`[workspace.package]`), both
+   `packages/*/package.json`, and `frontend/package.json` - private, but it carries the number so
+   that `grep 0.2.0` finds every place at once. `frontend/package-lock.json` repeats it, because
+   `npm ci` compares the two: run `npm install --package-lock-only` in `frontend/` (or let the check
+   below name the file for you).
+2. Move `CHANGELOG.md`'s `Unreleased` section under the new number with the date.
+3. Run the release check with the tag the commit is about to get: `scripts/check-version.sh v0.2.0`.
+4. Tag it and push the tag: `git tag -a v0.2.0 -m v0.2.0`, then `git push origin v0.2.0`.
+5. Create the GitHub release from the tag, with the changelog section as its notes.
+6. Publish the packages when the release carries something for them:
 
 ```bash
 cd packages/tsubame-preview
@@ -97,11 +109,10 @@ npm pack --dry-run          # what would ship: the `files` list, plus README and
 npm publish
 ```
 
-Both are already `"license": "MIT"` with the licence text beside them, and neither has a
-dependency. Two things want doing before the first publish: bump `version` in the manifest (and
-the `peerDependencies.gatsby` range when Gatsby's major moves), and add `repository` (with
-`directory: "packages/<name>"`), `homepage` and `bugs` pointing at the repository - this file
-cannot name the URL until the project is public.
+Both are already `"license": "MIT"` with the licence text beside them, and neither has a dependency;
+`gatsby-source-tsubame` declares its `peerDependencies.gatsby` range, which needs widening when
+Gatsby's major moves. If a package ever has to move on its own - a Gatsby major that the CMS should
+not wait for - that is the moment to give it its own number and drop it from the check.
 
 ## Reporting a security issue
 

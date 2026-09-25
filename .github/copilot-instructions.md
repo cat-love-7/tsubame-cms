@@ -57,6 +57,10 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
   says what the alternative would break is the point.
 - **Docs and UI text**: `docs/`, code comments and commit messages are English; the UI ships `en` and
   `ja` catalogues.
+- **One version for the repository**: `backend/Cargo.toml` `[workspace.package]`, both
+  `packages/*/package.json`, `frontend/package.json` and the git tag. The crates inherit
+  `version.workspace = true` instead of repeating it; `scripts/check-version.sh` enforces the lot and
+  `CHANGELOG.md` records what each release changed.
 - **Contract tests are written once** in `crates/tests/suite/` (one file per topic; `mod.rs` is the
   harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
   permissions) live with the adapter.

@@ -14,6 +14,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  versions:
+    name: Versions agree
+    runs-on: ubuntu-latest
+    # A hung job that nobody notices is a queue full of them; the numbers are generous
+    # multiples of what the job takes on a good day.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The number lives in four files and the tag, so it is the one thing a release commit can
+      # get wrong in a way no test notices. Fast, and first, so a drift is the first thing a
+      # pull request hears about.
+      - run: scripts/check-version.sh
+
   rust:
     name: Rust (core, local adapter, binaries)
     runs-on: ubuntu-latest

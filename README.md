@@ -231,6 +231,9 @@ comments; `.github/copilot-instructions.md` is the same conventions in short for
 Issues and pull requests are welcome - [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the
 suites to run, and the conventions a change is reviewed against. The licence needs no CLA.
 
+Releases are one version for the whole repository - the CMS, the two npm packages and the git tag -
+and [CHANGELOG.md](CHANGELOG.md) is what changed in each.
+
 ## License
 
 [MIT](LICENSE).
