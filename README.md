@@ -1,5 +1,8 @@
 # Tsubame
 
+[![CI](https://github.com/cat-love-7/tsubame-cms/actions/workflows/ci.yml/badge.svg)](https://github.com/cat-love-7/tsubame-cms/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A CMS that runs **serverless**: the API is a Lambda function, content lives in DynamoDB, images in
 S3 and the admin app on CloudFront, so there is no server to keep, no database to size and nothing
 billed while nobody is editing. A small site pays for what it uses - requests, storage, transfer -

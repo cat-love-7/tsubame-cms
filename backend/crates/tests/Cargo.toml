@@ -7,6 +7,7 @@ description = "The HTTP contract suite, run against every storage adapter."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish = false
 
 [dependencies]

@@ -105,6 +105,6 @@ cannot name the URL until the project is public.
 
 ## Reporting a security issue
 
-Please do not open a public issue for a vulnerability. Use the repository's private
-**Report a security vulnerability** form (GitHub's security advisories) with steps to reproduce,
-and give us a chance to fix it before it is published.
+Please do not open a public issue for a vulnerability. Use
+[https://github.com/cat-love-7/tsubame-cms/security/advisories/new](https://github.com/cat-love-7/tsubame-cms/security/advisories/new) - GitHub's private advisory form -
+with steps to reproduce, and give us a chance to fix it before it is published.

@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Gatsby source plugin for the Tsubame delivery API. Markdown fields become text/markdown nodes, so gatsby-transformer-remark turns them into HTML.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cat-love-7/tsubame-cms.git",
+    "directory": "packages/gatsby-source-tsubame"
+  },
+  "homepage": "https://github.com/cat-love-7/tsubame-cms#readme",
+  "bugs": {
+    "url": "https://github.com/cat-love-7/tsubame-cms/issues"
+  },
   "main": "gatsby-node.js",
   "files": [
     "gatsby-node.js",

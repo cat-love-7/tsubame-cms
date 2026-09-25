@@ -21,6 +21,7 @@ default-members = ["crates/on-premises"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/cat-love-7/tsubame-cms"
 
 # Dependencies shared by more than one package. The split is deliberate: the core has no storage
 # dependency at all, so neither adapter's tree is reachable from it.
