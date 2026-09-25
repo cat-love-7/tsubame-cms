@@ -1,30 +1,31 @@
-# 管理画面の E2E チェック
+# Admin UI E2E Checks
 
-実ブラウザで管理画面を操作し、**実際の API と組み合わせて**動くことを確認する。
+Drive the admin UI in a real browser and confirm it works **against the real API**.
 
-`npm test`(Vitest のコンポーネントテスト)はサービスをスタブするので、DOM とロジックは見られるが
-通信の形は見えない。ここで捕まえるのはその隙間で、実際に次の 4 件の不具合はこのチェックで見つかった。
+`npm test` (the Vitest component tests) stubs the services, so the DOM and the logic are visible but
+the shape of the traffic is not. That gap is what this check catches, and the following 4 defects were in
+fact found by it.
 
-- 一覧・状態・ナビゲーションを同時に取りに行くと 500 になる(LMDB のトランザクション制約)
-- 変更系 API が本文をテキストで返すため、Angular がパースに失敗して「保存/削除に失敗した」と誤判定する
-- 一覧の状態を通常フィールドで持っていたため `ExpressionChangedAfterItHasBeenCheckedError` が起き、
-  最終ページの 1 行が空で描画される
-- 並行リクエストで 500 になる(rkv が **ストアを開くたびに** `mdb_dbi_open` を呼び、LMDB は
-  他のトランザクションが動いている間それを拒否する)。読み取り系はストレージのロックで
-  直したが、**パスワード照合だけがロックの外**に残っていた。パスワードリセット直後の
-  サインインが、リセット画面のダッシュボード読み込みと重なると 500 になっていた
+- Fetching the list, the statuses and the navigation at the same time returns 500 (an LMDB transaction constraint)
+- The mutating APIs return their body as text, so Angular fails to parse it and wrongly reports "save/delete failed"
+- Holding the list state in a normal field caused `ExpressionChangedAfterItHasBeenCheckedError`, and the
+  last row of the final page rendered blank
+- Concurrent requests return 500 (rkv calls `mdb_dbi_open` **every time it opens the store**, and LMDB
+  refuses that while another transaction is running). The read paths were fixed with a storage lock, but
+  **only the password verification was left outside the lock**. A sign-in right after a password reset
+  returned 500 when it overlapped with the reset screen loading the dashboard
 
-## 前提
+## Prerequisites
 
-1. バックエンド: `cargo run --manifest-path backend/Cargo.toml`(127.0.0.1:8080、データは
-   `DATA_ROOT` の下。未設定なら起動したディレクトリの `./data`)。`--manifest-path` が指すのは
-   ワークスペースなので、`default-members` の指定で on-premises のバイナリ(`tsubame`)が起動する。
-   `scripts/test-e2e.sh` はこれに `DATA_ROOT` と `JWT_SECRET` を渡して起動する。
-2. 開発サーバ: `cd frontend && npm start`(localhost:4200、`/api` をバックエンドへ転送)
-3. Chromium(初回のみ): `npx playwright install chromium`
+1. Backend: `cargo run --manifest-path backend/Cargo.toml` (127.0.0.1:8080, data under
+   `DATA_ROOT`. If unset, `./data` in the directory it was started from). `--manifest-path` points at the
+   workspace, so the `default-members` setting starts the on-premises binary (`tsubame`).
+   `scripts/test-e2e.sh` starts it with `DATA_ROOT` and `JWT_SECRET` passed in.
+2. Dev server: `cd frontend && npm start` (localhost:4200, proxies `/api` to the backend)
+3. Chromium (first time only): `npx playwright install chromium`
 
-ブラウザは既定で `~/.cache/ms-playwright` に入る。**この開発環境ではホームディレクトリに
-書き込めない**ため、置き場所を指定して導入する。
+The browser goes into `~/.cache/ms-playwright` by default. **This development environment cannot
+write to the home directory**, so install it with an explicit location.
 
 ```bash
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers
@@ -35,82 +36,82 @@ npx playwright install chromium
 npx playwright install-deps chromium
 ```
 
-実行時も同じ `PLAYWRIGHT_BROWSERS_PATH` が必要(未設定だと Playwright は `~/.cache/ms-playwright`
-を探し、「Executable doesn't exist」で失敗する)。通常の開発機ではこの指定は不要。
+The same `PLAYWRIGHT_BROWSERS_PATH` is needed at run time (if it is unset, Playwright looks in
+`~/.cache/ms-playwright` and fails with "Executable doesn't exist"). On a normal development machine this setting is not needed.
 
-## 実行
+## Running
 
 ```bash
 cd frontend
 PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers npm run e2e
 ```
 
-環境変数で調整できる。
+It can be adjusted with environment variables.
 
-| 変数 | 既定値 | 意味 |
+| Variable | Default | Meaning |
 |---|---|---|
-| `BASE_URL` | `http://localhost:4200` | 開発サーバ |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin@example.com` / `admin-password` | データ投入とログインに使う管理者の ID(サーバ側は `ADMIN_EMAIL` でも可) |
-| `COLLECTION` | `e2e_blog` | ページングを見るコレクション |
-| `TOTAL` | `60` | その件数(50 件ページの確認があるため 51 以上が必要) |
-| `LAST_PAGE_COLLECTION` | `e2e_small` | 最終ページの削除を見るコレクション |
-| `LAST_PAGE_TOTAL` | `26` | その件数(25 件ページ + 1 件になる想定) |
-| `IMAGE_COLLECTION` | `e2e_images` | 画像フィールド(単一 + 配列)を持つコレクション |
-| `COMPOSITE_COLLECTION` | `e2e_composite` | 複合フィールドの中に画像配列を持つコレクション |
-| `COMPOSITE_ID` | `e2e_gallery_block` | その複合フィールド定義の id |
-| `SCHEMA_COLLECTION` | `e2e_schema_editor` | スキーマ編集画面から組み立てるコレクション(実行の最後に削除する) |
-| `SCHEMA_BLOCK` | `e2e_block` | その配列フィールドが要素として持つ複合フィールド定義 |
+| `BASE_URL` | `http://localhost:4200` | Dev server |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin@example.com` / `admin-password` | Administrator ID used for seeding and sign-in (the server also accepts `ADMIN_EMAIL`) |
+| `COLLECTION` | `e2e_blog` | Collection used to check paging |
+| `TOTAL` | `60` | Its item count (51 or more is required because there is a 50-item page check) |
+| `LAST_PAGE_COLLECTION` | `e2e_small` | Collection used to check deletion on the last page |
+| `LAST_PAGE_TOTAL` | `26` | Its item count (expected to be a 25-item page + 1 item) |
+| `IMAGE_COLLECTION` | `e2e_images` | Collection with image Fields (single + array) |
+| `COMPOSITE_COLLECTION` | `e2e_composite` | Collection with an image array inside a Composite field |
+| `COMPOSITE_ID` | `e2e_gallery_block` | The id of that Composite field definition |
+| `SCHEMA_COLLECTION` | `e2e_schema_editor` | Collection assembled from the schema editor screen (deleted at the end of the run) |
+| `SCHEMA_BLOCK` | `e2e_block` | The Composite field definition that that array Field holds as its element |
 
-## 言語
+## Language
 
-ハーネスは各ブラウザコンテキストで `localStorage['tsubame.language'] = 'en'` を仕込んでから
-ページを開く(`newContext()`)。画面の文言はカタログから来るので、固定しないと
-**ブラウザの言語設定しだいで落ちる**チェックが出る(実際、日本語環境では「閲覧のみ」の
-案内文を探すチェックが落ちる)。切り替え機能そのものは、この保存値の上から `use()` して
-確認する。文言を変えたときは、この README の下の一覧と `check-ui.mjs` の
-`has-text` / `aria-label` も一緒に直す。
+The harness sets `localStorage['tsubame.language'] = 'en'` in each browser context before opening the
+page (`newContext()`). The screen wording comes from the catalog, so without pinning it some checks
+**fail depending on the browser's language setting** (in fact, under a Japanese locale the check that
+looks for the "閲覧のみ" notice text fails - that is the Japanese wording for "view only"). The switching feature itself is
+checked by calling `use()` on top of this stored value. When you change wording, also fix the list
+further down in this README and the `has-text` / `aria-label` in `check-ui.mjs`.
 
-## 何を確認するか
+## What Is Checked
 
-- ログインフォームからのサインイン
-- 1 ページ目が既定の 25 件、id 昇順、ページャに総件数が出る
-- 状態バッジと Updated 列が描画される
-- 次ページ・ページサイズ変更がサーバへ届いている
-- 一覧から公開できる(Draft → Published)
-- 最終ページの最後の 1 件を削除すると前のページへ戻る
-- **保存だけでは公開されない**(配信 API は公開コピーだけを見る)
-- **公開すると配信 API に反映される**
-- 画像ライブラリ: アップロードでき、名前つきで並び、実体が配信され、削除できる
-- コンテンツ編集中に既存画像を選んで保存できる(選んだ id がアイテムに残る)
-- 画像配列に**複数まとめて**追加でき、**その場でアップロード**もでき、その順序で保存される
-- **複合フィールドの中の画像配列**でも同じことができる
-- **スキーマ編集を画面から**通す: コレクションを作り、フィールドを足し(名前・型・幅プリセット)、
-  Enum の値をチップで追加・削除し、**複合フィールドを配列の要素型に選び**、保存して API で読み戻す
-  (他のコレクションは API で作っているので、ここがこの画面をブラウザで通す唯一の経路)
-- そうやって定義した Enum フィールドを、**コンテンツ編集画面で選んで保存**できる
-- そうやって定義した**複合の配列**を、要素ごとに追加・入力・並べ替えして保存でき、開き直すと
-  保存した順で出る
-- その複合定義は**自分自身の配列**を持てる(ブロックがブロックを持つ)。要素の中の配列は
-  空のところで止まり、1 つ足せば 1 段深くなる
-- **ロールごとに出し分け**: 編集ロールには公開・削除・アカウント管理を出さず、閲覧ロールには保存も出さない
-- 一覧から公開すると、**誰が公開したか**がその行に出る
-- **自分のパスワードを変更**すると、変更前のトークンは 401 になり、変更した本人のセッションは
-  続き(新しいトークンを引き継ぐ)、新しいパスワードでサインインできる
-- **共有プレビュー URL**: 保存だけした下書きが、トークン無しで開くリンクで見え(配信 API は古い
-  公開コピーのまま)、リンクの宛先を書き換えると 401 になる
-- **リソース単位の権限**: アカウント画面からコレクションごとの許可を保存でき、その許可は一覧の
-  絞り込みと API の両方に効く(拒否したコレクションは一覧に出ず、直接叩いても 403)
-- **パスワードリセット**: アカウント画面から発行したリンクを (別ブラウザで) 開いて新しい
-  パスワードを設定でき、リセット前のセッションは切れ、同じリンクは二度使えない
-- **総当たりはロックされる**: 6 回目の失敗は 429 になり、`Retry-After` が付き、ロック中は
-  正しいパスワードでも通らず、他のアカウントは影響を受けない
-- その間ブラウザのコンソールエラーが出ない
+- Sign-in from the login form
+- The first page has the default 25 items, id ascending, and the pager shows the total count
+- The state badge and the Updated column render
+- Next page and page-size changes reach the server
+- Publishing from the list works (Draft → Published)
+- Deleting the last item on the last page goes back to the previous page
+- **Saving alone does not publish it** (the delivery API only looks at the Published copy)
+- **Publishing is reflected in the delivery API**
+- Image library: images can be uploaded, are listed with their names, are served, and can be deleted
+- While editing content, an existing image can be selected and saved (the selected id stays on the Item)
+- Images can be added to an image array **several at a time**, can be **uploaded in place**, and are saved in that order
+- The same works for **an image array inside a Composite field**
+- **Schema editing goes through the screen**: create a Collection, add Fields (name, type, width preset),
+  add and remove Enum values with chips, **choose a Composite field as the array element type**, save, and read it back through the API
+  (the other Collections are created through the API, so this is the only route that exercises this screen in a browser)
+- An Enum field defined that way can be **selected and saved on the content edit screen**
+- A **Composite array** defined that way can be added element by element, filled in, reordered and saved, and
+  reopening it shows the saved order
+- That Composite definition can hold **an array of itself** (a block holds a block). The array inside an
+  element stops where it is empty, and adding one goes one level deeper
+- **Per-Role visibility**: the Editor Role gets no Publish, Delete or account management, and the Viewer Role gets no Save either
+- Publishing from the list shows **who published it** on that row
+- **Changing your own password** makes the token from before the change return 401, while the session of
+  the person who changed it continues (it takes over the new token), and signing in with the new password works
+- **Shared preview link**: a Draft that was only saved is visible through a link that opens without a
+  token (the delivery API stays on the old Published copy), and rewriting the link's destination returns 401
+- **Per-Resource Permissions**: the Accounts screen can save a per-Collection allow, and that Permission
+  applies to both the list filtering and the API (a denied Collection does not appear in the list, and hitting it directly also returns 403)
+- **Password reset**: a link issued from the Accounts screen can be opened (in a separate browser) to set a new
+  password, the sessions from before the reset are cut, and the same link cannot be used twice
+- **Brute force is locked out**: the 6th failure returns 429 with `Retry-After`, and during the lock even
+  the correct password does not get through, while other accounts are unaffected
+- No browser console errors appear during any of this
 
-## デプロイ先のサインイン(AWS)
+## Sign-In at the Deployment Target (AWS)
 
-`check-ui.mjs` はローカルのパスワードフォームと `/api/auth/login` を叩く。Cognito がサインインを
-持つデプロイには**そのどちらも無い**(エンドポイントは 501、画面にはホステッドページへのボタン)ので、
-あちらの suite ではどうしても届かない。`hosted-signin.mjs` がそこだけを見る。
+`check-ui.mjs` hits the local password form and `/api/auth/login`. A deployment where Cognito owns sign-in
+has **neither** (the endpoint returns 501 and the screen has a button to the hosted page), so
+that suite can never reach it. `hosted-signin.mjs` looks at exactly that.
 
 ```bash
 cd frontend
@@ -119,21 +120,21 @@ ADMIN_USERNAME=cat ADMIN_PASSWORD=... \
 PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-signin.mjs
 ```
 
-確認するのは、PKCE の受け渡し(`login_url` に `code_challenge` と `redirect_uri` が付く)、
-**登録済みコールバック**へ戻ってくること、`/api/auth/callback` でのコード交換、CMS 自身のトークンが
-保存されること、管理画面が出ること、その間コンソールエラーが出ないこと。`curl` で見る
-`scripts/smoke-test.sh` はここまで届かない —— 画面は正しく描かれているのにサインインだけが
-壊れている、という状態は起こりうる。
+What it checks is the PKCE handoff (`login_url` carries `code_challenge` and `redirect_uri`), the return
+to the **registered callback**, the code exchange at `/api/auth/callback`, the CMS's own token being
+stored, the admin UI appearing, and no console errors along the way. `scripts/smoke-test.sh`, which
+checks with `curl`, does not reach this far - a state where the screen renders correctly but only sign-in is
+broken is possible.
 
-前提: サインインするアカウントが先に存在すること(管理者が `AdminCreateUser` +
-`AdminSetUserPassword` で作り、その名前が `BOOTSTRAP_ADMIN_USERNAMES` に入っている)。
+Prerequisite: the account to sign in with must already exist (an administrator creates it with `AdminCreateUser` +
+`AdminSetUserPassword`, and its name is in `BOOTSTRAP_ADMIN_USERNAMES`).
 
-## デプロイ先のアカウント管理(AWS)
+## Account Management at the Deployment Target (AWS)
 
-Cognito のエミュレータは無いので、`crates/aws/src/provisioner.rs` の SDK 呼び出しは手元では
-**実行されない**(継ぎ目の向こうの対応付けだけが unit テストで見られる)。`hosted-accounts.mjs` が
-実機でそこを通す。サインインそのものは共通の `hosted-login.mjs` が担う(ホステッドページの 2 つの
-フォーム、PKCE、そして初回の一時パスワードに対する「新しいパスワードを決めさせる」ステップ)。
+There is no Cognito emulator, so the SDK calls in `backend/crates/aws/src/provisioner.rs` are **not
+executed** locally (only the mapping beyond the seam is visible in unit tests). `hosted-accounts.mjs`
+exercises that on a real deployment. Sign-in itself is handled by the shared `hosted-login.mjs` (the two
+forms on the hosted page, PKCE, and the "make the user choose a new password" step for the initial temporary password).
 
 ```bash
 cd frontend
@@ -142,22 +143,23 @@ ADMIN_USERNAME=cat ADMIN_PASSWORD=... \
 PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-accounts.mjs
 ```
 
-1. 管理者としてサインイン
-2. `POST /api/auth/users` でアカウント作成(アカウント画面と同じ呼び出し)
-3. `POST /api/auth/users/{id}/password-reset` → `kind: "temporary"` と一時パスワード
-4. **その一時パスワードで本人としてサインイン** → プロバイダが新パスワードを要求するので決めて入る
-   ——ここが `external_id` の検証でもある: 作成時に Cognito の `sub` を記録していないと、本人は
-   `not_provisioned` で弾かれる
-5. 管理者に戻って削除
-6. 削除後はサインインできない(プロバイダが拒否する)
+1. Sign in as an administrator
+2. Create an account with `POST /api/auth/users` (the same call the Accounts screen makes)
+3. `POST /api/auth/users/{id}/password-reset` → `kind: "temporary"` and a temporary password
+4. **Sign in as that user with that temporary password** → the provider asks for a new password, so decide one and enter it
+   this is also the `external_id` verification: if the Cognito `sub` was not recorded at creation time, the user is
+   rejected with `not_provisioned`
+5. Go back to the administrator and delete
+6. After deletion, sign-in fails (the provider refuses)
 
-途中で失敗してもアカウントは残らない(`finally` で削除する)。
+Even if it fails partway through, no account is left behind (`finally` deletes it).
 
-## データ
+## Data
 
-実行のたびに `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` と複合フィールド定義
-`e2e_gallery_block`、ロックを見るための使い捨てアカウント `e2e-throttle-<時刻>@example.com` を作り直す。
-スキーマ編集の確認に使う `e2e_schema_editor` と、その配列が要素として持つ複合フィールド定義
-`e2e_block`(**自分自身の配列を持つ**ブロック定義)は、その場で作って最後に消す(前回の実行が途中で落ちていた場合に備えて、開始時にも消す)
-(既にあれば削除する)。開発用のデータには触れず、何度実行しても
-同じ結果になる。アップロードした画像も実行の最後に削除する。
+Each run recreates `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` and the Composite field definition
+`e2e_gallery_block`, plus the throwaway account `e2e-throttle-<time>@example.com` used to check the lock.
+The `e2e_schema_editor` used for the schema editing check, and the Composite field definition
+`e2e_block` that its array holds as its element (**a block definition that holds an array of itself**), are
+created on the spot and deleted at the end (also deleted at the start, in case the previous run died partway)
+(deleted if already present). Development data is not touched, and any number of runs gives the
+same result. Uploaded images are also deleted at the end of the run.

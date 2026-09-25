@@ -1,30 +1,30 @@
 # tsubame-preview
 
-`Tsubame` の**署名付きプレビューリンク**を、ビルドを経由せずにページとして描画するための
-小さなパッケージです。**Gatsby にも React にも依存しません**(依存パッケージはゼロ、
-`fetch` と普通のオブジェクトだけ)。
+A small package for rendering `Tsubame` **signed preview links** as pages without going
+through a build. It **depends on neither Gatsby nor React** (zero dependencies, just
+`fetch` and plain objects).
 
-契約の全体は `docs/preview-site.md` にあります。この README は使い方と API だけです。
+The full contract lives in `docs/preview-site.md`. This README covers usage and the API only.
 
-## 何をするか
+## What it does
 
 ```
-レビュアーが開く           https://preview.example.com/preview/collections/blog/items/7?token=…
-プレビューサイトが読む     GET https://cms.example.com/api/preview/collections/blog/items/7?token=…  → {schema, values}
-関連先(公開済みだけ)を読む GET https://cms.example.com/api/content/authors/items/9
-複合フィールド定義を読む   GET https://cms.example.com/api/content/composite-fields
+Reviewer opens                       https://preview.example.com/preview/collections/blog/items/7?token=…
+Preview site reads                   GET https://cms.example.com/api/preview/collections/blog/items/7?token=…  → {schema, values}
+Reads related items (published only) GET https://cms.example.com/api/content/authors/items/9
+Reads composite field definitions    GET https://cms.example.com/api/content/composite-fields
 ```
 
-1. `parsePreviewRoute(location.pathname)` で行き先を読む
-2. `fetchPreview({ target, token })` で作業コピーを取る
-3. `resolvePreview({ schema, values, renderMarkdown, ... })` でページが読める形にする
-4. サイト自身のコンポーネントで描く
+1. Read the destination with `parsePreviewRoute(location.pathname)`
+2. Fetch the working copy with `fetchPreview({ target, token })`
+3. Resolve it into a page-readable shape with `resolvePreview({ schema, values, renderMarkdown, ... })`
+4. Render it with the site's own components
 
 ```console
 $ npm install ../path/to/packages/tsubame-preview
 ```
 
-## 使い方(フレームワーク非依存)
+## Usage (framework-agnostic)
 
 ```js
 import {
@@ -48,72 +48,72 @@ const resolved = await resolvePreview({
   values,
   loadPublished: client.loadPublished,
   loadCompositeSchema: client.loadCompositeSchema,
-  // 本番と同じパイプラインを渡す(推奨)。渡さなければ Markdown は raw のまま。
+  // Pass the same pipeline as production (recommended). If omitted, Markdown stays raw.
   renderMarkdown: (raw) => myMarkdownPipeline(raw),
 });
 ```
 
-同じオリジンに API があるなら `apiUrl` は `''` で構いません(パスは `/api/...` のまま)。
+If the API is on the same origin, `apiUrl` can be `''` (paths stay `/api/...`).
 
 ## API
 
-### どこにプレビューがあるか
+### Where the preview is
 
-| 関数 | 返すもの |
+| Function | Returns |
 |---|---|
-| `previewApiPath(target, apiPrefix?)` | API のパス（`/api/preview/collections/blog/items/7`） |
-| `previewRoutePath(target)` | プレビューサイトのルート（`/preview/collections/blog/items/7`） |
-| `parsePreviewRoute(pathname)` | サイトの URL が指す `target`、または `null`。ベースパスは問わない |
-| `previewSiteUrl(apiPath, siteOrigin, apiPrefix?)` | 管理画面がコピーする URL（トークンごと運ぶ） |
-| `checkTarget(target)` | 不正ならその説明、正しければ `null` |
+| `previewApiPath(target, apiPrefix?)` | The API path (`/api/preview/collections/blog/items/7`) |
+| `previewRoutePath(target)` | The preview site route (`/preview/collections/blog/items/7`) |
+| `parsePreviewRoute(pathname)` | The `target` the site URL points to, or `null`. The base path does not matter |
+| `previewSiteUrl(apiPath, siteOrigin, apiPrefix?)` | The URL the admin UI copies (carries the token with it) |
+| `checkTarget(target)` | An explanation if invalid, `null` if valid |
 
-`target` は `{ kind: 'collection', collection, id }` か `{ kind: 'single_page', page }` です。
+`target` is either `{ kind: 'collection', collection, id }` or `{ kind: 'single_page', page }`.
 
-### CMS を読む
+### Reading the CMS
 
-| 関数 | 返すもの |
+| Function | Returns |
 |---|---|
-| `fetchPreview({ apiUrl, target, token, apiPrefix?, fetchImpl? })` | `{schema, values}`。拒否は `status` 付きの `Error` |
-| `createContentClient({ apiUrl, apiPrefix?, fetchImpl? })` | `{ loadPublished, loadCompositeSchema }`。404 は `null` |
-| `joinUrl(base, path)` | 素朴な URL 連結 |
+| `fetchPreview({ apiUrl, target, token, apiPrefix?, fetchImpl? })` | `{schema, values}`. Rejections are an `Error` with `status` |
+| `createContentClient({ apiUrl, apiPrefix?, fetchImpl? })` | `{ loadPublished, loadCompositeSchema }`. A 404 is `null` |
+| `joinUrl(base, path)` | Naive URL joining |
 
-### 値を解決する
+### Resolving values
 
-`resolvePreview(options) → Promise<resolved>`。オプションは `docs/preview-site.md` §4 の表のとおりです。
+`resolvePreview(options) → Promise<resolved>`. The options are as in the table in `docs/preview-site.md` §4.
 
-| オプション | 既定 | 意味 |
+| Option | Default | Meaning |
 |---|---|---|
-| `schema` / `values` | (必須) | `fetchPreview` が返したもの |
-| `loadPublished` | `async () => null` | 公開済みの関連先を読む。`null` は「未公開」 |
-| `loadCompositeSchema` | `async () => null` | 複合フィールド定義を読む |
-| `renderMarkdown` | なし | `(raw) => string \| Promise<string>`。**本番と同じものを渡す** |
-| `apiUrl` / `apiPrefix` | `''` / `'/api'` | 画像の `absoluteUrl` / `stableUrl` の組み立て |
-| `relationDepth` | `1` | 参照を何ホップまで辿るか。`0` なら参照は `null` |
-| `onProblem` | なし | `{path, message}` を受け取る。描画を止めずに知らせる |
+| `schema` / `values` | (required) | What `fetchPreview` returned |
+| `loadPublished` | `async () => null` | Reads published related items. `null` means "unpublished" |
+| `loadCompositeSchema` | `async () => null` | Reads composite field definitions |
+| `renderMarkdown` | none | `(raw) => string \| Promise<string>`. **Pass the same one as production** |
+| `apiUrl` / `apiPrefix` | `''` / `'/api'` | Building the image `absoluteUrl` / `stableUrl` |
+| `relationDepth` | `1` | How many hops to follow references for. With `0`, references are `null` |
+| `onProblem` | none | Receives `{path, message}`. Reports without stopping rendering |
 
-## 本番と一致させるために
+## Matching production
 
-- **Markdown**: `renderMarkdown` に本番と同じパイプラインを渡してください。
-  `gatsby-transformer-remark` の `html` は `remark.parse` → `mdast-util-to-hast` →
-  `hast-util-to-html`(両方 `allowDangerousHtml: true`、既定で gfm と footnotes)です。
-  `remark-parse` → `remark-rehype` → `rehype-stringify` では一致しません。
-- **画像**: ダウンロードしません。`absoluteUrl` を使ってください(§4)。
-- **足りないもの**: `localFile` / `gatsbyImageData`、`excerpt` / `timeToRead` / `headings` /
-  `tableOfContents`、逆引き参照。サイト側の view-model で吸収します(`docs/preview-site.md` §6)。
+- **Markdown**: pass the same pipeline as production to `renderMarkdown`.
+  The `html` from `gatsby-transformer-remark` is `remark.parse` → `mdast-util-to-hast` →
+  `hast-util-to-html` (both with `allowDangerousHtml: true`, gfm and footnotes by default).
+  `remark-parse` → `remark-rehype` → `rehype-stringify` does not match.
+- **Images**: they are not downloaded. Use `absoluteUrl` (§4).
+- **What is missing**: `localFile` / `gatsbyImageData`, `excerpt` / `timeToRead` / `headings` /
+  `tableOfContents`, inverse references. Absorb them in the site's own view-model (`docs/preview-site.md` §6).
 
-## Gatsby サイトの場合
+## For Gatsby sites
 
-`packages/gatsby-source-tsubame` の `previewFieldNames()` を使うと、ビルドと同じ GraphQL 名
-(`published-at` → `published_at`)が得られます。アダプタはそれだけで、残りは view-model の仕事です。
-詳しくは `gatsby-source-tsubame/README.md` の「ライブプレビュー」節を参照してください。
+Using `previewFieldNames()` from `packages/gatsby-source-tsubame` gives the same GraphQL names
+as the build (`published-at` → `published_at`). That adapter is all there is; the rest is the
+view-model's job. See the "Live preview" section of `gatsby-source-tsubame/README.md` for details.
 
-## テスト
+## Tests
 
 ```console
 $ npm test
-# または
+# or
 $ scripts/test-preview.sh
 ```
 
-ネットワークも CMS も Gatsby も要りません。`fetch` は注入でき、配信 API は
-`docs/content-api.md` の形をした偽の応答で置き換えています。
+No network, CMS, or Gatsby is needed. `fetch` is injectable, and the delivery API is
+replaced with fake responses shaped like `docs/content-api.md`.

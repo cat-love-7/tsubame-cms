@@ -1,24 +1,24 @@
 # gatsby-source-tsubame
 
-この CMS(`Tsubame`)の**公開コンテンツ API**(`/api/content/*`)を読む Gatsby の source plugin です。
-`docs/content-api.md` の「Gatsby からの使い方」にある薄いプラグインを、実際に使える形にしたものです。
+A Gatsby source plugin that reads the **published content API** (`/api/content/*`) of this CMS (`Tsubame`).
+It is the thin plugin described under "Using it from Gatsby" in `docs/content-api.md`, made usable in practice.
 
-- **認証不要**。配信 API は公開済みだけを返すので、ビルドにトークンは要りません。
-- CMS のスキーマから **GraphQL の型を組み立てる**。コレクション `blog` は `TsubameBlogItem`、
-  単一ページ `home` は `TsubameHomePage`、複合フィールド定義 `block` は `TsubameCompositeBlock` になります。
-- **参照は GraphQL でたどれる**(順方向も逆方向も)。`Relation` フィールドは参照先のノードに
-  `@link` されるので、`author { name }` と `author { articles { title } }`(逆引き、
-  `inverse_name`)のどちらも 1 つのクエリで辿れます。**複合フィールドの中の参照も同じ**です。
-- **Markdown フィールドは `text/markdown` のノード**になるので、`gatsby-transformer-remark` を
-  入れるだけで HTML として使えます。**複合フィールドの中の Markdown も同じ**です。
-- **画像は `images.download` で `File` ノード**にできるので、`gatsby-transformer-sharp` +
-  `gatsby-plugin-image` で `gatsbyImageData` を作れます(§5)。
+- **No authentication.** The delivery API returns published content only, so builds need no token.
+- **Builds GraphQL types from the CMS schema.** The collection `blog` becomes `TsubameBlogItem`,
+  the single page `home` becomes `TsubameHomePage`, and the composite field definition `block` becomes `TsubameCompositeBlock`.
+- **References are traversable in GraphQL** (forward and inverse). A `Relation` field is
+  `@link`ed to the node it points at, so both `author { name }` and `author { articles { title } }`
+  (inverse lookup, `inverse_name`) can be traversed in one query. **The same holds for references inside composite fields.**
+- **A Markdown field becomes a `text/markdown` node**, so adding `gatsby-transformer-remark` alone
+  makes it usable as HTML. **The same holds for Markdown inside composite fields.**
+- **Images can become `File` nodes with `images.download`**, so `gatsby-transformer-sharp` +
+  `gatsby-plugin-image` can produce `gatsbyImageData` (§5).
 
-## 1. 使い方
+## 1. Usage
 
 ```console
 $ npm install gatsby-transformer-remark
-$ npm install ../path/to/packages/gatsby-source-tsubame   # リポジトリ内のプラグイン
+$ npm install ../path/to/packages/gatsby-source-tsubame   # the plugin in this repository
 ```
 
 ```javascript
@@ -28,128 +28,133 @@ module.exports = {
     {
       resolve: 'gatsby-source-tsubame',
       options: {
-        // CMS のルート。`/api` は付けない(付けるのはプラグインの仕事)。
+        // Root of the CMS. Do not append `/api` (that is the plugin's job).
         apiUrl: process.env.TSUBAME_URL || 'http://127.0.0.1:8000',
       },
     },
-    // Markdown を HTML にする。Tsubame 側は mediaType を付けているだけなので、変換はこの
-    // プラグインに任せる(`docs/content-api.md` §8 の分担どおり)。
+    // Turn Markdown into HTML. Tsubame only attaches a mediaType, so the conversion is
+    // left to this plugin (as split in `docs/content-api.md` §8).
     'gatsby-transformer-remark',
   ],
 }
 ```
 
-`apiUrl` は CMS のルートです。API は常に `/api` の下にあり、配信 API が返す画像 URL も
-`/api/images/...` を含んだままなので、プラグインはそれを `apiUrl` で絶対 URL に直します。
-別の接頭辞で配備している場合だけ `apiPrefix` を指定してください。
+`apiUrl` is the root of the CMS. The API always lives under `/api`, and the image URLs the
+delivery API returns still contain `/api/images/...`, so the plugin turns them into absolute
+URLs with `apiUrl`. Specify `apiPrefix` only when you deploy under a different prefix.
 
-### オプション
+### Options
 
-| オプション | 既定 | 意味 |
+| Option | Default | Meaning |
 |---|---|---|
-| `apiUrl` | (必須) | CMS のルート。例 `http://127.0.0.1:8000` |
-| `apiPrefix` | `/api` | API の接頭辞。別の場所に載せているときだけ |
-| `pageSize` | `50` | コレクションを辿るときの 1 リクエストの件数(API の上限は 200) |
-| `typePrefix` | `Tsubame` | 生成する GraphQL 型名の接頭辞 |
-| `requestTimeout` | `30000` | 1 リクエストの制限時間(ms) |
-| `retries` | `2` | ネットワーク失敗・5xx/429 の再試行回数 |
-| `concurrency` | `4` | スキーマを読むときの同時リクエスト数 |
-| `fetchOptions` | `{}` | `fetch` に渡す追加オプション(例: 前段に認証があるときの `headers`) |
-| `images.download` | `false` | 画像をダウンロードして `File` ノードを作る(sharp 連携。§5) |
-| `images.concurrency` | `4` | 画像を同時にダウンロードする数 |
-| `images.requestHeaders` | `{}` | 画像取得時のヘッダ(配信が認証を要求するとき) |
+| `apiUrl` | (required) | Root of the CMS. Example `http://127.0.0.1:8000` |
+| `apiPrefix` | `/api` | API prefix. Only when it is served elsewhere |
+| `pageSize` | `50` | Items per request when walking a collection (the API limit is 200) |
+| `typePrefix` | `Tsubame` | Prefix of the generated GraphQL type names |
+| `requestTimeout` | `30000` | Time limit for one request (ms) |
+| `retries` | `2` | Number of retries on network failure or 5xx/429 |
+| `concurrency` | `4` | Number of concurrent requests when reading the schema |
+| `fetchOptions` | `{}` | Extra options passed to `fetch` (e.g. `headers` when something upstream authenticates) |
+| `images.download` | `false` | Download images and create `File` nodes (sharp integration. §5) |
+| `images.concurrency` | `4` | Number of images downloaded at the same time |
+| `images.requestHeaders` | `{}` | Headers when fetching images (when the delivery side requires authentication) |
 
-ページは件数ではなく **`next_offset`** で辿ります。配信 API は件数だけでなくバイト数でも
-1 ページを切るため、`offset + limit` で進むと取りこぼすことがあるからです(`docs/content-api.md` §3.1)。
+Pages are walked with **`next_offset`**, not by item count. The delivery API cuts a page by
+bytes as well as by count, so advancing with `offset + limit` can miss items (`docs/content-api.md` §3.1).
 
-## 2. 生成されるノード
+## 2. Generated nodes
 
-| ノード | 型 | 主なフィールド |
+| Node | Type | Main fields |
 |---|---|---|
-| コレクション | `TsubameCollection` | `name` / `itemTypeName` / `itemCount` / `schema` / `fieldNames` |
-| アイテム | `Tsubame<Collection>Item` | `remoteId` / `collection` / `publishedAt` / `lastPublishedAt` / `values` / `fieldNames` + 各フィールド |
-| 単一ページ | `Tsubame<Page>Page` | `name` / `publishedAt` / `lastPublishedAt` / `values` / `fieldNames` + 各フィールド |
+| Collection | `TsubameCollection` | `name` / `itemTypeName` / `itemCount` / `schema` / `fieldNames` |
+| Item | `Tsubame<Collection>Item` | `remoteId` / `collection` / `publishedAt` / `lastPublishedAt` / `values` / `fieldNames` + each field |
+| Single page | `Tsubame<Page>Page` | `name` / `publishedAt` / `lastPublishedAt` / `values` / `fieldNames` + each field |
 | Markdown | `TsubameMarkdown` | `raw` / `field` / `path` / `collection` / `pageName` / `itemId` |
-| 複合フィールド | `TsubameComposite<Id>` | `id` / `values` + 定義の各フィールド |
+| Composite field | `TsubameComposite<Id>` | `id` / `values` + each field of the definition |
 
-`values` は API が返した生の値(型タグなし)そのままです。型付きのフィールドはその上に載ります。
-`fieldNames` は「CMS の名前 → GraphQL の名前」の対応表です(後述)。
+`values` is exactly the raw values the API returned (without type tags). Typed fields sit on top of it.
+`fieldNames` is the mapping from "CMS name → GraphQL name" (described below).
 
-### フィールド型の対応
+### Field type mapping
 
-| CMS の `field_type` | GraphQL |
+| CMS `field_type` | GraphQL |
 |---|---|
 | `Text` / `Slug` | `String` |
 | `Markdown` | `TsubameMarkdown` (`@link`) |
-| `Number` | `Float`(CMS は `f64`) |
+| `Number` | `Float` (the CMS uses `f64`) |
 | `Boolean` | `Boolean` |
-| `Date` / `DateTime` | `Date`(Gatsby の scalar。`formatString` が使える) |
+| `Date` / `DateTime` | `Date` (Gatsby scalar. `formatString` works) |
 | `Image` | `TsubameImage` |
 | `TextEnum` | `[String]` |
-| `Relation`(単一) | 参照先の型 (`@link`) |
-| `Relation`(複数) | `[参照先の型]` (`@link`) |
+| `Relation` (single) | the target type (`@link`) |
+| `Relation` (multiple) | `[target type]` (`@link`) |
 | `CompositeField` | `TsubameComposite<Id>` |
-| `Array`(要素型が 1 つ) | `[要素型]` |
-| `Array`(要素型が複数・不明) | `JSON` |
-| 未知の型 | `JSON` |
+| `Array` (one element type) | `[element type]` |
+| `Array` (several or unknown element types) | `JSON` |
+| Unknown type | `JSON` |
 
-`TsubameImage` は `id` / `url`(API の値) / `absoluteUrl`(そのまま開ける URL) /
-`stableUrl`(差し替えても壊れない `/api/images/by-id/{id}`)を持ちます。
-`images.download` を有効にすると `localFile`(`File` ノードへの `@link`)も付きます(§5)。
+`TsubameImage` has `id` / `url` (the API value) / `absoluteUrl` (a URL you can open as is) /
+`stableUrl` (an `/api/images/by-id/{id}` that survives replacement).
+Enabling `images.download` also adds `localFile` (an `@link` to a `File` node) (§5).
 
-### 名前の書き換え
+### Name rewriting
 
-GraphQL の名前は `[_A-Za-z][_0-9A-Za-z]*` なので、CMS の名前がそのまま使えないことがあります。
+A GraphQL name must match `[_A-Za-z][_0-9A-Za-z]*`, so a CMS name cannot always be used as is.
 
-- 型名: `press-releases` → `TsubamePressReleasesItem`、`お知らせ` → `TsubameUnnamedItem`
-- フィールド名: `published-at` → `published_at`
+- Type names: `press-releases` → `TsubamePressReleasesItem`, `お知らせ` → `TsubameUnnamedItem`
+- Field names: `published-at` → `published_at`
 
-書き換えは**ビルドごとに同じ**で、対応はノードの `fieldNames`(と `TsubameCollection.itemTypeName`)に
-入ります。衝突した場合は `values` → `values_2` のように連番になります。
+The rewriting is **the same on every build**, and the mapping goes into the node's `fieldNames`
+(and `TsubameCollection.itemTypeName`). On a collision, names get a numeric suffix, as in
+`values` → `values_2`.
 
-## 3. 参照を GraphQL でたどる
+## 3. Traversing references in GraphQL
 
-`Relation` フィールドは**参照先ノードの id**を持ち、`@link` で解決されます。サイト側で
-突き合わせを書く必要はありません。
+A `Relation` field holds **the id of the referenced node** and is resolved with `@link`. The site
+does not have to write the matching itself.
 
 ```graphql
 query {
   allTsubameBlogItem {
     nodes {
       title
-      author { name }          # 単一の参照 → 参照先ノード
-      editors { name }         # 複数の参照 → ノードの配列
+      author { name }          # single reference → the referenced node
+      editors { name }         # multiple references → an array of nodes
       seo { description og_image { absoluteUrl } }
-      blocks {                 # 複合フィールドも型付き
+      blocks {                 # composite fields are typed too
         caption
         text { childMarkdownRemark { html } }
-        link { name }          # 複合フィールドの中の参照もたどれる
+        link { name }          # references inside composite fields are traversable too
         children { caption text { childMarkdownRemark { rawMarkdownBody } } }
       }
-      values                   # 生の値: 参照は {"target": "...", "item": 7} のまま残る
+      values                   # raw values: references stay as {"target": "...", "item": 7}
     }
   }
 }
 ```
 
-- **単一と複数**はスキーマの `has_many` で決まります(単一ページへの参照は定義上いつも単一)。
-- **複数の参照は書いた順のまま**。relation は集合ではなく**順序つきリスト**で、CMS は並び順を保存し
-  そのまま配信します(同じ参照の重複だけが除かれ、最初の位置に残ります)。プラグインはその順で
-  ノードをつなぐので、「注目記事をこの順で」がサイトにそのまま出ます。並べ替えは CMS 側の話で、
-  サイトは `values.<フィールド>` でも同じ順を見られます。
-- **参照そのもの(相手の名前と id)が要る**ときは `values.<フィールド>` を読みます。配信 API の
-  応答そのままです。
-- **参照先が未公開**のときは、そのノードが存在しないので `null`(複数なら空配列)になります。
-  ビルドは失敗しません。「まだサイトに出ていない相手」は辿れない、という素直な答えです。
-- **参照先のコレクションに公開アイテムが無くても**、その型は宣言されます。プラグインが
-  `/api/content/collections/{name}`(空でもスキーマは返る)を辿って定義を読むためです。
-  未公開の単一ページだけは公開スキーマが無い(404)ので、プラグイン自身のフィールドだけを持つ
-  型を宣言します。そのページが公開された次のビルドで、本来のフィールドが現れます。
+- **Single or multiple** is decided by `has_many` in the schema (a reference to a single page is always single by definition).
+- **Multiple references keep the order they were written in**. A relation is not a set but an
+  **ordered list**, and the CMS stores the order and delivers it as is (only duplicate references
+  are removed, and the first position stays). The plugin links the nodes in that order, so
+  "featured articles in this order" shows up on the site as is. Reordering is the CMS's business,
+  and the site can see the same order through `values.<field>` too.
+- When you need **the reference itself (the counterpart's name and id)**, read `values.<field>`.
+  It is the delivery API response as is.
+- When **the referenced target is unpublished**, that node does not exist, so the value is `null`
+  (an empty array when multiple). The build does not fail. It is the plain answer that a
+  "counterpart not yet on the site" cannot be traversed.
+- **Even when the referenced collection has no published items**, its type is declared. That is
+  because the plugin walks `/api/content/collections/{name}` (which returns the schema even when
+  empty) and reads the definition. Only an unpublished single page has no published schema (404),
+  so the plugin declares a type with only its own fields. The real fields appear on the next build
+  after that page is published.
 
-### 逆引き(`inverse_name`)
+### Inverse lookups (`inverse_name`)
 
-relation フィールドに `inverse_name` を書くと、**参照されている側**がその名前で参照元を持ちます。
-プラグインはそれを GraphQL のフィールドにするので、カテゴリーから記事へも 1 クエリで辿れます。
+Writing `inverse_name` on a relation field makes **the referenced side** hold the referring items
+under that name. The plugin turns it into a GraphQL field, so you can traverse from a category to
+its articles in one query too.
 
 ```json
 { "name": "author", "field_type": { "Relation": {
@@ -164,36 +169,38 @@ query {
   allTsubameAuthorsItem {
     nodes {
       name
-      articles { title }   # blog.author が inverse_name: "articles" を宣言している
-      features { title }   # home.featured_author が "features" を宣言している
+      articles { title }   # blog.author declares inverse_name: "articles"
+      features { title }   # home.featured_author declares "features"
     }
   }
 }
 ```
 
-- **向き**: `inverse_name` は**参照している側**のフィールドに書きます。名前は**対象ごとに 1 つ**
-  (別のスキーマが同じ対象に同じ名前を付けると CMS が 409 で拒否する)なので、逆引きフィールドは
-  **宣言した側の型 1 つの配列**になります(union ではない)。
-- **複合フィールドの中の relation は宣言になりません。** 複合定義は複数のコレクションに埋め込まれ
-  得るので「誰が参照しているか」が 1 つに決まりません。これは配信 API の
-  `?populate=<inverse_name>` と同じ規則で、プラグインもトップレベルの relation フィールドだけを
-  宣言として読みます。
-- **実装**: 逆引きは、そのビルドが既に読んだ公開コンテンツから**ローカルに索引を組んで**答えます。
-  配信 API には `?where=<field>:<value>`(参照で絞る)と `?populate=<inverse_name>`(参照元を展開)
-  がありますが、ビルドは全公開アイテムを持っているので、アイテムごとに 1 リクエスト投げるより
-  こちらの方が速く、上限(既定 25 件)もありません。判定は API と同じです: **公開コピーが実際に
-  その参照を持っているか**で決まり、複合や配列の中の参照も数えます。
-- 逆引きフィールドの名前も `fieldNames` に入ります(元の名前 → GraphQL 名)。
-- **逆引きに順序はありません。** 参照元は索引から引く集合なので、CMS も並び順を持ちません
-  (プラグインはコレクション名→アイテム id の順に並べて、ビルド間で安定させます)。順序に意味が
-  あるのは、参照を持つ側の順方向リストです。
+- **Direction**: `inverse_name` is written on the field of **the referring side**. A name is
+  **unique per target** (if another schema gives the same name to the same target, the CMS rejects
+  it with 409), so an inverse field is **an array of the single type that declared it** (not a union).
+- **A relation inside a composite field does not become a declaration.** A composite definition
+  can be embedded in several collections, so "who is referring" is not determined to one. This is
+  the same rule as the delivery API's `?populate=<inverse_name>`, and the plugin also reads only
+  top-level relation fields as declarations.
+- **Implementation**: an inverse lookup is answered by **building a local index** from the
+  published content that build has already read. The delivery API has
+  `?where=<field>:<value>` (filter by reference) and `?populate=<inverse_name>` (expand the
+  referring items), but a build holds every published item, so this is faster than one request per
+  item and has no cap (25 by default). The decision is the same as the API's: it is decided by
+  **whether the published copy actually holds that reference**, and references inside composites
+  and arrays count too.
+- The name of an inverse field also goes into `fieldNames` (original name → GraphQL name).
+- **Inverse lookups have no order.** The referring items are a set looked up from the index, and
+  the CMS holds no order either (the plugin sorts by collection name, then item id, to keep builds
+  stable). Order only has meaning for the forward list on the side that holds the references.
 
-## 4. Markdown を HTML にする
+## 4. Turning Markdown into HTML
 
-Markdown フィールドは `internal.mediaType: "text/markdown"` と `internal.content`(生のソース)を
-持つ子ノードとして作られます。`gatsby-transformer-remark` は media type だけで対象を決めて
-`internal.content` を読むので、間に入る設定はありません。アイテムのフィールドはそのノードに
-`@link` されているため、`childMarkdownRemark` をそのまま辿れます。
+A Markdown field is created as a child node that has `internal.mediaType: "text/markdown"` and
+`internal.content` (the raw source). `gatsby-transformer-remark` selects what to process by media
+type alone and reads `internal.content`, so no configuration goes in between. The item's field is
+`@link`ed to that node, so you can traverse `childMarkdownRemark` as is.
 
 ```graphql
 query {
@@ -215,7 +222,7 @@ query {
 }
 ```
 
-`createPages` で記事ページを作る:
+Creating article pages in `createPages`:
 
 ```javascript
 // gatsby-node.js
@@ -272,19 +279,20 @@ export const query = graphql`
 `
 ```
 
-**複合フィールドの中の Markdown** も同じ仕組みです。定義(`/api/content/composite-fields`)が
-公開されたので、どの文字列が Markdown なのかをプラグインが知ることができます。Markdown
-ノードは同じアイテムの子で、`path` が場所を示します(`blocks.0.text`、`blocks.0.children.0.text`)。
+**Markdown inside composite fields** works the same way. Since the definitions
+(`/api/content/composite-fields`) are published, the plugin can know which strings are Markdown.
+The Markdown node is a child of the same item, and `path` shows where it lives (`blocks.0.text`,
+`blocks.0.children.0.text`).
 
-Markdown が**配列**の要素のとき(`Array: [{"Markdown":{}}]`)は、要素ごとにノードを作って
-配列で `@link` します。
+When Markdown is an element of an **array** (`Array: [{"Markdown":{}}]`), the plugin creates a node
+per element and `@link`s them as an array.
 
-## 5. sharp で画像を処理する(`gatsby-transformer-sharp`)
+## 5. Processing images with sharp (`gatsby-transformer-sharp`)
 
-`gatsby-transformer-sharp` は**ローカルの `File` ノード**しか見ません(`internal.mediaType` が
-画像で、実体がディスクにあること)。配信 API が返すのは URL なので、そのままでは
-`gatsbyImageData` は作れません。`images.download` を有効にすると、プラグインが各画像を
-Gatsby のキャッシュに取得し、`File` ノードを作って `TsubameImage.localFile` からリンクします。
+`gatsby-transformer-sharp` only sees **local `File` nodes** (the `internal.mediaType` must be an
+image and the body must be on disk). The delivery API returns URLs, so `gatsbyImageData` cannot be
+produced as is. Enabling `images.download` makes the plugin fetch each image into Gatsby's cache,
+create a `File` node, and link it from `TsubameImage.localFile`.
 
 ```console
 $ npm install gatsby-source-filesystem gatsby-plugin-sharp gatsby-transformer-sharp gatsby-plugin-image
@@ -294,7 +302,7 @@ $ npm install gatsby-source-filesystem gatsby-plugin-sharp gatsby-transformer-sh
 // gatsby-config.js
 module.exports = {
   plugins: [
-    // createRemoteFileNode と File 型のために必要(取得元ではないので path は何でもよい)。
+    // Needed for createRemoteFileNode and the File type (not a source, so path can be anything).
     { resolve: 'gatsby-source-filesystem', options: { name: 'unused', path: './src/images' } },
     {
       resolve: 'gatsby-source-tsubame',
@@ -319,51 +327,55 @@ query {
 }
 ```
 
-`gatsby-plugin-image` の `GatsbyImage` / `getImage` にはその `gatsbyImageData` をそのまま渡せます。
-複合フィールドの中の画像も同じです(定義を読んで値の木を歩くので、`seo.og_image` も
-`blocks[0].image` も `localFile` を持ちます)。
+You can pass that `gatsbyImageData` to `GatsbyImage` / `getImage` from `gatsby-plugin-image` as is.
+Images inside composite fields work the same way (the plugin reads the definitions and walks the
+value tree, so both `seo.og_image` and `blocks[0].image` have `localFile`).
 
-- **既定は off**。ダウンロードは実際の仕事で、sharp を使わないサイトには不要だからです。
-- **同じ画像は 1 回だけ**取得します(参照が何箇所にあっても id でまとめる)。
-- **取得に失敗した画像は警告と `localFile: null`**。ビルドは止めません。`url` / `absoluteUrl` は
-  そのまま残ります。
-- `File` の media type は**ファイルの拡張子**から決まります。API の `url` は
-  `/api/images/<file>.<ext>` なのでそのまま取得に使えます(`stableUrl` は拡張子を持たないので
-  ダウンロードには使いません)。
-- **差し替えにも追随します。** CMS の差し替えは **id を変えずにファイル名(= URL)を変える**ので、
-  プラグインはそのビルドで API が返した**現在の `url`** を取得します。次のビルドで `url` /
-  `absoluteUrl` / `localFile` / `gatsbyImageData` が新しくなり、`stableUrl`
-  (`/api/images/by-id/{id}`)だけが変わりません — 変えないためのリンクだからです。Gatsby の
-  キャッシュを残したまま(`--clear-cache` なしで)再ビルドしても更新されます。
-- **未変更の画像は取得し直しません。** 同じ実体の `File` ノードが前のビルドのストアにあれば、
-  それを再利用し `touchNode` で Gatsby に残します。同一性は URL から**クエリを除いた**
-  `origin + pathname`、つまりオブジェクトキーです。この CMS はアップロードごとに新しいファイル名を
-  振り、差し替えでは使い回さないので、**同じキー＝同じ実体 / キーが変わった＝差し替え**と言い切れます。
-- **署名付き配信(AWS の `AWS_IMAGE_DELIVERY=presigned`)でも再利用できます。** 署名はクエリにあり
-  読むたびに変わりますが、パスはオブジェクトキーのままなので判定は影響を受けません。実測では、
-  署名だけ変わった再ビルドで**画像の取得は 0 回**、`File` ノードの id も sharp の出力もそのままで、
-  差し替えでは 1 回だけ取得して新しい `File` と変換結果になりました。
-  - ただし API が返す `url` / `absoluteUrl` は署名ごとに変わります(値そのものなので隠しません)。
-    そのため presigned モードでは画像入りのページの `contentDigest` は毎ビルド変わり、ページは
-    再生成されます(画像の再変換はありません)。
-  - 再利用した `File` ノードの `url` は**前のビルドの署名のまま**です。`localFile` は
-    `childImageSharp` / `gatsbyImageData` 経由で使い、URL を直接読まないでください
-    (presigned モードは「ビルド時に取得して自前で配信する」ためのモードです)。
+- **Off by default.** Downloading is real work, and sites that do not use sharp do not need it.
+- **The same image is fetched only once** (references in any number of places are merged by id).
+- **An image that fails to download gets a warning and `localFile: null`**. The build does not
+  stop. `url` / `absoluteUrl` stay as they are.
+- A `File`'s media type is decided by **the file extension**. The API's `url` is
+  `/api/images/<file>.<ext>`, so it can be used for fetching as is (`stableUrl` has no extension,
+  so it is not used for downloading).
+- **Replacement is followed too.** Replacement in the CMS **changes the file name (= URL) without
+  changing the id**, so the plugin fetches the **current `url`** the API returned for that build. On
+  the next build `url` / `absoluteUrl` / `localFile` / `gatsbyImageData` become new, and only
+  `stableUrl` (`/api/images/by-id/{id}`) does not change — because it is a link meant not to
+  change. It is updated even when you rebuild with Gatsby's cache kept (without `--clear-cache`).
+- **Unchanged images are not fetched again.** If a `File` node for the same body exists in the
+  previous build's store, the plugin reuses it and keeps it in Gatsby with `touchNode`. Identity is
+  `origin + pathname` — the URL **with the query removed**, i.e. the object key. This CMS assigns a
+  new file name on every upload and never reuses one on replacement, so **the same key means the
+  same body, and a changed key means a replacement** — that much can be stated flatly.
+- **Reuse also works with signed delivery (AWS's `AWS_IMAGE_DELIVERY=presigned`).** The signature
+  is in the query and changes on every read, but the path stays the object key, so the decision is
+  not affected. Measured, a rebuild where only the signature changed resulted in **zero image
+  fetches**, with `File` node ids and sharp output unchanged, and a replacement fetched once and
+  produced a new `File` and transformation result.
+  - However, the `url` / `absoluteUrl` the API returns change with each signature (they are values
+    themselves, so they are not hidden). Therefore, in presigned mode, the `contentDigest` of a
+    page containing images changes on every build, and the page is regenerated (images are not
+    re-transformed).
+  - The `url` of a reused `File` node is **still the previous build's signature**. Use `localFile`
+    through `childImageSharp` / `gatsbyImageData` and do not read the URL directly
+    (presigned mode is a mode for "fetch at build time and serve it yourself").
 
-## 6. ライブプレビュー(ビルドを経由しない)
+## 6. Live preview (without going through a build)
 
-公開前の作業コピーを、アカウントを持たない相手に見せるための入口です。共有プレビュー URL
-(`docs/content-api.md` §5.6)の仕事で、**このプラグインもビルドも通りません**。契約の全体は
-`docs/preview-site.md`、実装は `packages/tsubame-preview/`(このプラグインに依存しない、依存ゼロの
-パッケージ)です。
+An entry point for showing a pre-publication working copy to someone who has no account. It is the
+job of the shared preview URL (`docs/content-api.md` §5.6), and **neither this plugin nor a build
+is involved**. The full contract is `docs/preview-site.md`, and the implementation is
+`packages/tsubame-preview/` (a package that does not depend on this plugin and has zero
+dependencies).
 
-**このプラグインは `tsubame-preview` に依存しません。** サイトが両方をインストールします。
-プレビューを Gatsby 以外のサイトへ移しても、このプラグインの依存は増えません。
+**This plugin does not depend on `tsubame-preview`.** The site installs both. Moving the preview
+to a site other than Gatsby does not add any dependency to this plugin.
 
-### 配線
+### Wiring
 
-consuming site 側で `gatsby-config.js` / `gatsby-node.js` を環境変数で分け、**本番の成果物に
-`/preview/*` を含めない**ようにします。
+On the consuming site, split `gatsby-config.js` / `gatsby-node.js` by environment variable so that
+**the production artifacts do not contain `/preview/*`**.
 
 ```javascript
 // gatsby-config.js
@@ -371,9 +383,9 @@ const preview = process.env.BUILD_MODE === 'preview'
 
 module.exports = {
   plugins: [
-    // プレビュービルドは公開コンテンツを一切読みません: 作業コピーはブラウザが API から取ります。
+    // A preview build reads no published content at all: the browser fetches the working copy from the API.
     ...(preview ? [] : [{ resolve: 'gatsby-source-tsubame', options: { apiUrl: process.env.TSUBAME_URL } }]),
-    // Markdown のパイプラインはどちらのビルドでも同じものを使う(下記)。
+    // Use the same Markdown pipeline in both builds (below).
     ...(preview ? [] : ['gatsby-transformer-remark']),
   ],
 }
@@ -385,7 +397,7 @@ const path = require('path')
 
 exports.createPages = async ({ actions }) => {
   if (process.env.BUILD_MODE === 'preview') {
-    // クライアントオンリーのルートを1つだけ。行き先は URL から読みます。
+    // Just one client-only route. The destination is read from the URL.
     actions.createPage({
       path: '/preview',
       matchPath: '/preview/*',
@@ -393,18 +405,19 @@ exports.createPages = async ({ actions }) => {
     })
     return
   }
-  // 本番: これまでどおり全ページを生成する(README §4)。
+  // Production: generate every page as before (README §4).
 }
 ```
 
-`src/preview/preview-page.js` は `tsubame-preview` で読んで、サイトの表示コンポーネントに渡すだけです。
+`src/preview/preview-page.js` only reads with `tsubame-preview` and passes the result to the site's
+view components.
 
 ```javascript
 import React, { useEffect, useState } from 'react'
 import {
   parsePreviewRoute, fetchPreview, createContentClient, resolvePreview,
 } from 'tsubame-preview'
-import { renderMarkdown } from '../markdown'   // ビルドと同じ並び(下記)
+import { renderMarkdown } from '../markdown'   // the same sequence as the build (below)
 import { articleFromPreview } from '../view/article'
 import { Article } from '../view/article-view'
 
@@ -432,51 +445,54 @@ export default function PreviewPage({ location }) {
 }
 ```
 
-### 名前と Markdown
+### Names and Markdown
 
-- **フィールド名**: プレビューは CMS の綴り(`published-at`)で返します。ビルドと同じ GraphQL 名が
-  要るなら `previewFieldNames(kind, schema)`(`src/preview-adapter.js`)を使ってください。同じ
-  planner を使うので、ビルドとずれません。
-- **Markdown**: `renderMarkdown` に**本番と同じパイプライン**を渡します。
-  `gatsby-transformer-remark` の `html` は `remark.parse` → `mdast-util-to-hast` →
-  `hast-util-to-html`(両方 `allowDangerousHtml: true`、既定で gfm と footnotes)です。ファイルや
-  ノードを必要とする `gatsby-remark-*` はブラウザでは動かないので、AST だけを触るものに限ります。
-- **本番との差**(`localFile`、`excerpt`、逆引き参照など)と、view-model での吸収のしかたは
-  `docs/preview-site.md` §5・§6 にあります。
+- **Field names**: the preview returns the CMS spelling (`published-at`). If you need the same
+  GraphQL names as the build, use `previewFieldNames(kind, schema)` (`src/preview-adapter.js`). It
+  uses the same planner, so it does not drift from the build.
+- **Markdown**: pass **the same pipeline as production** to `renderMarkdown`. The `html` from
+  `gatsby-transformer-remark` is `remark.parse` → `mdast-util-to-hast` → `hast-util-to-html`
+  (both with `allowDangerousHtml: true`, gfm and footnotes by default). A `gatsby-remark-*` that
+  needs files or nodes does not run in the browser, so only ones that touch the AST alone are usable.
+- **Differences from production** (`localFile`, `excerpt`, inverse references, and so on) and how
+  to absorb them in the view-model are in `docs/preview-site.md` §5 and §6.
 
-### 置き場所
+### Where to put it
 
-- **AWS**: 管理画面とは別のサブドメインに置きます(`infra/preview.tf`)。管理画面とオリジンを
-  分けるのは、下書きの HTML を管理画面の `localStorage` と同じオリジンで描かないためです
-  (`docs/preview-site.md` §7)。
-- **Cloudflare Pages / オンプレミス**: 別ホスト名で配り、`PREVIEW_SITE_URL` を CMS に設定します。
-  オンプレミスの nginx 例は `docs/preview-site.md` §8 にあります。
+- **AWS**: put it on a subdomain separate from the admin UI (`infra/preview.tf`). The origin is
+  separated from the admin UI so that draft HTML is not rendered on the same origin as the admin
+  UI's `localStorage` (`docs/preview-site.md` §7).
+- **Cloudflare Pages / on-premises**: serve it under a separate host name and set
+  `PREVIEW_SITE_URL` in the CMS. An on-premises nginx example is in `docs/preview-site.md` §8.
 
-## 7. この版でできないこと
+## 7. What this version cannot do
 
-配信 API の契約から決まる制限です。
+These are limits decided by the delivery API contract.
 
-- **下書きは見えない**。意図どおりです。プレビューは共有プレビュー URL(`docs/content-api.md` §5.6)
-  の仕事で、ビルドとは別の入口です。
-- **公開アイテムが 0 件のコレクションはノードも 0 件**。型は宣言されますが、アイテムは
-  ありません(`/api/content/collections` が公開アイテムを持つコレクションしか列挙しないため)。
-- **`Date` / `DateTime` は Gatsby の `Date`**。生の文字列は `values` に残ります。
-- 複合フィールドの定義 ID が配信 API に無い場合、その値は `TsubameComposite`(`id` と `values` だけ)
-  になります。CMS が `/api/content/composite-fields` より古い場合は警告が出ます。
-- **配信 API の `?where=` / `?populate=` はプラグインからは呼びません。** ビルドは全公開
-  コンテンツを持っているので、参照の絞り込みも展開もローカルで答えます(理由は §3 の逆引き)。
-  実行時に一部だけ読むクライアントは、これらのパラメータを直接使ってください。
+- **Drafts are not visible**. That is intentional. Preview is the job of the shared preview URL
+  (`docs/content-api.md` §5.6) and a different entry point from the build.
+- **A collection with zero published items has zero nodes**. The type is declared, but there are no
+  items (because `/api/content/collections` lists only collections that have published items).
+- **`Date` / `DateTime` are Gatsby's `Date`**. The raw string stays in `values`.
+- When a composite field's definition id is not in the delivery API, that value becomes
+  `TsubameComposite` (only `id` and `values`). A warning is emitted when the CMS is older than
+  `/api/content/composite-fields`.
+- **The plugin does not call the delivery API's `?where=` / `?populate=`.** A build holds all
+  published content, so it answers both filtering and expansion of references locally (for the
+  reason, see the inverse lookups in §3). A client that reads only a part at runtime should use
+  these parameters directly.
 
-## 8. テスト
+## 8. Tests
 
-Gatsby も CMS も要りません。依存パッケージはありません(`fetch` と Node の `node:test` だけ)。
+Neither Gatsby nor the CMS is needed. There are no dependencies (only `fetch` and Node's `node:test`).
 
 ```console
 $ scripts/test-gatsby-source.sh
-# または
+# or
 $ cd packages/gatsby-source-tsubame && npm test
 ```
 
-テストは契約(`docs/content-api.md`)の形をした偽の配信 API と、Gatsby が渡すのと同じ引数で
-2 つのフックを動かします。ページの辿り方、型の割り当て、複合定義の解決、参照のリンク、
-Markdown ノードの生成とリンクまでを見ています。
+The tests run the two hooks against a fake delivery API shaped like the contract
+(`docs/content-api.md`) and with the same arguments Gatsby passes. They cover walking pages,
+assigning types, resolving composite definitions, linking references, and creating and linking
+Markdown nodes.
