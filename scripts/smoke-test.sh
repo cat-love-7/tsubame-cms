@@ -244,7 +244,7 @@ if [ -z "$api_url" ]; then
   note "no function URL given: the liveness route was not asked (pass \`terraform output -raw api_url\`)"
 else
   status="$(fetch "$api_url/")"
-  if [ "$status" = 200 ] && grep -q 'SL CMS API' "$work/body"; then
+  if [ "$status" = 200 ] && grep -q 'Tsubame API' "$work/body"; then
     ok "the function's liveness route answers"
   else
     bad "the function's liveness route answers (status $status)"

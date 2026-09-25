@@ -1,10 +1,10 @@
 {
   "app": {
-    "name": "SL CMS",
+    "name": "Tsubame",
     "landing": "ナビゲーションからコレクションまたは単一ページを選んでください。"
   },
   "auth": {
-    "signInTitle": "SL CMS にサインイン",
+    "signInTitle": "Tsubame にサインイン",
     "username": "ID",
     "password": "パスワード",
     "signIn": "サインイン",

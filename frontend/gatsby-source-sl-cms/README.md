@@ -32,7 +32,7 @@ module.exports = {
         apiUrl: process.env.SL_CMS_URL || 'http://127.0.0.1:8000',
       },
     },
-    // Markdown を HTML にする。SL CMS 側は mediaType を付けているだけなので、変換はこの
+    // Markdown を HTML にする。Tsubame 側は mediaType を付けているだけなので、変換はこの
     // プラグインに任せる(`doc/content-api.md` §7 の分担どおり)。
     'gatsby-transformer-remark',
   ],

@@ -1,4 +1,4 @@
-# SlCms
+# Tsubame
 
 The CMS's admin interface: an Angular 22 standalone application (zoneless, signals, OnPush) that
 talks to the API in `sl_cms/`. It is served by the same binary in a deployment, and by the dev

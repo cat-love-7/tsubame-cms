@@ -328,7 +328,7 @@ pub(crate) fn ensure_preview_allowed(
 /// Liveness endpoint. AWS Lambda Web Adapter also uses this as its readiness check, so it
 /// must answer 200 without touching storage or requiring a token.
 async fn root() -> impl IntoResponse {
-    (StatusCode::OK, "SL CMS API")
+    (StatusCode::OK, "Tsubame API")
 }
 
 impl IntoResponse for HttpError {

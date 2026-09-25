@@ -1,10 +1,10 @@
 {
   "app": {
-    "name": "SL CMS",
+    "name": "Tsubame",
     "landing": "Choose a collection or a single page from the navigation."
   },
   "auth": {
-    "signInTitle": "Sign in to SL CMS",
+    "signInTitle": "Sign in to Tsubame",
     "username": "ID",
     "password": "Password",
     "signIn": "Sign in",
