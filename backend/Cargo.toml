@@ -20,6 +20,7 @@ default-members = ["crates/on-premises"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 # Dependencies shared by more than one package. The split is deliberate: the core has no storage
 # dependency at all, so neither adapter's tree is reachable from it.

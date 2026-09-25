@@ -3,6 +3,7 @@ name = "tsubame-on-premises"
 description = "The CMS with rkv (LMDB) storage and image files on local disk."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "tsubame"

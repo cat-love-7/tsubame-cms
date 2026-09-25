@@ -3,6 +3,7 @@ name = "tsubame-aws"
 description = "The CMS on DynamoDB (single table) and S3."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "tsubame-aws"
