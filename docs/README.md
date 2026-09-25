@@ -25,5 +25,11 @@ form are `.github/copilot-instructions.md`, and the front door is [`../README.md
 - **The `aws-*` pair is a record, not a plan.** Both were written before the deployment and updated
   after it ran; the `[x]` marks say "decided, built, and checked this way", and the notes beside
   them are how it was checked.
-- **Each document opens with its status.** "Implemented (2026-09)" means the code matches it; a
-  section that is still ahead of the code says so itself.
+- **The only Japanese left is quoted UI wording or sample data.** `i18n.md` §2 records the English
+  term beside the wording the Japanese UI shows - that table is the point of the document. Two
+  READMEs outside `docs/` keep one string each for the same kind of reason: the Japanese notice text
+  an E2E check looks for, and a collection name that shows why a CMS name has to be rewritten.
+- **A status line means the document still describes the code.** Three of them open with
+  "Status: implemented (2026-09)"; the AWS pair records what was verified and how, and "Remaining
+  work" at the end of `aws-decisions.md` §2 is the honest list of what it does not cover yet. The
+  two contracts carry no status line because every section states its own.
