@@ -33,7 +33,7 @@ packages/
   tsubame-preview/              renders a signed preview link without a build
 infra/                          Terraform: the serverless deployment
 scripts/                        build, test and deploy
-docs/                            the design documents (Japanese)
+docs/                            the design documents
 brand/                          the mark and the lockup
 ```
 
@@ -223,8 +223,8 @@ cd backend && cargo build --release -p tsubame-on-premises
 `docs/` holds the reasoning rather than the summary - the content API (`docs/content-api.md`), the
 schema and relations (`docs/relations-design.md`), the frontend's boundaries
 (`docs/frontend-design.md`), the AWS plan (`docs/aws-decisions.md`), and the preview site
-(`docs/preview-site.md`). They are written in Japanese; the code and its comments are in English.
-`.github/copilot-instructions.md` is the same conventions in short form.
+(`docs/preview-site.md`). `docs/README.md` is the index. They are in English, like the code and its
+comments; `.github/copilot-instructions.md` is the same conventions in short form.
 
 ## Contributing
 

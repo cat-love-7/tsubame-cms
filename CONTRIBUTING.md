@@ -59,8 +59,8 @@ follows.
 
 ## The conventions that matter
 
-* **Code, comments, commit messages and this file are English.** The design documents in `docs/` are
-  Japanese, and stay that way.
+* **Code, comments, commit messages, the design documents in `docs/` and this file are English.**
+  The documents are part of the repository's prose, not a translation laid beside it.
 * **One change per commit**, with a subject in the imperative mood ("Add the images bucket
   override") and a body that says *why* - what was wrong, what it costs, what was measured. The
   history is the design record; a commit that only restates its diff is a lost paragraph.

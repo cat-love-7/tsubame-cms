@@ -1,7 +1,7 @@
 # Working in this repository
 
 A CMS in two halves: a Rust API (`backend/`) and an Angular admin interface (`frontend/`),
-with the AWS deployment in `infra/` and the design decisions in `docs/` (Japanese).
+with the AWS deployment in `infra/` and the design decisions in `docs/`.
 
 ## Layout
 
@@ -13,7 +13,7 @@ with the AWS deployment in `infra/` and the design decisions in `docs/` (Japanes
 | `backend/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
 | `frontend/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
 | `infra/` | Terraform |
-| `docs/` | design documents, in Japanese: `content-api.md` is the API contract |
+| `docs/` | design documents: `content-api.md` is the API contract |
 
 Both adapters lay their repositories out the same way, and it is worth keeping that way: the
 traits live in `core/src/repositories/<trait>.rs` (one per trait), an adapter implements them in
@@ -55,7 +55,8 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
 
 - **Comments explain why, not what.** A comment that restates the line below it is noise; one that
   says what the alternative would break is the point.
-- **Docs and UI text**: `docs/` is Japanese, code comments and commit messages are English.
+- **Docs and UI text**: `docs/`, code comments and commit messages are English; the UI ships `en` and
+  `ja` catalogues.
 - **Contract tests are written once** in `crates/tests/suite/` (one file per topic; `mod.rs` is the
   harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
   permissions) live with the adapter.
