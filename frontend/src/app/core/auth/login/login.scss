@@ -16,6 +16,27 @@
 
 .login-card {
   width: min(420px, 100%);
+
+  /// The mark sits above the title rather than beside it: it is the first thing on the one screen
+  /// that has no shell around it, and a card this narrow has no room for both.
+  mat-card-header {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  .mark {
+    width: 48px;
+    height: 48px;
+    /// The brand's own ink, not the text colour under it: a mark at text weight reads as a
+    /// bullet, and this one is the only picture on the screen.
+    color: var(--mat-sys-primary);
+  }
+
+  .titles {
+    text-align: center;
+  }
 }
 
 .full-width {

@@ -41,7 +41,7 @@ two binaries read.
 that catches what the unit tests cannot: it drives the interface, the API and the storage
 together, and more than one real bug in this project was only visible there.
 
-## The pictures in the README
+## The pictures in the README, and the favicon
 
 `doc/images/*.png` are generated rather than drawn. `scripts/screenshots.sh` starts a CMS with
 throwaway data, seeds a small site (four categories, five articles, one page, four images - see
@@ -51,6 +51,11 @@ Chromium as the browser suite and the same two free ports.
 Run it when a change moves something a reader would see, and commit what it writes: a picture that
 no longer matches the screen is worse than no picture. If a screen looks wrong while you are at it,
 that is usually the cheapest way to find a layout bug - two of them were found this way.
+
+The tab icon is derived the same way: `cd frontend && node e2e/favicon.mjs` rasterises
+`brand/tsubame-16.svg` (16/32/48px) into `frontend/public/favicon.ico`, beside the `favicon.svg`
+that carries the same mark for the browsers that read one. Change the brand, run that, and the tab
+follows.
 
 ## The conventions that matter
 
