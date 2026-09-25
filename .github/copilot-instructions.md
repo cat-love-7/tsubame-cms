@@ -61,6 +61,9 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
   `packages/*/package.json`, `frontend/package.json` and the git tag. The crates inherit
   `version.workspace = true` instead of repeating it; `scripts/check-version.sh` enforces the lot and
   `CHANGELOG.md` records what each release changed.
+- **No crate is published to crates.io**: every manifest under `backend/crates/` says
+  `publish = false`, and the same check fails if a new crate forgets. This is a CMS you deploy, not a
+  library you depend on.
 - **Contract tests are written once** in `crates/tests/suite/` (one file per topic; `mod.rs` is the
   harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
   permissions) live with the adapter.

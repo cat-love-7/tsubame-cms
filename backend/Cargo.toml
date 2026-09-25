@@ -7,6 +7,10 @@
 #
 # `default-members` keeps a bare `cargo run` / `cargo build` / `cargo test` here on the
 # on-premises backend (what a developer runs all day) rather than building every member.
+#
+# No crate here is published to crates.io: this is a CMS you deploy, not a library you depend on.
+# Every manifest says `publish = false`, so a stray `cargo publish` cannot take the names, and
+# nothing in the repository can quietly start depending on a version that does not exist.
 [workspace]
 resolver = "3"
 members = [

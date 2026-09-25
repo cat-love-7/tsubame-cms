@@ -6,9 +6,16 @@ and the numbering follows [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 One version covers the whole repository: the CMS, the two npm packages, the admin interface and the
 git tag carry the same number, checked by `scripts/check-version.sh`. The Rust crates do not repeat
 it - each inherits `version.workspace = true` - and the npm packages are published from the same
-tag, so "which version of `tsubame-preview` goes with this CMS" has one answer.
+tag, so "which version of `tsubame-preview` goes with this CMS" has one answer. The Rust crates
+themselves are not published at all: `cargo add tsubame-core` is not a way to use this CMS.
 
 ## [Unreleased]
+
+### Changed
+
+- No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
+  `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new
+  crate forgets to say it.
 
 ## [0.1.0] - 2026-09-25
 

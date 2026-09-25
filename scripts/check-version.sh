@@ -8,6 +8,10 @@
 # `version.workspace = true`, and this insists on that too, because a crate that pins its own number
 # is one more place to forget.
 #
+# The same loop checks the other manifest convention: no crate may be publishable. This is a CMS you
+# deploy, not a library you depend on, and a `cargo publish` in a repository whose tests all pass
+# would otherwise be one keystroke with no undo - crates.io does not let a version be removed.
+#
 # CI runs this on every change, and a release runs it against the tag it is about to get:
 #
 #   scripts/check-version.sh              # do the manifests agree with each other?
@@ -24,7 +28,7 @@ if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
   expected="${GITHUB_REF_NAME:-}"
 fi
 
-echo "== checking the version numbers =="
+echo "== checking the manifests =="
 python3 - "$root" "$expected" <<'PY'
 import json
 import pathlib
@@ -89,9 +93,11 @@ for path in sorted(root.glob("backend/crates/*/Cargo.toml")):
     name = path.relative_to(root)
     if "version.workspace = true" not in text:
         problems.append(f"{name}: does not inherit `version.workspace = true`")
+    if "publish = false" not in text:
+        problems.append(f"{name}: does not say `publish = false`, so it could be published")
 
 if problems:
-    print("the version numbers disagree:")
+    print("the manifests disagree:")
     print("\n".join(f"  {problem}" for problem in problems))
     sys.exit(1)
 
