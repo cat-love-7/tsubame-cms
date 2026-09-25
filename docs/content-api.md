@@ -1,210 +1,230 @@
-# 公開コンテンツ API と下書き / 公開
+# Public content API and Draft / Publish
 
-**すべての API は `/api` の下にある**(`tsubame_core::API_PREFIX`)。管理画面・サイトビルド・
-プレビュー・画像のどれも同じで、経路の先頭を剥がす作業はどこにも無い(dev プロキシも nginx も
-CloudFront もそのまま通す)。例外は liveness の `GET /` だけで、これはストレージにも
-トークンにも触れない。API が返すパス(プレビューリンク、画像の URL)は**この接頭辞込み**なので、
-そのまま開ける。
+**Every API lives under `/api`** (`tsubame_core::API_PREFIX`). The admin screen, site builds,
+preview and images are all the same, and nothing anywhere strips the path prefix (the dev proxy,
+nginx and CloudFront all pass it through as is). The only exception is the liveness `GET /`, which
+touches neither storage nor tokens. The paths the API returns (preview links, image URLs) **include
+this prefix**, so they can be opened as is.
 
-Gatsby などの静的サイトビルドが CMS の内容を読むための契約。
-管理画面が使う `/api/models/*` とは別に、**認証不要・公開済みのみ**を返す `/api/content/*` を用意している。
+The contract by which static site builds such as Gatsby read the CMS content.
+Separate from `/api/models/*` used by the admin screen, there is `/api/content/*`, which returns
+**no auth required, published only**.
 
-## 1. なぜ `/api/models/*` と分けているか
+## 1. Why it is separated from `/api/models/*`
 
 | | `/api/models/*` | `/api/content/*` |
 |---|---|---|
-| 認証 | Bearer トークン必須 | 不要 |
-| 返す内容 | 下書きを含む全件 | 公開済みのみ |
-| 主な利用者 | 管理画面 | サイトビルド・配信 |
-| スキーマ | 別リクエストで取得 | レスポンスに同梱 |
+| Authentication | Bearer token required | Not required |
+| What it returns | All items, including drafts | Published only |
+| Main users | Admin screen | Site builds and delivery |
+| Schema | Fetched in a separate request | Included in the response |
 
-`/api/models/*` はスキーマも下書きも含むため公開できない。そこで読み取り専用の入口を分けた。
-値は型タグを持たない(スキーマが唯一の型情報)ので、`/api/content/*` はスキーマを同時に返す。
-これにより、値の解釈のためだけに認証付き API を叩く必要がない。
+`/api/models/*` cannot be made public because it includes Schemas and drafts. So a read-only
+entrance was split off. Values carry no type tag (the Schema is the only type information), so
+`/api/content/*` returns the Schema at the same time. This means there is no need to hit an
+authenticated API just to interpret values.
 
-## 2. 下書き / 公開のモデル
+## 2. The draft / publish model
 
-**値は 2 つある。** 編集者が保存するのは**作業コピー**(draft)で、配信 API が読むのは
-**公開コピー**(published)だけ。`publish` は作業コピーを公開コピーへコピーする操作で、
-`unpublish` は状態を下げるだけでどちらのコピーも消さない。
+**There are two values.** What an editor saves is the **working copy** (draft), and what the
+delivery API reads is only the **published copy** (published). `publish` is the operation that
+copies the working copy into the published copy, and `unpublish` only lowers the status, deleting
+neither copy.
 
-| 保存先 | 中身 | 誰が見るか |
+| Destination | Contents | Who sees it |
 |---|---|---|
-| アイテムストア | 公開コピー | `/api/content/*`(サイト) |
-| 作業コピー用ストア | 作業コピー(未公開の変更) | `/api/models/*` の読み書き(管理画面・プレビュー) |
+| Item store | Published copy | `/api/content/*` (site) |
+| Working-copy store | Working copy (unpublished changes) | Reads and writes of `/api/models/*` (admin screen, preview) |
 
-- **保存はライブサイトを変えない。** 公開コピーが置き換わるのは `publish` のときだけ。
-  これが「編集はできるが公開はできない」ロールを安全にしている。
-- 作業コピーが無い = 保留中の変更が無い。`publish` は公開コピーを作業コピーで置き換え、
-  作業コピーを消す(何も無ければ `published_at` を更新するだけ)。
-- 状態・日時は値とは**別のストア**(`item_metadata`)に入る。スキーマに `status` や
-  `published_at` というフィールドがあっても衝突しない。
-- コレクション / 単一ページ / アイテムを削除すると、作業コピーとメタデータも一緒に消える。
-- **作業コピーは取り消せる**(2026-09 追加)。`DELETE .../draft` が作業コピーを消すだけで、公開
-  コピーには触れない。管理画面は「変更を公開」の隣に出す。**未公開の変更が9件溜まっていた**
-  実デプロイがあり、それまでは「公開する」以外に片付ける方法が無かった(作業コピーを消す保存層の
-  操作は最初からあったが、呼び出し元が無かった)。
-- **いま公開中の内容は別に読む**。管理画面の読み取りは作業コピー優先なので、変更を抱えた
-  アイテムでは「サイトが出している内容」が CMS から見えない。`GET .../published` がそれを返し、
-  編集画面は「公開中との違いを見る」で**違うフィールドだけ**を並べて見せる(取り消す前に確かめる
-  ため)。未公開のアイテムは 404: サイトは何も出していない。
-- 未公開の内容への `/api/content/*` は **404**(403 ではない)。存在自体を漏らさないため。
-- `published_at` は**最初に公開した日時**。再公開では動かさず、unpublish しても保持する
-  (「この記事を公開した日」は現在の状態ではなくアイテムの事実のため)。**更新を公開した日時**は
-  `updated_at` が持つ。
-- `created_at` は最初に保存した日時、`updated_at` は**内容が最後に変わった日時**(保存、または
-  変更を公開したとき)。何も待っていない状態での publish はどちらも動かさない
-  (`published_by` だけが更新される)。
-- 管理 API のメタデータは `has_draft` を返す。公開済み + `has_draft: true` が
-  「公開中だが、未公開の変更がある」状態で、管理画面はこれを「変更あり」と表示する。
-- **公開中のアイテムにもう一度 `publish` してよい。** それが保留中の変更を反映する操作で、
-  サイトから一時的に消えることはない(unpublish してから publish すると、その間 404 になる)。
-  管理画面の「変更を公開」はこれを呼ぶ。`publish` / `unpublish` の応答は
-  メタデータ取得と同じ形(`has_draft` を含む)で、画面はそれを次の状態として使う。
+- **Saving does not change the live site.** The published copy is replaced only on `publish`.
+  This is what makes the "can edit but cannot publish" role safe.
+- No working copy = no pending changes. `publish` replaces the published copy with the working
+  copy and deletes the working copy (if there is nothing, it only updates `published_at`).
+- Status and timestamps live in a **separate store** (`item_metadata`) from the values. A Schema
+  field named `status` or `published_at` does not collide.
+- Deleting a Collection / Single page / Item also deletes the working copy and the metadata.
+- **The working copy can be discarded** (added 2026-09). `DELETE .../draft` only deletes the
+  working copy and does not touch the published copy. The admin screen puts it next to "publish
+  changes". There was a real deployment where **9 unpublished changes had piled up**, and until
+  then there was no way to clear them other than "publish" (the storage-layer operation to delete
+  the working copy had existed from the start, but had no caller).
+- **The currently published content is read separately.** Reads in the admin screen prefer the
+  working copy, so for an Item with pending changes "what the site is serving" is not visible from
+  the CMS. `GET .../published` returns it, and the edit screen's "view differences from published"
+  lists **only the differing fields** (so the change can be checked before discarding). An
+  unpublished Item is 404: the site is not serving anything.
+- `/api/content/*` on unpublished content is **404** (not 403). So as not to leak the existence
+  itself.
+- `published_at` is the **time it was first published**. It does not move on re-publish and is kept
+  through unpublish ("the day this article was published" is a fact about the Item, not the current
+  state). The **time the update was published** is held by `updated_at`.
+- `created_at` is the time it was first saved, `updated_at` is **the time the content last changed**
+  (on save, or when changes were published). A publish with nothing pending moves neither (only
+  `published_by` is updated).
+- The admin API metadata returns `has_draft`. Published + `has_draft: true` is the state "published,
+  but with unpublished changes", and the admin screen shows this as "has changes".
+- **You may `publish` an already published Item again.** That is the operation that applies pending
+  changes, and it never temporarily disappears from the site (unpublishing first and then
+  publishing gives a 404 in between). The admin screen's "publish changes" calls this. The responses
+  of `publish` / `unpublish` have the same shape as fetching metadata (including `has_draft`), and
+  the screen uses them as the next state.
 
-## 3. エンドポイント
+## 3. Endpoints
 
-### 公開(認証不要)
+### Public (no auth required)
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| GET | `/api/content/collections` | 公開アイテムを1つ以上持つコレクション名の配列 |
-| GET | `/api/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }`。`?sort=` で順序を指定(既定は id 昇順) |
+| GET | `/api/content/collections` | Array of Collection names that have at least one published Item |
+| GET | `/api/content/collections/{name}` | `{ "schema": [...], "items": [...], "total": 12, "limit": 50, "offset": 0, "next_offset": 50 }`. `?sort=` gives the order (default is ascending id) |
 | GET | `/api/content/collections/{name}/items/{id}` | `{ "id": 1, "published_at": "...", "last_published_at": "...", "values": {...} }` |
-| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 同じ形。**一意なフィールド**の値から 1 件を返す(未公開・該当なしは 404) |
-| GET | `/api/content/single-pages` | 公開済み単一ページ名の配列 |
+| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | The same shape. Returns one Item from the value of a **unique Field** (404 if unpublished or not found) |
+| GET | `/api/content/single-pages` | Array of published Single page names |
 | GET | `/api/content/single-pages/{name}` | `{ "schema": [...], "published_at": "...", "last_published_at": "...", "values": {...} }` |
-| GET | `/api/content/composite-fields` | 複合フィールド定義の全体(`{ "<id>": [フィールド定義] }`)。公開スキーマが id で参照するので、認証なしで読める |
+| GET | `/api/content/composite-fields` | The whole set of Composite field definitions (`{ "<id>": [field definitions] }`). The public Schema references them by id, so they can be read without auth |
 
-### 管理(要トークン。`publish` / `unpublish` は編集権限が必要)
+### Admin (token required. `publish` / `unpublish` need edit permission)
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + `X-Total-Count` ヘッダ。**新しい順( id の降順)**(`?limit=` / `?offset=` でページング。同じ順を、内容編集画面のピッカーの候補も使う)。並び順は `?sort=` で指定でき、綴りは配信 API と同じ(`id` / `published_at` / `created_at` / `updated_at` / フィールド名。同値は id でタイブレーク) |
+| GET | `/api/models/collections/{name}/items` | `[[id, values], ...]` + the `X-Total-Count` header. **Newest first (descending id)** (paging with `?limit=` / `?offset=`. The picker candidates in the content edit screen use the same order). The order can be given with `?sort=`, with the same spellings as the delivery API (`id` / `published_at` / `created_at` / `updated_at` / field names. Ties are broken by id) |
 | GET | `/api/models/collections/{name}/items/metadata` | `{ "1": { "status": "draft", "published_at": null, "created_at": "...", "updated_at": "...", "has_draft": false }, ... }` |
-| GET | `/api/models/collections/{name}/items/{id}/metadata` | そのアイテムのメタデータ |
-| PUT | `/api/models/collections/{name}/items/{id}/metadata` | 日時を設定(下記「移行のための日時」)。返すのは更新後のメタデータ |
-| POST | `/api/models/collections/{name}/items/{id}/publish` | 更新後のメタデータ(存在しない id は 404) |
-| POST | `/api/models/collections/{name}/items/{id}/unpublish` | 更新後のメタデータ |
-| GET | `/api/models/single_pages/{name}/item/metadata` | そのページのメタデータ |
-| PUT | `/api/models/single_pages/{name}/item/metadata` | 日時を設定(下記「移行のための日時」) |
-| GET | `/api/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }`(**読めるページだけ**。一覧画面が 1 回で状態を出すためのもの) |
-| POST | `/api/models/single_pages/{name}/publish` | 更新後のメタデータ |
-| POST | `/api/models/single_pages/{name}/unpublish` | 更新後のメタデータ |
-| GET | `/api/models/collections/{name}/items/{id}/published` | **いまサイトに出ている内容**(公開コピー)。`GET .../items/{id}` が返すのは作業コピーなので、これがその反対側。未公開のアイテムは 404 |
-| GET | `/api/models/single_pages/{name}/published` | 同上(単一ページ) |
-| DELETE | `/api/models/collections/{name}/items/{id}/draft` | **作業コピーを破棄**して公開中の内容に戻す(`204`。要 `can_edit`)。冪等。サイトは変わらない |
-| DELETE | `/api/models/single_pages/{name}/draft` | 同上(単一ページ) |
-| GET | `/api/models/collections/{name}/items/{id}/api/preview` | `{ "schema": [...], "id": 1, "values": {...} }`(作業コピー。要トークン) |
-| GET | `/api/models/single_pages/{name}/api/preview` | `{ "schema": [...], "values": {...} }`(作業コピー。要トークン) |
-| GET | `/api/models/images` | `[{ "id": 1, "url": "/api/images/...", "thumbnail_url": "/api/images/thumb-...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]`(新しい順。`thumbnail_url` はタイル用の小さなコピーで、無ければ `url` を表示する。`?limit=`/`?offset=` と `X-Total-Count` は §5.9) |
-| DELETE | `/api/models/images/{id}` | 画像と実体を削除(存在しない id は 404) |
+| GET | `/api/models/collections/{name}/items/{id}/metadata` | That Item's metadata |
+| PUT | `/api/models/collections/{name}/items/{id}/metadata` | Set the timestamps (see "Timestamps for migration" below). Returns the updated metadata |
+| POST | `/api/models/collections/{name}/items/{id}/publish` | The updated metadata (404 for a nonexistent id) |
+| POST | `/api/models/collections/{name}/items/{id}/unpublish` | The updated metadata |
+| GET | `/api/models/single_pages/{name}/item/metadata` | That page's metadata |
+| PUT | `/api/models/single_pages/{name}/item/metadata` | Set the timestamps (see "Timestamps for migration" below) |
+| GET | `/api/models/single_pages/items/metadata` | `{ "home": { "status": "published", "updated_at": "...", "has_draft": true, ... }, ... }` (**only pages that can be read**. So the list screen can show the status in one request) |
+| POST | `/api/models/single_pages/{name}/publish` | The updated metadata |
+| POST | `/api/models/single_pages/{name}/unpublish` | The updated metadata |
+| GET | `/api/models/collections/{name}/items/{id}/published` | **What the site is currently serving** (the published copy). `GET .../items/{id}` returns the working copy, so this is its counterpart. 404 for an unpublished Item |
+| GET | `/api/models/single_pages/{name}/published` | Same as above (Single page) |
+| DELETE | `/api/models/collections/{name}/items/{id}/draft` | **Discard the working copy** and return to the published content (`204`. Requires `can_edit`). Idempotent. The site does not change |
+| DELETE | `/api/models/single_pages/{name}/draft` | Same as above (Single page) |
+| GET | `/api/models/collections/{name}/items/{id}/api/preview` | `{ "schema": [...], "id": 1, "values": {...} }` (the working copy. Token required) |
+| GET | `/api/models/single_pages/{name}/api/preview` | `{ "schema": [...], "values": {...} }` (the working copy. Token required) |
+| GET | `/api/models/images` | `[{ "id": 1, "url": "/api/images/...", "thumbnail_url": "/api/images/thumb-...", "original_filename": "logo.png", "uploaded_at": "..." }, ...]` (newest first. `thumbnail_url` is the small tile copy; when it is absent, `url` is shown. `?limit=`/`?offset=` and `X-Total-Count` are in §5.9) |
+| DELETE | `/api/models/images/{id}` | Delete the image and the file (404 for a nonexistent id) |
 
-`items/metadata` は**全アイテム分**を返す。保存されたことのないアイテムも `draft` として現れるので、
-管理画面の一覧はこれだけで状態の列を描ける。
+`items/metadata` returns **the entries for all Items**. Items that have never been saved appear as
+`draft` too, so the admin screen list can draw the status column with this alone.
 
-**変更系(`POST` / `PUT` / `DELETE`)は `200 OK` と空ボディを返す。** 以前は "… successfully" という
-テキストを返していたが、Angular の `HttpClient` は本文を JSON として解釈するため、成功しているのに
-クライアント側は「保存に失敗した」と判定していた(本文が空ならパースされない)。
-本文が意味を持つもの(アイテム作成は id、publish / unpublish はメタデータ、画像アップロードは URL)
-だけが JSON を返す。
+**Mutating requests (`POST` / `PUT` / `DELETE`) return `200 OK` with an empty body.** They used to
+return the text "… successfully", but Angular's `HttpClient` interprets the body as JSON, so even
+though the request had succeeded the client decided that "the save failed" (an empty body is not
+parsed). Only responses whose body carries meaning (Item creation gives the id, publish / unpublish
+give the metadata, image upload gives the URL) return JSON.
 
-### 画像
+### Images
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| POST | `/api/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/api/images/<file>?key=..." }`(要トークン) |
-| PUT | `/api/images/{file_name}?key=...` | 実体を保存(要トークン。`key` は一度きりで、発行時のファイル名に紐づく) |
-| GET | `/api/images/{file_name}` | 実体の配信。**認証不要**(`<img>` はヘッダを付けられないため) |
-| PUT | `/api/models/images/{id}` | 表示名の変更(`{ "original_filename": "..." }`)、差し替えの確定(`{ "file_name": "..." }`)、アップロード日時の設定(`{ "uploaded_at": "..." }`。下記「移行のための日時」) |
-| DELETE | `/api/models/images/{id}` | 画像と実体の削除 |
-| POST | `/api/models/images/{id}/replace` | 差し替え用のアップロード先(`{ "ext": "png" }` → `{ "file_name", "upload_url" }`) |
-| PUT | `/api/models/images/{id}/thumbnail?ext=webp` | タイル用の小さなコピーを保存(本文はバイト列。要 `can_edit`)。§5.9 |
-| GET | `/api/images/by-id/{id}` | **id で引く実体**(認証不要)。差し替えても壊れないリンク |
+| POST | `/api/models/images/get_upload_url` | `{ "id": 1, "upload_url": "/api/images/<file>?key=..." }` (token required) |
+| PUT | `/api/images/{file_name}?key=...` | Store the file (token required. `key` is single-use and is tied to the file name at issue time) |
+| GET | `/api/images/{file_name}` | Serve the file. **No auth required** (because `<img>` cannot attach headers) |
+| PUT | `/api/models/images/{id}` | Change the display name (`{ "original_filename": "..." }`), confirm a replacement (`{ "file_name": "..." }`), set the upload timestamp (`{ "uploaded_at": "..." }`. See "Timestamps for migration" below) |
+| DELETE | `/api/models/images/{id}` | Delete the image and the file |
+| POST | `/api/models/images/{id}/replace` | Upload destination for a replacement (`{ "ext": "png" }` → `{ "file_name", "upload_url" }`) |
+| PUT | `/api/models/images/{id}/thumbnail?ext=webp` | Store the small tile copy (the body is the bytes. Requires `can_edit`). §5.9 |
+| GET | `/api/images/by-id/{id}` | **The file looked up by id** (no auth required). A link that does not break when the image is replaced |
 
-アップロードは 2 段階(場所を貰う → 送る)。AWS では同じ契約を S3 の presigned URL が担う。
-ブラウザは送ったあとに**タイル用の小さなコピー**を作って `PUT .../thumbnail` へ送る(§5.9)。
-管理画面の「Images」(`/api/images`。ドキュメント側にある)が `GET /api/models/images` を一覧し、
-アップロード・名前の変更・差し替え・削除を行う。コンテンツ編集の画像フィールドからは、同じ一覧を開いて**既存の画像を選び直せる**。
+Upload is two-stage (get a location → send). On AWS the S3 presigned URL carries the same contract.
+After sending, the browser creates **the small tile copy** and sends it to `PUT .../thumbnail`
+(§5.9). The admin screen's "Images" (`/api/images`; it lives with the documents) lists
+`GET /api/models/images` and handles upload, renaming, replacement and deletion. From an image field
+in the content editor, the same list opens and **an existing image can be selected again**.
 
-**`original_filename` は表示名**であって、保存先のパスではない。保存先のファイル名はサーバーが
-生成するので、名前は自由に変えられる(空・255 文字超・パス区切り・制御文字は拒否する)。
-名前を変えても **id・URL・実体は変わらない**ので、その画像を参照している内容は影響を受けず、
-名前だけ元に戻すこともできる。
+**`original_filename` is the display name**, not the storage path. The storage file name is
+generated by the server, so the name can be changed freely (empty, over 255 characters, path
+separators and control characters are rejected). Changing the name does **not change the id, the URL
+or the file**, so content referencing that image is unaffected, and the name alone can be changed
+back.
 
-#### 実体の差し替え(id は変えない)
+#### Replacing the file (the id does not change)
 
-「ロゴを差し替えたいが、参照している内容は触りたくない」ための操作。**id・表示名・登録日時は
-変えず、実体だけを入れ替える**。
+The operation for "I want to replace the logo but not touch the content that references it". **The
+id, display name and upload timestamp do not change; only the file is swapped**.
 
 ```
 POST /api/models/images/3/replace  { "ext": "png" }   → { "file_name": "...", "upload_url": "..." }
-PUT  <upload_url>                                  ← 新しい実体
-PUT  /api/models/images/3          { "file_name": "..." }  ← 差し替えの確定
+PUT  <upload_url>                                  ← the new file
+PUT  /api/models/images/3          { "file_name": "..." }  ← confirm the replacement
 ```
 
-- **新しいファイル名に上げる**(同じキーに上書きしない)。ブラウザも CDN も URL 単位で
-  キャッシュするので、同じ URL のまま中身が変わると古い画像が出続ける。ファイル名が変われば
-  必ず取り直される。差し替え後、**古い実体は削除**される。
-- **先に上げてから確定する**。確定時に「実体が存在すること」「他の画像のものでないこと」を
-  確かめるので、アップロードが失敗しても**今の画像はそのまま配信され続ける**(壊れた状態を
-  残さない)。確定前は何も変わらない。
-- 2 つの画像が同じ実体を指すことはない(片方の差し替えでもう片方の実体が消えるため、拒否する)。
-- `uploaded_at` は**最初にアップロードされた時刻**のまま(公開日と同じ考え方)。
+- **Upload under a new file name** (do not overwrite the same key). Browsers and CDNs cache per
+  URL, so if the contents change while the URL stays the same, the old image keeps being served.
+  With a different file name it is always fetched again. After the replacement, **the old file is
+  deleted**.
+- **Upload first, then confirm.** The confirmation checks that the file exists and that it does not
+  belong to another image, so even if the upload fails **the current image keeps being served** (no
+  broken state is left behind). Nothing changes before the confirmation.
+- Two images never point at the same file (rejected, because replacing one would delete the other's
+  file).
+- `uploaded_at` stays the **time it was first uploaded** (the same idea as the publish date).
 
-#### 差し替えても壊れないリンク(id リンク)
+#### A link that survives replacement (id link)
 
-`GET /api/images/by-id/{id}` は**その画像がいま配信されている場所**へ解決する。**認証不要**。
+`GET /api/images/by-id/{id}` resolves to **where that image is currently being served**. **No auth
+required**.
 
-- オンプレでは実体をそのまま返す(`Cache-Control: no-cache`。指す先が変わるため)。
-- AWS では現在のオブジェクト URL へ 302 で送る(同じく `no-cache`。オブジェクト自体は
-  キャッシュされてよい)。
+- On-premises it returns the file itself (`Cache-Control: no-cache`, because the target changes).
+- On AWS it sends a 302 to the current object URL (also `no-cache`. The object itself may be
+  cached).
 
-Markdown 本文などに**手で書くリンクはこれを使う**。ファイル名入りの URL を書くと、差し替えで
-その URL は消えるのでリンクが切れる。ライブラリ画面の「リンクをコピー」がこの URL を返す。
-なお **Image 型のフィールドは id を保存している**ので、`GET` の応答がその時点の URL を返し、
-差し替え後は(配信 API の応答を通す限り)自動で新しい画像になる。
+**Links written by hand** in Markdown bodies and the like **use this**. A URL containing a file name
+disappears on replacement, breaking the link. The "copy link" action in the library screen returns
+this URL. Note that **an Image field stores an id**, so the `GET` response returns the URL at that
+point in time, and after a replacement (as long as the delivery API response is used) it
+automatically becomes the new image.
 
-**画像の配列**(`{ "Array": ["Image"] }`)は、書き込み時に `[3]`(id のみ)でも `[{ "id": 3, "url": "..." }]`
-でも受け付け、読み出しは `[{ "id", "url" }]` の配列で返す。管理画面ではサムネイルの並びとして編集でき、
-ライブラリから**複数まとめて追加**・並べ替え・削除ができる(JSON を直接編集する表示にも切り替えられる)。
-`Array: ["Image", "Number"]` のように Number と併用すると、素の数値が id なのか数値なのか決まらないため
-サーバも管理画面も拒否する。入れ子の配列(`Array: [{ "Array": [...] }]`)も拒否する(値に型タグが無く、
-どこまでも再帰するため)。
+**An image array** (`{ "Array": ["Image"] }`) accepts both `[3]` (ids only) and
+`[{ "id": 3, "url": "..." }]` on write, and reads back as an array of `[{ "id", "url" }]`. The admin
+screen edits it as a row of thumbnails, and images can be **added several at once** from the
+library, reordered and deleted (the view can also be switched to editing the JSON directly).
+Combining it with Number, as in `Array: ["Image", "Number"]`, is rejected by both the server and the
+admin screen, because a bare number could not be told apart from an id. Nested arrays
+(`Array: [{ "Array": [...] }]`) are rejected too (values carry no type tag and the recursion would
+have no end).
 
-### 複合フィールドの配列
+### Arrays of Composite fields
 
-公開 API のスキーマは複合定義を **id で参照する**(`{"CompositeField": {"id": "block"}}`)。定義そのものは
-`GET /api/content/composite-fields` が**認証なしで**返す(id → フィールド定義の対応。管理 API の
-`GET /api/models/composite_fields` と同じ形・同じ内容)。管理画面はトークン付きで管理 API 側を読むので、
-こちらの経路が増えても認可は緩んでいない(管理 API は今も 401 を返す)。
+The public API Schema references Composite definitions **by id** (`{"CompositeField": {"id":
+"block"}}`). The definitions themselves are returned by `GET /api/content/composite-fields`
+**without auth** (an id → field definition mapping. Same shape and same content as the admin API's
+`GET /api/models/composite_fields`). The admin screen reads the admin API side with a token, so
+adding this route does not loosen authorization (the admin API still returns 401).
 
-`{ "Array": [{ "CompositeField": { "id": "block" } }] }` のように、**複合フィールドを配列の要素型にできる**。
-要素はオブジェクトなのでスカラーと取り違えようがなく、参照先の定義を引いて中身まで検証する。
-読み出しは要素ごとに `{ "id", "values": { ... } }` を返し、**書き込みはその形でも、素のオブジェクトでも
-受け付ける**(`id` を書けば、同じ形を取れる複数の定義があってもその定義として読む。書かなければ宣言順に
-最初に一致した定義)。
+As in `{ "Array": [{ "CompositeField": { "id": "block" } }] }`, **a Composite field can be the
+element type of an array**. Elements are objects, so they cannot be mistaken for scalars, and the
+referenced definition is looked up and its contents validated. Reads return `{ "id", "values": { ...
+} }` per element, and **writes accept either that shape or a bare object** (if `id` is written, that
+definition is used even when several definitions could take the same shape; if it is not, the first
+matching definition in declaration order).
 
-管理画面では、スキーマ編集の「Composite item types」で**要素として持てる定義を複数選べ**、
-コンテンツ編集では**要素ごとに**その定義のフォームが出る(追加・削除・並べ替え)。
-型タグが無いので、**スカラーと複合が混ざった配列**だけは要素ごとのエディタに落とせない
-(どの要素がどちらの型か決まらない)。その場合は従来どおり JSON で編集する。
+In the admin screen, the Schema editor's "Composite item types" lets you **select several
+definitions the array may hold as elements**, and the content editor shows that definition's form
+**per element** (add, delete, reorder). Because there are no type tags, **an array mixing scalars and
+composites** is the one case that cannot be turned into a per-element editor (which type each
+element is cannot be decided). In that case it is edited as JSON as before.
 
-複合が複合を参照するのは自由で、**配列を通して自分自身に戻るのも許す**。たとえば「ブロックが
-ブロックの配列を持つ」定義(木構造)が書ける。これは参照グラフとしては循環だが、終わらない経路が
-無い — 配列の要素は**保存された値**から作られるので、空の配列は何も展開せず、1 段深くするには
-値が 1 段深くなる必要がある。解析も検証も同じ理由で値の深さで止まる。
+A Composite referencing a Composite is fine, and **returning to itself through an array is allowed**.
+For example you can write a definition where "a block holds an array of blocks" (a tree). This is
+cyclic as a reference graph, but there is no path that never ends - array elements are built from
+**stored values**, so an empty array expands nothing, and going one level deeper requires a value
+one level deeper. Parsing and validation stop at the depth of the value for the same reason.
 
-**配列を通らない循環**(`a → b → a`)だけは拒否する。管理画面は複合のサブフィールドを**スキーマから**
-描画するので、こちらは値を空にしても永遠に展開されてしまう。
+Only **cycles that do not pass through an array** (`a → b → a`) are rejected. The admin screen draws
+a Composite's subfields **from the Schema**, so this kind would expand forever even with an empty
+value.
 
-**削除は参照を検査しない。** 画像を id で参照しているアイテムはそのまま残り、参照先が解決しなくなる
-だけ(使用中チェックと参照の書き換えは行わない、という判断)。
+**Deletion does not inspect references.** Items referencing an image by id simply remain, and the
+reference stops resolving (the decision is not to do in-use checks or reference rewriting).
 
-### 3.1 別のコレクション・単一ページへの参照(リレーション)
+### 3.1 References to another Collection or Single page (relations)
 
-アイテムが**別のコレクションのアイテム**(または**単一ページ**)を参照できる。設計の全体は
-`docs/relations-design.md`。ここは API から見た形だけを書く。
+An Item can reference **an Item of another Collection** (or a **Single page**). The full design is in
+`docs/relations-design.md`. Only the shape as seen from the API is written here.
 
 ```json
 { "name": "author", "field_type": { "Relation": {
@@ -214,414 +234,462 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
 }}, "required": false, "width": 12, "height": 1 }
 ```
 
-- 対象は `{ "kind": "collection" | "single_page", "name": "..." }`。**同じ名前でも種類が違えば
-  別の対象**で、保存時に存在を確かめる(無ければ 400)。単一ページは 1 件しか無いので
-  `has_many: true` は拒否する。
-- `inverse_name` は**逆側での呼び名**(画面の見出しと `?populate=` 用)。呼び名だけで、相手側に
-  データは持たない。**同じ対象に対して 1 つだけ**: 別のスキーマが同じ対象に同じ名前を付けようと
-  すると保存が **409 `conflict`** で拒否される(`?populate=<inverse_name>` の答えが「誰が訊いたか」で
-  変わってしまうため)。対象が違えば同じ名前でもよい(名前は対象から辿るものなので)。
-- 値は**参照の並び順つきリスト**:
+- The target is `{ "kind": "collection" | "single_page", "name": "..." }`. **The same name with a
+  different kind is a different target**, and existence is checked on save (400 if missing). A Single
+  page has only one entry, so `has_many: true` is rejected.
+- `inverse_name` is **the name used on the other side** (for screen headings and `?populate=`). It is
+  only a name; no data is held on the other side. **Only one per target**: if another Schema tries to
+  give the same name to the same target, the save is rejected with **409 `conflict`** (because the
+  answer to `?populate=<inverse_name>` would change depending on who asked). The same name is fine
+  for a different target (names are looked up from the target).
+- The value is **a list of references with an order**:
 
-| 対象 | 値 |
+| Target | Value |
 |---|---|
-| コレクション・単一 (`has_many: false`) | `[{ "target": "authors", "item": 7 }]` |
-| コレクション・複数 (`has_many: true`) | `[{ "target": "authors", "item": 7 }, { "target": "authors", "item": 9 }]` |
-| 単一ページ | `[{ "target": "home" }]`(ページは id を持たないので `item` は付かない) |
+| Collection, single (`has_many: false`) | `[{ "target": "authors", "item": 7 }]` |
+| Collection, many (`has_many: true`) | `[{ "target": "authors", "item": 7 }, { "target": "authors", "item": 9 }]` |
+| Single page | `[{ "target": "home" }]` (no `item`, since a page has no id) |
 
-- `null` と `[]` は「参照なし」で同じ。保存時に**同じ参照の重複だけ**を取り除く(最初に現れた位置に
-  残る)ので、**書いた順序がそのまま保存され、配信 API もその順で返す**。並べ替えは管理画面のチップの
-  左右の矢印で行う(索引は集合なので、並べ替えても索引は動かない)。
-- 拒否されるもの(いずれも 400): 対象と違う名前の参照、コレクションの参照で `item` が無い/整数でない、
-  単一ページの参照に `item` が付いている、単一の参照に 2 件以上、配列ではない値。
-- `Relation` は**配列の要素型にはできない**。複数持つのは `has_many` の役目で、配列にすると
-  「集合の集合」という 2 つ目の言い方になるため(スキーマ保存が拒否する)。
-- `Relation` は**複合フィールド定義の中にも書ける**。対象はサイトのコレクション / 単一ページで、
-  定義は独立して保存されるので、**対象の存在は定義の保存時**に確かめ、**埋め込む側のスキーマ保存時**
-  にもう一度確かめる(定義の中まで歩く)。値は複合の値の中に入り、**参照を持つのはアイテム**なので、
-  索引・逆引き・削除の拒否・`?detach=true` は複合や配列の中まで届く:
-  `{ "cta": { "author": [{ "target": "authors", "item": 7 }] } }`。
-  一覧の列とタイトルにはできない(複合の中の 1 項目は指定できない)。
-- **`required` な relation は公開のときに問う**(他の必須項目と同じ規則)。作業コピーは空でも保存でき、
-  公開が `field_required` で拒否する。
-- **公開は「公開されている相手」を数える**(`docs/relations-design.md` §4)。`required` な relation の
-  参照先が**すべて未公開**なら、埋まっていても公開を **409 `relation_unpublished`** で拒否する
-  (配列の一部が公開済みなら通る)。逆に、**公開中の参照元**が `required` な relation で指している
-  相手の `unpublish` は **409 `relation_required_by`** で拒否する(そのフィールドに公開済みの参照が
-  他に残るなら通る)。**任意**の relation はどちらも自由で、未公開の相手は配信 API が落とす。
-  拒否は `field` にスキーマ上の経路(`author`、複合の中なら `cta.author`、配列なら `blocks[0].author`)
-  を返すので、画面はどの入力を開けばよいか分かる。
-#### 逆引き(誰が参照しているか)
+- `null` and `[]` both mean "no references". On save only **duplicate identical references** are
+  removed (the first occurrence keeps its position), so **the written order is stored as is and the
+  delivery API returns it in that order**. Reordering is done with the left/right arrows on the chips
+  in the admin screen (the index is a set, so reordering does not move the index).
+- What is rejected (all 400): a reference with a name different from the target; a Collection
+  reference without `item` or with a non-integer `item`; a Single page reference carrying `item`; two
+  or more entries in a single reference; a value that is not an array.
+- `Relation` **cannot be an array element type**. Holding many is `has_many`'s job, and an array
+  would be a second way of saying "a set of sets" (Schema save rejects it).
+- `Relation` **can also be written inside a Composite field definition**. The target is a site
+  Collection / Single page, and because definitions are stored independently, **the target's
+  existence is checked when the definition is saved** and checked again **when the Schema that embeds
+  it is saved** (walking into the definitions). The value goes inside the Composite's value, and **it
+  is the Item that holds the reference**, so the index, reverse lookup, deletion refusal and
+  `?detach=true` reach inside composites and arrays:
+  `{ "cta": { "author": [{ "target": "authors", "item": 7 }] } }`. It cannot be a list column or the
+  title (a single entry inside a Composite cannot be designated).
+- **A `required` relation is asked at publish time** (the same rule as other required fields). The
+  working copy saves even when empty, and publish rejects it with `field_required`.
+- **Publish counts "published targets"** (`docs/relations-design.md` §4). If every target of a
+  `required` relation is **unpublished**, publish is rejected with **409 `relation_unpublished`**
+  even when the value is filled in (if part of the array is published, it passes). Conversely,
+  `unpublish` of a target pointed at by a **published referrer** through a `required` relation is
+  rejected with **409 `relation_required_by`** (if other published references remain in that field,
+  it passes). An **optional** relation is free in both directions, and the delivery API drops
+  unpublished targets. A refusal returns the path in the Schema in `field` (`author`, `cta.author`
+  inside a Composite, `blocks[0].author` in an array), so the screen knows which input to open.
+#### Reverse lookup (who references it)
 
-参照は**索引**として本体と同時に書かれるので、逆引きは読み出しだけで答える(全件走査しない)。
+References are written as an **index** together with the body, so reverse lookup answers with a read
+alone (no full scan).
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| GET | `/api/models/collections/{name}/items/{id}/references` | そのアイテムを参照しているコンテンツ(要トークン) |
-| GET | `/api/models/single_pages/{name}/references` | そのページを参照しているコンテンツ(要トークン) |
+| GET | `/api/models/collections/{name}/items/{id}/references` | Content referencing that Item (token required) |
+| GET | `/api/models/single_pages/{name}/references` | Content referencing that page (token required) |
 
 ```json
 [{ "kind": "collection_item", "name": "posts", "item": 3 }, { "kind": "single_page", "name": "about" }]
 ```
 
-- **下書きと公開コピーの和**を数える。編集中の参照も、公開中の参照も、消してよい理由にはならない。
-- 無いアイテム・ページは 404(「参照なし」ではない)。
+- Counts **the union of the draft and the published copy**. Neither an in-progress reference nor a
+  published one is a reason that deletion is allowed.
+- A missing Item or page is 404 (not "no references").
 
-#### 参照されているコンテンツの削除
+#### Deleting content that is referenced
 
-`DELETE …/items/{id}` / `DELETE …/single_pages/{name}` は、参照が 1 件でもあると **409
-`still_referenced`** で拒否する(メッセージは参照元を最大 3 件名指しする)。参照を外してから消す:
+`DELETE …/items/{id}` / `DELETE …/single_pages/{name}` are rejected with **409 `still_referenced`**
+when there is even one reference (the message names up to 3 referrers). To detach and then delete:
 
 ```
 DELETE /api/models/collections/authors/items/1?detach=true
 ```
 
-- `?detach=true` は**参照元の両コピー**からその参照を外してから削除する。外す書き込みは通常の
-  保存経路を通るので、索引も値と一緒に動く。全部外してから消すので、途中で失敗しても参照が
-  残ったまま消えることはない。
-- 自分が何かを参照していても、参照されてさえいなければ削除できる(拒否の理由は「参照されている
-  こと」だけ)。
-- **コレクションごとの削除も参照を見る**(2026-09)。そのコレクションの**どのアイテムか**を指す
-  参照が 1 件でもあれば **409 `still_referenced`** で拒否する(名前は参照元を最大 3 件)。
-  `?detach=true` は無い: コレクション全体の参照を書き換えるのは、その中身を見ていない運用者には
-  大きすぎる判断なので、外すなら 1 件ずつ(`?detach=true` つきのアイテム削除)行う。
+- `?detach=true` removes the reference from **both copies of the referrer** and then deletes. The
+  detaching writes go through the normal save path, so the index moves together with the value.
+  Everything is detached before deletion, so a mid-way failure never deletes while references remain.
+- Even if it references something itself, it can be deleted as long as it is not referenced (being
+  referenced is the only reason for refusal).
+- **Deleting a whole Collection also inspects references** (2026-09). If there is even one reference
+  pointing at **any item** of that Collection, it is rejected with **409 `still_referenced`** (naming
+  up to 3 referrers). There is no `?detach=true`: rewriting the references of an entire Collection is
+  too large a decision for an operator who has not looked at its contents, so detaching is done one
+  at a time (Item deletion with `?detach=true`).
 
-- **配信 API は公開コピーだけを出し、公開されていない相手を参照から落とす**。落とすのは
-  「サイトが辿れない参照」だからで、管理 API は編集のためにそのまま返す。`?populate=<フィールド名>`
-  を付けると、その参照に**公開コピーの値**(画面と同じ形。画像は `{id,url}`)が 1 段だけ入る。
-  一覧・単一アイテム・単一ページのどこでも効き、**知らない名前は 400**(黙って無視しない)。
-- **並び順は呼ぶ側が決める**(`?sort=`、2026-09)。`sort=<key>` / `sort=-<key>` の 1 つだけで、
-  `id`(既定)/ `published_at` / `created_at` / `updated_at` / **そのコレクションのフィールド名**。
-  同値は **id でタイブレーク**するので、`next_offset` でページを歩いても重複も抜けも出ない。
-  知らないキーや順序を作れない型(画像・配列・複合・リレーション)は 400。
-  **順序を指定すると、その一覧は全件を読んでから並べ替えてページを切る**(フィルタと同じ。
-  1 ページずつでは順序が決まらないため)。既定の並びはこれまでどおり id 昇順で、そちらは
-  格納側のページングのままなので、大きなコレクションでも全件を読みません。
-  **逆引き展開(`?populate=<inverse_name>`)は索引順のまま**で、`?sort=` は効きません
-  (`?where=` の一覧には効きます)。
-- **逆引きも配信で読める**(2026-09)。一覧は `?where=<フィールド>:<値>` で**その参照を持つ
-  公開アイテムだけ**に絞れる(`articles?where=category:3`。値はコレクションの対象ならアイテム id、
-  単一ページの対象ならページ名。ページングと `total` は**絞ったあとの集合**に対する)。
-  `?populate=<inverse_name>` は**このアイテムを参照している公開コンテンツ**を、その側が付けた
-  呼び名(`inverse_name`)のキーで返す(単一アイテム / 単一ページでは `?limit=` が件数の上限。
-  既定 25)。どちらも索引が候補を答え、**公開コピーが実際に参照を持っているか**で決まる。
-- 管理画面の**参照元パネル**、`inverse_name` の一意性検査(スキーマ保存時)、**コレクションごと**の
-  削除の参照チェックまで入っている(2026-09)。アイテム単位の削除と同じく、参照が残るなら 409 で
-  拒否する。
+- **The delivery API returns only the published copy, and drops references whose target is
+  unpublished**. The drop is because "the site cannot follow the reference"; the admin API returns
+  them as is for editing. Adding `?populate=<field name>` fills that reference with **the published
+  copy's value** (the same shape as the screen. Images are `{id,url}`) one level deep. It works on
+  lists, single Items and Single pages alike, and **an unknown name is 400** (not silently ignored).
+- **The caller decides the order** (`?sort=`, 2026-09). One of `sort=<key>` / `sort=-<key>`, where
+  key is `id` (default) / `published_at` / `created_at` / `updated_at` / **a Field name of that
+  Collection**. Ties are **broken by id**, so walking pages with `next_offset` yields no duplicates
+  and no gaps. An unknown key or a type whose order cannot be built (Image, array, Composite,
+  relation) is 400. **When an order is given, that list reads everything and then sorts and slices
+  pages** (same as filtering, because the order cannot be decided one page at a time). The default
+  order is still ascending id, and that one keeps the storage-side paging, so a large Collection does
+  not read everything. **Reverse-lookup expansion (`?populate=<inverse_name>`) stays in index
+  order**, and `?sort=` does not apply (it does apply to a `?where=` list).
+- **Reverse lookup can also be read from delivery** (2026-09). A list can be narrowed with
+  `?where=<field>:<value>` to **only the published Items holding that reference**
+  (`articles?where=category:3`. The value is the Item id for a Collection target and the page name
+  for a Single page target. Paging and `total` apply to **the narrowed set**).
+  `?populate=<inverse_name>` returns **the published content referencing this Item** under the key of
+  the name the other side gave it (`inverse_name`) (for a single Item / Single page, `?limit=` caps
+  the count. Default 25). In both cases the index answers the candidates, and **whether the published
+  copy actually holds the reference** decides.
+- The admin screen's **referrer panel**, the uniqueness check for `inverse_name` (at Schema save) and
+  the reference check for **whole-Collection** deletion are all in place (2026-09). As with per-Item
+  deletion, a remaining reference is rejected with 409.
 
-### 値からアイテムを引く
+### Looking up an Item by value
 
-一意なフィールドは**値が 1 件を指す**ので、両方の API に参照ルートがある(索引の点読みで、
-全件走査はしない)。
+A unique Field **has a value that points at one entry**, so both APIs have a lookup route (a point
+read of the index, no full scan).
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| GET | `/api/models/collections/{name}/items/by/{field}/{value}` | `{ "id": 1, "values": {...} }`(要トークン、一意でないフィールドは 400) |
-| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | 公開アイテム(上記と同じ形) |
+| GET | `/api/models/collections/{name}/items/by/{field}/{value}` | `{ "id": 1, "values": {...} }` (token required; a non-unique Field is 400) |
+| GET | `/api/content/collections/{name}/items/by/{field}/{value}` | The published Item (same shape as above) |
 
-- **管理側は索引が答える**。下書きが値を変更中のアイテムも、公開コピーが使っている値と
-  これから使う値の**どちらでも引ける**(保存が衝突する値と同じ答えになる)。
-- **公開側は公開コピーが決める**。下書きが変更中の値は、公開されるまで 404。いま配信している値は
-  そのまま解決する。
+- **On the admin side the index answers.** An Item whose draft is changing the value can be looked up
+  by **either** the value the published copy uses or the value it is about to use (the same answer as
+  for values that collide on save).
+- **On the public side the published copy decides.** A value the draft is changing gives 404 until
+  published. The value currently being served resolves as is.
 
-### アイテムの名前(タイトル)
+### Item names (titles)
 
-参照は「どのアイテムか」だけを保存するので、**id は読む人に何も言わない**。コレクション(と単一ページ)は
-**どのフィールドがアイテムの名前か**を言える:
+A reference stores only "which Item", so **an id says nothing to the reader**. A Collection (and a
+Single page) can say **which Field is the Item's name**:
 
 ```json
 { "name": "name", "field_type": { "Text": {} }, "required": true,
   "width": 12, "height": 1, "is_title": true }
 ```
 
-- **1 スキーマに 1 つだけ**。2 つ目は保存時に拒否する(「'name' is already the title」)。
-- **1 行として読める型だけ**: Text / Slug / Markdown / Number / Boolean / Date / DateTime / TextEnum。
-  Image・配列・複合・リレーションは拒否する(その 1 行が無いため)。
-- 参照を表示する画面(コレクションの一覧、内容編集画面のチップとピッカー)が、この項目の値を
-  **参照先の名前**として出す。
-  タイトルを決めていないコレクションは今までどおり `categories #3`(参照そのもの)を出す。
-- 値は**保存されているままの形**で答える(画面が描画する)。作業コピーを見るので、公開前に名前を
-  直した場合はその直った名前が出る。
+- **Only one per Schema.** A second is rejected on save ("'name' is already the title").
+- **Only types that read as one line**: Text / Slug / Markdown / Number / Boolean / Date / DateTime /
+  TextEnum. Image, arrays, Composites and relations are rejected (they have no such single line).
+- Screens that display references (the Collection list, the chips and picker in the content edit
+  screen) show this field's value as **the target's name**. A Collection with no title defined still
+  shows `categories #3` (the reference itself) as before.
+- The value is answered **in the form it is stored** (the screen renders it). It reads the working
+  copy, so if the name was corrected before publishing, the corrected name is shown.
 
-**名前をまとめて引く**(管理 API。要トークン):
+**Fetching names in bulk** (admin API. Token required):
 
-| メソッド | パス | 返すもの |
+| Method | Path | What it returns |
 |---|---|---|
-| GET | `/api/models/collections/{name}/items/titles?ids=1,2,3` | `{ "1": "技術", "2": "ニュース" }` |
-| GET | `/api/models/single_pages/titles` | `{ "home": "ホーム" }` |
+| GET | `/api/models/collections/{name}/items/titles?ids=1,2,3` | `{ "1": "Technology", "2": "News" }` |
+| GET | `/api/models/single_pages/titles` | `{ "home": "Home" }` |
 
-- 一覧は「画面に出ている行が指している先」だけを聞く(コレクション丸ごとではない)。1 リクエストは
-  200 id まで。無い id と、タイトルを持たないコレクションの id は**答えに含めない**(画面は参照そのもの
-  を出す)。ページは数が少ないので全部まとめて答える。
+- A list asks only about "the targets of the rows on the screen" (not the whole Collection). One
+  request takes up to 200 ids. Missing ids and ids of a Collection with no title are **not included
+  in the answer** (the screen shows the reference itself). Pages are few, so all of them are answered
+  together.
 
-### 一覧に出す項目(コレクション)
+### Fields shown in the list (Collection)
 
-コレクションの一覧は、**アイテムを探すために編集者が眺める画面**で、項目が十数個あるスキーマでは
-読めない表になる。どの項目がアイテムを見分けさせるかはスキーマの作者の話なので、フィールド側に持つ:
+The Collection list is **the screen an editor scans to find an Item**, and a Schema with a dozen-plus
+fields makes an unreadable table. Which Fields let you tell Items apart is the Schema author's call,
+so it is held on the Field side:
 
 ```json
 { "name": "title", "field_type": { "Text": {} }, "required": true,
   "width": 12, "height": 1, "show_in_list": true }
 ```
 
-- `"show_in_list": true` を付けたフィールドが、そのコレクションの一覧に**スキーマの順**で列になる。
-- **どのフィールドも付けていないスキーマでは、フィールドの列は 1 つも出ない**: id・状態・更新日時だけが
-  並ぶ。どのフィールドがアイテムを見分けさせるかは作者が決めることで、選ばれていないフィールドは
-  誰も求めていない列だから。
-- **画像の列はサムネイル**で出る(url ではなく)。配列なら先頭 3 枚と「+N」。
-- **参照の列は参照先の名前**で出る。相手がタイトルを決めていればその値(例: `技術`)、決めていなければ
-  参照そのもの(`authors #1`、単一ページなら `home`)。参照先の中身を展開するのは配信 API の
-  `?populate=` の仕事。
-- 単一ページと複合フィールド定義には一覧が無いので、この設定は使わない(画面にも出ない)。
-- `width` / `height` が**内容編集画面**の話なのに対し、こちらは**一覧画面**の話。値そのものは
-  今までどおり全部往復する(列に出さない項目も保存・公開・配信はされる)。
-- `false` のときは**ワイヤに出ない**(`unique` と同じ)。付いていないキーは `false` として読む。
+- Fields with `"show_in_list": true` become columns in that Collection's list **in Schema order**.
+- **With no Field marked, no field columns appear at all**: only id, status and updated time are
+  shown. Which Field tells Items apart is the author's decision, and an unselected Field is a column
+  nobody asked for.
+- **An image column shows thumbnails** (not urls). For an array, the first 3 and "+N".
+- **A relation column shows the target's name.** If the target has a title, that value (e.g.
+  `Technology`); otherwise the reference itself (`authors #1`, or `home` for a Single page). Expanding
+  the target's contents is the job of the delivery API's `?populate=`.
+- Single pages and Composite field definitions have no list, so this setting is not used (it does not
+  appear on screen either).
+- `width` / `height` concern the **content edit screen**, whereas this concerns the **list screen**.
+  The values themselves still round-trip completely as before (fields not shown as columns are still
+  saved, published and delivered).
+- When `false` it **does not appear on the wire** (same as `unique`). A key that is absent is read as
+  `false`.
 
-### 一意なフィールド
+### Unique Fields
 
-スキーマのフィールドに `"unique": true` を付けると、その値は**コレクション内で一意**になる
-(いまは **Text のみ**。単一ページと複合フィールド定義では意味が無いので保存時に拒否する)。
+Marking a Schema Field with `"unique": true` makes its value **unique within the Collection**
+(currently **Text only**. It is meaningless for Single pages and Composite field definitions, so it
+is rejected on save).
 
-- **索引は「値 → アイテム id」**。保存のたびに点読み 1 回と条件付き書き込み 1 回で、全件走査は
-  しない(`username` の予約と同じ形)。同時に同じ値を保存しても片方だけが成功する。
-- **空の値は「未設定」**として予約しない。必須でない一意フィールドを空のままにした 2 件は衝突しない。
-- **どのコピーが持っている値も一意**: 公開コピーの値は、下書きが別の値に変更中でも予約を保持する
-  (生きている URL を他のアイテムに取られないため)。下書きのアイテムは作業コピーだけを数える
-  (作成時の公開コピーは配信されない残り物なので、その値を握り続けない)。
-- 値を変更すると**古い値は解放**され、削除でも解放される。publish は「作業コピーの値が公開コピーの
-  値になる」ので、**古い公開値だけを解放**する。
-- 衝突は **409 + `code: "value_taken"` + `field`**。`field` は本文にしか無い任意フィールドで、
-  画面はそれを文言に埋めて「どのフィールドか」を示す。コードは既存の `error-codes.json` の契約に
-  含まれるので、Rust・フロント・カタログの 3 者がずれたらテストが落ちる。
-- **既存データがあるときに有効化する**: スキーマ保存時に 1 回だけコレクションを走査し、重複があれば
-  保存を拒否して該当アイテムを返す。重複が無ければ索引を作ってから保存する(索引が既存アイテムを
-  取りこぼした状態を作らないため)。
-- **`unique` を外すと索引からも外れる**: スキーマ保存のときに、前のスキーマが一意にしていたのに
-  新しいスキーマがそうしないフィールドは、**その値の予約を全部返す**。返さないと、その間に使い回された
-  値を**あとで `unique` を戻したときに「使用中」として拒否**してしまう(実際には誰も持っていないのに)。
+- **The index is "value → Item id"**. Every save does one point read and one conditional write, with
+  no full scan (the same shape as the `username` reservation). Saving the same value concurrently
+  lets only one succeed.
+- **An empty value is not reserved** as "unset". Two entries leaving a non-required unique Field
+  empty do not collide.
+- **The value held by either copy is unique**: the published copy's value keeps its reservation even
+  while the draft is changing to another value (so a live URL is not taken by another Item). A draft
+  Item counts only the working copy (the published copy created at creation is a leftover that is not
+  delivered, so it does not keep holding that value).
+- Changing the value **releases the old value**, and deletion releases it too. Publish makes "the
+  working copy's value become the published copy's value", so it **releases only the old published
+  value**.
+- A collision is **409 + `code: "value_taken"` + `field`**. `field` is an optional field present only
+  in the body, and the screen embeds it in the message to show "which field". The code is part of the
+  existing `error-codes.json` contract, so a mismatch among the three parties - Rust, frontend and
+  catalogue - fails a test.
+- **Enabling it with existing data**: at Schema save the Collection is scanned once, and if there are
+  duplicates the save is rejected and the offending Items are returned. If there are no duplicates
+  the index is built before saving (so as not to create a state where the index missed existing
+  Items).
+- **Removing `unique` removes it from the index too**: at Schema save, a Field that the previous
+  Schema made unique but the new Schema does not has **all its reservations returned**. Otherwise a
+  value reused in the meantime would be **rejected as "in use" when `unique` is put back later** (even
+  though nobody actually holds it).
 
-### Slug(URL に使う値)
+### Slug (the value used in URLs)
 
-`{"Slug": {}}` は **URL に使える文字列**の型。`unique` を付けた Text との違いは**正規化**で、
-これがあるから「同じ slug の綴り違いが 2 件できる」ことがなくなる。
+`{"Slug": {}}` is a type for **a string usable in a URL**. The difference from Text with `unique` is
+**normalization**, which is what prevents "two Items with different spellings of the same slug".
 
-- **正規形は小文字の ASCII 英数字と、その間の 1 個のハイフン**(`[a-z0-9]` の連なりを `-` で
-  つないだ形)。それ以外の文字は区切りとして扱い、**非 ASCII の文字はローマ字化せず落とす**
-  (`café` → `caf`)。勝手な綴りを URL に載せないため。
-- **正規化は書き込み時**。保存される値・一意索引に入る値・URL が引く値がすべて同じになる。
-  **参照時も問い合わせた値を正規化する**ので、`Hello%20World` でも `hello-world` でも同じ
-  アイテムに当たる(管理 API の `/items/by/{field}/{value}` と配信 API の両方)。
-- **Slug は型として一意**。`unique` は冗長なので拒否する。空は「URL なし」として予約しない。
-- **長さの上限は 200 文字**(型の性質。設定ではない)。超えると `field_too_long`。
-- 正規化しても何も残らない値(日本語だけの値など)は **`invalid_slug`**。空として黙って保存
-  しない。
-- スキーマで `generate_from` に**同じスキーマのテキスト項目**を指定できる。内容編集画面が
-  「〜から生成」ボタンを出すだけで、**自動では動かない**(公開済みの URL が勝手に動かないため)。
-- **既存の Text を Slug に変える**とき、保存されている値が正規形でなければスキーマ保存を
-  **拒否**する(索引に、どの問い合わせとも一致しない綴りが入るため)。拒否は該当アイテムを
-  名指しするので、その値を正規形に直してから保存する。
-- 単一ページと複合フィールド定義では使えない(ページの住所はページ名、複合の中身は
-  アイテムに埋め込まれるため)。
+- **The canonical form is lowercase ASCII alphanumerics joined by a single hyphen** (runs of
+  `[a-z0-9]` joined with `-`). Any other character is treated as a separator, and **non-ASCII
+  characters are dropped rather than romanized** (`café` → `caf`). So that arbitrary spellings do not
+  end up in URLs.
+- **Normalization happens on write.** The stored value, the value in the unique index and the value a
+  URL looks up are all the same. **Lookups normalize the queried value too**, so both `Hello%20World`
+  and `hello-world` hit the same Item (both in the admin API's `/items/by/{field}/{value}` and in the
+  delivery API).
+- **Slug is unique as a type**. `unique` is redundant and rejected. Empty is not reserved, as "no
+  URL".
+- **The length limit is 200 characters** (a property of the type, not a setting). Over it gives
+  `field_too_long`.
+- A value that leaves nothing after normalization (such as a Japanese-only value) is **`invalid_slug`**.
+  It is not silently saved as empty.
+- A Schema can point `generate_from` at **a Text field in the same Schema**. The content edit screen
+  only shows a "generate from …" button; it **does not run automatically** (so published URLs do not
+  move on their own).
+- **When changing an existing Text into Slug**, if a stored value is not in canonical form the Schema
+  save is **rejected** (the index would contain a spelling that matches no query). The rejection names
+  the offending Items, so the value is fixed to canonical form and then saved.
+- It cannot be used on Single pages or Composite field definitions (a page's address is its page name,
+  and a Composite's contents are embedded in the Item).
 
-### 3.0 値の検証(必須・文字数)と拒否の形
+### 3.0 Value validation (required, length) and the shape of a refusal
 
-スキーマが値について決めたことは、**サーバーが検証し、画面が同じことを先に言う**。ずれると
-「保存してから初めて分かる」ことになるので、拒否は機械可読な形で返す。
+What the Schema decides about values is **validated by the server, and the screen says the same thing
+first**. A mismatch would mean "you only find out after saving", so refusals are returned in a
+machine-readable shape.
 
-| 規則 | スキーマ | 拒否の `code` |
+| Rule | Schema | Refusal `code` |
 |---|---|---|
-| 必須の値が空 | `"required": true` | `field_required` |
-| 文字数の上限を超えた | `{"Text":{"max_length":N}}`(`Markdown` も同じ) | `field_too_long` |
-| 文字数の下限に足りない(空は除く) | `{"Text":{"min_length":N}}` | `field_too_short` |
-| 値の型が合わない(配列要素を含む) | `Array` の要素型 | `field_type_mismatch` |
-| 選択肢にない値 | `{"TextEnum":[...]}` | `invalid_enum_value` |
-| (拒否ではない)複数行の入力欄 | `{"Text":{"multiline":true}}` | — |
-| 参照先の複合フィールドが無い | `{"CompositeField":{"id":"..."}}` | `unknown_composite_field` |
-| 複合の id がスキーマと違う | 同上 | `composite_id_mismatch` |
-| 配列の中に配列 | `Array` | `nested_arrays` |
-| Slug に URL へ使える文字が無い | `{"Slug":{}}` | `invalid_slug` |
+| A required value is empty | `"required": true` | `field_required` |
+| Over the maximum length | `{"Text":{"max_length":N}}` (`Markdown` too) | `field_too_long` |
+| Under the minimum length (empty excluded) | `{"Text":{"min_length":N}}` | `field_too_short` |
+| The value type does not match (including array elements) | the `Array` element type | `field_type_mismatch` |
+| A value not among the options | `{"TextEnum":[...]}` | `invalid_enum_value` |
+| (not a refusal) a multi-line input | `{"Text":{"multiline":true}}` | — |
+| The referenced Composite field does not exist | `{"CompositeField":{"id":"..."}}` | `unknown_composite_field` |
+| The Composite's id differs from the Schema | same as above | `composite_id_mismatch` |
+| An array inside an array | `Array` | `nested_arrays` |
+| A Slug with no URL-usable character | `{"Slug":{}}` | `invalid_slug` |
 
-- **文字数は文字(コードポイント)で数える**。バイト数ではないので、`max_length: 20` は日本語
-  20 文字もラテン文字 20 文字も通す。画面側も同じ数え方をする(`[...value].length`)。
-- **`multiline` は Text の見た目**(2026-09 追加)。`true` なら1行の入力欄ではなく複数行の箱に
-  なる。Markdown は元から箱なので指定しない(あっても無視される)。**省略時は `false`** で、古い
-  スキーマは今までどおり1行。箱の**高さ**はフィールドの `height`(レイアウトの最小の高さ。
-  72px 単位)から決まり、1単位 = テキスト3行として `rows` になる(最小は Text が3行、Markdown が
-  6行 = 変更前と同じ見た目)。**サーバーは値の改行を制限しない**: `multiline` は入力欄の話で、
-  検証の話ではない。
-- **`field` は入力への経路**: `title`、`tags[2]`、`seo.description`。入れ子の中の拒否でも、
-  画面がどの入力欄を強調すればよいか分かる(`.field-cell.problem`)。
-- **「必須」は公開のときに問う**(2026-09 変更)。保存が書くのは**作業コピー**で、それは編集者が
-  途中まで書いたものだから、必須が空でも保存できる。サイトに出る瞬間 = 公開で初めて完全性を
-  要求し、`field_required` で**どの項目か**を返す。理由は2つ: (a) 必須項目を後からスキーマへ
-  足したとき、既存アイテムが**一切保存できなくなる**のを避ける、(b) 複製が一意項目を空にした
-  下書きを作れる(`§5.12` のとおり)。必須以外の規則(型・文字数・選択肢・Slug)は保存時も見る。
-- 値の検証以外の状況コード(認証・重複・公開の競合など)は `assets/error-codes.json` の
-  `situational` に並ぶ。たとえば **`draft_changed`** は公開が保存と競合したときの 409(下記)。
-- 拒否は **400 + `code` + `field` + 英語の `message`**。`code` は `assets/error-codes.json` の
-  契約に含まれ、画面は自分の言語の文言を出す。`message` はコードを知らないクライアントとログのため。
-- 画面側では、文字数の制限は**保存前に**入力欄へ反映する(`maxlength` / `minlength` と件数のヒント)。
-  ブラウザが守れない下限もあるので、ウィジェット自身が問題を報告して保存を止める。
-- 配列は JSON で編集するので、画面は**宣言された要素型をヒントに出す**(`要素の型: Number`)。
-  あわせて「宣言されたどの型でも読めない要素」だけを保存前に止める。この検査は控えめで、
-  サーバーの判定(宣言順に試して最初に読めた型を採る)を置き換えるものではない。
+- **Length counts characters (code points)**. It is not bytes, so `max_length: 20` passes both 20
+  Japanese characters and 20 Latin characters. The screen counts the same way (`[...value].length`).
+- **`multiline` is how Text looks** (added 2026-09). When `true` it is a multi-line box rather than a
+  one-line input. Markdown is already a box, so it is not specified (and ignored if present).
+  **Absent means `false`**, and old Schemas keep their one line. The box's **height** comes from the
+  Field's `height` (the layout minimum height, in 72px units), with 1 unit = 3 lines of text for
+  `rows` (the minimum is 3 lines for Text and 6 for Markdown = the same look as before the change).
+  **The server does not restrict newlines in the value**: `multiline` is about the input, not about
+  validation.
+- **`field` is the path to the input**: `title`, `tags[2]`, `seo.description`. Even for a refusal
+  inside nesting, the screen knows which input to highlight (`.field-cell.problem`).
+- **"Required" is asked at publish time** (changed 2026-09). What a save writes is the **working
+  copy**, which the editor has written only part of, so an empty required field still saves. The
+  moment it goes on the site = publish is when completeness is first required, returning **which
+  field** with `field_required`. There are two reasons: (a) to avoid **making existing Items
+  impossible to save at all** when a required field is added to a Schema later, and (b) so duplication
+  can create a draft with unique fields emptied (as in `§5.12`). Rules other than required (type,
+  length, options, Slug) are checked on save too.
+- Situational codes other than value validation (auth, conflicts, publish races, etc.) are listed
+  under `situational` in `assets/error-codes.json`. For example, **`draft_changed`** is the 409 when a
+  publish raced with a save (below).
+- A refusal is **400 + `code` + `field` + an English `message`**. `code` is part of the
+  `assets/error-codes.json` contract, and the screen shows wording in its own language. `message` is
+  for clients that do not know the code and for logs.
+- On the screen, length limits are applied to the input **before saving** (`maxlength` / `minlength`
+  and a count hint). Some lower bounds the browser cannot enforce, so the widget itself reports the
+  problem and stops the save.
+- Arrays are edited as JSON, so the screen **shows the declared element type as a hint** (`Element
+  type: Number`). It also stops before saving only "elements that none of the declared types can
+  read". This check is conservative and does not replace the server's decision (try in declaration
+  order and take the first type that reads).
 
-### 3.1 ページネーション
+### 3.1 Pagination
 
-アイテム一覧は `?limit=&offset=` を受け付ける。並び順は**アイテム id の昇順**で固定なので、
-`offset` を進めれば重複も抜けもなく全件を辿れる。
+Item lists accept `?limit=&offset=`. The order is fixed to **ascending Item id**, so advancing
+`offset` walks everything with no duplicates and no gaps.
 
-| | 公開 API (`/api/content/collections/{name}`) | 管理 API (`/api/models/collections/{name}/items`) |
+| | Public API (`/api/content/collections/{name}`) | Admin API (`/api/models/collections/{name}/items`) |
 |---|---|---|
-| `limit` 未指定 | `50` 件(`total` と `next_offset` で続きが分かる) | **全件**(API の既定。管理画面は常に `25` 件ずつ要求する) |
-| `limit` の上限 | `200` | `200` |
-| 総件数 | レスポンスの `total` | `X-Total-Count` ヘッダ |
-| 本文の形 | 変わらず `{schema, items, ...}` | 変わらず `[[id, values], ...]` |
+| `limit` omitted | `50` (`total` and `next_offset` show the continuation) | **Everything** (the API default. The admin screen always requests `25` at a time) |
+| `limit` maximum | `200` | `200` |
+| Total count | `total` in the response | The `X-Total-Count` header |
+| Body shape | Still `{schema, items, ...}` | Still `[[id, values], ...]` |
 
-- `limit=0`・`limit=201`・数値でない `limit` は **400**。黙って既定値に丸めたりはしない。
-- `offset` が末尾を越えた場合はエラーではなく**空の最終ページ**(`next_offset: null`)。
-- **公開 API の 1 ページは件数だけでなくバイト数でも切られる**(`MAX_RESPONSE_BYTES`、
-  既定 4MB)。Lambda は 1 回の呼び出しに 6MB までしか答えられず、base64 化で 3 割増しになるため、
-  大きなアイテムを 50 件返そうとすると**関数が失敗して何も届かない**。収まらない分は次のページに
-  回し、`next_offset` は**収まらなかった最初のアイテム**を指す。したがって `next_offset` を辿る
-  限り抜けも重複もない(1 件だけで予算を超える場合は、空のページで無限ループにならないよう
-  その 1 件を返す)。件数で辿る実装はこの場合に取りこぼすので、**`offset` ではなく
-  `next_offset` を次の `offset` に使う**こと。
-- 管理 API の一覧は件数で切る(管理画面がページ数を数えて出すため、黙って短くすると
-  行が飛ぶ)。ページを指定しない全件取得が大きすぎる場合は、Lambda 側の応答ガードが
-  CMS のエラー(413)で答える。
-- `total` は「このコレクションの公開アイテム数」(公開 API)/「全アイテム数」(管理 API)。
-- 管理画面の一覧は `mat-paginator` から 10 / 25 / 50 / 100 件を選べる。最終ページの最後の 1 件を
-  削除したときは 1 つ前のページへ戻る(空のページに取り残されないように)。
-- 現状はアダプタが全件読んでから切り出す。ページング自体は API の契約なので、
-  DynamoDB アダプタでは `Limit` / `ExclusiveStartKey` に押し下げる余地がある。
-- on-prem アダプタは**ストレージ操作を 1 つずつ直列化**している。LMDB はトランザクション中に
-  名前付き DB を開けず、このアダプタは操作ごとにストアを開くため、同時アクセスを許すと
-  500 になる(管理画面は一覧・状態・ナビゲーションを並行して取りに行くので実際に踏んでいた)。
-  スループットは単一ライター相当だが、同時リクエストで壊れることはない。
-  読み書きを並列化するのは、スケールアウトを担う AWS アダプタ側の課題。
+- `limit=0`, `limit=201` and a non-numeric `limit` are **400**. Nothing is silently rounded to the
+  default.
+- An `offset` past the end is not an error but **an empty final page** (`next_offset: null`).
+- **A page of the public API is cut by bytes as well as by count** (`MAX_RESPONSE_BYTES`, default
+  4MB). Lambda can answer at most 6MB per invocation, and base64 encoding adds 30%, so trying to
+  return 50 large Items **makes the function fail and nothing arrives**. What does not fit is pushed
+  to the next page, and `next_offset` points at **the first Item that did not fit**. So as long as
+  `next_offset` is followed there are no gaps and no duplicates (if a single Item exceeds the budget,
+  that one Item is returned so an empty page does not loop forever). An implementation that walks by
+  count misses Items in this case, so **use `next_offset` as the next `offset`, not `offset`**.
+- Admin API lists are cut by count (the admin screen computes and shows a page count, and a silently
+  short page skips rows). If fetching everything without paging is too large, the Lambda-side response
+  guard answers with the CMS error (413).
+- `total` is "the number of published Items in this Collection" (public API) / "the number of all
+  Items" (admin API).
+- The admin screen list lets you pick 10 / 25 / 50 / 100 from `mat-paginator`. Deleting the last Item
+  of the last page moves back one page (so you are not left on an empty page).
+- Currently the adapter reads everything and then slices. Paging itself is part of the API contract,
+  so the DynamoDB adapter has room to push it down to `Limit` / `ExclusiveStartKey`.
+- The on-prem adapter **serializes storage operations one by one**. LMDB cannot open a named DB inside
+  a transaction, and this adapter opens the store per operation, so allowing concurrent access gives
+  500s (the admin screen fetches lists, statuses and navigation in parallel and was in fact hitting
+  this). Throughput is equivalent to a single writer, but concurrent requests do not corrupt anything.
+  Parallelizing reads and writes is a task for the AWS adapter, which handles scale-out.
 
 ```bash
-# 1 ページ目
+# First page
 curl 'http://127.0.0.1:8000/content/collections/blog?limit=2'
 # => {"schema":[...],"items":[{...},{...}],"total":5,"limit":2,"offset":0,"next_offset":2}
 
-# 最終ページまで next_offset を辿る
+# Follow next_offset to the last page
 curl 'http://127.0.0.1:8000/content/collections/blog?limit=2&offset=2'
 
-# 管理側: 総件数はヘッダで
+# Admin side: the total count is in the header
 curl -D - 'http://127.0.0.1:8000/models/collections/blog/items?limit=2' -H "Authorization: Bearer $TOKEN"
 # => x-total-count: 5
 ```
 
-### 3.2 `updated_at` と `created_at`
+### 3.2 `updated_at` and `created_at`
 
-アイテム(単一ページはその 1 件)には、公開状態とは別に 2 つの時刻が付く。
+An Item (or the single entry of a Single page) carries two timestamps besides the publish status.
 
-| フィールド | 出る場所 | 意味 |
+| Field | Where it appears | Meaning |
 |---|---|---|
-| `created_at` | 管理 API | 値が最初に保存された時刻 |
-| `updated_at` | 管理 API | **内容が最後に変わった**時刻(保存、または変更を公開したとき) |
-| `published_at` | 両方 | **最初に公開した**時刻(unpublish しても保持) |
-| `last_published_at` | 両方 | **最後に公開した**時刻(unpublish で `null` に戻る) |
-| `published_by` | 管理 API | 最後に公開した**アカウント**(`{ id, username }`)。unpublish で `null` に戻る |
+| `created_at` | Admin API | When the value was first saved |
+| `updated_at` | Admin API | When **the content last changed** (on save, or when changes were published) |
+| `published_at` | Both | When it was **first published** (kept through unpublish) |
+| `last_published_at` | Both | When it was **last published** (returns to `null` on unpublish) |
+| `published_by` | Admin API | The **Account** that last published (`{ id, username }`). Returns to `null` on unpublish |
 
-公開 API に `updated_at` は**出しません**。2 コピーでは「編集した時刻」と「公開物が変わった
-時刻」が別で、未公開の編集を `lastmod` として見せてしまうためです。公開物の最終更新は
-`published_at` を使ってください(公開コピーが変わるのは publish のときだけ)。
+The public API does **not expose** `updated_at`. With two copies, "the time it was edited" and "the
+time the published thing changed" differ, and it would show unpublished edits as `lastmod`. Use
+`published_at` for the published thing's last update (the published copy changes only on publish).
 
-- **`updated_at` は「内容が最後に変わった時刻」**。保存で進み、**変更を公開したとき**にも進む
-  (何も待っていない状態での publish では動かない)。未公開の編集でも進むので、公開 API には
-  出しません。
-- サイトの差分ビルドに使うのは **`last_published_at`**(公開物が変わった時刻)。`published_at` は
-  初回公開日なので、再公開では動きません(記事の公開日として表示する用)。
-- 値を保存すると `updated_at` だけが進み、`created_at` と公開状態は変わらない
-  (公開済みのアイテムを編集しても draft に戻らない)。
-- この機能より前に保存された内容は `created_at` / `updated_at` が `null` になる(移行不要)。
-  タイムスタンプを持たない古いメタデータレコードもそのまま読める。
-- 管理 API のメタデータは `has_draft` も返すので、公開済み + 未公開の変更、を見分けられる。
-- `published_by` は**監査用**: 公開した時点の識別子(username)と id を記録する。名前はその時の
-  値なので、アカウントが後で改名・削除されても記録は読める。`published_at` と同じく unpublish で消える
-  (サイトから下りたものに「誰が公開したか」は残らない)。**公開 API には出しません**。
+- **`updated_at` is "when the content last changed"**. It advances on save and also **when changes are
+  published** (it does not move for a publish with nothing pending). It advances for unpublished edits
+  too, so it is not exposed in the public API.
+- What a site's incremental build uses is **`last_published_at`** (when the published thing changed).
+  `published_at` is the first publish date, so it does not move on re-publish (it is for showing as
+  the article's publish date).
+- Saving a value advances only `updated_at`, and does not change `created_at` or the publish status
+  (editing a published Item does not put it back to draft).
+- Content saved before this feature has `created_at` / `updated_at` as `null` (no migration needed).
+  Old metadata records without timestamps also read as is.
+- Admin API metadata also returns `has_draft`, so published + unpublished changes can be told apart.
+- `published_by` is **for auditing**: it records the identifier (username) and id at the time of
+  publishing. The name is the value at that time, so the record stays readable even if the Account is
+  later renamed or deleted. Like `published_at`, it is cleared by unpublish (what came down from the
+  site does not keep "who published it"). **It is not exposed in the public API.**
 
-#### 移行のための日時(他の CMS から取り込む)
+#### Timestamps for migration (importing from another CMS)
 
-他の CMS からコンテンツを移すとき、**元の日付をそのまま持ち込みたい**。作成日が「移行した日」に
-なると、一覧もサイトの並びも意味を失うため。そこで管理 API は日時の**設定**も受け付ける:
+When moving content from another CMS, **the original dates should be carried over as they are**. If
+the creation date became "the day of migration", both the list and the site's ordering would lose
+their meaning. So the admin API also accepts **setting** the timestamps:
 
-| メソッド | パス | 本文 |
+| Method | Path | Body |
 |---|---|---|
 | PUT | `/api/models/collections/{name}/items/{id}/metadata` | `{ "created_at"?, "updated_at"?, "published_at"?, "last_published_at"? }` |
-| PUT | `/api/models/single_pages/{name}/item/metadata` | 同上 |
-| PUT | `/api/models/images/{id}` | `{ "uploaded_at" }`(画像は 1 つだけ。表示専用の値) |
+| PUT | `/api/models/single_pages/{name}/item/metadata` | Same as above |
+| PUT | `/api/models/images/{id}` | `{ "uploaded_at" }` (images have only one; a display-only value) |
 
-- **パッチ**: 書いたフィールドだけが変わる。指定しなかった日時・`status`・`published_by` はそのまま
-  なので、**編集中・公開中のコンテンツに並行して走らせても壊れない**(保存や公開と同じく、読みと
-  書きはアダプタ側で 1 手順)。
-- **`null` で消すことはできない**。「書かなければ触らない」と「null なら忘れる」の 2 通りを
-  呼び出し側に区別させる価値が無いため。
-- **公開日時(`published_at` / `last_published_at`)は公開権限が要る**。ビルドが差分を取る値なので、
-  編集権限とは別。作成日・更新日は編集権限で足りる。
-- **ありえない日時は拒否**: 未来(この CMS の時計 + 60 秒を超えるもの)、`updated_at < created_at`、
-  `last_published_at < published_at` は 400。タイムゾーンを二重に適用した、年を打ち間違えた、が
-  典型で、保存してしまうと並べ替えるまで気づけない。
-- **存在しないアイテム/ページ/画像は 404**。メタデータだけの孤立レコードを作らないため。
-- 典型的な移行の順序: **作成 → 公開 → 日時を設定**(公開は `published_at` を「今」にするので、
-  最後に本来の日付で上書きする)。単一ページは `PUT …/item` の後 `PUT …/item/metadata`。
+- **A patch**: only the written fields change. Timestamps not given, `status` and `published_by` stay
+  as they are, so **it is safe to run concurrently with content being edited or published** (as with
+  save and publish, the read and write are one step in the adapter).
+- **`null` cannot erase.** There is no value in making callers distinguish the two cases "not written
+  means untouched" and "null means forget".
+- **The publish timestamps (`published_at` / `last_published_at`) need publish permission.** They are
+  the values a build diffs against, so they are separate from edit permission. Creation and updated
+  dates need only edit permission.
+- **Impossible timestamps are rejected**: a future time (more than this CMS's clock + 60 seconds),
+  `updated_at < created_at` and `last_published_at < published_at` are 400. Applying a timezone twice
+  and mistyping the year are typical, and once saved the mistake is not noticed until things are
+  reordered.
+- **A missing Item / page / image is 404.** So as not to create orphan metadata records.
+- The typical migration order: **create → publish → set the timestamps** (publish sets `published_at`
+  to "now", so it is overwritten last with the intended date). For a Single page, `PUT …/item` then
+  `PUT …/item/metadata`.
 
 
-#### 例
+#### Example
 
 ```bash
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin@example.com","password":"..."}' | jq -r .token)
 
-# 公開する
+# Publish
 curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/publish \
   -H "Authorization: Bearer $TOKEN"
 # => {"status":"published","published_at":"2026-09-13T07:19:42.672723691Z",
 #     "published_by":{"id":"...","username":"admin@example.com"},"created_at":"...","updated_at":"..."}
 
-# 誰でも読める
+# Anyone can read
 curl http://127.0.0.1:8000/content/collections/blog
 # => {"schema":[...],"items":[{"id":1,"published_at":"...","updated_at":"...","values":{"title":"Hello"}}],"total":1,"limit":50,"offset":0,"next_offset":null}
 ```
 
-## 4. Gatsby からの使い方
+## 4. Using it from Gatsby
 
 ```text
-GET /api/content/collections                → 公開コレクションの一覧
-GET /api/content/collections/{name}         → スキーマ + 公開アイテム(1 ページ分)
-GET /api/content/collections/{name}?offset= → next_offset が null になるまで繰り返す
-GET /api/content/single-pages/{name}        → スキーマ + 単一ページの値
+GET /api/content/collections                → List of published Collections
+GET /api/content/collections/{name}         → Schema + published Items (one page)
+GET /api/content/collections/{name}?offset= → Repeat until next_offset is null
+GET /api/content/single-pages/{name}        → Schema + the Single page's values
 ```
 
-ビルド時にこれらを取得し、Gatsby のノードとして `createPages` する薄い source plugin を
-書くのが素直な形。`schema` が同梱されているので、値の解釈に追加リクエストは要らない。
-再ビルドの起動は Webhook(第 5 節)に任せる。CMS は「何か変わった」ことだけを通知し、
-サイト側はいつもの手順でビルドする、という分担にしている。
+The straightforward form is to fetch these at build time and write a thin source plugin that
+`createPages` them as Gatsby nodes. Because `schema` is bundled in, interpreting values needs no extra
+request. Starting a rebuild is left to Webhooks (section 5). The division of labour is that the CMS
+only notifies that "something changed", and the site builds by its usual procedure.
 
-ページを跨ぐときは `next_offset` をそのまま `?offset=` に渡す。全件を舐めるのはビルド時の
-一度きりなので、`updated_at` を保持しておけば次回以降は「前回より新しいアイテムだけ」を
-処理する差分ビルドにも広げられる。
+When crossing pages, pass `next_offset` straight into `?offset=`. Reading everything happens only
+once, at build time, so keeping `updated_at` around allows extending to an incremental build that
+processes "only Items newer than last time" on subsequent runs.
 
-`/api/content/collections` を起点にすると「公開アイテムが1つも無いコレクション」は列挙されない。
-空のコレクションもページにしたい場合は `/api/models/collections` (要トークン)を使うか、
-サイト側で一覧を固定する。
+Starting from `/api/content/collections` does not list "Collections with no published Items". To make
+pages for empty Collections too, use `/api/models/collections` (token required) or fix the list on
+the site side.
 
-## 5. Webhook(公開・非公開の通知)
+## 5. Webhook (publish / unpublish notifications)
 
-サイトの再ビルドを起動するために、`publish` / `unpublish` のたびに設定した URL へ JSON を POST する。
+To start a site rebuild, a JSON body is POSTed to the configured URL on every `publish` /
+`unpublish`.
 
-### 設定(環境変数)
+### Configuration (environment variables)
 
-| 変数 | 意味 |
+| Variable | Meaning |
 |---|---|
-| `WEBHOOK_URLS` | 通知先(カンマ区切り)。未設定または空なら webhook は無効。`http` / `https` のみ受け付け、URL の誤りは**起動時**にエラーになる |
-| `WEBHOOK_SECRET` | 本文の HMAC-SHA256 署名鍵(任意)。未設定なら署名せずに送る |
+| `WEBHOOK_URLS` | Notification targets (comma separated). Unset or empty disables the webhook. Only `http` / `https` are accepted, and a bad URL is an error **at startup** |
+| `WEBHOOK_SECRET` | The HMAC-SHA256 signing key for the body (optional). If unset, the body is sent unsigned |
 
-### リクエスト
+### Request
 
 ```http
 POST /hook HTTP/1.1
@@ -642,20 +710,21 @@ X-CMS-Signature: sha256=...
 }
 ```
 
-| `event` | 意味 |
+| `event` | Meaning |
 |---|---|
-| `collection_item.published` / `collection_item.unpublished` | アイテムの公開状態が変わった(`collection` と `id`) |
-| `single_page.published` / `single_page.unpublished` | 単一ページの公開状態が変わった(`page`) |
+| `collection_item.published` / `collection_item.unpublished` | An Item's publish status changed (`collection` and `id`) |
+| `single_page.published` / `single_page.unpublished` | A Single page's publish status changed (`page`) |
 
-- 本文に**値は含まない**。受け取った側が必要な `/api/content/*` を取りに行く(全件を送ると本文が
-  肥大し、直後の再取得と二重管理になるため)。
-- `published_at` は publish の時刻、unpublish では `null`。`occurred_at` はイベント発生時刻。
-- `X-CMS-Delivery` は配信ごとの UUID で、受信側の重複排除に使える。
+- **No values are included** in the body. The receiver goes and fetches the `/api/content/*` it needs
+  (sending everything would bloat the body and duplicate management with the immediate re-fetch).
+- `published_at` is the publish time, and `null` for unpublish. `occurred_at` is the time the event
+  occurred.
+- `X-CMS-Delivery` is a per-delivery UUID and can be used by the receiver for deduplication.
 
-### 署名の検証(HMAC-SHA256)
+### Signature verification (HMAC-SHA256)
 
-`X-CMS-Signature` は `sha256=` + **生のリクエストボディ**に対する HMAC-SHA256(16 進小文字)。
-JSON をパースして再シリアライズするとバイト列が変わるので、必ず生ボディで検証すること。
+`X-CMS-Signature` is `sha256=` + the HMAC-SHA256 (lowercase hex) over **the raw request body**.
+Parsing the JSON and re-serializing changes the bytes, so always verify against the raw body.
 
 ```python
 expected = "sha256=" + hmac.new(SECRET, raw_body, hashlib.sha256).hexdigest()
@@ -663,447 +732,501 @@ if not hmac.compare_digest(request.headers["X-CMS-Signature"], expected):
     return 401
 ```
 
-### 配信の性質(重要)
+### Delivery properties (important)
 
-- 配信は**リクエストを待たせない**。publish は状態を保存した時点で応答し、送信はバックグラウンドで行う。
-- 失敗時は 500ms → 1s の間隔で最大 3 回試行する。`4xx` は再試行しない(受信側が理解して拒否しているため)。
-- 受信先が落ちていても publish は成功する(200)。失敗した配信はサーバログの
-  `webhook delivery failed` に出る。
-- 複数の URL は独立して配信される。1 つが落ちても他は受け取る。
-- `https` 宛の証明書検証は**デプロイ先のトラストストア**を使う(ルート証明書を同梱しない)。
-  CA 証明書を持たない最小構成のコンテナでは検証に失敗するので、デプロイ先にシステムの
-  CA バンドルがあることを確認する。暗号実装は `ring` を起動時に登録している
-  (`reqwest` 0.13 はプロバイダを同梱しないため)。
-- `publish` が 404 になるなど**状態が保存されなかった場合は送らない**。
-- **outbox は用意しない**(現時点の方針): 配信前にプロセスが落ちるとそのイベントは失われる。
-  「再ビルドを起動する」用途では取りこぼしても次の publish でやり直せるため、許容している。
-- **AWS Lambda では応答後に実行環境が凍結され得る**ため、バックグラウンド送信が完了しない可能性がある。
-  Lambda に載せる際は SQS / EventBridge 経由にするか、配信を同期化する必要がある。
-- 順序は保証しない。受信側は「再ビルドを起動する」程度の使い方を想定している。
+- Delivery **does not make the request wait**. Publish responds as soon as the status is saved, and
+  the send happens in the background.
+- On failure it retries up to 3 times at 500ms → 1s intervals. `4xx` is not retried (the receiver
+  understood and refused).
+- Publish succeeds (200) even if the receiver is down. A failed delivery appears in the server log as
+  `webhook delivery failed`.
+- Multiple URLs are delivered independently. If one is down the others still receive.
+- Certificate verification for `https` uses **the deployment target's trust store** (no root
+  certificates are bundled). A minimal container without CA certificates fails verification, so
+  confirm that the deployment target has a system CA bundle. The crypto implementation registers
+  `ring` at startup (because `reqwest` 0.13 does not bundle a provider).
+- **Nothing is sent when the status was not saved**, such as when `publish` is a 404.
+- **No outbox is provided** (the current policy): if the process dies before delivery, that event is
+  lost. For the "start a rebuild" use case a missed event can be redone by the next publish, so this
+  is accepted.
+- **On AWS Lambda the execution environment may be frozen after the response**, so a background send
+  may not complete. When running on Lambda, delivery must go through SQS / EventBridge or be made
+  synchronous.
+- Order is not guaranteed. The receiver is assumed to use it for little more than "start a rebuild".
 
-## 5.5 権限
+## 5.5 Permissions
 
-| 操作 | 必要 |
+| Operation | Required |
 |---|---|
-| 読む(下書きを含む) | `can_view` |
-| 値の作成・編集(作業コピー) | `can_edit` |
-| 公開 / 非公開、コンテンツの削除 | `can_publish` |
-| スキーマ・コレクション・単一ページ・複合フィールドの変更 | `is_admin` |
-| アカウント管理(`/api/auth/users`) | `is_admin` |
-| 画像のアップロード(`/api/models/images/get_upload_url`) | **どこか 1 つでも `can_edit`** |
-| 画像の変更・差し替え・削除 | `can_edit`(アカウント全体) |
+| Read (including drafts) | `can_view` |
+| Create and edit values (working copy) | `can_edit` |
+| Publish / unpublish, delete content | `can_publish` |
+| Change Schemas, Collections, Single pages, Composite fields | `is_admin` |
+| Account management (`/api/auth/users`) | `is_admin` |
+| Image upload (`/api/models/images/get_upload_url`) | **`can_edit` on any one resource** |
+| Image change, replacement, deletion | `can_edit` (account-wide) |
 
-ロールはこのフラグの組み合わせとして扱う。
+Roles are treated as combinations of these flags.
 
-| ロール | can_view | can_edit | can_publish | is_admin |
+| Role | can_view | can_edit | can_publish | is_admin |
 |---|---|---|---|---|
-| 確認(閲覧のみ) | ✓ | – | – | – |
-| 編集(下書きまで) | ✓ | ✓ | – | – |
-| 公開(編集 + 公開操作) | ✓ | ✓ | ✓ | – |
-| 管理者 | ✓ | ✓ | ✓ | ✓ |
+| Viewer (view only) | ✓ | – | – | – |
+| Editor (up to drafts) | ✓ | ✓ | – | – |
+| Publisher (edit + publish operations) | ✓ | ✓ | ✓ | – |
+| Admin | ✓ | ✓ | ✓ | ✓ |
 
-判定は「読み取りは `can_view`、それ以外は `can_edit`」を 1 か所のミドルウェアで行い、
-メソッドだけでは決まらないもの(公開・削除・構造変更)はハンドラ側で追加判定する。
-**画像はどのコレクション・ページにも属さない**ので、判定するリソースが無い。そこで
-**アップロードだけは「どこか 1 つでも `can_edit`」**とし(1 コレクションだけ任された編集者にも、
-そのコレクションが使う画像を上げる手段が要る)、**既にある画像を変える・消すのはアカウント全体の
-`can_edit`** のままにする(他の内容が使っている可能性があるため)。
-**編集は公開コピーに触れない**ので、`can_edit` だけのロールを安全に運用できる。
+The decision "reads use `can_view`, everything else uses `can_edit`" is made in one place of
+middleware, and things that the method alone cannot decide (publish, delete, structural changes) are
+additionally decided in the handler. **Images belong to no Collection or page**, so there is no
+resource to decide against. Therefore **upload alone uses "`can_edit` on any one resource"** (an
+editor trusted with only one Collection also needs a way to upload the images that Collection uses),
+while **changing or deleting an existing image stays account-wide `can_edit`** (because other content
+may be using it). **Editing does not touch the published copy**, so a role with only `can_edit` can be
+operated safely.
 
-#### 公開は「読んだ作業コピー」だけを昇格する
+#### Publish promotes only "the working copy it read"
 
-公開は作業コピーを公開コピーに載せ替え、**作業コピーのレコードを消す**操作です。作業コピーを読んで
-から載せ替えるまでの間に別の保存が入ると、その新しい保存を消してしまうため、**載せ替えは「保存
-されている作業コピーが、公開処理が読んだ内容のまま」であることを条件**に行います(内容の比較は
-キー順に依存しない形で行う)。
+Publish is the operation that moves the working copy onto the published copy and **deletes the
+working-copy record**. If another save came in between reading the working copy and moving it, that
+new save would be deleted, so **the move is conditional on "the stored working copy being exactly
+what the publish operation read"** (the content comparison does not depend on key order).
 
-- 条件が合わなければ**何も適用せず 409 + `code: "draft_changed"`**。画面には「公開の途中で
-  もう一度保存されました。開き直してからもう一度公開してください」と出る。
-- 単一ページの公開(`apply_page_status`)も同じ規則。
-- 新しい保存の**後**に公開が走る場合(順序が逆)は何も失われない: 保存は新しい作業コピーを
-  書くだけだから。
-- 公開と公開が競合した場合も同じで、負けた側は `draft_changed` で終わる(公開コピーが
-  半分だけ入れ替わることはない)。
+- If the condition fails, **nothing is applied and it is 409 + `code: "draft_changed"`**. The screen
+  shows "It was saved again during publishing. Reopen and publish again".
+- Publishing a Single page (`apply_page_status`) follows the same rule.
+- If publish runs **after** the new save (the opposite order), nothing is lost: the save only writes a
+  new working copy.
+- The same goes when two publishes race: the loser ends with `draft_changed` (the published copy never
+  ends up half swapped).
 
-### アカウント管理 API
+### Account management API
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| GET | `/api/auth/users` | 一覧 |
-| POST | `/api/auth/users` | 作成(`username` / 任意の `email` / `is_admin` / `permission`。**パスワードは取らない**) |
-| PATCH | `/api/auth/users/{id}` | `is_admin` / `is_active` / `permission` の部分更新 |
-| DELETE | `/api/auth/users/{id}` | 削除 |
-| POST | `/api/auth/me/password` | 自分のパスワード変更(現在のパスワードが必要) |
+| GET | `/api/auth/users` | List |
+| POST | `/api/auth/users` | Create (`username` / optional `email` / `is_admin` / `permission`. **No password is taken**) |
+| PATCH | `/api/auth/users/{id}` | Partial update of `is_admin` / `is_active` / `permission` |
+| DELETE | `/api/auth/users/{id}` | Delete |
+| POST | `/api/auth/me/password` | Change your own password (the current password is required) |
 
-**パスワードを選べるのは本人だけ**。作成したアカウントは資格情報を持たず、本人がリセットリンクで
-設定するまでサインインできない(本文に `password` を入れても**無視される** — 作成で他人の
-パスワードを決める経路は API にも画面にも無い)。管理者が渡せるのはリセットリンクまで。
+**Only the person themselves can choose a password.** A created Account has no credentials and cannot
+sign in until the person sets one with a reset link (putting `password` in the body is **ignored** -
+neither the API nor the screen has a route for deciding someone else's password on creation). All an
+admin can hand over is the reset link.
 
-例外は配備が自分で作る**初期管理者**(`ADMIN_PASSWORD`)だけ。誰もサインインできない状態では
-リンクを発行する人がいないため、ここだけは代わりに選ぶ。この作成と資格情報の保存は 1 組で、
-保存に失敗したらアカウントも消す(残すと次の起動が bootstrap を飛ばし、誰も入れない配備になる)。
+The only exception is the **initial admin** the deployment creates itself (`ADMIN_PASSWORD`). When
+nobody can sign in there is no one to issue a link, so only here is the password chosen on the
+person's behalf. This creation and the credentials save form one pair; if the save fails the Account
+is deleted too (leaving it would make the next startup skip bootstrap and produce a deployment nobody
+can enter).
 
-`/api/auth/users*` は管理者のみ。`/api/auth/me/*` は自分自身への操作なので、**書き込み権限の無い
-アカウントでも使える**(閲覧のみの人がパスワードを変えられない、という状態を避けるため)。
+`/api/auth/users*` is admin only. `/api/auth/me/*` operates on yourself, so **it is usable even by an
+Account with no write permission** (to avoid a situation where a view-only person cannot change their
+password).
 
-#### アカウントの識別子
+#### Account identifiers
 
-- サインインに使うのは **`username`** で、`email` は**任意の連絡先**。メールアドレスを持たない
-  運用(`ops`、`team-editor` など)がそのまま成立する。
-- `username` は 1〜128 文字、`A-Z a-z 0-9 + = , . @ _ -` のみ。この文字集合は Cognito が受け付ける
-  ものに合わせてあるので、そのままプールへ持ち込める(`ops@example.com` のようなアドレスも
-  username として有効)。
-- 大文字小文字と前後の空白は同一視する(`Ops.User` と `ops.user` は同じアカウント)。
-- `email` を指定する場合は形だけ検証する(空文字は「未設定」として扱う)。**サインインには
-  使わない**ので、到達できないアドレスでも構わない。
-- `username` は識別子なので作成後は変更しない(変更が必要なら作り直す)。Cognito の username も
-  不変なので、この前提はそのまま移行できる。
-- 初期管理者は `ADMIN_USERNAME` と `ADMIN_PASSWORD`(この 1 人だけはパスワードを配備が選ぶ)。`ADMIN_USERNAME` が無い場合は
-  `ADMIN_EMAIL` を識別子として使う(以前の設定名のままでも起動する)。`ADMIN_EMAIL` は同時に
-  連絡先としても記録される。
+- Sign-in uses **`username`**, and `email` is **an optional contact address**. Operations without
+  email addresses (`ops`, `team-editor`, etc.) work as they are.
+- `username` is 1–128 characters from `A-Z a-z 0-9 + = , . @ _ -` only. This character set matches
+  what Cognito accepts, so it can be taken into a pool as is (an address like `ops@example.com` is
+  valid as a username too).
+- Case and surrounding whitespace are treated as the same (`Ops.User` and `ops.user` are the same
+  Account).
+- When `email` is given only its form is validated (an empty string is treated as "unset"). It **is
+  not used for sign-in**, so an unreachable address is fine.
+- `username` is an identifier, so it is not changed after creation (if a change is needed, recreate).
+  Cognito usernames are immutable too, so this assumption carries over as is.
+- The initial admin uses `ADMIN_USERNAME` and `ADMIN_PASSWORD` (only this one person has a
+  deployment-chosen password). Without `ADMIN_USERNAME`, `ADMIN_EMAIL` is used as the identifier (it
+  still starts with the older setting name). `ADMIN_EMAIL` is also recorded as the contact address at
+  the same time.
 
-- **有効な管理者が 0 人になる変更は拒否する**(最後の管理者の降格・無効化・削除は 409)。
-  自分自身を降格してロックアウトすることもできない。
-- 無効化したアカウントはログインできず、既存トークンも拒否される。削除は履歴ごと消える。
-- **パスワード変更は既存のトークンをすべて失効させる**。アカウントはトークン世代
-  (`token_version`)を持ち、トークンは発行時の世代を運ぶ。認証は毎回アカウントを読むので、
-  世代が古いトークンは残りの有効期限によらず 401 になる(クロックの一致も要らない)。
-  - `POST /api/auth/me/password` は**新しい世代のトークン**を返す。変更した本人のセッションも
-    切れるため、画面はこれを保存して続行する(他の端末のセッションは終了したまま)。
-    応答: `{"token":"...","expires_at":"..."}`
-  - リセットリンクの完了(`POST /api/auth/password-reset`)も同じく、そのアカウントのトークンだけを
-    失効させる。管理者がリンクを発行しただけでは何も失効しない。
+- **A change that leaves zero enabled admins is rejected** (demoting, deactivating or deleting the
+  last admin is 409). You cannot demote yourself into a lockout either.
+- A deactivated Account cannot log in and its existing tokens are rejected. Deletion removes the
+  history too.
+- **Changing a password invalidates every existing token.** An Account has a token generation
+  (`token_version`), and a token carries the generation from when it was issued. Authentication reads
+  the Account every time, so a token with an old generation is 401 regardless of its remaining
+  lifetime (no clock agreement is needed either).
+  - `POST /api/auth/me/password` returns **a token of the new generation**. The changer's own session
+    is cut too, so the screen saves this and continues (sessions on other devices stay ended).
+    Response: `{"token":"...","expires_at":"..."}`
+  - Completing a reset link (`POST /api/auth/password-reset`) likewise invalidates only that
+    Account's tokens. An admin merely issuing a link invalidates nothing.
 
-### ログイン試行の制限
+### Login attempt limiting
 
-総当たりを止めるため、**同じメールアドレスに対する失敗を数え**、一定回数を超えると 429 を返す。
+To stop brute force, **failures for the same email address are counted**, and over a certain number a
+429 is returned.
 
-| 項目 | 値 |
+| Item | Value |
 |---|---|
-| 失敗の許容回数 | 5 回 |
-| 失敗を数える期間 | 15 分(これより間が空いた失敗は数えない) |
-| ロックの長さ | 最後の失敗から 15 分 |
-| サインインに成功したとき | カウンタを消す |
+| Allowed failures | 5 |
+| Failure counting window | 15 minutes (failures spaced wider apart are not counted) |
+| Lock length | 15 minutes from the last failure |
+| On a successful sign-in | The counter is cleared |
 
-- 429 の本文は理由と待ち時間、ヘッダに `Retry-After`(秒)を付ける。
-- ロック中は**正しいパスワードでも通らない**(パスワードを見る前に拒否する)。
-- **存在しないアドレスも同じように数える**。実在するアカウントだけを数えると、「429 になったか
-  どうか」でアカウントの有無が分かってしまい、401 のメッセージを統一している意味が無くなる。
-- ロック中に試行を重ねても**ロックは延びない**(最後の失敗から 15 分で必ず解ける)。1 人の
-  ミスの連発で組織全体が止まることもない(カウンタはアドレスごと)。
-- カウンタは**プロセスのメモリ**にある。再起動で消え、複数のプロセスでは共有されない
-  (Lambda のようにインスタンスが入れ替わる環境では共有ストレージが要る)。
-- 同じカウンタを `POST /api/auth/me/password` の現在のパスワード確認にも使う。
+- The 429 body gives the reason and the wait time, and the header carries `Retry-After` (seconds).
+- During a lock **even the correct password does not pass** (it is refused before the password is
+  looked at).
+- **Nonexistent addresses are counted the same way.** Counting only Accounts that exist would let the
+  presence of an Account be inferred from "whether it became a 429", nullifying the point of unifying
+  the 401 message.
+- Repeated attempts during a lock **do not extend the lock** (it always clears 15 minutes after the
+  last failure). One person's repeated mistakes cannot stop the whole organization either (the
+  counter is per address).
+- The counter lives **in process memory**. It is lost on restart and not shared across processes (an
+  environment where instances are replaced, such as Lambda, needs shared storage).
+- The same counter is used for verifying the current password in `POST /api/auth/me/password`.
 
-### パスワードリセット(管理者が新しい入り口を渡す)
+### Password reset (an admin hands over a new way in)
 
-パスワードを忘れた / 分からなくなったアカウントのために、**管理者がリセットを発行**する。CMS は
-メールを送らない: 発行されたものを管理者が本人へ渡す(Slack・口頭・印刷など)。したがって
-**メールアドレスの無いアカウントでも使える**。
+For an Account whose password is forgotten / unknown, **an admin issues a reset**. The CMS does not
+send email: the admin hands what was issued to the person (Slack, verbally, printed, etc.). Therefore
+**it works for Accounts without an email address too**.
 
-**何を渡すかは配備で違う**(`GET /api/auth/capabilities` の `password_reset` が先に約束し、
-応答の `kind` が同じことを言う):
+**What is handed over differs by deployment** (`password_reset` in `GET /api/auth/capabilities`
+promises it in advance, and `kind` in the response says the same thing):
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| POST | `/api/auth/users/{id}/password-reset` | リセットを発行(要 `is_admin`)。`{"kind":"link","token":…,"expires_at":…}` または `{"kind":"temporary","password":…}` |
-| POST | `/api/auth/password-reset` | **公開**。`{ token, new_password }` で新しいパスワードを設定し、新しいトークンを返す(リンクの配備のみ。一時パスワードの配備では 501) |
+| POST | `/api/auth/users/{id}/password-reset` | Issue a reset (requires `is_admin`). `{"kind":"link","token":…,"expires_at":…}` or `{"kind":"temporary","password":…}` |
+| POST | `/api/auth/password-reset` | **Public**. Sets a new password with `{ token, new_password }` and returns a new token (link deployments only. 501 in temporary-password deployments) |
 
-- **`link`**: パスワードを CMS が持つ配備。本人がリンクを開いて自分でパスワードを決めるので、
-  管理者も含めて他人は誰もその値を知らない。
-- **`temporary`**: サインインを ID プロバイダが持つ配備(Cognito)。CMS はパスワードを持たないので
-  値を作れず、プロバイダが**一時パスワード**を設定して次回サインイン時に変更を強制する
-  (`AdminSetUserPassword` を `Permanent=false` で)。管理者は画面に出た値を本人へ渡す。
-- 画面の URL はフロント側が組み立てる: `/reset-password?token=<token>`(API はトークンだけ返す。
-  UI の経路は API が知るべきものではないため)。
-- 有効期限は `PASSWORD_RESET_TTL_MINUTES`(既定 30 分)。トークンは
-  `password-reset:v1:<user id>:<token_version>:<期限>` への HMAC-SHA256(`JWT_SECRET`、専用接頭辞)。
-- **1 回だけ使える**。完了するとパスワードが変わり `token_version` が進むため、同じリンクは
-  それ以降拒否される。**リセット前の既存セッションもすべて切れる**(漏洩時の一次対応と同じ効果)。
-- 失敗の返し方: 使用済み・期限切れ・無効化されたアカウントは **403**(理由が分かる)、壊れた
-  トークン・存在しないアカウントは **401**(公開エンドポイントなので存在を漏らさない)。
-- ログインと同じカウンタで試行を制限する。
-- **パスワードを選べるのは本人だけ**(リンクの配備)。管理者ができるのはリンクの発行までで、他人の
-  パスワードを直接設定する経路は API にも画面にも無い(以前は `POST /api/auth/users/{id}/password`
-  があったが、削除した)。アカウント作成時も同じで、画面はパスワードを聞かず、作成した直後にこの
-  リセットを発行して渡す(一時パスワードの配備では、プロバイダが設定した値を渡す)。
+- **`link`**: a deployment where the CMS holds passwords. The person opens the link and decides their
+  own password, so nobody else - the admin included - knows the value.
+- **`temporary`**: a deployment where the identity provider owns sign-in (Cognito). The CMS holds no
+  passwords and cannot create a value, so the provider sets a **temporary password** and forces a
+  change at the next sign-in (`AdminSetUserPassword` with `Permanent=false`). The admin hands the
+  value shown on screen to the person.
+- The screen URL is assembled by the frontend: `/reset-password?token=<token>` (the API returns only
+  the token. The UI's route is not something the API should know).
+- The lifetime is `PASSWORD_RESET_TTL_MINUTES` (default 30 minutes). The token is an HMAC-SHA256 over
+  `password-reset:v1:<user id>:<token_version>:<expiry>` (`JWT_SECRET`, a dedicated prefix).
+- **Single use.** Completing it changes the password and advances `token_version`, so the same link
+  is refused afterwards. **Every existing session from before the reset is cut too** (the same effect
+  as a first response to a leak).
+- How failures are returned: used, expired and deactivated Accounts are **403** (the reason is clear);
+  a broken token or a nonexistent Account is **401** (a public endpoint does not leak existence).
+- Attempts are limited with the same counter as login.
+- **Only the person themselves can choose a password** (link deployments). All an admin can do is
+  issue a link, and neither the API nor the screen has a route to set someone else's password directly
+  (there used to be `POST /api/auth/users/{id}/password`, which was removed). The same goes for
+  Account creation: the screen does not ask for a password and issues this reset right after creating
+  (in temporary-password deployments it hands over the value the provider set).
 
-### リソース単位の権限
+### Per-resource permissions
 
-アカウント共通のロールに加えて、**コレクション / 単一ページごとに許可を上書き**できる。上書きは
-そのリソースだけ**置き換え**なので、広げることも狭めることもできる。
+In addition to the Account-wide role, **permissions can be overridden per Collection / Single page**.
+An override **replaces** permissions for that resource only, so it can widen or narrow them.
 
-| 例 | `permission` | `collection_permissions` |
+| Example | `permission` | `collection_permissions` |
 |---|---|---|
-| どこでも閲覧のみ | viewer | – |
-| `blog` だけ編集できる | viewer | `{ "blog": editor }` |
-| `legal` だけ触らせない | editor | `{ "legal": すべて false }` |
+| View only everywhere | viewer | – |
+| Can edit only `blog` | viewer | `{ "blog": editor }` |
+| Touch anything but `legal` | editor | `{ "legal": all false }` |
 
-- `PATCH /api/auth/users/{id}` の `collection_permissions` / `single_page_permissions` に
-  **マップ全体**を送る(部分マージではない)。`{}` を送れば上書きは全部消える。
-- 判定は「そのリソースの実効権限」で行う。読み取りは `can_view`、書き込みは `can_edit`、
-  公開・非公開・削除は `can_publish`。**管理者は常にすべて可**(上書きで締め出せない)。
-- `/api/models/collections` と `/api/models/single_pages` の一覧は**読めるものだけ**返すので、拒否した
-  リソースはナビにも出ない(直接開けば 403)。
-- 存在しない名前への付与は 400。綴り間違いが「どこにも出てこない効かない許可」として残らない。
-- 対象はコレクションと単一ページだけ。画像ライブラリと複合フィールド定義はアカウント共通
-  (`can_edit` / 管理者)のまま。
+- Send **the whole map** in `collection_permissions` / `single_page_permissions` of
+  `PATCH /api/auth/users/{id}` (it is not a partial merge). Sending `{}` clears all overrides.
+- The decision uses "that resource's effective permission". Reads use `can_view`, writes use
+  `can_edit`, publish, unpublish and delete use `can_publish`. **An admin can always do everything**
+  (an override cannot shut them out).
+- The lists in `/api/models/collections` and `/api/models/single_pages` return **only what can be
+  read**, so a denied resource does not appear in navigation either (opening it directly gives 403).
+- Granting to a nonexistent name is 400. A misspelling does not remain as "a permission that appears
+  nowhere and does nothing".
+- The targets are Collections and Single pages only. The Image library and Composite field definitions
+  stay Account-wide (`can_edit` / admin).
 
-## 5.6 共有できるプレビュー URL
+## 5.6 Shareable preview URLs
 
-アカウントを持たない相手(クライアント、翻訳者)に下書きを見せるための、**署名付き・期限付き**の
-URL。相手はトークンもアカウントも要らない。
+A **signed, time-limited** URL for showing a draft to someone without an Account (a client, a
+translator). The other party needs neither a token nor an Account.
 
 ```bash
-# 管理側がリンクを発行する(要 can_edit)
+# The admin side issues a link (requires can_edit)
 curl -X POST http://127.0.0.1:8000/models/collections/blog/items/1/preview-link \
   -H "Authorization: Bearer $TOKEN"
 # => {"path":"/api/preview/collections/blog/items/1?token=1758000000.3f9c...","expires_at":"..."}
 
-# 受け取った人はトークン無しで開ける(作業コピーが見える)
+# The recipient can open it without a token (the working copy is visible)
 curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9c...
 ```
 
-**スキーマごとの許可が要ります。** 既定は**無効**で、スキーマ編集画面の「プレビューリンクを
-許可する」を入れて保存したコレクション・単一ページだけがリンクを発行できます(要管理者)。
+**A per-Schema permission is required.** The default is **disabled**, and only Collections / Single
+pages saved with "allow preview links" turned on in the Schema editor can issue links (requires
+admin).
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| GET | `/api/models/collections/{name}/settings` | `{ "preview": false }`(要トークン。未設定なら既定) |
-| PUT | `/api/models/collections/{name}/settings` | `{ "preview": true }`(要管理者) |
-| GET / PUT | `/api/models/single_pages/{name}/settings` | 同上 |
-| POST | `/api/models/collections/{name}/items/{id}/preview-link` | リンクを発行(要 `can_edit` かつ `preview` 有効) |
-| POST | `/api/models/single_pages/{name}/preview-link` | 同上 |
-| GET | `/api/preview/collections/{name}/items/{id}?token=...` | 作業コピーを返す(認証不要) |
-| GET | `/api/preview/single_pages/{name}?token=...` | 同上 |
+| GET | `/api/models/collections/{name}/settings` | `{ "preview": false }` (token required. The default when unset) |
+| PUT | `/api/models/collections/{name}/settings` | `{ "preview": true }` (requires admin) |
+| GET / PUT | `/api/models/single_pages/{name}/settings` | Same as above |
+| POST | `/api/models/collections/{name}/items/{id}/preview-link` | Issue a link (requires `can_edit` and `preview` enabled) |
+| POST | `/api/models/single_pages/{name}/preview-link` | Same as above |
+| GET | `/api/preview/collections/{name}/items/{id}?token=...` | Return the working copy (no auth required) |
+| GET | `/api/preview/single_pages/{name}?token=...` | Same as above |
 
-- 許可していないスキーマへの発行・そのリンクを開くことは、どちらも **403 `preview_disabled`**
-  (メッセージがコレクション名・ページ名を名指しする)。**設定を切ると、発行済みのリンクもその場で
-  開けなくなる**(リンクは数分の命で、取り消すべき台帳が無いため)。既存のデプロイは設定が無いので、
-  これまで使えていたコレクションも**管理者が入れ直すまで発行できない**。
-- 設定はスキーマ定義とは**別のレコード**に入る(`collection_settings` / `single_page_settings`。
-  DynamoDB では同じパーティションの `settings`)。フィールドの保存が設定を書き戻すことはなく、
-  コレクション・ページを削除すれば設定も消える。表示の順も同じ: 保存した設定は、次に同じ名前で
-  作り直したスキーマには引き継がれない。
-- 期限は `PREVIEW_LINK_TTL_MINUTES`(既定 60 分)。トークンは `有効期限.署名` の形で、
-  署名は**行き先と有効期限そのもの**に対する HMAC-SHA256(`JWT_SECRET` を使用、メッセージには
-  専用の接頭辞を付けるので他の署名と使い回せない)。
-  - 行き先を書き換えれば署名が合わなくなるので、**1 本のリンクは 1 つの作業コピーしか開けない**。
-  - 有効期限を先に延ばすこともできない。期限切れは 403、署名違い・壊れたトークンは 401。
-- サーバ側に**保存するものが無い**(期限が署名に含まれるので、消すべきレコードが存在しない)。
-- ただしリンクは**持っている人にとっては資格情報**。期限まではその 1 件の下書きを読めるので、
-  渡す相手と有効期限は意識すること。失効させたい場合は**そのスキーマの許可を切る**(即時に効く)、
-  `PREVIEW_LINK_TTL_MINUTES` を短くする、`JWT_SECRET` を変える(全トークンが無効になる)。
-- 返す本文は管理側のプレビューと同じ形(schema + values)なので、サイト側は 1 つのパーサで済む。
-- **渡すリンクはプレビューサイトの URL に写す。** API のパスをそのまま渡すと、レビュアーには
-  JSON が表示される。`GET /api/auth/capabilities` の `preview_site_url` がプレビューサイトの
-  origin で、パスは API のパスから `/api` を除いたもの(`/preview/collections/{c}/items/{id}`)。
-  `preview_site_url` が無いデプロイでは、管理画面はコピーせず「プレビューサイト未設定」と表示する
-  (生 JSON の URL は渡さない)。契約の全体は `docs/preview-site.md`。
+- Issuing to a Schema that is not allowed and opening such a link are both **403 `preview_disabled`**
+  (the message names the Collection or page). **Turning the setting off makes already-issued links
+  unopenable on the spot** (a link lives for minutes, and there is no ledger to revoke against).
+  Existing deployments have no setting, so even Collections that used to work **cannot issue links
+  until an admin turns it back on**.
+- The setting lives in **a separate record** from the Schema definition (`collection_settings` /
+  `single_page_settings`. In DynamoDB, `settings` in the same partition). Saving fields never writes
+  the setting back, and deleting the Collection or page deletes the setting too. The display order is
+  the same: a saved setting is not carried over to a Schema recreated later with the same name.
+- The lifetime is `PREVIEW_LINK_TTL_MINUTES` (default 60 minutes). The token has the form
+  `expiry.signature`, and the signature is an HMAC-SHA256 over **the destination and the expiry
+  itself** (using `JWT_SECRET`; a dedicated prefix is added to the message so it cannot be reused with
+  other signatures).
+  - Rewriting the destination makes the signature mismatch, so **one link can open only one working
+    copy**.
+  - The expiry cannot be extended either. Expired is 403; a wrong signature or a broken token is 401.
+- There is **nothing stored on the server** (the expiry is part of the signature, so there is no
+  record to delete).
+- However, a link **is a credential to whoever holds it**. Until it expires it can read that one
+  draft, so be mindful of who it is given to and of the lifetime. To revoke, **turn off that Schema's
+  permission** (effective immediately), shorten `PREVIEW_LINK_TTL_MINUTES`, or change `JWT_SECRET`
+  (all tokens become invalid).
+- The returned body has the same shape as the admin-side preview (schema + values), so the site needs
+  only one parser.
+- **The link handed over is mapped onto the preview site's URL.** Handing over the API path as is
+  shows the reviewer JSON. `preview_site_url` in `GET /api/auth/capabilities` is the preview site's
+  origin, and the path is the API path with `/api` removed
+  (`/preview/collections/{c}/items/{id}`). In a deployment without `preview_site_url`, the admin
+  screen does not copy and shows "preview site not configured" (it does not hand over a raw JSON URL).
+  The full contract is in `docs/preview-site.md`.
 
-### 差し替えの適用は「この画像に与えたアップロード」だけ
+### Replacement applies only to "the upload given to this image"
 
-`PUT /api/models/images/{id}`(`file_name` を指定して差し替えを適用)は、**id で引いたレコード**で
-判定する。ファイル名を選ぶのはサーバーで、`POST .../replace` の時点で**その画像の待ち行列に
-記録**される。適用できるのはそれだけ:
+`PUT /api/models/images/{id}` (specifying `file_name` to apply a replacement) decides using **the
+record looked up by id**. The file name is chosen by the server, and at the time of `POST .../replace`
+it is **recorded in that image's pending queue**. Nothing else can be applied:
 
-| 状況 | 答え |
+| Situation | Answer |
 |---|---|
-| その画像が無い | 404 |
-| 実体がまだバケットに無い | 404 `the uploaded image is not there yet` |
-| `file_name` が**今その画像が配っているファイル** | **200(何もしない)** — 画面が同じファイルを送るのは誤りではない。**待ちは消さない** |
-| `file_name` が**その画像に与えた待ちのアップロード** | **200(適用)**。同時に待ちは消える |
-| それ以外(**他の画像のファイル**、誰も要求していないファイル) | **400** `that is not the upload this replacement was for` |
+| The image does not exist | 404 |
+| The file is not in the bucket yet | 404 `the uploaded image is not there yet` |
+| `file_name` is **the file this image is currently serving** | **200 (do nothing)** - the screen sending the same file is not an error. **The pending entry is not cleared** |
+| `file_name` is **the pending upload given to this image** | **200 (applied)**. The pending entry is cleared at the same time |
+| Anything else (**another image's file**, a file nobody requested) | **400** `that is not the upload this replacement was for` |
 
-- **待っているのは最後の要求だけ**。`POST .../replace` をもう一度呼ぶと、前の待ちは新しいもので
-  置き換わる(古い待ちを後から適用しようとすると 400)。
-- **今配っているファイルを送っても待ちは消えない**。消してしまうと、直前の「差し替え」ボタンで
-  出したアップロードが、画面の再送だけで無効になる。
-- `POST .../replace` と適用はどちらも**自分が読んだレコードのままのときだけ書き込む**(オンプレは
-  同じロックの中で読んで書く)。適用が割り込んだ後に古いレコードを書き戻すと、適用が消した実体を
-  指し続けて画像が表示できなくなるため。
+- **Only the last request is pending.** Calling `POST .../replace` again replaces the previous pending
+  entry with the new one (trying to apply the old one afterwards gives 400).
+- **Sending the currently served file does not clear the pending entry.** If it did, the upload
+  produced by the immediately preceding "replace" button would be invalidated by a mere resend from
+  the screen.
+- Both `POST .../replace` and the apply **write only while the record is as they read it** (on-premises
+  reads and writes inside the same lock). Writing back an old record after an apply intervened would
+  keep pointing at the file the apply deleted, making the image undisplayable.
 
-**なぜ id なのか**: 判定に必要なのは「このファイルは誰のものか」ではなく「**この画像に与えた
-アップロードか**」だから。前者はライブラリ全体を走査して「たまたまその名前を使っている
-レコード」を探すことになり、**アップロード直後(まだどのレコードも指していない)**については
-何も言えない。後者は id の点読みで済み、配信 URL の形(署名付きかどうか)にも依存しない。
+**Why id**: what the decision needs is not "whose file is this" but "**is it the upload given to this
+image**". The former would mean scanning the whole library for "a record that happens to use that
+name", and would say nothing about **an upload that was just made (no record points at it yet)**. The
+latter is a point read by id and does not depend on the shape of the delivery URL (whether it is
+signed or not).
 
-**ファイル名を URL から読み取ってはいけない**というのがこの設計の教訓: 署名付き配信の配備では
-URL が署名で終わるため、URL を見る比較は**静かに効かなくなる**(一度そうなっていた)。
+The lesson from this design is that **the file name must not be read from the URL**: in a
+signed-delivery deployment the URL ends with a signature, so a comparison that looks at the URL
+**quietly stops working** (it once was that way).
 
-### 画像 URL は配備ごとに違う(安定 URL か署名付きか)
+### Image URLs differ by deployment (stable URL or signed)
 
-`Image` 値の `url`、およびアップロード応答の `url` は、**配備が決めた配り方**で返る。
+The `url` of an `Image` value, and the `url` in an upload response, are returned **in the delivery
+style the deployment chose**.
 
-| 配備の設定 | 返る URL | バケット |
+| Deployment setting | Returned URL | Bucket |
 |---|---|---|
-| `AWS_IMAGE_DELIVERY=public`(既定) | オブジェクトのアドレス(CDN を前に置く場合はその URL)。**期限なし** | 公開読み取り |
-| `AWS_IMAGE_DELIVERY=presigned` | **署名付き GET**(`AWS_IMAGE_URL_TTL_SECONDS`、既定 1 時間)。**期限あり** | 非公開 |
+| `AWS_IMAGE_DELIVERY=public` (default) | The object's address (or the CDN URL if one is in front). **No expiry** | Public read |
+| `AWS_IMAGE_DELIVERY=presigned` | **A presigned GET** (`AWS_IMAGE_URL_TTL_SECONDS`, default 1 hour). **Expires** | Private |
 
-- どちらでも**コンテンツに保存するのは id**。URL は API が読むたびに解決するので、署名が
-  切れても次の取得で新しい URL が返る。
-- 署名モードが向くのは**ビルド時に画像を取得して自前で配信するサイト**(SSG が変換して自分の
-  コピーを配る)。ページに CMS の URL をそのまま載せるサイトでは、**キャッシュした URL が
-  期限切れで死ぬ**ため既定は `public`。
-- 手書きの Markdown には **`/api/images/by-id/{id}`** を使う。CMS が現在の実体へ転送するので、
-  モードにかかわらず・差し替え後も動く(転送先はその時点の署名付き URL になる)。
+- In both cases **what is stored in content is the id**. The URL is resolved every time the API reads,
+  so even after a signature expires the next fetch returns a new URL.
+- Signed mode suits **sites that fetch images at build time and serve them themselves** (the SSG
+  transforms and serves its own copies). For a site that puts CMS URLs straight onto pages, **a cached
+  URL dies when it expires**, so the default is `public`.
+- For hand-written Markdown use **`/api/images/by-id/{id}`**. The CMS forwards to the current file, so
+  it works regardless of mode and after a replacement (the forwarding target becomes the signed URL at
+  that point).
 
-## 5.9 画像の小さなコピー(タイル用)とページング
+## 5.9 Image thumbnails (for tiles) and paging
 
-管理画面のタイルは 180px 幅で、原本は写真 1 枚が 1MB 級。**原本をタイルに使うと、275 枚の
-ライブラリを最後まで見るのに 154MB 落ちる**(実測。`loading="lazy"` は取得を遅らせるだけで、
-取得するのは原本)。そこで**ブラウザがアップロード時に小さなコピーを作り**、原本と別のファイル
-として保存し、一覧とピッカーはそちらを表示する。サーバは画像をデコードしない(原本と同じく
-バイト列として扱う)ので、アダプタの差が出ない。
+Admin screen tiles are 180px wide, while a single original photo is on the order of 1MB. **Using
+originals for tiles downloads 154MB to page through a 275-image library to the end** (measured.
+`loading="lazy"` only delays the fetch; what is fetched is the original). So **the browser creates a
+small copy at upload time**, it is stored as a separate file from the original, and the list and
+picker display that. The server does not decode images (it treats them as bytes, same as originals),
+so adapters do not diverge.
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| PUT | `/api/models/images/{id}/thumbnail?ext=webp` | 小さなコピーのバイト列を本文で送る。`204`。要 `can_edit` |
-| GET | `/api/models/images?limit=&offset=` | 1 ページ。`X-Total-Count` に総数 |
-| GET | `/api/models/images/trash?limit=&offset=` | 同上(ゴミ箱) |
+| PUT | `/api/models/images/{id}/thumbnail?ext=webp` | Send the small copy's bytes in the body. `204`. Requires `can_edit` |
+| GET | `/api/models/images?limit=&offset=` | One page. The total is in `X-Total-Count` |
+| GET | `/api/models/images/trash?limit=&offset=` | Same as above (trash) |
 
-- 一覧の各要素に `thumbnail_url` が付く。**無い場合は `url` を表示する**(API 経由で
-  アップロードされた画像や、この機能より前の画像)。`thumbnail_url` は原本と同じ配信方法
-  (オンプレは `/api/images/thumb-<uuid>.<ext>`、AWS はバケット/CDN か署名付き URL)。
-- `ext` は保存名の拡張子になり、配信時の種別はそれで決まる。安全な拡張子だけを受け付け、
-  **512KiB を超える「小さなコピー」は 413**、中身が空なら 400。
-- **差し替え(§5.8)は小さなコピーを捨てる**: コピーは「その写真」の説明であって、写真が
-  変われば古いコピーは嘘になる。ブラウザは差し替え後にもう一度コピーを送る。
-- **完全削除はコピーも消す**(原本と一緒)。ゴミ箱への移動では実体もコピーも残る。
-- `limit`/`offset` はコレクションのアイテム一覧と同じ規則(`limit` は 1..=200、既定は全件。
-  `limit=0` は 400)。画面は 60 枚ずつ読み、「もっと見る」で次を足す。
+- Each list element carries `thumbnail_url`. **When it is absent, `url` is displayed** (images
+  uploaded through the API, or images from before this feature). `thumbnail_url` uses the same
+  delivery method as the original (on-premises `/api/images/thumb-<uuid>.<ext>`, AWS the bucket/CDN or
+  a signed URL).
+- `ext` becomes the extension of the stored name and decides the type at delivery. Only safe
+  extensions are accepted, **a "small copy" over 512KiB is 413**, and an empty body is 400.
+- **A replacement (§5.8) discards the small copy**: the copy describes "that photo", and if the photo
+  changes the old copy becomes a lie. The browser sends a copy again after a replacement.
+- **Permanent deletion removes the copy too** (along with the original). Moving to the trash leaves
+  both the file and the copy.
+- `limit`/`offset` follow the same rules as a Collection's Item list (`limit` is 1..=200, default
+  everything. `limit=0` is 400). The screen loads 60 at a time and appends the next with "load more".
 
-## 5.10 画像のゴミ箱
+## 5.10 Image trash
 
-削除は**2段階**。`DELETE` は完全削除で、ゴミ箱を経由しないと届かない。
+Deletion is **two-stage**. `DELETE` is permanent deletion and cannot be reached without going through
+the trash.
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| GET | `/api/models/images` | ライブラリ(ゴミ箱の中身は含まない) |
-| GET | `/api/models/images/trash` | ゴミ箱(削除した時刻の新しい順) |
-| POST | `/api/models/images/{id}/trash` | ゴミ箱へ移動(要 `can_edit`) |
-| POST | `/api/models/images/{id}/restore` | ライブラリへ戻す(要 `can_edit`) |
-| DELETE | `/api/models/images/{id}` | **完全削除**(レコードと実体。要 `can_edit`)。**ゴミ箱にある画像だけ** |
+| GET | `/api/models/images` | The library (does not include trash contents) |
+| GET | `/api/models/images/trash` | The trash (newest deletion time first) |
+| POST | `/api/models/images/{id}/trash` | Move to the trash (requires `can_edit`) |
+| POST | `/api/models/images/{id}/restore` | Return to the library (requires `can_edit`) |
+| DELETE | `/api/models/images/{id}` | **Permanent deletion** (the record and the file. Requires `can_edit`). **Only images in the trash** |
 
-- ゴミ箱への移動は**レコードも実体も残す**ので、その画像を参照しているコンテンツは**そのまま
-  表示され続ける**(`/api/images/by-id/{id}` の実体も配信も生きている)。「消したつもりが消えている」
-  を避けるための段階。
-- ゴミ箱にある画像は**ライブラリの一覧とピッカーに出ない**ので、新しいコンテンツはそれを選べない。
-- 完全削除だけが実体を消す。以降、その id を参照していたコンテンツの画像は解決しなくなる。
-- ゴミ箱への移動は**冪等**(既にゴミ箱にある画像をもう一度移動してもエラーにしない)。
-  存在しない id は 404。
+- Moving to the trash **keeps both the record and the file**, so content referencing that image
+  **keeps being displayed** (both the file and the delivery of `/api/images/by-id/{id}` stay alive). A
+  stage to avoid "it is gone when you thought you had only deleted it".
+- An image in the trash **does not appear in the library list or the picker**, so new content cannot
+  select it.
+- Only permanent deletion removes the file. After that, images in content that referenced that id stop
+  resolving.
+- Moving to the trash is **idempotent** (moving an image already in the trash again is not an error).
+  A nonexistent id is 404.
 
-## 5.11 画像の使用箇所(参照索引)
+## 5.11 Where an image is used (reference index)
 
-画像を消す前に「何が使っているか」を答えられるよう、**参照の逆引き索引**を持っている。
+So that "what is using it" can be answered before deleting an image, there is **a reverse reference
+index**.
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| GET | `/api/models/images/{id}/references` | その画像を使っているコンテンツの一覧 |
+| GET | `/api/models/images/{id}/references` | The list of content using that image |
 
-応答は `[{"kind":"collection_item","name":"blog","item":7}, {"kind":"single_page","name":"about"}]`。
-画面はゴミ箱へ移動・完全削除の**確認文にこの一覧を入れる**(使用中なら「N 件で使われています
-(blog #7, about)」と名前を出す)。
+The response is `[{"kind":"collection_item","name":"blog","item":7},
+{"kind":"single_page","name":"about"}]`. The screen **includes this list in the confirmation text**
+for moving to the trash and for permanent deletion (if in use it names them: "used by N Items (blog
+#7, about)").
 
-索引が数えるもの:
+What the index counts:
 
-- **`Image` フィールド**(配列の中、複合フィールドの中も含む)。値は id なので正確。
-- **Markdown の `/api/images/by-id/<id>` リンク**(ライブラリの「リンクをコピー」が作る形)。
-  **手書きの URL(S3 や CDN の直リンク)は追えない** — 普通のリンクと区別が付かず、差し替えで
-  変わる URL を使ってしまうため。本文に直リンクを書く運用なら、この限りではない。
-- **公開コピーと作業コピーの両方**。ただし**公開コピーは公開中のときだけ**数える(下書きは
-  作成時のレコードを抱えているだけで、誰も配信していない。一意索引と同じ規則)。
+- **`Image` fields** (including inside arrays and inside Composite fields). The value is an id, so it
+  is exact.
+- **`/api/images/by-id/<id>` links in Markdown** (the form the library's "copy link" creates).
+  **Hand-written URLs (direct S3 or CDN links) cannot be followed** - they cannot be told apart from
+  ordinary links, and a URL that changes on replacement would be used. This does not apply if the
+  operation writes direct links in bodies.
+- **Both the published copy and the working copy**. However, **the published copy is counted only
+  while published** (a draft merely holds the record from creation and nobody is serving it. The same
+  rule as the unique index).
 
-更新のタイミング: アイテム/ページの保存、公開・非公開、削除。索引の更新に失敗しても**保存は
-成功したまま**で、警告が 1 件足りなくなるだけ(ログに残る)。
+Update timing: saving an Item / page, publish, unpublish, deletion. Even if the index update fails
+**the save still succeeds**, and only one warning is missing (it is left in the log).
 
-## 5.12 記事の複製と一括公開
+## 5.12 Duplicating articles and bulk publish
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| POST | `/api/models/collections/{name}/items/{id}/duplicate` | 複製(201 + 新しい id。要 `can_edit`) |
-| POST | `/api/models/collections/{name}/items/status` | `{ "ids": [...], "status": "published"\|"draft" }`(要 `can_publish`) |
+| POST | `/api/models/collections/{name}/items/{id}/duplicate` | Duplicate (201 + the new id. Requires `can_edit`) |
+| POST | `/api/models/collections/{name}/items/status` | `{ "ids": [...], "status": "published"\|"draft" }` (requires `can_publish`) |
 
-**複製**:
+**Duplicate**:
 
-- コピーするのは**編集画面が見ている内容**(作業コピーがあればそれ、無ければ公開コピー)。
-- コピーは**常に下書き**として作られ、公開日・公開したアカウントは引き継がない。
-- **一意なフィールドは空にする**(`unique` の Text と Slug)。2 件が同じ値を持てないので、そのまま
-  複製すると拒否されるため。空いた分は編集者が入れる — Slug なら「タイトルから生成」がそのまま
-  使える。
+- What is copied is **the content the edit screen sees** (the working copy if there is one, otherwise
+  the published copy).
+- The copy is **always created as a draft**, and does not inherit the publish date or the publishing
+  Account.
+- **Unique fields are emptied** (Text with `unique`, and Slug). Two Items cannot hold the same value,
+  so a plain duplicate would be rejected. The editor fills in the blanks - for a Slug, "generate from
+  title" works as is.
 
-**一括公開/非公開**:
+**Bulk publish / unpublish**:
 
-- **項目ごとに結果を返す**: `[{"outcome":"changed","id":1,"metadata":{...}},
-  {"outcome":"refused","id":999,"code":"not_found","message":"..."}]`。1 件の拒否(存在しない、
-  公開の途中で保存された)は他を止めない。
-- 各項目は単体の公開と同じ経路(`set_item_status`)を通るので、保証も拒否も同じ。
-- 1 回の上限は **100 件**(各項目はトランザクション + 索引 + Webhook なので、一括は画面が
-  1 ページ見せている範囲のための便宜)。空の配列は 400。
+- **The result is returned per entry**: `[{"outcome":"changed","id":1,"metadata":{...}},
+  {"outcome":"refused","id":999,"code":"not_found","message":"..."}]`. One refusal (nonexistent, or
+  saved while publishing) does not stop the others.
+- Each entry goes through the same path as a single publish (`set_item_status`), so the guarantees and
+  refusals are the same.
+- The limit per call is **100 entries** (each entry is a transaction + index + Webhook, so bulk is a
+  convenience for the range the screen is showing on one page). An empty array is 400.
 
-## 5.13 外部プロバイダでのサインイン(Cognito)
+## 5.13 Signing in with an external provider (Cognito)
 
-パスワードを CMS が扱わない配備では、サインインは**プロバイダのページ**で行われ、CMS は
-**トークンを検証するだけ**。`GET /api/auth/capabilities` の `login_url` がそのページの住所で、
-`password_login: false` が「ここではパスワードを受け取らない」の合図。
+In a deployment where the CMS does not handle passwords, sign-in happens **on the provider's page**,
+and the CMS **only verifies the token**. `login_url` in `GET /api/auth/capabilities` is that page's
+address, and `password_login: false` is the signal that "passwords are not accepted here".
 
-流れ:
+Flow:
 
-1. 画面が `login_url` に **PKCE の challenge(S256)・`state`・`redirect_uri`** を足して
-   ブラウザを送る(verifier と state はそのタブの `sessionStorage` に残す)。
-2. プロバイダが `redirect_uri`(`<app_url>/api/auth/callback`)へ `code` と `state` を返す。
-3. 画面が state を照合し、**サーバーに交換を依頼**する:
+1. The screen adds **the PKCE challenge (S256), `state` and `redirect_uri`** to `login_url` and sends
+   the browser there (the verifier and state are kept in that tab's `sessionStorage`).
+2. The provider returns `code` and `state` to `redirect_uri` (`<app_url>/api/auth/callback`).
+3. The screen checks the state and **asks the server to exchange**:
 
-| メソッド | パス | 内容 |
+| Method | Path | Contents |
 |---|---|---|
-| POST | `/api/auth/cognito/exchange` | **公開**。`{ code, code_verifier, redirect_uri }` → `{ token, expires_at }` |
+| POST | `/api/auth/cognito/exchange` | **Public**. `{ code, code_verifier, redirect_uri }` → `{ token, expires_at }` |
 
-4. サーバーがプロバイダのトークンエンドポイント(`login_url` と同じドメインの
-   `/oauth2/token`)へフォーム POST し、`id_token` を返す。**ブラウザから直接交換しない**のは、
-   トークンエンドポイントが CORS ヘッダを返さないため。
-5. 画面はそのトークンをセッションとして採用し、`GET /api/auth/me` で権限レコードを読む
-   (初回は `BOOTSTRAP_ADMIN_USERNAMES` の誰かなら管理者として作られ、リスト外は 403)。
+4. The server form-POSTs to the provider's token endpoint (`/oauth2/token` on the same domain as
+   `login_url`) and returns the `id_token`. **The exchange is not done directly from the browser**
+   because the token endpoint returns no CORS headers.
+5. The screen adopts that token as the session and reads the permission record with `GET /api/auth/me`
+   (on first sign-in, anyone in `BOOTSTRAP_ADMIN_USERNAMES` is created as an admin, and anyone outside
+   the list gets 403).
 
-- **公開クライアントなので secret は無い**。コードが同じ呼び出し元に戻ったことの証明は PKCE
-  verifier だけ。
-- 署名・issuer・audience・期限・`token_use` の検証は `CognitoVerifier`(RS256 + JWKS、
-  キャッシュ 10 分)が行う。
-- 交換ルートは**プロバイダを使う配備だけ**が合成する(on-prem にはコードが無い)。
-- Terraform 側はクライアントに `callback_urls = ["<app_url>/api/auth/callback"]`、
-  `allowed_oauth_flows = ["code"]`、`allowed_oauth_scopes = ["openid","email"]` を設定する
-  (`app_url` 変数)。これが無いとプロバイダは `redirect_uri is not registered` を返す。
-- CMS のサインアウトは**ローカルのセッションだけ**を消す。プロバイダ側のセッションは残るので、
-  次にサインインすると確認なしで戻る(プロバイダのログアウトを使うのは別途)。
+- **A public client, so there is no secret**. The only proof that the code came back to the same
+  caller is the PKCE verifier.
+- Verification of the signature, issuer, audience, expiry and `token_use` is done by
+  `CognitoVerifier` (RS256 + JWKS, 10-minute cache).
+- The exchange route is composed **only by deployments that use the provider** (on-prem has no such
+  code).
+- On the Terraform side the client is configured with `callback_urls = ["<app_url>/api/auth/callback"]`,
+  `allowed_oauth_flows = ["code"]` and `allowed_oauth_scopes = ["openid","email"]` (the `app_url`
+  variable). Without this the provider returns `redirect_uri is not registered`.
+- CMS sign-out clears **only the local session**. The provider-side session remains, so the next
+  sign-in returns without confirmation (using the provider's logout is separate).
 
-## 6. まだ無いもの
+## 6. What does not exist yet
 
-- **`published_at` を使った差分ビルド**: 値は返っているが、サイト側の実装はこれから。
-- **監査ログ(履歴)**: いまは「最後に公開したアカウント」だけを持つ。誰がいつ何を保存・公開・
-  削除したかの**履歴**は残していない(追記型のログが要る)。
-- **メール送信**: リセットも通知も**メールでは送らない**(リンクを発行して手渡す方式)。SMTP を
-  設定して自動送信する案は未実装で、入れるなら `SMTP_URL` / `MAIL_FROM` / 本文用の絶対 URL が要る。
-- **利用者自身の「パスワードを忘れた」フロー**: 未実装。実装するなら `email` が必須の機能になり、
-  アカウントの存在を漏らさないよう常に同じ応答を返す設計が要る(いまは管理者発行のみ)。
-- **機械可読な仕様(OpenAPI)**: かつて `docs/swagger.yaml` があったが、実装済みルートの一部
-  (4 パス)しか載っておらず、`info.description` には Swagger Petstore のサンプル文がそのまま
-  残っていた。**この文書が契約**であり、テストがそれを固定しているので、**削除した**。外部の
-  ツールに読ませる仕様が要るなら、コード生成とセットで「新しく書く」判断をする(手で二重管理
-  すると必ずずれる)。
+- **Incremental builds using `published_at`**: the value is returned, but the site-side implementation
+  is still to come.
+- **Audit log (history)**: currently only "the Account that last published" is held. There is no
+  **history** of who saved, published or deleted what and when (an append-only log would be needed).
+- **Email sending**: neither resets nor notifications are **sent by email** (the approach is to issue
+  a link and hand it over). The idea of configuring SMTP and sending automatically is unimplemented,
+  and adding it would need `SMTP_URL` / `MAIL_FROM` and an absolute URL for the body.
+- **A user-initiated "forgot password" flow**: unimplemented. Implementing it would make `email`
+  required and need a design that always returns the same response so as not to leak the existence of
+  an Account (currently only admin issuance).
+- **A machine-readable specification (OpenAPI)**: there used to be `docs/swagger.yaml`, but it covered
+  only part of the implemented routes (4 paths), and `info.description` still contained the Swagger
+  Petstore sample text verbatim. **This document is the contract**, and tests pin it down, so it was
+  **deleted**. If a specification readable by external tools is needed, decide to "write a new one"
+  together with code generation (managing it by hand in two places always drifts).
 
-## 7. AWS 対応
+## 7. AWS support
 
-Lambda + DynamoDB + S3 で動かすと決めた理由と、実装して分かったことは
-[`docs/aws-decisions.md`](aws-decisions.md) にある。
-決めなければ後戻りする分岐(画像の配信方式、Cognito の採用、Webhook の配信方式、IaC)と、
-テスト方針、残っている課題をまとめてある。
+The reasons for deciding to run on Lambda + DynamoDB + S3, and what was learned by implementing it,
+are in [`docs/aws-decisions.md`](aws-decisions.md). The forks that cannot be undone once decided
+(image delivery style, adopting Cognito, Webhook delivery style, IaC), the testing policy and the
+remaining tasks are gathered there.
 
-## 8. CMS 側に GraphQL を持たせない方針
+## 8. The policy of not giving the CMS side GraphQL
 
-Gatsby の GraphQL は**ビルド時のデータ層**であり、CMS が GraphQL を喋る必要はない。
-`gatsby-source-graphql` は事実上非推奨で、Gatsby 自体も活発ではない。
-そのため、まずは REST の公開 API を整え、必要になったら次の順で進める。
+Gatsby's GraphQL is **a build-time data layer**, and the CMS has no need to speak GraphQL.
+`gatsby-source-graphql` is effectively deprecated, and Gatsby itself is not active.
+Therefore, first put the REST public API in order, and if the need arises proceed in this order.
 
-1. `/api/content/*`(本ドキュメント。実装済み)
-2. publish / unpublish を契機にした Webhook(本ドキュメント。実装済み)
-3. Gatsby の source plugin(REST → GraphQL ノード)
-4. 消費側が増えて GraphQL が本当に必要になったときだけ、GraphQL 層を検討する
+1. `/api/content/*` (this document. Implemented)
+2. Webhooks triggered by publish / unpublish (this document. Implemented)
+3. A Gatsby source plugin (REST → GraphQL nodes)
+4. Consider a GraphQL layer only when consumers grow and GraphQL becomes genuinely necessary
