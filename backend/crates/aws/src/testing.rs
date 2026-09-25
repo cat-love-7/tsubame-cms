@@ -100,42 +100,66 @@ pub fn in_memory_provisioner() -> std::sync::Arc<dyn AccountProvisioner> {
     )))
 }
 
-/// A MinIO user with exactly that policy, and the credentials to sign as it.
+/// A user with exactly the policy the deployment grants, and the credentials to sign as it.
 ///
 /// The emulator's root credentials can do anything, so a code path that needs a permission the
 /// deployment does not grant passed here and failed in the cloud - which is how a missing
 /// `s3:GetObject` stayed invisible. Running the same code as a user with the deployment's policy
 /// puts the same wall in front of it.
 ///
-/// The name is letters and digits only, because these are not only MinIO's credentials: a test
-/// hands them to the DynamoDB client too, and **DynamoDB Local refuses an access key id with
-/// anything else in it** (`cms-...` reads as "The Access Key ID or security token is invalid").
+/// Two steps, because the emulator splits them: the account is created through the gateway's admin
+/// API inside the container (`--iam-dir` has no identity policies, so a user starts with nothing),
+/// and the deployment's policy is then attached to the bucket as a **bucket** policy naming that
+/// user - the same statements, with the user as their `Principal` ([`crate::policy`]). Without the
+/// statement an action is denied, which is what a deployment's implicit deny looks like.
+///
+/// The name is letters and digits only, because these are not only S3 credentials: a test hands
+/// them to the DynamoDB client too, and **DynamoDB Local refuses an access key id with anything
+/// else in it** (`cms-...` reads as "The Access Key ID or security token is invalid").
 ///
 /// `None` when the emulator is not running at all, which is a test that skips rather than a test
 /// that lies. Everything after that check is this test's own setup, and a setup step that fails is
 /// a failure ([`run_in_emulator`] says why).
 #[cfg(test)]
-pub fn restricted_minio_user(bucket: &str, list_bucket: bool) -> Option<(String, String)> {
+pub async fn user_with_the_deployment_policy(
+    s3: &aws_sdk_s3::Client,
+    bucket: &str,
+    list_bucket: bool,
+) -> Option<(String, String)> {
     if !crate::repository::emulator_reachable(&test_s3_endpoint()) {
         return None;
     }
     let user = format!("cms{}", uuid::Uuid::new_v4().simple());
     let secret = uuid::Uuid::new_v4().simple().to_string();
-    let policy = deployment_s3_policy(bucket, list_bucket);
-    // The JSON has no single quotes in it, so the shell can carry it as it is.
-    let script = format!(
-        "set -e;          mc alias set cms http://127.0.0.1:9000 {root} {password} >/dev/null;          printf '%s' '{policy}' > /tmp/{user}.json;          mc admin user add cms {user} {secret} >/dev/null;          mc admin policy create cms {user} /tmp/{user}.json >/dev/null;          mc admin policy attach cms {user} --user {user} >/dev/null",
+    // The admin API's own credentials are the gateway's root ones, and the `--role user` keeps the
+    // account out of the admin API: what it may do is only ever what the bucket policy says.
+    run_in_emulator(&format!(
+        "set -e; versitygw admin --endpoint-url http://127.0.0.1:7071 -a {root} -s {password} create-user -a {user} -s {secret} --role user",
         root = test_access_key(),
         password = test_secret_key(),
-    );
-    run_in_emulator(&script);
+    ));
+    s3.put_bucket_policy()
+        .bucket(bucket)
+        .policy(crate::policy::deployment_bucket_policy(
+            bucket,
+            &user,
+            list_bucket,
+        ))
+        .send()
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "the emulator refused the deployment's bucket policy: {}",
+                crate::repository::describe(&e)
+            )
+        });
     Some((user, secret))
 }
 
 /// Run a shell line inside the emulator container, and fail loudly when it does not run.
 ///
 /// Answering `None` for a failed command, the way an absent emulator is answered, hides the
-/// failures that matter: a policy MinIO will not accept, a user it will not create, a command
+/// failures that matter: a policy the gateway will not accept, a user it will not create, a command
 /// whose syntax is wrong. The test then reports success having checked nothing, which is exactly
 /// what happened to this helper (`cargo test` was green; the policy was never applied). The caller
 /// has already established that there is an emulator; from there, a failure is a failure.

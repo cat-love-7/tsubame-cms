@@ -114,7 +114,8 @@ impl Drop for OnPremises {
     }
 }
 
-/// The AWS adapter: a table of its own in DynamoDB Local, and the emulator's MinIO for bytes.
+/// The AWS adapter: a table of its own in DynamoDB Local, and the emulator's S3 gateway for
+/// bytes.
 ///
 /// Unlike the local one this needs something running, so it fails with instructions rather
 /// than quietly passing when `docker compose` has not been started. `scripts/test-rust.sh`

@@ -49,7 +49,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
-      # The same emulators a developer starts, from the same file: DynamoDB Local and MinIO.
+      # The same emulators a developer starts, from the same file: DynamoDB Local and the
+      # S3 gateway.
       - name: Start the emulators
         run: docker compose -f backend/docker-compose.yml up -d
       - name: Wait for them to listen

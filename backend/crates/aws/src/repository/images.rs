@@ -556,7 +556,8 @@ mod tests {
     /// hands out works, and the same object without a signature does not.
     #[tokio::test]
     async fn a_presigned_deployment_serves_a_url_that_expires() {
-        // Both halves are needed: the records are in DynamoDB and the bytes are in S3 (MinIO), and
+        // Both halves are needed: the records are in DynamoDB and the bytes are in S3 (the
+        // emulator's gateway), and
         // the bare read below has to reach the *bucket* to be about the bucket at all.
         let dynamo = crate::test_endpoint();
         let s3 = crate::test_s3_endpoint();
@@ -810,8 +811,8 @@ mod tests {
     /// of it: a key that is there is found, and one that is not is absent.
     ///
     /// The one thing this cannot show is what the policy is *for*: with real S3 a caller that may
-    /// not list the bucket is refused for a key that is not there, while MinIO answers 404 either
-    /// way. `infra/lambda.tf` carries that reason, and the last part of this test states what the
+    /// not list the bucket is refused for a key that is not there, while the emulator answers 404
+    /// either way. `infra/lambda.tf` carries that reason, and the last part of this test states what
     /// emulator does instead of pretending to check it.
     /// The length a client announces is part of the signature, so object storage takes only an
     /// upload of that size. That is what makes the CMS's limit real even though the bytes never
@@ -904,7 +905,9 @@ mod tests {
             .unwrap_or_else(|e| panic!("could not create {bucket}: {}", describe(&e)));
 
         // The deployment's own policy: what is there is found, and what is not is absent.
-        let Some((user, secret)) = crate::restricted_minio_user(&bucket, true) else {
+        let Some((user, secret)) =
+            crate::user_with_the_deployment_policy(&root.inner.s3, &bucket, true).await
+        else {
             eprintln!("skipped: no emulator container to make a restricted user in");
             return;
         };
@@ -962,9 +965,11 @@ mod tests {
         // What the emulator cannot show: with the real service, a caller that may not list the
         // bucket is *refused* (403) for a key that is not there, so "missing" and "not allowed"
         // look the same and this "not there yet" branch is never reached. That is the reason the
-        // deployment's policy carries `s3:ListBucket` - and MinIO answers 404 whether or not the
+        // deployment's policy carries `s3:ListBucket` - and the emulator answers 404 either way,
         // policy allows listing, so the emulator pins the policy's shape, not that consequence.
-        let Some((stranger, secret)) = crate::restricted_minio_user(&bucket, false) else {
+        let Some((stranger, secret)) =
+            crate::user_with_the_deployment_policy(&root.inner.s3, &bucket, false).await
+        else {
             eprintln!("skipped: no emulator container to make a restricted user in");
             return;
         };
@@ -976,7 +981,7 @@ mod tests {
             !stranger_repository
                 .image_bytes_exist("nothing-here.png")
                 .await
-                .expect("MinIO answers 404 with or without s3:ListBucket"),
+                .expect("the emulator answers 404 with or without s3:ListBucket"),
             "a key that is not there is absent, whatever the policy says"
         );
     }

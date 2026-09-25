@@ -68,7 +68,7 @@ async fn dynamodb_client(settings: &AwsSettings) -> Client {
 
 /// Build an S3 client pointed at `settings`, which may be a local emulator.
 ///
-/// Path-style addressing is what MinIO serves; against real AWS the SDK's virtual-host style is
+/// Path-style addressing is what the emulator serves; against real AWS the SDK's virtual-host style is
 /// the default, so it is only switched on when an endpoint override is in play.
 async fn s3_client(settings: &AwsSettings) -> aws_sdk_s3::Client {
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())

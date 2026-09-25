@@ -18,12 +18,13 @@
 # all different in the cloud. Passing here means the adapter's logic is right, not that the
 # deployment is (see docs/aws-decisions.md, "テスト方針").
 #
-# One thing they *can* reproduce, now that it matters: MinIO takes a user whose policy is the
-# deployment's, so a permission-dependent branch is exercised against the same walls
-# (`restricted_minio_user` in crates/aws, and the test that uses it). Without that user, root
-# credentials answered for permissions the deployment does not grant, which is how a missing
-# `s3:GetObject` stayed invisible. What MinIO does *not* reproduce: real S3 answers 403 for a key
-# that is not there unless the caller may list the bucket, while MinIO answers 404 either way.
+# One thing they *can* reproduce, now that it matters: the gateway grants a user exactly the
+# policy the deployment has, so a permission-dependent branch is exercised against the same walls
+# (`user_with_the_deployment_policy` in crates/aws, and the test that uses it). Without that user,
+# root credentials answered for permissions the deployment does not grant, which is how a missing
+# `s3:GetObject` stayed invisible. What the emulator does *not* reproduce: real S3 answers 403 for
+# a key that is not there unless the caller may list the bucket, while versitygw answers 404
+# either way.
 #
 # The project name is pinned rather than left to the directory: it is the prefix of the container
 # names (`tsubame-s3-1`), and the tests that `docker compose exec` into the emulator
@@ -40,26 +41,34 @@ services:
     # It insists on *some* signature, as the real service does: the tests hand it the
     # credentials below (`test` / `test-secret`), while a bare curl is refused. It also refuses an
     # access key id with anything but letters and digits in it (`UnrecognizedClientException`),
-    # which is why the restricted MinIO user's name has no dash in it.
+    # which is why the restricted user's name has no dash in it.
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
     ports:
       - "8000:8000"
 
   s3:
-    # MinIO rather than LocalStack: the current LocalStack image refuses to start without a
-    # license token (`License activation failed`, exit 55), which would mean every developer
-    # and CI run needing an account. MinIO needs no token and verifies SigV4 for real, so the
-    # presigned PUT/GET the adapter hands out are actually exercised.
-    image: quay.io/minio/minio:latest
-    command: ["server", "/data", "--console-address", ":9001"]
+    # versitygw, because MinIO's community server, client and images were archived in 2025 and are
+    # no longer served anywhere (Docker Hub answers 404, quay.io 401, dl.min.io 410 - see
+    # docs/aws-decisions.md). This gateway is Apache-2.0, still released, and verifies SigV4 for
+    # real, so the presigned PUT/GET the adapter hands out are actually exercised.
+    #
+    # The admin API on 7071 is how the tests create the restricted user: with `--iam-dir` there are
+    # no identity policies, so the user's grant is a *bucket* policy that names them
+    # (`deployment_bucket_policy` in crates/aws/src/policy.rs). Pinned by tag: an emulator that
+    # changes under a build is an emulator whose failures nobody can reproduce.
+    image: versity/versitygw:v1.8.0
+    command:
+      ["--port", ":9000", "--admin-port", ":7071", "--iam-dir", "/iam", "posix", "/data"]
     environment:
-      MINIO_ROOT_USER: test
-      MINIO_ROOT_PASSWORD: test-secret
+      ROOT_ACCESS_KEY: test
+      ROOT_SECRET_KEY: test-secret
     ports:
       - "9000:9000"   # S3 API
-      - "9001:9001"   # web console, for looking at what a test left behind
+      - "7071:7071"   # admin API (the tests create their users here)
     volumes:
-      - minio:/data
+      - s3data:/data
+      - s3iam:/iam
 
 volumes:
-  minio:
+  s3data:
+  s3iam:

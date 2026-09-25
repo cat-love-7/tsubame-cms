@@ -86,9 +86,10 @@
 - **エンドポイント差し替え**: `AWS_ENDPOINT_URL`(既定 `http://localhost:8000`)、
   `AWS_REGION=us-east-1`、`AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test`。
   DynamoDB Local は資格情報を要求する(実サービスと同じ)。
-- **S3 は MinIO**: `S3_ENDPOINT_URL`(既定 `http://localhost:9000`)、`force_path_style(true)`、
-  `MINIO_ROOT_USER=test` / `MINIO_ROOT_PASSWORD=test-secret`。presign → PUT → GET を実際に往復する
-  (MinIO は SigV4 を検証するので、presigner が壊れればテストが落ちる)。
+- **S3 は versitygw**: `S3_ENDPOINT_URL`(既定 `http://localhost:9000`)、`force_path_style(true)`、
+  `ROOT_ACCESS_KEY=test` / `ROOT_SECRET_KEY=test-secret`。presign → PUT → GET を実際に往復する
+  (SigV4 を検証するので、presigner が壊れればテストが落ちる)。MinIO のコミュニティ版は 2025 年に
+  配布終了したため、保守されているゲートウェイに替えた(`aws-decisions.md` §2)。
 - 起動: `docker compose up -d`(`backend/docker-compose.yml`)。
 
 ## 6. 依存とビルド

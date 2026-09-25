@@ -34,7 +34,7 @@ in the wrong place (`crates/tests/suite/mod.rs` says so itself).
 ./scripts/test-frontend.sh    # ng test (Vitest) + ng build
 cd frontend && npm run lint && npm run format:check
 ./scripts/test-e2e.sh         # real browser against a real backend, own servers on 8080/4200
-docker compose -f backend/docker-compose.yml up -d   # DynamoDB Local + MinIO
+docker compose -f backend/docker-compose.yml up -d   # DynamoDB Local + the S3 emulator (versitygw)
 (cd infra && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
 (cd infra/bootstrap && terraform init -backend=false && terraform validate)
 scripts/check-iam-actions.sh  # every action in the deployer policies exists, and the plan one is a subset

@@ -3,7 +3,7 @@
 # The Rust test suite.
 #
 # The core, the local adapter and the contract suite against it need nothing running. The AWS
-# adapter's own tests and the contract suite against it need DynamoDB Local and MinIO
+# adapter's own tests and the contract suite against it need DynamoDB Local and an S3 gateway
 # (`docker compose -f backend/docker-compose.yml up -d`); when they are not there this script
 # says so and skips them rather than failing, and CI starts them as service containers instead.
 #
@@ -42,6 +42,6 @@ if listening 8000 && listening 9000; then
   cargo test -p tsubame-aws
   cargo test -p tsubame-tests --test aws
 else
-  echo "skipped: nothing listening on 8000 (DynamoDB Local) / 9000 (MinIO)"
+  echo "skipped: nothing listening on 8000 (DynamoDB Local) / 9000 (S3 emulator)"
   echo "         start them with: docker compose -f backend/docker-compose.yml up -d"
 fi

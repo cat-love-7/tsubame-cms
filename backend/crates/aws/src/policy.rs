@@ -3,18 +3,35 @@
 //! It mirrors `infra/lambda.tf`; see the note in `docs/aws-decisions.md` about the two being kept in
 //! step by hand.
 
-/// The S3 policy a deployment gives its function, as the emulator is told it.
+/// The S3 policy a deployment gives its function, as the tests are told it.
 ///
 /// A copy of `infra/lambda.tf`'s two statements. It is here so a test that depends on a permission
 /// can say so out loud, and so that changing the deployment's policy is something the tests are
 /// expected to follow - they are the only place the difference is visible.
 pub fn deployment_s3_policy(bucket: &str, list_bucket: bool) -> String {
+    policy(bucket, None, list_bucket)
+}
+
+/// The same policy, as a **bucket** policy naming one user.
+///
+/// The emulator's built-in IAM has no identity policies (versitygw with `--iam-dir`): what a user
+/// may do is what a bucket policy grants them, and anything else is denied - which is the same shape
+/// as a deployment, where the function's policy is the only thing that grants it anything. So the
+/// statements are the deployment's, with the user as their `Principal`.
+pub fn deployment_bucket_policy(bucket: &str, principal: &str, list_bucket: bool) -> String {
+    policy(bucket, Some(principal), list_bucket)
+}
+
+fn policy(bucket: &str, principal: Option<&str>, list_bucket: bool) -> String {
+    let who = principal
+        .map(|name| format!(r#""Principal":"{name}","#))
+        .unwrap_or_default();
     let mut statements = vec![format!(
-        r#"{{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}"#
+        r#"{{{who}"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}"#
     )];
     if list_bucket {
         statements.push(format!(
-            r#"{{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::{bucket}"]}}"#
+            r#"{{{who}"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::{bucket}"]}}"#
         ));
     }
     format!(

@@ -8,7 +8,7 @@ guessing at the conventions.
 * **Rust 1.98+** (the workspace is edition 2024) - `rustup` is enough.
 * **Node 24+** for the admin app, and for the two packages under `packages/`.
 * **Docker** - only for the AWS half: `docker compose -f backend/docker-compose.yml up -d` starts
-  DynamoDB Local and MinIO, which the `tsubame-aws` tests run against.
+  DynamoDB Local and an S3 gateway, which the `tsubame-aws` tests run against.
 * **Chromium for Playwright** - only for the browser suite, which has its own instructions in
   `frontend/e2e/README.md`.
 

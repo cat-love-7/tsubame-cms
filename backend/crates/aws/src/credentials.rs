@@ -9,7 +9,7 @@ use super::*;
 ///
 /// A deployment has nothing to put here: on Lambda the chain resolves the execution role. An
 /// emulator, unlike DynamoDB Local, verifies the signature, so the CMS has to be told the same
-/// keys MinIO was started with.
+/// keys the emulator was started with.
 ///
 /// **The endpoint decides, not the variable.** Lambda sets `AWS_ACCESS_KEY_ID`,
 /// `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` to the execution role's temporary credentials,

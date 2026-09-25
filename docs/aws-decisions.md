@@ -18,7 +18,7 @@
   **Lambda の起動点**(`lambda.rs`)、Cognito のアカウント管理(`provisioner.rs`)が入っている。
 - リポジトリのトレイトは async。かつての「同期トレイトをランタイムスレッドで包む」ブリッジは
   無くなった(`aws-dynamodb-design.md` §7.1)。
-- エミュレータ(DynamoDB Local + MinIO)は `docker-compose.yml`、配備は `infra/`(Terraform)、
+- エミュレータ(DynamoDB Local + versitygw)は `docker-compose.yml`、配備は `infra/`(Terraform)、
   テストは `scripts/test-rust.sh` が 1 コマンド。
 - プロセス内メモリに依存していた 3 つ(ログイン試行のカウンタ、画像アップロードの単回トークン、
   Webhook のバックグラウンド送信)は、AWS 側でそれぞれ DynamoDB のレコード、S3 の presigned PUT、
@@ -77,12 +77,20 @@ Cognito を入れると「配備によってできることが違う」状態に
       → 残り: AWS 側のヘルパーができたらゲートを `any(on-premises, aws)` に広げる。
 - [x] `docker-compose.yml`(DynamoDB Local + S3 エミュレータ)
       → **確認済み**。DynamoDB Local で CreateTable → `UpdateItem ADD`(原子カウンタ。1 → 2 を確認)
-      → ListTables → DeleteTable。S3 は **MinIO** に presign した PUT / GET / DELETE を実際に往復
-      (改竄した署名は 403 = エミュレータが SigV4 を本当に検証している)。
+      → ListTables → DeleteTable。S3 はエミュレータに presign した PUT / GET / DELETE を実際に往復
+      (改竄した署名は拒否 = エミュレータが SigV4 を本当に検証している)。
       **LocalStack は不採用**: 現在のイメージはライセンストークンが無いと起動しない
       (`License activation failed!`, exit 55)。開発者や CI がアカウントを持つ前提になってしまう。
-      MinIO はトークン不要で SigV4 を検証する。DynamoDB Local は実サービス同様なんらかの資格情報を
-      要求するので、SDK には `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` を渡す。
+      DynamoDB Local は実サービス同様なんらかの資格情報を要求するので、SDK には
+      `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` を渡す。
+
+      **2025-10 追記: MinIO から versitygw へ。** MinIO はオープンソース版のサーバー・クライアント・
+      イメージをアーカイブし、配布を終了した(Docker Hub は 404、quay.io は 401、`dl.min.io` は
+      アーカイブ一覧まで 410。公式の告知どおり「セキュリティ更新も脆弱性報告も受けない」)。
+      コミュニティのミラーを CI に pin すると、更新の無いソフトウェアを検証もできずに動かすことになる。
+      代わりに **versitygw**(Apache-2.0、いまもリリースされている S3 ゲートウェイ)に替えた:
+      SigV4 を検証し、`--iam-dir` のユーザー + **バケットポリシー**で「配備と同じ権限のユーザー」を
+      作れるので、権限に依存するテストはそのまま意味を保っている(`deployment_bucket_policy`)。
 - [x] テストを 1 コマンドにした(`scripts/test-rust.sh` / `test-frontend.sh` / `test-e2e.sh`)と
       CI(`.github/workflows/ci.yml`: rust / frontend / e2e の 3 ジョブ)
       → 確認: スクリプトは手元で実行して確認済み。**ワークフロー自体はこの環境にランナーが
@@ -580,22 +588,23 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 で偶然通っていた** — バケットを CloudFront の背後に置いた時点で HeadObject ごと失敗する。
 `infra/lambda.tf` に `s3:GetObject`(HeadObject 用)と `s3:ListBucket`(404 を取り戻すため)を明示。
 
-**エミュレータでも再現できるようにした**: MinIO に**配備と同じポリシーのユーザー**を作り
-(`restricted_minio_user`)、その資格情報で `image_bytes_exist` を呼ぶ。配備ポリシーに無い権限を
+**エミュレータでも再現できるようにした**: **配備と同じポリシーを持つユーザー**を作り
+(`user_with_the_deployment_policy`。いまは versitygw のユーザー + そのユーザーを principal にした
+バケットポリシー)、その資格情報で `image_bytes_exist` を呼ぶ。配備ポリシーに無い権限を
 コードが使えば 403 になるので、root 資格情報で偶然通っていた状態(上の `s3:GetObject` の件)は
 もう隠れない。**このテストはしばらく一度も走っていなかった**(compose ファイルのパスが 1 階層
 ずれていて、`run_in_emulator` が `None` を返し、テストが「スキップ」として通り抜けていた)。
 当時の `run_in_emulator` は**失敗と「エミュレータが無い」を同じ `None` に畳んで**いたので、
-ポリシーを MinIO が拒否しても、ユーザーを作れなくても緑のままだった。いまは:
+ポリシーをエミュレータが拒否しても、ユーザーを作れなくても緑のままだった。いまは:
 
 - **スキップは「エミュレータが無い」だけ**(`emulator_reachable` が見て `None`)。compose の
-  パスが解決しない、`docker` が失敗する、`mc` が拒否するのは**すべてテストの失敗**。
+  パスが解決しない、`docker` が失敗する、ゲートウェイが拒否するのは**すべてテストの失敗**。
 - したがって `cargo test` の "24 passed" を**カバレッジとして読むときは注意**: エミュレータを
   起動していない実行では、この系統のテストはスキップしたまま緑になる(それは意図した動作で、
   `scripts/test-rust.sh` はそもそも 8000/9000 が開いていなければ AWS 側を走らせない)。
 
 **エミュレータでは再現できない部分**: 実 S3 は `s3:ListBucket` の無い呼び出しに「存在しない
-キー」も **403** と答える(不在と権限不足を区別させない)が、**MinIO は ListBucket の有無に
+キー」も **403** と答える(不在と権限不足を区別させない)が、**エミュレータは ListBucket の有無に
 かかわらず 404 を返す**。`ListBucket` を外したユーザーで差が出ないことをテストは明示的に固定し、
 「403 になるので 404 が必要」という理由の側は `infra/lambda.tf` と `deployment_s3_policy` の
 コメントが担う。
@@ -627,7 +636,7 @@ Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` 
 |---|---|---|
 | ルーター / ドメイン | `oneshot` + **共有契約スイート**(両バックエンド) | — |
 | DynamoDB | DynamoDB Local(`endpoint_url` 差し替え) | GSI の反映遅延、スロットリング、上限 |
-| S3 | **MinIO**(presign → PUT → GET。検証済み。不在の 403 化は再現しない) | IAM、CloudFront、転送 |
+| S3 | **versitygw**(presign → PUT → GET。検証済み。不在の 403 化は再現しない) | IAM、CloudFront、転送 |
 | Lambda 起動点 | localhost で `serve` して E2E / `cargo lambda watch`。CI が **arm64 の成果物**をビルドして中身のアーキテクチャまで確認 | イベント形状、コールドスタート、凍結 |
 | Cognito | 鍵を生成して JWKS を注入(単体) | 実プールの設定 |
 | 全体 | — | 使い捨てスタック + 既存 E2E |

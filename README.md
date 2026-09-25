@@ -196,7 +196,7 @@ scripts/test-preview.sh         # the preview renderer
 ```
 
 The AWS halves want the emulators (`docker compose -f backend/docker-compose.yml up -d`: DynamoDB
-Local and MinIO); `test-rust.sh` skips them when nothing is listening. The end-to-end suite needs
+Local and an S3 gateway); `test-rust.sh` skips them when nothing is listening. The end-to-end suite needs
 Chromium for Playwright - see `frontend/e2e/README.md`.
 
 ## Deploy it

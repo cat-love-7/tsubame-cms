@@ -20,7 +20,8 @@
 //! runs it against both, which is something a single crate selecting a backend with a Cargo
 //! feature cannot do, because one build has one feature set.
 //!
-//! The AWS suite needs DynamoDB Local and MinIO from `backend/docker-compose.yml`; it says so
+//! The AWS suite needs DynamoDB Local and an S3 gateway from `backend/docker-compose.yml`; it says
+//! so
 //! loudly rather than passing quietly when they are missing. `scripts/test-rust.sh` checks for
 //! them first and skips the whole file with a note.
 
