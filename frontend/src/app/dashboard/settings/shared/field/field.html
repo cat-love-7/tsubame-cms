@@ -42,7 +42,9 @@
   </mat-select>
 </mat-form-field>
 @if (isSlug()) {
-  <mat-form-field appearance="fill" class="full-width">
+  <!-- The hint is a sentence, and a narrow column wraps it: a fixed subscript clips the second
+       line onto whatever comes next. -->
+  <mat-form-field appearance="fill" class="full-width" subscriptSizing="dynamic">
     <mat-label>{{ 'schema.slugGenerateFrom' | transloco }}</mat-label>
     <mat-select
       name="slugGenerateFrom"

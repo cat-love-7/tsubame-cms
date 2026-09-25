@@ -38,13 +38,18 @@
   width: 9rem;
 }
 
-/// Uniqueness is the one setting that costs something at write time, so it is explained
-/// rather than merely labelled.
-.unique-field {
+/// The settings that need a sentence rather than a label: uniqueness costs something at write
+/// time, and the title and the list change how an item is read everywhere else. Each one is
+/// explained under its checkbox - `display: block`, or the hint runs into the label it explains.
+.unique-field,
+.title-field,
+.list-field {
   display: block;
   margin-top: 4px;
 
-  .unique-hint {
+  .unique-hint,
+  .title-hint,
+  .list-hint {
     display: block;
     color: var(--mat-sys-on-surface-variant);
     font: var(--mat-sys-body-small);
