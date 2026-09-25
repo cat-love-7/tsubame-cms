@@ -27,7 +27,7 @@ resource "aws_dynamodb_table" "cms" {
 # readable — a presigned URL in a page would expire with the page
 # (doc/aws-dynamodb-design.md, and `AwsSettings::image_url`).
 resource "aws_s3_bucket" "images" {
-  bucket = "${local.name}-images"
+  bucket = var.images_bucket != "" ? var.images_bucket : "${local.name}-images"
 }
 
 resource "aws_s3_bucket_public_access_block" "images" {

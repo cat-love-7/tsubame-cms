@@ -4,11 +4,13 @@ project    = "sl-cms"
 environment = "staging"
 
 # Signs preview and reset links. The value lives in Secrets Manager, not here: create the secret
-# once and paste its ARN. (At least 32 characters; the command below makes 48.)
+# once and paste its ARN. (At least 32 characters; the command below makes 48.) One secret per
+# environment, named for both halves: a deployment that shares one with another environment can
+# mint a token the other accepts.
 #
-#   aws secretsmanager create-secret --name sl-cms/jwt-secret \
+#   aws secretsmanager create-secret --name sl-cms/staging/jwt-secret \
 #     --secret-string "$(openssl rand -base64 48)"
-jwt_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:sl-cms/jwt-secret-AbCdEf"
+jwt_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:sl-cms/staging/jwt-secret-AbCdEf"
 
 # Who may become the first administrator by signing in.
 bootstrap_admin_usernames = ["ops@example.com"]
@@ -36,3 +38,11 @@ image_delivery = "public"
 
 # Cognito's hosted page has to be unique across the whole region.
 cognito_domain_prefix = "sl-cms-staging-example"
+
+# Only when the default name is taken somewhere in the world: S3 bucket names are unique across
+# every account, so `<project>-<environment>-app` and `-images` are the two a second deployment
+# sometimes has to change. `frontend_bucket` holds a build artifact and can be moved freely;
+# `images_bucket` is the address content stores for an image, so an environment that already
+# serves content keeps the one it has.
+# frontend_bucket = "example-cms-app"
+# images_bucket   = "example-cms-images"

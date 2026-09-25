@@ -130,6 +130,30 @@ shape. `bootstrap/` keeps its own state locally — it is the thing that makes t
 possible, so it cannot use it — and that file is worth keeping: without it the bucket still exists,
 but Terraform no longer knows it made it.
 
+## A second environment
+
+`local.name` is `"<project>-<environment>"`, and everything named from it follows: the DynamoDB
+table, the images and the app bucket, the function with its role and log group, the three
+CloudFront functions. A `tsubame-prod` beside a `tsubame-staging` is therefore a `terraform.tfvars`
+with a different `environment` - plus the things only that file can decide, because they are
+global names or the world outside the account:
+
+| What | Why it is not derived |
+|---|---|
+| `jwt_secret_arn` | one secret per environment (`<project>/<environment>/jwt-secret`): two deployments sharing one can mint a token the other accepts |
+| `bootstrap_admin_usernames` | who administers *this* deployment |
+| `app_url`, `frontend_certificate_arn` | the name the provider sends the browser back to, and its certificate |
+| `preview_url`, `preview_certificate_arn` | a name of its own, never a path under `app_url` (`doc/preview-site.md` §7) |
+| `cognito_domain_prefix` | unique across *all* accounts in the region, so the default usually has to change |
+| `cors_allowed_origins` | the preview origin, and anything else that calls the API |
+| the state key in `backend.hcl` | one state per environment: `<project>/<environment>/terraform.tfstate` |
+| `frontend_bucket`, `images_bucket` | only when the default (`<name>-app`, `<name>-images`) is taken - S3 names are unique across every account |
+
+The two buckets are the only names with that global uniqueness; the table, the function and the
+rest are unique per account and region, which `environment` already separates. The Lambda artifact
+is one file per build (`infra/build/tsubame-aws-<arch>.zip`, or `function_zip`), so two
+environments deployed from one checkout want it built - or copied aside - per environment.
+
 ## Renaming a deployment
 
 Every resource is named from `project` and `environment` (`local.name`, `locals.tf`), so changing

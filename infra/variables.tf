@@ -130,6 +130,18 @@ variable "frontend_bucket" {
   default     = ""
 }
 
+variable "images_bucket" {
+  description = <<-EOT
+    Name of the bucket the uploads go in. Empty means `<project>-<environment>-images`, which is
+    what the deployment creates. Set it when that name is taken elsewhere: S3 bucket names are
+    unique across *every* account, so the second and third deployment of this stack are the ones
+    that meet a stranger's bucket. It is also the address content stores for an image, so a
+    deployment that already serves content is not the one to move to another name.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "image_delivery" {
   description = <<-EOT
     How the CMS hands out image URLs.
