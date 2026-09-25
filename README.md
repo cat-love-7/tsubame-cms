@@ -106,6 +106,11 @@ schema and relations (`doc/relations-design.md`), the frontend's boundaries
 (`doc/preview-site.md`). They are written in Japanese; the code and its comments are in English.
 `.github/copilot-instructions.md` is the same conventions in short form.
 
+## Contributing
+
+Issues and pull requests are welcome - [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the
+suites to run, and the conventions a change is reviewed against. The licence needs no CLA.
+
 ## License
 
 [MIT](LICENSE).
