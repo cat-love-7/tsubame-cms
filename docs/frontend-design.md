@@ -1,312 +1,313 @@
-# 画面の見た目(デザインの土台)
+# Screen appearance (the foundation of the design)
 
-**状態: 実装済み**(2026-09)。テーマは Angular Material 3 の `mat.theme()`
-(`mat.$azure-palette` + `mat.$blue-palette`)のままで、その上に**共通の語彙**を置き、
-全画面をその語彙で組み直した。新しいライブラリもデザイントークンも増やしていない。
+**Status: implemented** (2026-09). The theme is still Angular Material 3's `mat.theme()`
+(`mat.$azure-palette` + `mat.$blue-palette`); a **common vocabulary** was placed on top of it,
+and every screen was rebuilt with that vocabulary. No new library and no new design token were added.
 
-## 1. 決めたこと
+## 1. Decisions
 
-| 項目 | 決定 |
+| Item | Decision |
 |---|---|
-| テーマ | **Material 3 の azure パレットを維持**。色は `--mat-sys-*` だけを使う |
-| 色の直書き | **禁止**(`#666`、`#b3261e`、`#fff4e5` のような直書きは全部やめた) |
-| ダークモード | **OS の設定に追従**(`html { color-scheme: light dark }`)。`mat.theme()` が両スキームの変数を出すので、色を直書きしない限りそのまま暗くなる |
-| 共通の形 | `src/styles.scss` に集約(ツールバー、パネル、メッセージ、チップ、表、操作行) |
-| 余白 | 画面ごとに `:host { display: flex; flex-direction: column; gap: 16px }`。個別の `margin` で帳尻を合わせない |
-| シェル | ヘッダー固定 + サイドバー + スクロールする本文(`100dvh`)。本文は最大 1400px で中央寄せ |
-| シェルの色 | アプリバーは `surface-container`。Material のボタンやアイコンは surface の上に載る前提で描かれているため、brand とナビゲーションでパレットを見せる |
+| Theme | **Keep the Material 3 azure palette**. Use only `--mat-sys-*` for colour |
+| Hard-coded colours | **Prohibited** (all hard-coded values such as `#666`, `#b3261e`, `#fff4e5` were removed) |
+| Dark mode | **Follow the OS setting** (`html { color-scheme: light dark }`). `mat.theme()` emits variables for both schemes, so unless a colour is hard-coded it darkens as is |
+| Common shapes | Collected in `src/styles.scss` (toolbar, panel, message, chip, table, action row) |
+| Spacing | Per screen, `:host { display: flex; flex-direction: column; gap: 16px }`. Do not balance things out with individual `margin` |
+| Shell | Fixed header + sidebar + scrolling body (`100dvh`). The body is centred with a maximum width of 1400px |
+| Shell colours | The app bar is `surface-container`. Material's buttons and icons are drawn on the premise that they sit on surface, so the palette is shown in the brand and the navigation |
 
-## 2. 語彙(`src/styles.scss`)
+## 2. Vocabulary (`src/styles.scss`)
 
-「画面はいくつかの形の組み合わせ」という前提で、形だけをここに置く。Angular の
-view encapsulation のせいで各コンポーネントに似た規則を書くと、画面ごとに少しずつ違う
-灰色と赤が生まれる — それが実際に起きていた。
+On the premise that "a screen is a combination of a few shapes", only the shapes are put here.
+Because of Angular's view encapsulation, writing similar rules in each component gives birth to
+slightly different greys and reds per screen - and that is what was actually happening.
 
-| 形 | クラス | 使いどころ |
+| Shape | Class | Where to use |
 |---|---|---|
-| 画面ヘッダー | `.toolbar`(+ `.spacer`) | 見出し `h2` と、その画面でできること |
-| パネル | `.panel` | フォーム・表・設定など、ひとまとまりの内容 |
-| メッセージ | `.error` / `.status` / `.notice` / `.note` / `.hint` | 失敗・成功・注意・補足。全部同じ形で、色だけが意味を分ける |
-| チップ | `.draft-note` | 未公開の変更など、見出しの横の小さな状態 |
-| 補助文字 | `.updated` / `.publisher` / `.user-email` / `.count` | 日時、公開者、件数。本文と競わせない |
-| 操作行 | `.actions` / `.array-actions` / `.picker-actions` / `.resource-actions` / `.schema-actions` / `.element-actions` | ボタンの並び。間隔を画面ごとに決めない |
-| 表 | `table.items` / `table.accounts`、`.mat-mdc-table`、`.empty` | 素の表も `mat-table` も同じ見た目 |
-| リンク | `.preview-link` | 配る用の URL(長いので折り返す) |
-| フィールド | `.field-grid` / `.field-cell` / `.field-cell.problem` | スキーマ編集と内容編集で同じ格子。`problem` はサーバーが拒否した項目 |
+| Screen header | `.toolbar` (+ `.spacer`) | The `h2` heading and what can be done on that screen |
+| Panel | `.panel` | A unit of content such as a form, a table or settings |
+| Message | `.error` / `.status` / `.notice` / `.note` / `.hint` | Failure, success, caution, supplement. All the same shape, only the colour separates the meanings |
+| Chip | `.draft-note` | A small state next to the heading, such as unpublished changes |
+| Supporting text | `.updated` / `.publisher` / `.user-email` / `.count` | Date and time, publisher, count. Do not let them compete with the body |
+| Action row | `.actions` / `.array-actions` / `.picker-actions` / `.resource-actions` / `.schema-actions` / `.element-actions` | A row of buttons. Do not decide the spacing per screen |
+| Table | `table.items` / `table.accounts`, `.mat-mdc-table`, `.empty` | A plain table and a `mat-table` look the same |
+| Link | `.preview-link` | The URL to hand out (long, so it wraps) |
+| Field | `.field-grid` / `.field-cell` / `.field-cell.problem` | The same grid in schema editing and content editing. `problem` is a field the server rejected |
 
-格子は複合フィールドの中にも入れ子で入る(複合定義も `width` / `height` を持つため)。
-入れ子の 12 列は、その複合フィールドが占めている幅を 12 と数える。
+The grid is also nested inside a Composite field (a Composite definition also has `width` / `height`).
+The nested 12 columns count the width occupied by that Composite field as 12.
 
-CDK のドラッグプレビュー(オーバーレイに描かれるのでコンポーネント側に書けない)も
-同じファイルにある。
+The CDK drag preview (drawn on the overlay, so it cannot be written on the component side) is in
+the same file.
 
-## 3. 画面を作るとき
+## 3. When building a screen
 
-1. 画面コンポーネントの `:host` に縦のリズムを入れる(上記)。
-2. 見出しと操作は `.toolbar`、内容は `.panel`。
-3. メッセージは上の 5 つのどれか。**色を自分で決めない**。
-4. 表の操作列は `td.actions`(表のセルのまま `nowrap`。flex にすると表組みから外れる)。
-5. スタイルシートに残すのは**その画面に固有の配置だけ**(格子の列数、画像の高さなど)。
+1. Put vertical rhythm on the screen component's `:host` (above).
+2. Heading and actions in `.toolbar`, content in `.panel`.
+3. A message is one of the five above. **Do not decide the colour yourself**.
+4. The action column of a table is `td.actions` (stay a table cell with `nowrap`. Making it flex takes it out of the table layout).
+5. What remains in the stylesheet is **only the layout specific to that screen** (the number of grid columns, the image height, and so on).
 
-## 4. ついでに直したもの
+## 4. Things fixed along the way
 
-- **一覧の列をスキーマで選べるようにした**: コレクションの一覧はこれまで**全項目**を列にしていた
-  (項目が十数個あると読めない表になり、アイテムを見分けにくい)。スキーマ編集のフィールドごとに
-  「一覧に表示」を付け、その項目だけがスキーマの順で列になる。**何も付けていないスキーマでは
-  フィールドの列は出ない**(id・状態・更新日時だけ)。設定はフィールドの性質なので API では
-  `show_in_list` として一緒に往復する(`docs/content-api.md`)。単一ページ・複合定義には一覧が無いので、
-  その画面には出さない。
-- **列がまだ無い一覧に案内を出した**: 何も選ばれていないコレクションの一覧は id・状態・更新日時だけに
-  なるので、「表示する項目がまだ選ばれていません」と**スキーマ画面へのリンク**を出す(管理者にだけ。
-  編集者にはスキーマ画面が無いので、押すと断られるリンクは出さない)。
-- **参照は選ぶものにした**: 内容編集画面の relation は、id を JSON で打つのではなく**チップ**で持ち、
-  「参照を追加」で**ピッカー**(`shared/relation-picker/`)を開いて対象のアイテムを**タイトルで**並べる。
-  **並び順が値**なので、チップの左右の矢印で並べ替えられる(画像配列と同じ操作)。外すのは ×。
-  単一の参照(`has_many: false`、単一ページ)は順序が無いので矢印は出さず、選び直しが置き換え。JSON 欄は「JSON で編集」の裏に残した(移行や、ピッカーが表せない値を書くため)。
-  候補は開いたときだけ・100 件まで取りに行き(絞り込みは画面側)、それ以上は JSON で書く。
-- **参照元パネル**: 内容編集画面(アイテムと単一ページ)の下に「参照しているコンテンツ」を置いた
-  (`shared/relation-references/`)。**開いたときだけ**索引に問い(ピッカーと同じ判断)、見出しは
-  **その側が付けた呼び名**(`inverse_name`。無ければ参照元の名前)、各行は参照元のタイトルと
-  その編集画面へのリンク。まだ何も参照していない場合と、読み込めなかった場合は別々に言う
-  (空の一覧と「読めなかった」を混同させない)。
-- **参照先の名前(タイトル)**: 参照は「どのアイテムか」しか持たないので、`categories #3` は読む人に
-  何も言わない。スキーマ編集で**フィールドごとに「タイトルとして使う」**を選べるようにし(1 スキーマに
-  1 つ。チェックすると他は外れる)、一覧の参照列と内容編集画面の参照欄がその値を名前として出す。
-  名前を引くのは `RelationLabelsService` で、画面に出ている参照だけを・対象コレクションごとに 1
-  リクエストで聞く(キャッシュしない: 名前を直した直後に古い名前が出るほうが困る。ただし**同時に
-  飛んだ同じ問い合わせは 1 本にまとめる** — relation は複合定義の中にも置けるので、複合の配列は
-  要素ごとに同じ問い合わせをする)。タイトルを決めていない相手は今までどおり参照そのものが出る。
-- **一覧は新しい順**: コレクションの一覧とピッカーの候補は **id の降順**(id は作成順なので、最後に作ったものが上)。編集者が開いたときに探すのはたいてい最近触ったもので、画像ライブラリが既に同じ並びだったのに合わせた。逆順にするのは管理側のサービスだけ(管理一覧は全件を読んでから窓を切る実装なので、格納側の変更は要らない)。配信 API は従来どおり id 昇順のままで、順序を変えたい呼び出し側は `?sort=` を使う。
-- **一覧の並べ替え**: 列の見出し(ID と「一覧に表示」で選んだ項目)がボタンになっていて、押すとその列で並ぶ。もう一度押すと逆順。向きは CSS で描いた矢印(▲/▼)で示し、`th` の `aria-sort` が読み上げ用の答えを持つ — **`mat-icon` を使わない**のは、リガチャ名が表のテキスト(読み上げにも、見出しを読むテストにも)混ざるため。並び順はサーバーが決める(管理 API の `?sort=`)ので、ページングは絞った順序のまま正しく動く。
-- **一覧の中の画像と参照**: 画像の列は url ではなく**サムネイル**(配列は先頭 3 枚 + 「+N」、
-  url を知らない素の id は `id 5`)。参照の列は `[{"target":"authors","item":1}]` という JSON でも
-  url でもなく **`authors #1`**(単一ページはページ名)。参照先の中身を展開するのは配信 API の
-  `?populate=` の仕事で、一覧のセルの仕事ではない。
-- セルの値は行ごとに 1 度だけ組み立てる(`list.ts` の `rows`)。画像の列は 1 つの値を「何枚か」と
-  「何枚あったか」の 2 通りに読むので、テンプレートのバインディングから何度も呼ぶと無駄になる。
-- **アカウントがスキーマの中にあった**: サイドバーの「設定 → スキーマ」の 4 つ目の項目が
-  「アカウント」だった。スキーマが記述するのは**コンテンツ**で、アカウントはコンテンツではない。
-  設定の直下で「スキーマ」と兄弟にし、呼び名も画面と同じ `accounts.title` のまま
-  (`sidebar.spec.ts` に構造のテスト、E2E は「設定を開くだけでアカウントが見える」ことを見る)。
-- **設定は管理者だけのものにした**: 設定の枝(スキーマ 3 画面 + アカウント)は**管理者にしか
-  出さない**。以前はコメントだけがそう書いてあり、実際はスキーマのリンクを全アカウントに
-  見せていた(変更はサーバーが 403 で拒否するので、押すと必ず失敗する導線だった)。
-  枝ごと出さないので、管理者でないアカウントには空の「設定」も残らない。
-  アドレスも `adminGuard` が守る(リンクが無いことは規則ではない: ブックマーク・履歴・
-  アドレスバーがあり、保存を拒否される画面に着地させるのは説明のない拒否になる)。
-  **スキーマを*読む*ことは別**: 内容編集画面は API からスキーマを取るので、そちらは
-  全アカウントのまま。
-- **サイドバーの現在地**: `routerLinkActive` が効いていなかった(`RouterLinkActive` が
-  `imports` に無く、属性が無視されていた)。いまは現在の画面のリンクが
-  `secondary-container` で強調される。
-- **管理者リンクの欠落**: ツリーが `isAdmin()` を一度だけ読んでいたため、プロフィールが
-  届く前に描画されると「Accounts」が消えていた(設定画面を再読み込みすると起きる)。
-  アカウントをストリームに含めて直した(`sidebar.spec.ts` にテストあり)。
-- **アカウント一覧の最終サインイン**: ISO 文字列をそのまま出していたので、他の画面と
-  同じ `Intl` の書式(`DateTimeFormat`)にした。
-- **空の一覧**: 単一ページと複合フィールドの一覧が「見出しだけの表」だったので、
-  `matNoDataRow` で「まだありません」を出すようにした。
-- **キーボードのフォーカス**: 素のリンクとボタンに `:focus-visible` の輪郭を足した。
-- **複合フィールドの中の幅・高さ**: 複合定義の `width` / `height` が内容編集画面で
-  無視され、中身が全部同じ幅で縦に並んでいた(スキーマ編集画面のプレビューとも食い違う)。
-  複合の中も同じ 12 列の格子で描くようにした。列数は**複合フィールド自身の幅**を 12 と
-  数える(`.composite` の中に `.field-grid` が入れ子になる)。
+- **List columns can now be chosen with the Schema**: the Collection list used to make **every Field** a column
+  (with a dozen or so Fields the table became unreadable and Items were hard to tell apart). In schema editing,
+  "show in list" is attached per Field, and only those Fields become columns in Schema order. **A Schema with
+  nothing attached shows no Field columns** (only id, status and updated at). The setting is a property of the
+  Field, so the API round-trips it as `show_in_list` (`docs/content-api.md`). Single pages and Composite definitions have no list,
+  so it is not shown on those screens.
+- **Added guidance to a list that has no columns yet**: a Collection list with nothing selected ends up with only
+  id, status and updated at, so "no Fields are selected for display yet" and a **link to the schema screen** are
+  shown (only to administrators. Editors have no schema screen, so a link that would be refused when pressed is not shown).
+- **Relations are now chosen, not written**: a relation on the content editing screen is held as a **chip** rather
+  than typing an id as JSON, and "add relation" opens a **picker** (`shared/relation-picker/`) that lists the target Items **by title**.
+  **The order is the value**, so the chip's left and right arrows reorder them (the same operation as an image array). Removing is ×.
+  A single relation (`has_many: false`, Single page) has no order, so no arrows are shown and re-selecting is a replacement. The JSON field was kept
+  behind "edit as JSON" (for migration, or to write values the picker cannot express).
+  Candidates are fetched only when it is opened and up to 100 (filtering on the screen side); beyond that is written as JSON.
+- **Reference-source panel**: below the content editing screen (Item and Single page) is "content referring to this"
+  (`shared/relation-references/`). It asks the index **only when opened** (the same judgement as the picker), the heading is
+  **the name given by that side** (`inverse_name`; if absent, the name of the reference source), and each row is the reference source's title and
+  a link to its editing screen. Nothing referring to it yet and a failed load are stated separately
+  (do not conflate an empty list with "could not read").
+- **Name (title) of the relation target**: a relation holds only "which Item", so `categories #3` says nothing to the reader.
+  Schema editing lets you choose **"use as title" per Field** (one per Schema. Checking one unchecks the others), and the
+  reference column in the list and the reference field on the content editing screen show that value as the name.
+  The name is looked up by `RelationLabelsService`, which asks only about relations shown on the screen and one
+  request per target Collection (not cached: an old name showing right after a name is fixed is worse. However **identical
+  queries issued at the same time are merged into one** - a relation can also be placed inside a Composite definition, so an array of
+  composites issues the same query per element). A target with no title decided shows the relation itself as before.
+- **Lists are newest first**: the Collection list and the picker's candidates are in **descending id order** (id is creation order, so the last created is at the top). What an editor looks for when opening is usually what they touched recently, and this was matched to the Image library, which already had the same order. Only the admin side does the reverse (the admin list reads all records and then cuts a window, so no change is needed on the storage side). The delivery API stays in ascending id order as before, and callers who want a different order use `?sort=`.
+- **Sorting the list**: the column headings (ID and the Fields chosen with "show in list") are buttons, and pressing one sorts by that column. Pressing again reverses it. The direction is shown by an arrow drawn in CSS (▲/▼), and `th`'s `aria-sort` holds the answer for screen readers - **`mat-icon` is not used** because the ligature name gets mixed into the table text (into the reading, and into tests that read the headings). The order is decided by the server (the admin API's `?sort=`), so paging works correctly with the filtered order.
+- **Images and relations in the list**: the image column shows a **thumbnail** rather than the url (an array shows the first 3 + "+N";
+  a raw id whose url we do not know shows `id 5`). The relation column shows **`authors #1`** (a Single page shows the page name)
+  rather than JSON like `[{"target":"authors","item":1}]` or a url. Expanding the target's contents is the job of the
+  delivery API's `?populate=`, not the job of a list cell.
+- Cell values are assembled only once per row (`rows` in `list.ts`). The image column reads one value in two ways,
+  "how many" and "how many there were", so calling it repeatedly from template bindings is wasteful.
+- **Accounts were inside the Schema**: the fourth item under "Settings → Schema" in the sidebar was
+  "Accounts". What a Schema describes is **content**, and an Account is not content.
+  It was made a sibling of "Schema" directly under Settings, and the name also stays `accounts.title`, the same as on the screen
+  (there is a structure test in `sidebar.spec.ts`; the E2E checks that "Accounts is visible just by opening Settings").
+- **Settings are for administrators only**: the settings branch (3 schema screens + accounts) is **shown only to
+  administrators**. Previously only a comment said so, and in reality the schema links were shown to every Account
+  (the server rejects changes with 403, so it was a path that always failed when pressed).
+  Since the whole branch is not shown, no empty "Settings" is left for a non-administrator Account.
+  The address is also protected by `adminGuard` (the absence of a link is not the rule: there are bookmarks, history and the
+  address bar, and landing on a screen whose save is rejected is a refusal with no explanation).
+  **Reading a Schema is separate**: the content editing screen fetches the Schema from the API, so that stays
+  available to all Accounts.
+- **Current location in the sidebar**: `routerLinkActive` was not working (`RouterLinkActive` was not in
+  `imports`, so the attribute was ignored). Now the link for the current screen is
+  highlighted with `secondary-container`.
+- **Missing administrator link**: the tree read `isAdmin()` only once, so if it was rendered before the profile
+  arrived, "Accounts" disappeared (this happens when the settings screen is reloaded).
+  Fixed by including the Account in the stream (there is a test in `sidebar.spec.ts`).
+- **Last sign-in in the account list**: an ISO string was output as is, so it was changed to the same
+  `Intl` format as the other screens (`DateTimeFormat`).
+- **Empty lists**: the Single page and Composite field lists were "tables with only a heading", so
+  `matNoDataRow` now shows "nothing yet".
+- **Keyboard focus**: added `:focus-visible` outlines to plain links and buttons.
+- **Width and height inside a Composite field**: a Composite definition's `width` / `height` was
+  ignored on the content editing screen, and the contents were all stacked vertically at the same width (which also disagreed with
+  the preview on the schema editing screen). Inside a composite is now drawn with the same 12-column grid. The column count counts **the composite
+  field's own width** as 12 (`.field-grid` is nested inside `.composite`).
 
-## 5. スキーマ編集と内容編集の食い違い(2026-09 の監査で見つけて直したもの)
+## 5. Discrepancies between schema editing and content editing (found and fixed in the 2026-09 audit)
 
-「スキーマ編集で決められるのに内容編集が反映しない」ものを洗い出した。値の検証と拒否の形は
-`docs/content-api.md` §3.0 に書いてある。
+We listed the things that "can be decided in schema editing but are not reflected in content editing". Value validation and the shape of rejection are
+written in `docs/content-api.md` §3.0.
 
-- **複合フィールドの中の幅・高さ**(§4 参照)。
-- **文字数の制限**: 内容編集の入力欄は `max_length` / `min_length` を知らなかった。いまは
-  `maxlength` / `minlength` と件数のヒントを出し、範囲外なら**保存前に**止める(ブラウザが
-  守れない下限もあるので、ウィジェット自身が問題を報告して親が保存を拒否する)。
-- **`unique` の手がかり**: 一意かどうかはサーバーしか判定できないが、フォームにその表示が
-  無かった。ラベルに「一意」を出す(重複の拒否は 409 + `field` + 該当欄の強調)。
-- **文字数の入力が文字列のまま保存されていた**: スキーマ編集の Max/Min Length は素の
-  `input` で、Angular の ngModel は文字列を返す。サーバーは `Option<usize>` を厳密に読むので、
-  制限を入れたスキーマの保存は 422(本文のデシリアライズ失敗)になっていた。入力を
-  `type="number"` にし、保存時に数値へ正規化する(`schemaForSaving`)。
-- **既定のフィールド型が全フィールドで共有されていた**: `FieldDefaults` は型ごとに 1 つの
-  オブジェクトで、フィールド編集はその型に直接書き込む。追加した Text フィールドが同じ
-  オブジェクトを指していたため、1 つに最大長を入れると**他の Text フィールド全部**(と
-  以後追加する全部)に効いていた。Enum の選択肢と Array の要素型も同様。フィールドごとに
-  複製するようにした(`newFieldType`)。
-- **配列の要素型が内容編集に出ていなかった**: スカラー配列は JSON テキストエリアが唯一の
-  編集手段なので、宣言した要素型がどこにも出ていなかった。ヒントに「要素の型: Number」の形で
-  出し、**宣言された型のどれも読めない要素**は保存前に止める(例: 数値配列に文字列)。この検査は
-  意図的に控えめで、サーバーの「宣言順に試して最初に読めた型を採る」判定を置き換えない
-  (読める値を誤って拒むほうが、サーバーに断られるより悪い)。
-- **クライアント側で見つけた問題が強調されない**: 保存を止めるのはサーバーの拒否でも
-  ウィジェットの報告でも同じなので、どちらも該当欄を強調する(`isProblem`)。拒否の `field` は
-  経路(`seo.description`、`tags[2]`)なので、入れ子の中の拒否は外側のセルを強調する。
+- **Width and height inside a Composite field** (see §4).
+- **Character count limits**: the content editing input did not know about `max_length` / `min_length`. Now it
+  shows `maxlength` / `minlength` and a count hint, and stops **before saving** when out of range (some lower bounds the browser
+  cannot enforce, so the widget itself reports the problem and the parent rejects the save).
+- **A hint for `unique`**: only the server can decide uniqueness, but the form had no such display. "Unique" is shown
+  on the label (a duplicate is rejected with 409 + `field` + highlighting of the relevant field).
+- **The character count input was saved as a string**: Max/Min Length in schema editing was a plain
+  `input`, and Angular's ngModel returns a string. The server reads `Option<usize>` strictly, so
+  saving a Schema with limits resulted in 422 (body deserialisation failure). The input was made
+  `type="number"` and is normalised to a number on save (`schemaForSaving`).
+- **The default Field type was shared by all Fields**: `FieldDefaults` is one
+  object per type, and field editing writes directly into that type. A newly added Text Field pointed at the same
+  object, so putting a max length in one affected **all the other Text Fields** (and
+  all added afterwards). The same applied to Enum choices and the Array element type. It is now
+  copied per Field (`newFieldType`).
+- **The Array element type was not shown in content editing**: a scalar array's only editing means is a JSON text
+  area, so the declared element type appeared nowhere. It is shown in the hint in the form "element type: Number", and
+  **an element that cannot be read as any of the declared types** is stopped before saving (for example, a string in a numeric array). This check is
+  deliberately conservative and does not replace the server's judgement of "try in declared order and take the first type that could be read"
+  (wrongly rejecting a readable value is worse than being refused by the server).
+- **A problem found on the client side is not highlighted**: stopping a save is the same whether it comes from a
+  server rejection or a widget report, so both highlight the relevant field (`isProblem`). The `field` of a
+  rejection is a path (`seo.description`, `tags[2]`), so a rejection inside a nested structure highlights the outer cell.
 
-## 6. アイコンのツールチップ
+## 6. Icon tooltips
 
-アイコンだけのボタンには、**`aria-label` と同じ文言**を `matTooltip` にも入れている。読み上げ名と
-ホバーの説明が一致し、文言の出どころが 1 つで済む。
+For icon-only buttons, **the same wording as `aria-label`** is also put into `matTooltip`. The reading name and the
+hover explanation match, and the wording has a single source.
 
-- 表示は **300ms 遅らせる**(`MAT_TOOLTIP_DEFAULT_OPTIONS`)。ポインタが通過しただけのアイコンで
-  ちらつかせない。
-- **`disableTooltipInteractivity: true` は必須**。Material のツールチップは既定で操作可能
-  (中にボタンを置ける)なので、押したアイコンのヒントが**隣のアイコンのクリックを奪う**。
-  実際に E2E のサイドバー展開がこれで壊れ、原因は「クリックが `.mat-mdc-tooltip` に当たっている」
-  ことだった。ヒントだけのツールチップはクリックを通すべきなので、この設定で無効化する。
+- The display is **delayed by 300ms** (`MAT_TOOLTIP_DEFAULT_OPTIONS`). Do not make an icon the pointer merely passes over
+  flicker.
+- **`disableTooltipInteractivity: true` is required**. Material's tooltip is by default operable
+  (a button can be placed inside it), so the hint of a pressed icon **steals the click of the neighbouring icon**.
+  In fact the E2E sidebar expansion broke because of this, and the cause was "the click landing on `.mat-mdc-tooltip`".
+  A hint-only tooltip should let clicks through, so this setting disables it.
 
-## 7. 古い応答と、未保存の変更
+## 7. Stale responses and unsaved changes
 
-**答えた相手を確かめてから反映する。** 一覧から編集画面へ移ると同じコンポーネントが再利用される
-ので、前のアイテムへの応答が後から届く。そのまま `set` すると、**別の記事の住所の下に前の記事の
-内容**が表示され、保存すればその内容で上書きしてしまう。編集画面は読み込みごとに通し番号
-(`loadToken`)を持ち、自分の番でなければ何もしない。公開や保存の応答も、押した時点のアイテムと
-今のアイテムが一致するときだけ反映する。
+**Verify who answered before reflecting it.** Moving from the list to the editing screen reuses the same component,
+so a response for the previous Item arrives later. Calling `set` as is displays **the previous Item's
+content under another Item's address**, and saving overwrites it with that content. The editing screen holds a sequence number
+(`loadToken`) per load and does nothing if it is not its turn. Responses to publish and save are likewise
+reflected only when the Item at the time of pressing and the current Item match.
 
-**公開は「保存済み」を送る。** サーバーの公開は作業コピーを公開コピーに載せ替える操作なので、
-フォームに未保存の変更があるまま押すと**画面と違う版が公開される**。そこで:
+**Publish sends the "saved" version.** The server's publish is an operation that replaces the published copy with the working
+copy, so pressing it with unsaved changes in the form **publishes a version different from the screen**. Therefore:
 
-- フォームと保存済みの値を比較して**未保存かどうか**を持ち(`core/value-changes.ts` の
-  `fingerprint` で、キー順に依存しない比較)、未保存のときは画面に「未保存の変更あり」を出す。
-- コレクションの編集画面は、未保存のときの主ボタンを**「保存して公開」**にする(保存が通って
-  から公開する。保存が拒否されたら公開しない)。
-- 単一ページの編集画面は公開ボタンを**無効**にし、理由を `title` に出す(「保存して公開」は
-  フッターにある)。
-- 離脱時は `unsavedChangesGuard`(`canDeactivate`)が確認し、`beforeunload` が再読み込み・
-  タブを閉じる場合を拾う。確認の文言はカタログのキーで持つ。
+- Compare the form with the saved value and hold **whether there are unsaved changes** (`fingerprint` in
+  `core/value-changes.ts`, a comparison that does not depend on key order), and show "unsaved changes" on the screen when there are.
+- The Collection editing screen makes the primary button **"save and publish"** when there are unsaved changes (publish after the save
+  succeeds. If the save is rejected, do not publish).
+- The Single page editing screen **disables** the publish button and puts the reason in `title` ("save and publish" is
+  in the footer).
+- On leaving, `unsavedChangesGuard` (`canDeactivate`) confirms, and `beforeunload` catches reloads and
+  tab closes. The confirmation wording is held as a catalogue key.
 
-## 8. ルートのパラメータと画面の状態
+## 8. Route parameters and screen state
 
-**パラメータは流れから読む**(`route.paramMap` を購読する)。`route.snapshot` を一度読むだけでは
-いけない: サイドバーで別の対象に切り替えると**ルート定義は同じままパラメータだけが変わる**ので、
-Angular はコンポーネントを再利用する。スナップショットを読んでいると **URL だけ変わって中身は
-前のまま**になる(単一ページ間、コレクション間、アイテム間、スキーマ間のすべてで起きる)。
+**Read parameters from the stream** (subscribe to `route.paramMap`). Reading `route.snapshot` only
+once does not work: switching to another target in the sidebar **changes only the parameter while the route definition stays the same**, so
+Angular reuses the component. Reading the snapshot results in **only the URL changing and the content staying as
+before** (this happens for Single page to Single page, Collection to Collection, Item to Item and Schema to Schema alike).
 
-- 対象を表す値は **signal** にする(OnPush + zoneless では、ただのフィールドを書き換えても
-  ビューは更新されない)。
-- パラメータが変わったら**その対象に属する状態を全部捨ててから読み直す**(スキーマ・値・
-  メタデータ・エラー・強調表示)。前の対象の値を残すと、保存で別の対象に書き込む事故になる。
-- テストは `app/core/testing/activated-route.ts` の `stubActivatedRoute` を使い、
-  `route.navigate({...})` で切り替えを再現する(`snapshot` だけのスタブでは検証できない)。
+- The values representing the target are made **signals** (with OnPush + zoneless, overwriting a mere field does not
+  update the view).
+- When a parameter changes, **discard all state belonging to that target and then reload it** (Schema, values,
+  metadata, errors, highlighting). Keeping the previous target's values causes an accident of writing to another target on save.
+- Tests use `stubActivatedRoute` in `app/core/testing/activated-route.ts` and reproduce the switch with
+  `route.navigate({...})` (a stub with only `snapshot` cannot verify this).
 
-**クエリパラメータも同じ**。同じルートで `?token=...` だけが変わってもコンポーネントは再利用される
-ので、`route.queryParamMap` を購読する: パスワードリセット画面の `token`、Cognito コールバックの
-`code` / `state` がこれにあたる(どちらも一度読んで保持すると、2 つ目のリンクで**前の
-トークン/コードを送ってしまう**)。スタブは第 2 引数でクエリを渡し、`route.navigateQuery({...})` で
-切り替えを再現する。画面に出さない値なので signal にはしない。
+**Query parameters are the same.** Even if only `?token=...` changes on the same route, the component is reused,
+so subscribe to `route.queryParamMap`: the password reset screen's `token` and the Cognito callback's
+`code` / `state` are the cases (if either is read once and kept, the second link **sends the previous
+token/code**). The stub takes the query as a second argument, and the switch is reproduced with
+`route.navigateQuery({...})`. Since the value is not shown on screen, it is not made a signal.
 
-## 9. 名前の付け方
+## 9. Naming
 
-同じ名前が2つあると、**それを避けるための書き方が増える**(実際 `dashboard.routes.ts` は
-`List` を7つ、`Edit` を3つ別名で読み込んでいた。しかも別名の綴りが `CollectionList` と
-`schemaCollectionList` で揺れていた)。そうならないための決めごと。
+When the same name exists twice, **ways to avoid it increase** (in fact `dashboard.routes.ts`
+imported seven `List`s and three `Edit`s under aliases. Moreover the alias spellings wavered between `CollectionList` and
+`schemaCollectionList`). Rules so this does not happen.
 
-- **コンポーネントのクラス名は `<対象><役割>`**: `CollectionItemList`、`SinglePageEdit`、
-  `CompositeFieldSchema`。`List` や `Edit` だけの名前は付けない。ルート定義は**別名なし**で
-  そのまま import できる状態を保つ。
-- **セレクタは `app-` + kebab で一意**。他のセレクタの**接頭辞にしない**: `app-edit` は
-  `app-edit-schema` の接頭辞だったので、`app-edit` で検索すると別のコンポーネントが出ていた。
-  重複は、たまたま同時に `imports` へ入るまで Angular も文句を言わない(実際
-  `app-single-page-list` が2つあった)。
-- **ファイル名は kebab**: `composite-fields.service.ts`。1語ならそのまま(`list.ts`)。
-  機能ごとのディレクトリ(`dashboard/single-pages/`)と同じ綴りにする。API のリソース名
-  (`single_pages`)に合わせるのは**型の側**の話で、ファイル名ではない。
-- **TS の識別子は camelCase**(変数・メソッド・`@Input()` / `@Output()` の名前:
-  `value`/`valueChange`、`schema`/`schemaChange`)。
-- **API を写した型のフィールドだけ snake_case**(`published_at`、`has_draft`、
-  `original_filename`)。これは**サーバーが返す JSON そのもの**で、写像レイヤを置かない方針の
-  表れ。`app/models/` と `app/repositories/` の型がそうなっている。ここを camelCase に
-  「直す」と、リポジトリごとに変換コードが要る — 直すのではなく、この境目を守る。
-- Rust 側は型が UpperCamelCase で、頭字語も `Id`(`ImageID` ではなく `ImageId`。
-  `CollectionItemId` / `UserId` と揃える)、関数・フィールドは snake_case、JSON のキーは
-  `serde` が決める(`docs/content-api.md` が API の綴り)。
+- **Component class names are `<target><role>`**: `CollectionItemList`, `SinglePageEdit`,
+  `CompositeFieldSchema`. Do not give names that are only `List` or `Edit`. Keep route definitions in a state where they can be imported
+  as is, **without aliases**.
+- **Selectors are `app-` + kebab and unique**. Do not make them **prefixes of other selectors**: `app-edit` was
+  a prefix of `app-edit-schema`, so searching for `app-edit` turned up another component.
+  Angular does not complain about duplicates until they happen to enter `imports` at the same time either (in fact
+  there were two `app-single-page-list`).
+- **File names are kebab**: `composite-fields.service.ts`. If one word, as is (`list.ts`).
+  Match the spelling of the feature directory (`dashboard/single-pages/`). Matching the API resource name
+  (`single_pages`) is a matter of **the type side**, not the file name.
+- **TS identifiers are camelCase** (variables, methods, `@Input()` / `@Output()` names:
+  `value`/`valueChange`, `schema`/`schemaChange`).
+- **Only fields of types that mirror the API are snake_case** (`published_at`, `has_draft`,
+  `original_filename`). This is **the JSON the server returns as is**, a manifestation of the policy of not putting a mapping
+  layer in. The types in `app/models/` and `app/repositories/` are like this. "Fixing" this to camelCase
+  would require conversion code per repository - do not fix it, keep this boundary.
+- On the Rust side types are UpperCamelCase, acronyms too are `Id` (`ImageId`, not `ImageID`.
+  Align with `CollectionItemId` / `UserId`), functions and fields are snake_case, and JSON keys are
+  decided by `serde` (`docs/content-api.md` is the API's spelling).
 
-## 10. 画像タイルはブラウザが作った小さなコピーを出す
+## 10. Image tiles show the small copy the browser made
 
-一覧とピッカーは 180px 幅のタイルに、写真 1 枚 1MB 級の**原本**を読み込んでいた。実測で
-**275 枚のライブラリを最後まで見ると 154MB**(初回描画だけで 85 枚・47.7MB)。`loading="lazy"` は
-入っていたが、遅らせるだけで取得するのは原本なので効かなかった。
+The list and the picker loaded the **original** 1MB-class photo into a 180px-wide tile. Measured,
+**viewing a library of 275 images to the end was 154MB** (the first render alone was 85 images and 47.7MB). `loading="lazy"` was
+present, but it only delays, and what is fetched is the original, so it did not help.
 
-そこで **`ImagesService.uploadImage` がアップロードの直後にブラウザで小さなコピーを作り**
-(`core/image-thumbnail.ts`。`createImageBitmap` → canvas → WebP 360px)、
-`PUT /api/models/images/{id}/thumbnail` で送る。サーバは画像をデコードしない — 原本と同じく
-バイト列として扱うので、アダプタごとの差が出ない。
+So **`ImagesService.uploadImage` makes a small copy in the browser right after upload**
+(`core/image-thumbnail.ts`. `createImageBitmap` → canvas → WebP 360px), and sends it with
+`PUT /api/models/images/{id}/thumbnail`. The server does not decode the image - it treats it as a byte string
+just like the original, so no per-adapter difference appears.
 
-- **失敗は握りつぶす**: 小さなコピーが作れないブラウザ、保存を断るサーバ、どちらでも
-  アップロード自体は成功として扱う(`sendThumbnail` が `catchError` で `undefined` にする)。
-  画像は使えて、タイルが重いだけ。
-- **表示は `image.thumbnail_url || image.url`**。API 経由のアップロードや、この機能より前の
-  画像はコピーを持たないので、そのまま原本が出る。
-- **一覧はページ単位**。`ImagesService.listImages(offset)` が 60 枚ずつ読み、画面は
-  「もっと見る」で足す。削除や差し替えのあとは、**読み込んでいたページ数ぶん**を読み直す
-  (4 ページ目まで見ていた編集者を先頭に戻さない)。
+- **Failures are swallowed**: a browser that cannot make a small copy and a server that refuses the save both
+  leave the upload itself as a success (`sendThumbnail` turns it into `undefined` with `catchError`).
+  The image is usable, the tile is just heavy.
+- **Display is `image.thumbnail_url || image.url`**. Images uploaded via the API, or images from before this feature,
+  have no copy, so the original is shown as is.
+- **The list is paged**. `ImagesService.listImages(offset)` reads 60 at a time, and the screen
+  adds more with "load more". After a delete or replace, **as many pages as had been loaded** are re-read
+  (do not send an editor who had looked up to page 4 back to the top).
 
-## 11. 未公開の変更は「見比べてから取り消す」
+## 11. Unpublished changes are "compare, then discard"
 
-管理画面の読み取りは**作業コピー優先**(`working_item`)なので、未公開の変更を抱えたアイテムでは
-**サイトが今出している内容が CMS のどこにも出ない**。取り消す手段も無かった(公開する・unpublish
-する・見えないものを手で打ち直す、の三択で、どれも「取り消し」ではない)。
+The admin screen's reads are **working-copy-first** (`working_item`), so for an Item carrying unpublished changes
+**the content the site is currently serving appears nowhere in the CMS**. There was also no means to discard
+it (the three choices were publish, unpublish, or retype the invisible thing by hand, and none of them is "discard").
 
-編集画面に足したのは2つ。どちらも**保存済みの変更**に対する操作で、フォームの未保存編集とは別:
+Two things were added to the editing screen. Both are operations on **saved changes**, separate from unsaved edits in the form:
 
-- **「公開中との違いを見る」**: `GET .../published` をその場で読み、`changedFields()` が
-  **違うフィールドだけ**を並べる。比較は `fingerprint`(キー順に依存しない描画)で、公開側は
-  `withDefaults` を通してから比べる(フォームが既定値で埋めただけの差を「変更」と呼ばないため)。
-  表示は `ValueField` を `[disabled]="true"` で — スキーマ編集のプレビューと同じ使い方なので、
-  比較の見え方がフォームとずれない。
-- **「変更を取り消す」**: 確認を挟んで `DELETE .../draft`。**サイトは触らない**ので、unpublish とは
-  別物(あちらはページが消えるうえ、作業コピーも残る)。実行後に読み直すので、フォームには公開中の
-  内容が出る。通知は**読み直しの後**に出す(`load` が冒頭で通知を消すため)。
+- **"View differences from published"**: reads `GET .../published` on the spot and `changedFields()` lists
+  **only the Fields that differ**. The comparison is `fingerprint` (a rendering that does not depend on key order), and the published side is
+  compared after passing through `withDefaults` (so that a difference the form merely filled in with defaults is not called a "change").
+  The display uses `ValueField` with `[disabled]="true"` - the same usage as the schema editing preview, so
+  the comparison does not drift from the form.
+- **"Discard changes"**: `DELETE .../draft` behind a confirmation. **It does not touch the site**, so it is
+  different from unpublish (that one makes the page disappear and leaves the working copy). It reloads after execution, so the form shows the published
+  content. The notification is shown **after the reload** (because `load` clears notifications at the start).
 
-出る条件は `published() && hasDraft()`。一度も公開していないアイテムには「公開中」が無いので出さない
-(作成時の値が公開コピー側にあるが、サイトは何も出していないので「戻す先」ではない)。
+The condition for appearing is `published() && hasDraft()`. An Item that has never been published has no "published" version, so it is not shown
+(the value at creation is on the published-copy side, but the site is serving nothing, so it is not a "place to return to").
 
-## 12. 通知はトースト、Markdown はボタン、高さは行数
+## 12. Notifications are toasts, Markdown is buttons, height is rows
 
-### 12.1 保存したことは画面の上に出す(トースト)
+### 12.1 Show that a save happened at the top of the screen (toast)
 
-スキーマ編集の保存メッセージはページ先頭にあったが、保存ボタンはページの**下端**にある。実測で
-内容 2632px・`scrollTop` 1976 のときに `.status` は **y = −1888px**(見えない)。記事の編集画面も
-同じ構造で、同じことが起きる。
+The schema editing save message was at the top of the page, but the save button is at the **bottom** of the page. Measured,
+with content 2632px and `scrollTop` 1976, `.status` was **y = −1888px** (invisible). The article editing screen has the
+same structure, and the same thing happens.
 
-`shared/notice-toast` を1つ作り、**ビューポート上部**(ヘッダーのすぐ下)に fixed で出す。9画面が
-使う(スキーマ編集×3、記事/単一ページ編集、画像ライブラリ、ユーザー一覧、パスワード)。規則:
+One `shared/notice-toast` was made and shown fixed at the **top of the viewport** (just below the header). 9 screens
+use it (schema editing ×3, article/Single page editing, Image library, user list, password). Rules:
 
-- **成功の通知**は約5秒で自動的に消え、×でも消える。同じ文言がもう一度来たら**また出す**(2回目の
-  保存が「出すべきメッセージが既にある」として飲み込まれない)。
-- **エラーはインラインとトーストの両方**。インラインは `role="alert"` で再試行ボタンを持ち、画面
-  から消えない(トーストを閉じても消えない — トーストの dismiss はコンポーネント内の状態だけを
-  触る)。**トースト側は `aria-hidden`** にしてある: 同じ失敗を2回読み上げないため。
-- **一括公開の結果はインラインのまま**: 拒否の一覧と対で読むものなので、流れて消える場所には
-  置かない。
-- トーストは `pointer-events: none`(×ボタンだけが押せる): ツールバーの上に浮いた要素が
-  クリックを飲み込むと、直したはずの不便より悪くなる。
+- **A success notification** disappears automatically after about 5 seconds, and also with ×. If the same wording arrives again it is
+  **shown again** (a second save is not swallowed as "the message to show already exists").
+- **Errors are both inline and toast**. The inline one has `role="alert"` and a retry button and does not disappear from
+  the screen (it does not disappear even if the toast is closed - the toast's dismiss touches only state inside the
+  component). **The toast side is `aria-hidden`**: so as not to read the same failure twice.
+- **The result of bulk publish stays inline**: it is read as a pair with the list of rejections, so it is not
+  placed somewhere that flows away and disappears.
+- The toast is `pointer-events: none` (only the × button can be pressed): an element floating over the
+  toolbar swallowing clicks is worse than the inconvenience it was meant to fix.
 
-### 12.2 Markdown は書式ボタンで書ける
+### 12.2 Markdown can be written with formatting buttons
 
-Markdown は素の `<textarea>` で、記法を知らない編集者には手がかりが無かった。ツールバーを足し、
-**選択範囲に対して**作用させる: 太字 / 斜体 / 見出し / リンク / 画像 / 箇条書き / 番号付き / 引用。
+Markdown was a plain `<textarea>`, and an editor who did not know the notation had no clue. A toolbar was added and
+acts **on the selection**: bold / italic / heading / link / image / bullet list / numbered list / quote.
 
-- 包む系(太字・斜体・リンク)は選択範囲を包み、**挿入したものを選択したまま**にする。ボタンを
-  押してから打てば placeholder が置き換わる。
-- 行頭に付ける系(見出し・リスト・引用)は**選択が触れている行すべて**に付ける(段落の途中を
-  選んでリストを押したら、段落がリストになる)。既に付いている行は触らない(二度押しで壊れない)。
-- リンクは `window.prompt` で URL を聞く。画像は**画像ライブラリのピッカー**を再利用し、
-  `![名前](絶対URL)` をキャレット位置に差し込む。URL はライブラリの「リンクをコピー」と同じ
-  もので、id で引く**壊れないリンク**(`/api/images/by-id/{id}`)。Markdown を描画するのは
-  サイト側で、CMS と別オリジンのこともあるため絶対URLにしてある。
-- **選択範囲は DOM から読む**(`#markdownInput` をテンプレート参照で渡す)。キャレットを戻すのは
-  値がバインディング経由で書き戻された**後**(`setTimeout`)。それ以外は `ValueField` の外に
-  状態を持たない。
+- Wrapping kinds (bold, italic, link) wrap the selection and **leave the inserted thing selected**. Typing after
+  pressing the button replaces the placeholder.
+- Line-prefix kinds (heading, list, quote) are added to **every line the selection touches** (if you select the middle of
+  a paragraph and press list, the paragraph becomes a list). Lines that already have the prefix are not touched (pressing twice does not break it).
+- Links ask for the URL with `window.prompt`. Images reuse the **Image library picker** and
+  insert `![name](absolute URL)` at the caret position. The URL is the same as the library's "copy link",
+  a **link that does not break** and is looked up by id (`/api/images/by-id/{id}`). Rendering Markdown is
+  the site's job and may be on a different origin from the CMS, so the URL is absolute.
+- **The selection is read from the DOM** (`#markdownInput` is passed as a template reference). The caret is restored
+  **after** the value is written back through the binding (`setTimeout`). Other than that, no state is held outside
+  `ValueField`.
 
-### 12.3 高さは入力欄の行数になる
+### 12.3 Height becomes the number of rows of the input
 
-`height` は**セルの最小の高さ**(72px × N)で、ラベルも「最小の高さ」だったが、**入力欄は無視**
-していた(実測: 高さ3の Text は 216px のセルに **24px** の入力欄、高さ5の Markdown は 360px の
-セルに **144px** の箱、高さ1の Markdown も同じ 144px で短くできない)。
+`height` is **the cell's minimum height** (72px × N), and the label was also "minimum height", but **the input ignored**
+it (measured: a Text of height 3 was a **24px** input in a 216px cell, a Markdown of height 5 was a **144px** box in a
+360px cell, and a Markdown of height 1 was also the same 144px and could not be made shorter).
 
-- **行数は `height` から導く**: `rows = max(下限, height × 3)`。1単位 = 72px、テキスト1行 ≒ 24px
-  なので3行。下限は変える前の見た目(Text は3行、Markdown は6行)なので、既存のスキーマは
-  何も変わらない。
-- **Text は `multiline` のときだけ箱**。タイトルが勝手に複数行になると驚くので、スキーマが
-  「複数行」と言ったときだけ `<textarea>` にする。Markdown は元から箱。
-- セルの最小の高さと行数が**同じ数字から出る**ので、スキーマ編集のプレビューで高さハンドルを
-  動かすと箱が伸び、内容編集画面でも同じになる。
+- **The number of rows is derived from `height`**: `rows = max(lower bound, height × 3)`. 1 unit = 72px and one
+  line of text ≒ 24px, so 3 rows. The lower bounds are the appearance before the change (Text 3 rows, Markdown 6 rows), so existing Schemas
+  change nothing.
+- **Text is a box only when `multiline`**. A title becoming multi-line on its own is surprising, so it becomes a
+  `<textarea>` only when the Schema says "multi-line". Markdown is a box from the start.
+- The cell's minimum height and the number of rows **come from the same number**, so moving the height handle in the
+  schema editing preview stretches the box, and the same happens on the content editing screen.

@@ -1,185 +1,199 @@
-# AWS: DynamoDB の設計
+# AWS: DynamoDB design
 
-`aws` バックエンドの構造化データを **1 テーブル** に収めるための設計。実装はこの文書だけを
-見て書ける状態を目標にする。前提は `docs/aws-decisions.md`(決定事項)。
+A design for fitting the `aws` backend's structured data into **one table**. The goal is a state
+where the implementation can be written by looking at this document alone. The premise is
+`docs/aws-decisions.md` - the decisions.
 
-## 1. 原則
+## 1. Principles
 
-- **1 テーブル**、`PK`(S) + `SK`(S)。オンデマンド。GSI は使わない(すべての一覧が
-  パーティションクエリで済む設計にするため)。
-- **値は JSON 文字列として保存する**。この CMS のドメイン型は「スキーマだけが型情報を持つ
-  `serde_json::Value`」なので、DynamoDB の型へ写す必要がない。`data` という 1 属性に入れる。
-  - 利点: 型変換のコードがゼロになり、on-prem のレコードと 1 対 1 で対応する。
-  - 代償: アイテム内のフィールドでサーバ側フィルタはできない(必要ない)。
-- **読み取りは `ConsistentRead = true`**。CMS は「保存した直とに一覧を見る」ため、結果整合の
-  取りこぼしがそのまま UI の不具合になる。読み取りコストは 2 倍だが、この規模では誤差。
-- **アイテム ID はゼロ埋め**して `SK` に入れる(`{:020}`)。DynamoDB の `SK` はバイト順なので、
-  ゼロ埋めしないと 10 が 2 より前に来る。
+- **One table**, `PK`(S) + `SK`(S). On-demand. No GSI - so that every list is settled by a partition
+  query.
+- **Values are stored as JSON strings**. This CMS's domain types are "`serde_json::Value` where only
+  the schema holds type information", so there is no need to map them onto DynamoDB types. They go
+  into a single attribute called `data`.
+  - Benefit: zero type-conversion code, and a 1:1 correspondence with on-premises records.
+  - Cost: no server-side filtering on fields inside an item - not needed.
+- **Reads use `ConsistentRead = true`**. This CMS "looks at a list right after saving", so a miss
+  from eventual consistency becomes a UI bug as it is. Reads cost twice as much, but at this scale
+  that is noise.
+- **Item IDs are zero-padded** into `SK` (`{:020}`). DynamoDB `SK` is byte-ordered, so without zero
+  padding 10 comes before 2.
 
-## 2. キー設計
+## 2. Key design
 
-| 実体 | PK | SK | 補足 |
+| Entity | PK | SK | Notes |
 |---|---|---|---|
-| コレクションスキーマ | `collection#<name>` | `schema` | 存在確認も兼ねる |
-| アイテム(公開コピー) | `collection#<name>` | `item#<id:020>` | 配信 API が見る唯一のコピー |
-| アイテム(作業コピー) | `collection#<name>` | `draft#<id:020>` | |
-| アイテムメタデータ | `collection#<name>` | `meta#<id:020>` | status / published_at / last_published_at / created_at / updated_at / published_by |
-| 一意な値の予約 | `unique#<collection>#<field>` | `<value>` | その値を握っているアイテム id(条件付き put で確保、`attribute_not_exists(pk) OR data = :id`) |
-| コレクションの ID カウンタ | `collection#<name>` | `counter` | `UpdateItem ADD` で原子的に採番 |
-| コレクション名一覧 | `collections` | `<name>` | 名前だけの小さなアイテム |
-| 単一ページスキーマ | `page#<name>` | `schema` | |
-| 単一ページの内容(公開) | `page#<name>` | `item` | |
-| 単一ページの作業コピー | `page#<name>` | `draft` | |
-| 単一ページのメタデータ | `page#<name>` | `meta` | |
-| 単一ページ名一覧 | `pages` | `<name>` | |
-| 複合フィールド定義 | `composite#<id>` | `schema` | |
-| 複合フィールド一覧 | `composites` | `<id>` | |
-| ユーザー | `users` | `user#<uuid>` | |
-| **ユーザー名の予約** | `users` | `username#<name>` | 値は user id。**一意性をここで担保** |
-| 画像レコード | `images` | `image#<id:020>` | file_name も保持 |
-| 画像の ID カウンタ | `images` | `counter` | |
-| アップロードの単回トークン | `upload_keys` | `<key>` | 値は file_name、`expires_at`(TTL)付き |
+| Collection schema | `collection#<name>` | `schema` | also serves as the existence check |
+| Item - published copy | `collection#<name>` | `item#<id:020>` | the only copy the delivery API sees |
+| Item - working copy | `collection#<name>` | `draft#<id:020>` | |
+| Item metadata | `collection#<name>` | `meta#<id:020>` | status / published_at / last_published_at / created_at / updated_at / published_by |
+| Unique value reservation | `unique#<collection>#<field>` | `<value>` | the item id holding that value (secured by a conditional put, `attribute_not_exists(pk) OR data = :id`) |
+| Collection ID counter | `collection#<name>` | `counter` | numbered atomically with `UpdateItem ADD` |
+| Collection name list | `collections` | `<name>` | a small item with only the name |
+| Single page schema | `page#<name>` | `schema` | |
+| Single page content - published | `page#<name>` | `item` | |
+| Single page working copy | `page#<name>` | `draft` | |
+| Single page metadata | `page#<name>` | `meta` | |
+| Single page name list | `pages` | `<name>` | |
+| Composite field definition | `composite#<id>` | `schema` | |
+| Composite field list | `composites` | `<id>` | |
+| User | `users` | `user#<uuid>` | |
+| **Username reservation** | `users` | `username#<name>` | the value is the user id. **Uniqueness is guaranteed here** |
+| Image record | `images` | `image#<id:020>` | also holds file_name |
+| Image ID counter | `images` | `counter` | |
+| Single-use upload token | `upload_keys` | `<key>` | the value is file_name, with `expires_at` (TTL) |
 
-- 一覧系はすべて「パーティションを指定した `Query`」になる:
-  - コレクション名 / ページ名 / 複合フィールド / 画像 / ユーザー
-  - アイテム: `PK = collection#<name>` かつ `SK begins_with "item#"`(公開)、`draft#`、`meta#`
-- ユーザー名の予約アイテムをユーザー本体と**同じトランザクション**で書くことで、
-  「同名の 2 人」が作れない。`attribute_not_exists(SK)` を条件にする。
+- Every list kind becomes "a `Query` with the partition specified":
+  - Collection names / page names / composite fields / images / users
+  - Items: `PK = collection#<name>` and `SK begins_with "item#"` (published), `draft#`, `meta#`
+- Writing the username reservation item in the **same transaction** as the user body makes "two
+  people with the same name" impossible to create. The condition is `attribute_not_exists(SK)`.
 
-## 3. アクセスパターン → 操作
+## 3. Access patterns → operations
 
-| トレイトのメソッド(代表) | 操作 |
+| Trait method - representative | Operation |
 |---|---|
 | `get_collection_schema` / `get_single_page_schema` / `get_composite_field_schema` | `GetItem` |
-| `list_collection_names` / `list_all_page_names` / `list_composite_field_schemas` / `get_all_images` / `get_all_users` | `Query`(一覧パーティション) |
+| `list_collection_names` / `list_all_page_names` / `list_composite_field_schemas` / `get_all_images` / `get_all_users` | `Query` (list partition) |
 | `add_*_schema` / `update_*` | `PutItem` |
 | `add_collection_item` | `UpdateItem ADD counter 1` → `PutItem item#` |
 | `get_collection_item` / `get_collection_item_draft` / `get_item_metadata` | `GetItem` |
 | `list_collection_items` / `list_collection_item_drafts` / `list_item_metadata` | `Query` + `begins_with` |
-| `delete_collection_item` | `TransactWriteItems`(`item#` + `draft#` + `meta#` を削除。存在しないキーの削除は無視される) |
-| `delete_collection` | `TransactWriteItems`(スキーマ + 一覧アイテム + 配下のアイテム/下書き/メタデータを削除) |
-| 公開(`set_item_status` から) | 下書きを `GetItem` → あれば `TransactWriteItems`(公開コピーへ Put + 下書き Delete + メタデータ Put)、無ければメタデータだけ Put |
-| `add_user` | `TransactWriteItems`(ユーザー Put + ユーザー名予約 Put、予約に `attribute_not_exists`) |
-| `delete_user` | `TransactWriteItems`(ユーザー Delete + 予約 Delete) |
-| `generate_image_upload_url` | `UpdateItem ADD`(画像 ID)→ レコード Put → S3 の presigned PUT URL(トークンは S3 が担うので不要) |
+| `delete_collection_item` | `TransactWriteItems` (delete `item#` + `draft#` + `meta#`. Deleting a nonexistent key is ignored) |
+| `delete_collection` | `TransactWriteItems` (delete the schema + the list item + the items/drafts/metadata under it) |
+| Publish (from `set_item_status`) | `GetItem` the draft → if present `TransactWriteItems` (Put to the published copy + Delete the draft + Put metadata), if absent Put metadata only |
+| `add_user` | `TransactWriteItems` (Put user + Put username reservation, with `attribute_not_exists` on the reservation) |
+| `delete_user` | `TransactWriteItems` (Delete user + Delete reservation) |
+| `generate_image_upload_url` | `UpdateItem ADD` (image ID) → Put record → S3 presigned PUT URL (no token needed, since S3 carries it) |
 
-**公開の「下書きが無い場合」**は、そもそも削除をトランザクションに入れない(先に読んで分岐する)。
-`docs/aws-decisions.md` で要確認としていた『存在しないキーの削除がトランザクションを失敗させるか』は、
-この設計では**問題にならない**(該当ケースで削除を発行しない)。
+**Publish "when there is no draft"** does not put a delete into the transaction at all (it reads
+first and branches). The question `docs/aws-decisions.md` left as needing confirmation - "does
+deleting a nonexistent key fail the transaction" - **is not an issue** in this design (no delete is
+issued in that case).
 
-## 4. 上限と検証項目
+## 4. Limits and verification items
 
-- **1 アイテム 400KB**: アイテムの値・スキーマ・複合フィールド定義が収まること。超える場合は
-  400 を返す(DynamoDB は ValidationException を返す)。複合フィールドを多用した大きめの値を
-  入れるテストを置く。
-- **`Query` 1MB**: 一覧は 1MB で切れる。アイテム一覧は `LastEvaluatedKey` で**ページを繰り返して
-  全件取る**(トレイトの契約は「全件返す」なので、内部でループする)。
-- **`TransactWriteItems` 100 項目 / 4MB**: 公開は 3 項目、ユーザー作成は 2 項目、コレクション削除は
-  配下の件数に依存する → **コレクション削除は 25 件ずつに分けて実行**する(トランザクションは使わず、
-  下書き/メタデータ/アイテムを順に消す。途中で失敗しても再実行できる)。
-- **TTL**: アップロードトークンの `expires_at` に使う(削除は非同期なので、消費時に期限も確認する)。
+- **400KB per item**: the item value, schema and composite field definition must fit. If they exceed
+  it, return 400 (DynamoDB returns ValidationException). Add a test that inserts a fairly large value
+  using many composite fields.
+- **`Query` 1MB**: lists are cut off at 1MB. For an item list, **repeat pages with
+  `LastEvaluatedKey` to take all** (the trait contract is "return all", so it loops internally).
+- **`TransactWriteItems` 100 items / 4MB**: publish is 3 items, user creation is 2 items, collection
+  deletion depends on the number under it → **collection deletion runs in batches of 25** (no
+  transaction; delete drafts/metadata/items in order. If it fails partway, it can be re-run).
+- **TTL**: used for the upload token's `expires_at` (deletion is asynchronous, so also check the
+  expiry at consumption time).
 
-## 5. テストの作り方
+## 5. How to write tests
 
-- **テーブルはテストごとに作る**: `test_<uuid>` を作り、`Drop` で消す。`open_test_repository` の
-  AWS 版を `aws.rs` に置き、`http/tests.rs` のゲートを `any(on-premises, aws)` に広げる。
-- **エンドポイント差し替え**: `AWS_ENDPOINT_URL`(既定 `http://localhost:8000`)、
-  `AWS_REGION=us-east-1`、`AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test`。
-  DynamoDB Local は資格情報を要求する(実サービスと同じ)。
-- **S3 は versitygw**: `S3_ENDPOINT_URL`(既定 `http://localhost:9000`)、`force_path_style(true)`、
-  `ROOT_ACCESS_KEY=test` / `ROOT_SECRET_KEY=test-secret`。presign → PUT → GET を実際に往復する
-  (SigV4 を検証するので、presigner が壊れればテストが落ちる)。MinIO のコミュニティ版は 2025 年に
-  配布終了したため、保守されているゲートウェイに替えた(`aws-decisions.md` §2)。
-- 起動: `docker compose up -d`(`backend/docker-compose.yml`)。
+- **Create the table per test**: create `test_<uuid>` and delete it in `Drop`. Put the AWS version of
+  `open_test_repository` in `aws.rs`, and widen the gate in `http/tests.rs` to `any(on-premises, aws)`.
+- **Endpoint substitution**: `AWS_ENDPOINT_URL` (default `http://localhost:8000`),
+  `AWS_REGION=us-east-1`, `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test`.
+  DynamoDB Local requires credentials (same as the real service).
+- **S3 is versitygw**: `S3_ENDPOINT_URL` (default `http://localhost:9000`), `force_path_style(true)`,
+  `ROOT_ACCESS_KEY=test` / `ROOT_SECRET_KEY=test-secret`. Actually round-trip presign → PUT → GET
+  (it verifies SigV4, so the test fails if the presigner is broken). MinIO's community edition
+  stopped distribution in 2025, so we switched to a maintained gateway (`aws-decisions.md` §2).
+- Startup: `docker compose up -d` (`backend/docker-compose.yml`).
 
-## 6. 依存とビルド
+## 6. Dependencies and build
 
-`aws` フィーチャーで追加する予定: `aws-config`、`aws-sdk-dynamodb`、`aws-sdk-s3`
-(プリサインド URL に必要なフィーチャーは**実装時に確認**する)。`aws-sdk-*` は依存が多く
-ビルドが重いので、`aws` フィーチャーのビルド時間は on-premises より明確に長くなる。
-既定ビルドには影響しない(`dep:` で括る)。
+Planned additions under the `aws` feature: `aws-config`, `aws-sdk-dynamodb`, `aws-sdk-s3` (the
+features needed for presigned URLs will be **confirmed at implementation time**). `aws-sdk-*` has
+many dependencies and is heavy to build, so the `aws` feature's build time is clearly longer than
+on-premises. It does not affect the default build (wrapped in `dep:`).
 
-## 7. 先に決めること: 同期トレイトと非同期 SDK
+## 7. Deciding first: synchronous traits and the async SDK
 
-**リポジトリのトレイトは同期**(`fn get_collection_schema(&self, ...) -> Result<...>`)で、これは
-on-premises の rkv が同期だから。**AWS SDK は非同期**なので、そのままでは実装できない。
+**The repository traits are synchronous** (`fn get_collection_schema(&self, ...) -> Result<...>`),
+because on-premises' rkv is synchronous. **The AWS SDK is asynchronous**, so they cannot be
+implemented as they are.
 
-| 案 | 内容 | 代償 |
+| Option | Content | Cost |
 |---|---|---|
-| **A. トレイトを async にする** | 41 トレイトメソッド + サービス層 47 メソッドを async 化。HTTP ハンドラは既に async なので `.await` を足すだけ。on-prem 実装は「await しない async fn」になる。テストは `#[tokio::test]` + `.await` | 機械的だが差分は大きい(サービス内テスト 53 件)。オブジェクト安全は不要(すべてジェネリック)なので `async fn` in trait で書ける |
-| **B. アダプタ内でブロックする** | 専用のランタイムを持つスレッドを 1 本立て、同期メソッドからそこへ投げて待つ | 差分は小さいが、**すべての DB 呼び出しでスレッドを跨いでブロック**する。Lambda では動くが、常駐サーバでは同時実行をスレッド数で制限してしまう。将来 A に置き換えると二度手間 |
+| **A. Make the traits async** | Make 41 trait methods + 47 service-layer methods async. HTTP handlers are already async, so just add `.await`. The on-prem implementation becomes an "async fn that does not await". Tests become `#[tokio::test]` + `.await` | Mechanical, but the diff is large (53 service tests). Object safety is not needed (everything is generic), so it can be written with `async fn` in trait |
+| **B. Block inside the adapter** | Stand up one thread with a dedicated runtime, throw from the synchronous methods into it and wait | The diff is small, but **every DB call blocks across a thread**. It works on Lambda, but on a long-running server it limits concurrency by the number of threads. Replacing it with A later means doing it twice |
 
-**推奨は A**。この CMS の層構成(トレイト → サービス → HTTP)は元々「ストレージを差し替えられる」
-ために作ってあり、非同期ストレージを差し込むならトレイトを async にするのがその延長線上にある。
-テスト 230 件が安全網になる。
+**A is recommended.** This CMS's layer structure (trait → service → HTTP) was originally built so
+that "storage can be swapped", and making the traits async is the extension of that when plugging in
+asynchronous storage. The 230 tests are the safety net.
 
-### 7.1 実際に採った順序: B′ を経て A へ(完了)
+### 7.1 The order actually taken: through B′ to A - complete
 
-A を機械的に一括で当てるのを 3 回試して 3 回落ちた(同名の同期/非同期メソッドが複数の型に
-あり、`to_response` や `notify` の呼び出しが別の型のメソッドに化ける。複数行のチェーンと
-`format!` の中の `{}` のせいで「囲っている関数」の検出も安定しない)。そこで順序を変えた:
+Applying A mechanically all at once was tried 3 times and failed 3 times (same-named sync/async
+methods exist on several types, and calls to `to_response` and `notify` turn into methods of a
+different type. Detecting the "enclosing function" is also unstable because of multi-line chains and
+the `{}` inside `format!`). So the order was changed:
 
-1. **アダプタは async で書く**(AWS SDK が求める形。ここが最終的に残る実装)。
-2. トレイトの同期メソッドは、専用スレッドでランタイムを持つ `BlockingRuntime` に
-   1 メソッド 1 往復で委譲する(差分は小さい)。
-3. 契約スイートを DynamoDB Local に対して通し、アダプタの正しさを先に固める。
-4. そのあと **A**(トレイトを async に)を行い、1 の実装をそのまま残して 2 を消す。
+1. **Write the adapter as async** (the shape the AWS SDK wants. This is the implementation that
+   ultimately remains).
+2. The trait's synchronous methods delegate, one round trip per method, to a `BlockingRuntime` that
+   holds the runtime on a dedicated thread (the diff is small).
+3. Run the contract suite against DynamoDB Local and harden the adapter's correctness first.
+4. Then do **A** (make the traits async), leave the implementation from 1 in place and delete 2.
 
-「同期メソッドをランタイムの中から呼ぶ」が一番壊れやすいので、そこは
-`aws::repository::tests::a_collection_round_trips_against_dynamodb_local` が
-`#[tokio::test]` の中から同期トレイトを呼ぶ形で押さえている。
+"Calling a synchronous method from inside the runtime" is the most fragile part, so
+`aws::repository::tests::a_collection_round_trips_against_dynamodb_local` pins it down by calling
+the synchronous trait from inside `#[tokio::test]`.
 
-**→ A は完了した(2026-09)。** トレイトは
-`fn f(...) -> impl Future<Output = ...> + Send` になり、`BlockingRuntime` ブリッジと
-`bridge.rs`、`s3_blocking` / `delete_table_blocking` は消えた。分かったこと:
+**→ A is complete (2026-09).** The traits became
+`fn f(...) -> impl Future<Output = ...> + Send`, and the `BlockingRuntime` bridge, `bridge.rs`,
+`s3_blocking` / `delete_table_blocking` are gone. What we learned:
 
-- **`async fn` ではなく `impl Future + Send` を書く。** `async fn` in trait は Send を約束せず、
-  `R: Storage` にジェネリックな axum ハンドラが「future cannot be sent between threads」で
-  落ちる。実装側は `async fn` のままでよい。
-- **変換はコンパイラに運転させる。** トレイトを async にした瞬間、全呼び出し箇所が型エラーに
-  なる。rustc は「`await` をここに入れろ」を span と置換文字列で出すので、名前で置換するより
-  確実(以前それで `to_response` / `notify` の別型メソッドを壊した)。同じ提案が lib と test の
-  2 回出るので**重複除去が必須**。
-- **半分だけ変換したアダプタはデッドロックする。** ブリッジ経由の trait と直接 async の trait が
-  同じ SDK クライアントを使うと、接続プールがランタイム単位なので固まる。アダプタは 1 単位で
-  変換する。
-- 残る山は**借用**だった: `let result = service.call(&"x".into()); ... result.await` のような
-  テストは、await を定義側へ移す(`let result = service.call(&"x".into()).await;`)と両方直る。
-  整形処理(`models/field.rs`)は画像をイテレータの closure の中で引いていたので、
-  **解決済みの画像地図を渡す**形にして純粋関数にした(1 リクエスト 1 クエリになり、以前の
-  「値ごとに 1 回」より速い)。
+- **Write `impl Future + Send`, not `async fn`.** `async fn` in trait does not promise Send, and an
+  axum handler generic over `R: Storage` fails with "future cannot be sent between threads". The
+  implementation side can stay `async fn`.
+- **Let the compiler drive the conversion.** The moment the traits become async, every call site
+  becomes a type error. rustc emits "put `await` here" as a span and a replacement string, which is
+  more reliable than replacing by name (that is how we previously broke methods of a different type
+  for `to_response` / `notify`). The same suggestion appears twice, for lib and test, so
+  **deduplication is mandatory**.
+- **A half-converted adapter deadlocks.** When a trait through the bridge and a trait with direct
+  async use the same SDK client, the connection pool is per-runtime, so it hangs. Convert the
+  adapter as one unit.
+- The remaining mountain was **borrowing**: tests like `let result = service.call(&"x".into()); ...
+  result.await` are both fixed by moving the await to the definition side
+  (`let result = service.call(&"x".into()).await;`). The formatting pass (`models/field.rs`) was
+  pulling images inside an iterator closure, so it was made a pure function taking a **resolved image
+  map** (one query per request, faster than the previous "once per value").
 
-変換に使った使い捨ての道具(ブレース対応を正しく扱う書き換えと、rustc の診断 span から
-`.await` を差し込むスクリプト)は**削除した**。移行は完了していて、対象だった `BlockingRuntime`
-ブリッジも無いので、残しても実行できない。コードは git 履歴にある。残った教訓は上の箇条書き
-のとおり(**Rust を正規表現で書き換えない。コンパイラの診断を入力にする**)で、それがこの節の
-値打ちでもある。
+The throwaway tools used for the conversion (a rewriter that handles brace matching correctly, and a
+script that inserts `.await` from rustc's diagnostic spans) have been **deleted**. The migration is
+complete and the `BlockingRuntime` bridge they targeted is gone, so keeping them would leave
+something that cannot run. The code is in the git history. The lessons that remain are the bullets
+above (**do not rewrite Rust with regular expressions. Feed the compiler's diagnostics in**), and
+that is also this section's value.
 
-**確認済み**: テーブル作成、スキーマと一覧の索引、原子的採番(1 → 2)、公開/下書き/メタデータの
-3 レコード、アイテム削除で 3 レコード、コレクション削除で配下と索引まで消えること。
+**Confirmed**: table creation, the schema and list indexes, atomic numbering (1 → 2), the 3 records
+for publish/draft/metadata, 3 records on item deletion, and that collection deletion removes
+everything under it including the indexes.
 
-**ブリッジの掟(実装中に踏んだ罠)**: SDK の HTTP クライアントは接続をプールし、その接続は
-**開いたランタイムに属する**。別のランタイムから流すと、所有側は `block_on` で塞がっているので
-永遠に待つ。つまり「あるクライアントの最初のリクエストはブリッジ経由で」が必須で、テストでも
-S3 のバケット作成を直接 SDK で叩くとその後の `delete_image` が固まる(実際に踏んだ)。
-テスト用の `AwsRepository::s3_blocking` はこのためにある。
+**The bridge's rule - traps hit during implementation**: the SDK's HTTP client pools connections,
+and those connections **belong to the runtime that opened them**. Pushing them from another runtime
+waits forever, because the owning side is blocked in `block_on`. In other words, "a client's first
+request must go through the bridge" is mandatory, and in tests too, hitting S3 bucket creation
+directly with the SDK freezes the later `delete_image` (hit for real). The test-only
+`AwsRepository::s3_blocking` exists for this.
 
-## 8. 実装で確定したこと、残っている課題
+## 8. What implementation settled, and remaining issues
 
-「実装時に確認」としていた 3 点は、実装の形で決着している。
+The 3 points marked "confirm at implementation time" have been settled by the shape of the
+implementation.
 
-- **プリサインド URL**: `aws-sdk-s3` の presigning で PUT を発行する(有効期限 15 分)。
-  単回トークンは on-prem のローカル PUT 経路だけの仕組みになった。
-- **採番とトランザクション**: 採番は `ADD` を使う独立の `UpdateItem`(`repository.rs` の
-  `next_id`)。本体の書き込みとは別の呼び出しで、`TransactWriteItems` に `ADD` を混ぜる必要は
-  無かった — 失敗しても id が 1 つ飛ぶだけで、衝突はしない。
-- **`ConsistentRead`**: 「保存したものをすぐ読む」読み(単一取得、パーティション内の一覧、公開
-  一覧の状態レコード)には使う。一覧の並びは id でタイブレークするので、順序が揺れることはない。
+- **Presigned URL**: issue the PUT with `aws-sdk-s3` presigning (15-minute expiry). The single-use
+  token became a mechanism for the on-prem local PUT path only.
+- **Numbering and transactions**: numbering is an independent `UpdateItem` using `ADD` (`next_id` in
+  `repository.rs`). It is a separate call from the body write, and there was no need to mix `ADD`
+  into `TransactWriteItems` - on failure only one id is skipped, and there is no collision.
+- **`ConsistentRead`**: used for "read what was just saved" reads (single fetch, in-partition lists,
+  published-list status records). The list order breaks ties by id, so the order never wobbles.
 
-残っている設計課題(いまの実装で動いており、規模が来たときに効く順):
+Remaining design issues (these work in the current implementation, listed in the order they will
+matter when scale arrives):
 
-- **管理画面の一覧の押し下げ**。配信 API は状態レコードを id 順に走査して窓に入る本文だけ読む形に
-  したが、管理画面の一覧は公開コピーと作業コピーの和集合なので、2 つのキー空間を id 順に
-  マージする必要がある。
-- **配信 API のカーソル方式**。offset/limit を `LastEvaluatedKey` に変えると走査は消えるが、
-  `total` を諦めることになり API の形が変わる(`content-api.md` §3.1)。
+- **Pushing down the admin screen's list**. The delivery API now scans status records in id order and
+  reads only the bodies that fall in the window, but the admin screen's list is the union of
+  published copies and working copies, so the two key spaces must be merged in id order.
+- **The delivery API's cursor scheme**. Changing offset/limit to `LastEvaluatedKey` removes the scan,
+  but it means giving up `total` and changes the API's shape (`content-api.md` §3.1).

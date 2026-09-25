@@ -1,298 +1,351 @@
-# コンテンツの関係(リレーション)の設計
+# Designing content relations
 
-**状態: 実装済み**(2026-09。参照の並び順も入った)。ピッカー、`inverse_name`、参照元パネル、
-配信での展開、公開の整合、コレクション削除の参照チェックまで動いている。最初の利用者は Strapi からの
-移行(`scripts/migrate-from-strapi/`)で、同ツールは現在リレーションを既定で落としている(§7)。
+**Status: implemented** (2026-09; the ordering of references is in too). The picker, `inverse_name`,
+the referenced-by panel, the expansion in delivery, the consistency of publishing, and the
+reference check on collection deletion all work. The first user is the migration from Strapi
+(`scripts/migrate-from-strapi/`), and that tool currently drops relations by default (§7).
 
-Strapi の relation に相当するもの — コレクションのアイテムが、別のコレクションのアイテムを
-参照する — を、この CMS の設計に合わせて入れる。**画像参照が既にその原型**なので、新しい概念を
-持ち込むのではなく、画像で動いている仕組みを一般化する。
+The equivalent of Strapi's relation - an item of a Collection referencing an item of another
+Collection - goes into this CMS's design. **Image references are already its prototype**, so rather
+than bringing in a new concept, this generalises the mechanism that works for images.
 
-## 1. 何を作るか
+## 1. What to build
 
-- コレクションのアイテムに**参照フィールド**を定義できる(対象は他のコレクション、または単一ページ)
-- 値は参照先の**集合**(順序は持たない)。1 件(単一)か複数(`has_many`)
-- **逆引き**(このアイテムを参照しているコンテンツ)を API と画面で見られる。**配信 API でも引ける**
-  — 「カテゴリー 3 の記事一覧」がページング付きで取れる(フィルタ)、「このカテゴリーとその記事」が
-  1 段で取れる(逆引きの展開)
-- 公開 API では、明示したときだけ**1 段だけ展開**する(公開済みの相手のみ)
-- 参照されているアイテムの**削除は拒否**(理由と参照元を示す。`?detach=true` で外して削除)
-- 移行ツールが Strapi の relation を取り込める(`--relations=relation`)
+- A **reference field** can be defined on an item of a Collection (the target is another Collection,
+  or a Single page)
+- The value is a **set** of references (it has no order). One (single) or several (`has_many`)
+- **Reverse lookup** (the content referencing this item) is visible in the API and on screen.
+  **It can also be read in the delivery API** - "the articles of category 3" comes back with paging
+  (a filter), and "this category and its articles" comes back in one level (the expansion of the
+  reverse lookup)
+- In the public API, **only one level is expanded**, and only when it is explicit (published targets
+  only)
+- **Deleting a referenced item is rejected** (showing the reason and the referencing items; use
+  `?detach=true` to detach and delete)
+- The migration tool can import Strapi's relation (`--relations=relation`)
 
-**作らないもの**: ユーザーへの参照(権限は別の話)、参照の深い再帰展開、参照の双方向の手動管理
-(逆側はインデックスから自動)。
+**What is not built**: references to users (permissions are a separate matter), deep recursive
+expansion of references, and manual management of both directions of a reference (the reverse side
+comes automatically from the index).
 
-## 2. 決めたこと
+## 2. What we decided
 
-| 論点 | 決定 | 理由 |
+| Point | Decision | Reason |
 |---|---|---|
-| 定義する側 | **片面だけ**。フィールドを持つ側が「持つ側」、逆側はインデックスから引く | Strapi の `mappedBy`/`inversedBy` の二重管理をなくす。画像参照と同じ |
-| カーディナリティ | **`has_many: bool` の 2 種類だけ** | Strapi の oneToOne / oneToMany / manyToOne はこの 2 つに畳める(多側に単一参照を置けば oneToMany) |
-| 値の形 | `{ "target": "<collection or page>", "id"?: n }` の**順序つきリスト** | 2026-09 に集合から変更。並び順は「注目記事をこの順で」のような意味を持ち、サイトがそのまま出す。保存時に**同じ参照の重複だけ**を取り除き、順序は書かれたまま保つ(索引・削除・detach は集合として扱うので影響しない) |
-| 対象 | **コレクションと単一ページの両方**。単一ページは `has_many: false` のみ | ページは id を持たないので「参照しているか」だけが値になる(複数持つ意味が無い) |
-| 逆引き | **インデックス**(スキーマには呼び名だけ)。管理は `GET …/references`、配信はフィルタと展開で見る | 画像の `GET /models/images/{id}/references` と同じ。**引くのに再計算は要らない**(書き込み時に索引が更新される) |
-| 逆側の呼び名 | `inverse_name: Option<String>` をスキーマに書ける。**データは持たない** | 画面の見出し(「このカテゴリーの記事」)と配信の `?populate=<inverse_name>` に使う。Strapi の `mappedBy` と違って二重管理にならない |
-| インデックスの書き込み | **本体と同時**(DynamoDB は `TransactWriteItems`、オンプレは同じロック) | 削除の判断に使うので、画像参照より厳しくする(画像は本体→インデックスの 2 手で、ずれても削除が保守的になるだけ) |
-| 未公開の相手を参照したまま公開 | **`required` な relation が公開時に空になるなら拒否**。任意の relation は配信で落とす | 保存時の検証が既に「required は空を許さない」なので、公開時も同じ規則にする。配列で一部が未公開なら残りが出るので通る |
-| 公開中の参照元があるアイテムの unpublish | **同じ規則**: 下げた結果、`required` な参照元が空になるなら拒否 | 公開のときと同じ 1 つの規則で説明できる |
-| 削除される側 | **拒否が既定**。`?detach=true` で参照を外してから削除(参照は全部外れる) | 画像の「ゴミ箱 → 参照確認 → 完全削除」と同じ思想 |
-| 公開 API の展開 | **既定は id のみ**、`?populate=<field>` で 1 段展開 | 画像は常に展開しているが、多対多では応答が重くなり、循環・未公開の説明も要る。明示が安全 |
-| 循環・自己参照 | **許す** | 値であって定義ではないので作成順の問題が無い。展開は 1 段なので再帰しない |
-| 配列の要素型 | **なれない**。複数持つのは `has_many` だけ | relation は既に集合なので、配列にすると「集合の集合」という 2 つ目の言い方になる。編集も配信もできない(検証で拒否) |
-| 置ける場所 | **フィールドと複合フィールド定義の中**。配列の要素型にはできない | 定義は独立して保存され再利用されるので、対象はサイトのコレクション / 単一ページで決まる(埋め込む側に依存しない)。値は複合の中に入るが、**参照を持つのはアイテム**なので索引の持ち主は変わらない |
+| The defining side | **One side only**. The side with the field is the "owning" side; the reverse side is read from the index | Removes the double management of Strapi's `mappedBy`/`inversedBy`. The same as image references |
+| Cardinality | **Only two kinds, via `has_many: bool`** | Strapi's oneToOne / oneToMany / manyToOne fold into these two (putting a single reference on the many side gives oneToMany) |
+| The shape of the value | An **ordered list** of `{ "target": "<collection or page>", "id"?: n }` | Changed from a set in 2026-09. The order carries meaning, as in "featured articles in this order", and the site serves it as it is. On save, **only duplicates of the same reference** are removed, and the order stays as written (the index, deletion and detach treat it as a set, so they are unaffected) |
+| The target | **Both Collections and Single pages**. A Single page only allows `has_many: false` | A page has no id, so only "is it referenced" becomes the value (holding several is meaningless) |
+| Reverse lookup | **An index** (the schema only holds the name). Management reads it with `GET …/references`; delivery sees it through filters and expansion | The same as the image's `GET /models/images/{id}/references`. **No recomputation is needed to read it** (the index is updated when writing) |
+| The name of the reverse side | `inverse_name: Option<String>` can be written in the schema. **It holds no data** | Used for the heading on screen ("the articles of this category") and for `?populate=<inverse_name>` in delivery. Unlike Strapi's `mappedBy`, it is not doubly managed |
+| Writing the index | **Together with the body** (`TransactWriteItems` on DynamoDB; the same lock on-prem) | Because it is used to decide deletion, it is stricter than image references (an image takes two steps, body then index, and a drift only makes deletion conservative) |
+| Publishing while referencing unpublished targets | **Rejected if a `required` relation would be empty at Publish time**. An optional relation is dropped in delivery | Validation on save already says "required does not allow empty", so publishing uses the same rule. If part of an array is unpublished, the rest is served, so it passes |
+| Unpublish of an item that is referenced by published content | **The same rule**: rejected if, as a result of unpublishing, a `required` referrer would be empty | It is explained by the same single rule as publishing |
+| The side being deleted | **Rejection is the default**. `?detach=true` detaches the references first, then deletes (all references are detached) | The same idea as the image's "trash → check references → delete permanently" |
+| Expansion in the public API | **By default only the id**; `?populate=<field>` expands one level | Images are always expanded, but many-to-many makes responses heavy, and cycles and unpublished targets need explaining. Being explicit is safer |
+| Cycles and self-references | **Allowed** | They are values, not definitions, so there is no creation-order problem. Expansion is one level, so it does not recurse |
+| The element type of an Array | **Cannot be one**. Only `has_many` holds several | A relation is already a set, so making it an Array would be a second way of saying "a set of sets". It could be neither edited nor delivered (rejected by validation) |
+| Where it can go | **In Fields and in Composite field definitions**. It cannot be the element type of an Array | A definition is stored and reused independently, so the target is decided by the site's Collections / Single pages (it does not depend on the embedding side). The value goes inside the Composite, but **the item is what holds the references**, so the owner of the index does not change |
 
-## 3. データの形
+## 3. The shape of the data
 
-### スキーマ(`core/src/models/schema.rs`)
+### Schema (`core/src/models/schema.rs`)
 
 ```rust
 FieldType::Relation(RelationOptions {
     target: RelationTarget,       // Collection(name) | SinglePage(name)
-    has_many: bool,               // 単一ページの対象では false のみ(検証で拒否)
-    inverse_name: Option<String>, // 逆側の呼び名。表示と ?populate= にだけ使う
+    has_many: bool,               // only false for a Single page target (rejected by validation)
+    inverse_name: Option<String>, // the name on the reverse side. Used only for display and ?populate=
 })
 ```
 
-- 検証は**複合フィールド参照と同じ場所**で: 対象が存在すること、単一ページなら `has_many: false` で
-  あること、`inverse_name` が対象側で一意であること(`referenced_composite_ids` の隣に
-  `referenced_targets` を足す)。
-  - **対象の存在**はコレクションと単一ページの一覧が要るので、スキーマ保存のサービスで見る
-    (`RelationTargetSource` が両方の名前を答える)。**複合定義の中の relation も同じ対象**なので、
-    `referenced_relation_targets` は複合定義の中まで歩く(定義は 1 回だけ。配列を通して自分自身に
-    戻る定義があるため)。見る場所は 2 つ: **定義の保存時**(`CompositeFieldService`。誰も埋め込んで
-    いない定義も保存できてしまう)と、**埋め込む側のスキーマ保存時**(コレクション / 単一ページ)。
-  - **`inverse_name` の一意性**はスキーマ保存時に見る(`ensure_inverse_names_are_unique`)。
-    同じ対象に同じ呼び名を 2 つ付けると、逆引きの展開がどちらを返すか決まらないため。
-- `inverse_name` は**呼び名だけ**でデータを持たない。逆引きは常にインデックスから引く。
-- 定義の作成順に制約が出る(対象が先)。Strapi の相互参照は片側だけ採用して回避する(§7)。
+- Validation happens **in the same place as Composite field references**: that the target exists,
+  that a Single page has `has_many: false`, and that `inverse_name` is unique on the target
+  (`referenced_targets` is added next to `referenced_composite_ids`).
+  - **The existence of the target** needs the list of Collections and Single pages, so it is checked
+    in the schema save service (`RelationTargetSource` answers both names). **A relation inside a
+    Composite definition has the same target**, so `referenced_relation_targets` walks into
+    Composite definitions as well (a definition is walked once, because a definition can come back
+    to itself through an Array). There are two places to check: **when the definition is saved**
+    (`CompositeFieldService`; a definition that nobody embeds would otherwise be saveable) and
+    **when the embedding side's schema is saved** (a Collection / Single page).
+  - **The uniqueness of `inverse_name`** is checked when the schema is saved
+    (`ensure_inverse_names_are_unique`). Giving the same name twice to the same target would make
+    it undecidable which one the expansion of the reverse lookup returns.
+- `inverse_name` is **only a name** and holds no data. The reverse lookup is always read from the
+  index.
+- A constraint on the order of creating definitions appears (the target comes first). Strapi's
+  mutual references are avoided by adopting only one side (§7).
 
-### 値(`core/src/models/values.rs`)
+### Values (`core/src/models/values.rs`)
 
 ```rust
-// 値は「対象の名前」と「アイテムの id」だけ。どちらの種類かはスキーマが知っている。
+// The value is only "the target's name" and "the item's id". The schema knows which kind it is.
 FieldValue::Relation(Vec<RelationRef>)    // RelationRef { target: String, item: Option<u64> }
-FieldValueResponse::Relation(Vec<RelationResponse>)   // §5 の形
+FieldValueResponse::Relation(Vec<RelationResponse>)   // the shape of §5
 ```
 
-- コレクションの対象なら `{ "target": "authors", "item": 7 }`、単一ページなら
-  `{ "target": "home", "item": null }`(ページは id を持たない)。値の形がスキーマの種類と
-  食い違うものは `from_untyped` が拒否する。
-- **並び順は値**: 書いた順がそのまま保存され、配信 API もその順で返す。同じ参照を 2 度書いても
-  1 件で、**最初に現れた位置**に残る(`from_untyped`)。索引は (所有者, 対象) の集合なので、
-  **並べ替えでは索引は動かない**(`RelationIndexChanges::between` は集合差)。
-- 管理画面のチップは**左右の矢印で並べ替え**、ピッカーは選んだ順に末尾へ足す(単一の参照には
-  順序が無いので矢印は出ない)。
-- **集合として保存する**: 保存時に `(target, item)` で整列・重複除去する。順序を持たない以上、
-  比較(公開コピーとの差分)、インデックスの差分計算、テストの断言を安定させる必要がある。
+- For a Collection target, `{ "target": "authors", "item": 7 }`; for a Single page,
+  `{ "target": "home", "item": null }` (a page has no id). A value whose shape disagrees with the
+  schema's kind is rejected by `from_untyped`.
+- **The order is the value**: the order written is stored as it is, and the delivery API returns it
+  in that order too. The same reference written twice is one entry and stays at **the position where
+  it first appeared** (`from_untyped`). The index is a set of (owner, target), so **reordering does
+  not move the index** (`RelationIndexChanges::between` is a set difference).
+- The chips in the admin screen are **reordered with left and right arrows**, and the picker appends
+  to the end in the order chosen (a single reference has no order, so no arrows appear).
+- **Store it as a set**: on save, sort and deduplicate by `(target, item)`. Without an order, it is
+  necessary to keep comparisons (the diff against the published copy), the index's difference
+  calculation, and the assertions in tests stable.
 
-追加が要るのは、既存の型が通っているすべての分岐:
+What has to be added is every branch the existing types pass through:
 
-| 場所 | 中身 |
+| Place | Content |
 |---|---|
-| `FieldValue` / `FieldValueResponse` | 新しい variant |
-| `from_untyped` | `[{"target": "...", "item": n}, ...]` を受理(配列の要素型検証と同じ形) |
-| `test_required` | `has_many: false` は 1 件以上、`true` は空を許す |
-| `FieldSchema::get_default_value`(schema.rs L150) | 空の配列 |
-| `FieldValue::to_response`(values.rs L721) | 画像と同じく**解決用の情報を渡す**形にする(今は `&HashMap<ImageId, Image>` を取る) |
-| `referenced_images` の隣 | `referenced_items`(値の木を走査。配列・複合の中も見る。`without_reference` も同じ) |
-| フロント `value-field` | 型ごとの分岐(§6) |
+| `FieldValue` / `FieldValueResponse` | A new variant |
+| `from_untyped` | Accepts `[{"target": "...", "item": n}, ...]` (the same shape as Array element type validation) |
+| `test_required` | `has_many: false` requires one or more; `true` allows empty |
+| `FieldSchema::get_default_value` (schema.rs L150) | An empty array |
+| `FieldValue::to_response` (values.rs L721) | Make it **pass in the information for resolution**, as with images (today it takes `&HashMap<ImageId, Image>`) |
+| Next to `referenced_images` | `referenced_items` (walks the value tree; it also looks inside Arrays and Composites; `without_reference` is the same) |
+| The frontend `value-field` | The branch per type (§6) |
 
-**管理 API が返す形**(`FieldValueResponse` は参照の配列をそのまま返す。展開は配信 API だけ):
+**The shape the management API returns** (`FieldValueResponse` returns the array of references as it
+is; only the delivery API expands):
 
-- `RelationTarget` は `{ "kind": "collection" | "single_page", "name": "..." }` の内部タグ付き。
-  同じ名前でも種類が違えば別の対象なので、検証は種類ごとの一覧と突き合わせる。
-- 単一ページの値は `{ "target": "home" }`(`item` は付かない)。`item` を送ると拒否する。
-- 配列の要素型にはできない(`validate_field_type` が拒否)。読み出しも `validate_at` が
-  「配列の要素が relation だった」を型不一致として返す。
+- `RelationTarget` is internally tagged as `{ "kind": "collection" | "single_page", "name": "..." }`.
+  The same name with a different kind is a different target, so validation matches it against the
+  list for each kind.
+- A Single page's value is `{ "target": "home" }` (`item` is not attached). Sending `item` is
+  rejected.
+- It cannot be an Array's element type (`validate_field_type` rejects it). On read, `validate_at`
+  also returns "an Array element was a relation" as a type mismatch.
 
-### 逆引きインデックス
+### The reverse-lookup index
 
-画像参照と同じ**両方向**のキー族を、汎用の `ItemOwner` で持つ:
+Hold the **bidirectional** key families with the generic `ItemOwner`, as with image references:
 
-**所有者も対象も同じ形**(`ItemOwner`: `collection:<name>:<id>` / `page:<name>`)で書く。対象とは
-「参照先のコンテンツ」そのものなので、所有者と同じ名前の付け方ができる。
+**The owner and the target are written in the same shape** (`ItemOwner`:
+`collection:<name>:<id>` / `page:<name>`). The target is "the referenced content" itself, so it can
+be named the same way as the owner.
 
-| 問い | on-prem(rkv) | DynamoDB |
+| Question | on-prem (rkv) | DynamoDB |
 |---|---|---|
-| このコンテンツは何を参照しているか | `<owner>|rel|<target>` | `refs#<owner>` / `rel#<target>` |
-| このコンテンツを誰が参照しているか | `rel|<target>|<owner>` | `rel#<target>` / `ref#<owner>` |
+| What does this content reference | `<owner>\|rel\|<target>` | `refs#<owner>` / `rel#<target>` |
+| Who references this content | `rel\|<target>\|<owner>` | `rel#<target>` / `ref#<owner>` |
 
-- 値は所有者の storage key(画像索引と同じ。読むときに使うのはキーだけ)。
-- 画像索引の順方向も `refs#<owner>` を partition に使う(`image#` の並び)ので、AWS では
-  1 つの所有者の「出ていく参照」が同じ partition に並ぶ。
+- The value is the owner's storage key (the same as the image index; only the key is used when
+  reading).
+- The forward direction of the image index also uses `refs#<owner>` as its partition (the `image#`
+  ordering), so on AWS one owner's "outgoing references" line up in the same partition.
 
-- 保存・公開・削除のすべての書き込み経路で、**保存後の値**から差分を計算して更新する
-  (`set_image_references` と同じ。ただし本体と同一トランザクション)。
-  - 差分の計算は**アダプタの中で、書き込みロック/トランザクションの中**で行う。どのコピーを書いて
-    いるか(`Written::Published` / `Written::Draft`)を渡し、もう一方のコピーはその場で読む。
-    サービスは関与しない: 値の書き込みを通る限り、どの経路でも索引が付いてくる。
-  - **スキーマ保存の再索引は要らない**。`referenced_items` はスキーマではなく**保存されている値**を
-    見るので、フィールドを消したスキーマで保存し直せば値と一緒に索引も消え、追加したフィールドは
-    その保存で入る。
-- 逆引きは**両コピー(draft / published)の和**を数える(画像と同じ保守的な規則)。
+- On every write path - save, publish, delete - the difference is calculated from **the value after
+  saving** and the index is updated (the same as `set_image_references`, but in the same transaction
+  as the body).
+  - The difference is calculated **inside the adapter, inside the write lock / transaction**. It is
+    passed which copy is being written (`Written::Published` / `Written::Draft`) and reads the other
+    copy on the spot. The service is not involved: as long as the write goes through the value, the
+    index follows on every path.
+  - **No reindexing is needed on schema save**. `referenced_items` looks at **the stored values**,
+    not the schema, so saving again with a schema that removed the field removes the index together
+    with the values, and an added field comes in with that save.
+- The reverse lookup counts **the union of both copies (draft / published)** (the same conservative
+  rule as images).
 
-### 削除(2026-09 実装)
+### Deletion (implemented 2026-09)
 
-- `DELETE …/items/{id}` / `DELETE …/single_pages/{name}` は、**参照されているなら 409**
-  (`still_referenced`)。メッセージは参照元を最大 3 件名指しする。
-- **`?detach=true`** で参照を全部外してから削除する。外すのは**参照元の両コピー**(配信される
-  公開コピーと、編集中の作業コピー)で、書き込みは通常の保存経路を通るので索引も一緒に動く。
-  全部外してから削除するので、途中で失敗しても「参照が残ったまま消える」方向にはならない。
-- **`DELETE …/collections/{name}`(コレクションごと)も参照を見る**(2026-09 実装)。その
-  コレクションのアイテムを 1 つずつ索引に問い、参照があれば **409 `still_referenced`** で拒否する
-  (`?detach=true` は無い: コレクション全体の参照を 1 回のクエリで書き換えるのは大きすぎる)。
-  代償はアイテム数ぶんの索引読みで、稀な破壊的操作なので許容する。
-- 画像索引は削除の判断には使われない(ゴミ箱→完全削除の 2 段階と参照表示)ので、ここだけ規則が
-  違う: **リレーションは拒否が既定**、画像は「見せるだけ」。
+- `DELETE …/items/{id}` / `DELETE …/single_pages/{name}` return **409 if it is referenced**
+  (`still_referenced`). The message names at most 3 referrers.
+- **`?detach=true`** detaches all references first, then deletes. What is detached is **both copies
+  of the referencing side** (the published copy that is delivered and the working copy being
+  edited), and the write goes through the normal save path, so the index moves with it. Because
+  everything is detached before deleting, a failure part-way does not turn into "it disappears while
+  references remain".
+- **`DELETE …/collections/{name}` (a whole Collection) also looks at references** (implemented
+  2026-09). It asks the index about each item of that Collection one by one, and if there is a
+  reference it rejects with **409 `still_referenced`** (there is no `?detach=true`: rewriting a whole
+  Collection's references in one query is too large). The cost is one index read per item, and this
+  is a rare destructive operation, so it is accepted.
+- The image index is not used to decide deletion (the two steps of trash → permanent deletion, plus
+  showing the references), so only here is the rule different: **relations reject by default, images
+  only show**.
 
-## 4. 公開との関係(この設計の中心)
+## 4. The relationship with publishing (the heart of this design)
 
-規則は **1 つだけ**にする: **公開した結果、`required` な relation が「公開されている相手」を
-1 つも持たなくなるなら、その公開を拒否する**(409 + どのフィールドがどの相手を指しているか)。
+There is **only one** rule: **if, as a result of publishing, a `required` relation no longer holds
+any "published target", that publish is rejected** (409 + which field points at which target).
 
-- 配列(`has_many: true`)で一部が未公開 → 残りが出るので**通る**(サイトは 1 件減るだけ)。
-- 配列で全部が未公開 → 空になるので、`required` なら拒否、任意なら通る。
-- 単一(`has_many: false`)で相手が未公開 → 空になるので、`required` なら拒否、任意なら通る。
-- **任意の relation は黙って落とす**(配信 API が「公開されている相手」だけを返す)。
-  配列なら「その参照が無い」、単一なら「未設定」としてサイトに出る。
+- In an Array (`has_many: true`), if part is unpublished → the rest is served, so it **passes** (the
+  site just has one fewer).
+- In an Array, if all are unpublished → it becomes empty, so if `required` it is rejected, and if
+  optional it passes.
+- In a single (`has_many: false`), if the target is unpublished → it becomes empty, so if `required`
+  it is rejected, and if optional it passes.
+- **An optional relation is silently dropped** (the delivery API returns only "published targets").
+  On the site it appears as "there is no such reference" for an Array, or as "not set" for a single.
 
-保存時の検証が既に「required は空を許さない」なので、**公開時も同じ意味の規則**になる。
-「単一なら常に拒否」にしない理由: 任意の単一参照まで拒否することになり、相手を下げただけで
-参照元が公開できなくなる(公開の自由を失う)。
+Validation on save already says "required does not allow empty", so **publishing gets a rule with
+the same meaning**. The reason not to make it "a single is always rejected": that would reject even
+an optional single reference, and merely unpublishing the target would make the referencing item
+unpublishable (losing the freedom to publish).
 
-- **`unpublish` も同じ規則**で見る: 下げた結果、`required` な参照元が空になるなら拒否する。
-  そうでなければ下げてよく、配信 API からはその参照が消える。
-- 値は 2 コピーにそれぞれ入る。**公開コピーの値**が上の規則の対象で、作業コピーは自由
-  (未公開の相手を指していてよい。画面はそれを「未公開」と表示する)。
-- 相手を先に公開すればよい、という**順序の問題**でもある。移行スクリプトは依存順に publish する
-  (§7)。
+- **`unpublish` is checked by the same rule**: if, as a result of unpublishing, a `required` referrer
+  becomes empty, it is rejected. Otherwise it may be Unpublished, and the reference disappears from
+  the delivery API.
+- The value goes into each of the two copies. **The published copy's value** is the subject of the
+  rule above; the working copy is free (it may point at an unpublished target. The screen shows it
+  as "unpublished").
+- It is also a **question of order**: publish the target first. The migration script publishes in
+  dependency order (§7).
 
 ## 5. API
 
-### 管理 API
+### Management API
 
-| メソッド | パス | 中身 |
+| Method | Path | Content |
 |---|---|---|
-| (既存) | `POST/PUT …/items` | 値として `values: { "author": [{"target":"authors","item":7}] }` を送る |
-| GET | `/api/models/collections/{name}/items/{id}/references` | このアイテムを参照しているコンテンツ(逆引き) |
-| GET | `/api/models/collections/{name}/items/{id}/related?field=<name>` | ピッカー用の候補(検索・ページング) |
-| DELETE | `…/items/{id}?detach=true` | 参照を外して削除(既定は 409) |
+| (existing) | `POST/PUT …/items` | Send `values: { "author": [{"target":"authors","item":7}] }` as the value |
+| GET | `/api/models/collections/{name}/items/{id}/references` | The content referencing this item (reverse lookup) |
+| GET | `/api/models/collections/{name}/items/{id}/related?field=<name>` | The candidates for the picker (search and paging) |
+| DELETE | `…/items/{id}?detach=true` | Detach the references and delete (the default is 409) |
 
-- 管理 API の値は**未公開の相手も返す**。編集には見えている必要がある。未公開かどうかは
-  逆引き(と候補一覧)が印を付ける。
+- The management API's values **return unpublished targets too**. Editing needs to see them. Whether
+  they are unpublished is marked by the reverse lookup (and the candidate list).
 
-### 公開 API(配信)
+### Public API (delivery)
 
 ```jsonc
-// 1) 順方向: 既定は対象と id だけ(公開されている相手のみ)
+// 1) Forward direction: by default only the target and the id (published targets only)
 "category": [{ "target": "categories", "item": 3 }]
 
-// 2) 順方向の展開: ?populate=category(公開済みの相手だけ)
-"category": [{ "target": "categories", "item": 3, "values": { "name": "技術" } }]
+// 2) Forward expansion: ?populate=category (published targets only)
+"category": [{ "target": "categories", "item": 3, "values": { "name": "Engineering" } }]
 
-// 3) フィルタ: 逆側から引く(「カテゴリー 3 の記事」)。ページングは既存の limit/offset
+// 3) Filter: read from the reverse side ("the articles of category 3"). Paging is the existing limit/offset
 //    GET /api/content/collections/articles?where=category:3&limit=25&offset=0
 
-// 4) 逆引きの展開: ?populate=<inverse_name>(「このカテゴリーとその記事」)
+// 4) Expansion of the reverse lookup: ?populate=<inverse_name> ("this category and its articles")
 "articles": [{ "target": "articles", "item": 12, "values": { … } }]
 ```
 
-- 展開の深さは 1 段固定(`populate` はフィールド名か `inverse_name` の列挙のみ。再帰指定は無し)。
-- **フィルタは relation の等値だけ**: `?where=<field>:<id>`(複数はカンマ区切り)。それ以上の
-  クエリ言語は作らない(「カテゴリーで絞る」が実際に要る唯一の形で、既存のページングがそのまま使える)。
-- 逆引きの展開は**件数の上限**を持つ(既定 25、`?limit=` で変更可)。大きな集合はフィルタで
-  ページングして読む。
-- 未公開の相手は**配信では落ちる**(§4 の規則)。`required` な relation がそれで空になる公開は、
-  そもそも拒否されている。
-- 画像は今までどおり常に `{id, url}` に展開(参照の一種だが、URL 解決という別の意味を持つ)。
+- The depth of expansion is fixed at one level (`populate` is only an enumeration of field names or
+  `inverse_name`. There is no recursive specification).
+- **The filter is only equality on a relation**: `?where=<field>:<id>` (several separated by
+  commas). No further query language is built (it is the only form "narrow by category" actually
+  needs, and the existing paging can be used as it is).
+- The expansion of the reverse lookup has **an upper bound on the count** (25 by default, changeable
+  with `?limit=`). A large set is read with the filter and paging.
+- An unpublished target **is dropped in delivery** (the rule of §4). A publish in which a `required`
+  relation thereby becomes empty is rejected in the first place.
+- An image is always expanded to `{id, url}` as before (it is a kind of reference, but it carries a
+  different meaning, URL resolution).
 
-## 6. 画面
+## 6. Screens
 
-- **スキーマ編集**: 型のドロップダウンで `Relation` を選ぶと、対象(コレクション / 単一ページ)、
-  `has_many`、逆側での呼び名(`inverse_name`)の 3 つが出る。専用コンポーネントは作らず、
-  `dashboard/settings/shared/field` の中で完結している(選択肢が 2 つだけなので)。
-- **内容編集**: `shared/relation-field` がチップ・参照ピッカー・JSON 欄を持つ。順序はチップで
-  並べ替え、名前は**対象のスキーマの title フィールド**から引く(引けなければ `categories #3` の
-  ように参照そのものを出す)。対象や形の合わない参照は、保存の前に画面で弾く。
-- **逆引き**: アイテム画面と単一ページ画面の「Referenced by」が `…/references` を読む。画像の
-  「使用している場所」と同じ形。
-- 型名(`Relation` / `Text` …)は画面でも翻訳していない。追加するときに触るのは
-  `models/schema/fields.ts` の型と、`field` / `relation-field` の 2 コンポーネント、
-  それらの spec・カタログだけ。
+- **Schema editing**: choosing `Relation` in the type dropdown brings up three things: the target
+  (Collection / Single page), `has_many`, and the name on the reverse side (`inverse_name`). No
+  dedicated component is made; it is completed inside `dashboard/settings/shared/field` (because
+  there are only two choices).
+- **Content editing**: `shared/relation-field` has chips, a reference picker, and a JSON box. The
+  order is rearranged with the chips, and the name is read from **the title field of the target's
+  schema** (if it cannot be read, the reference itself is shown, as in `categories #3`). A reference
+  with a mismatched target or shape is rejected on screen before saving.
+- **Reverse lookup**: "Referenced by" on the item screen and the Single page screen reads
+  `…/references`. The same shape as the image's "used in".
+- Type names (`Relation` / `Text` …) are not translated on screen either. What is touched when
+  adding one is only the types in `models/schema/fields.ts`, the two components `field` /
+  `relation-field`, and their specs and catalogue.
 
-## 7. 移行(Strapi)
+## 7. Migration (Strapi)
 
-- Strapi v3 の `oneToOne` / `oneToMany` / `manyToMany` / `oneWay` / `manyWay` を
-  **「片面 + `has_many`」に畳む**。両側に定義がある場合は**片方だけ採用**し、もう片方は警告に出す
-  (CMS の逆引きは自動なので情報は失われない)。
-- `single type`(単一ページ)への参照も移せる(2026-09 の設計変更で対象に含めた)。
-- **2 パス必要**: 1 周目でアイテムを作り Strapi id → CMS id の対応表を作る(既に state が持っている)。
-  2 周目で参照を設定する。参照先が未作成のものは警告して落とす。
-- **順序は移さない**(CMS の値は集合)。Strapi 側で並び順に意味があるなら、移行時に警告する。
-- **公開の順序**: 参照される側を先に publish する(依存順)。移行ツールは対応表から依存を辿れる。
-- ツールの `--relations` に `relation` を追加(既定 `skip` は残す。移行前の安全策として
-  `text` も残す)。
-- **`created_at` / `published_at` は既に API から設定できる**(2026-09、`PUT …/metadata`)ので、
-  ツールの README の「日時はサーバーが打つので移行後の日時になる」という記述は更新が要る。
+- Strapi v3's `oneToOne` / `oneToMany` / `manyToMany` / `oneWay` / `manyWay` are **folded into "one
+  side + `has_many`"**. When both sides have a definition, **only one side is adopted** and the
+  other is put out as a warning (the CMS's reverse lookup is automatic, so no information is lost).
+- References to a `single type` (Single page) can also be migrated (they were included in the
+  targets by the 2026-09 design change).
+- **Two passes are needed**: the first pass creates the items and builds a Strapi id → CMS id table
+  (the state already holds it). The second pass sets the references. A reference whose target has
+  not been created is warned about and dropped.
+- **The order is not migrated** (the CMS's value is a set). If the order carries meaning on the
+  Strapi side, it is warned about at migration time.
+- **The order of publishing**: publish the referenced side first (dependency order). The migration
+  tool can follow the dependencies from the table.
+- `relation` is added to the tool's `--relations` (the default `skip` stays; as a safety measure
+  before migrating, `text` stays too).
+- **`created_at` / `published_at` can already be set from the API** (2026-09, `PUT …/metadata`), so
+  the tool README's statement "the date and time are set by the server, so it becomes the date and
+  time after migration" needs updating.
 
-## 8. テスト
+## 8. Tests
 
-**この設計で入ったもの**:
+**What this design brought in**:
 
-- unit(`core/src/models/{schema,values}.rs`): 対象の検証、単一ページの `has_many` 拒否、配列要素の拒否、
-  複合定義が relation を持てること、複合定義の中まで歩く対象収集(自分自身に配列で戻る定義でも止まる)、
-  `validate_relation_targets` の種類違い、値の正準化(整列・重複除去)、
-  対象の食い違い・アイテム id の欠落・単一に複数・単一ページの `item` の拒否、`required` の空
-- service(`core/src/services/{collection,single_page,composite_field}_service.rs`): 存在しない対象を
-  名指すスキーマ保存は 400(種類違いも 400)。**複合定義の中の relation** は、定義の保存でも、
-  それを埋め込むスキーマの保存でも 400
-- 契約スイート(`crates/tests/suite/relations.rs`、両アダプタ): **順序つきリストの往復**(書いた順・
-  重複は最初の位置)、並べ替えの保存、単一ページの値の形、
-  スキーマ保存の 400 4 種(複合定義の保存を含む)、値の 400 4 種、`required` な relation が空のままの公開は 400、
-  **複合の中の参照**(複合フィールドとその配列の両方)が索引に載り、削除が 409 で拒否され、
-  `?detach=true` が複合の中まで外すこと
-- 公開の整合(2026-09、`repositories/relation_rules.rs` の unit + 契約スイート): 未公開の相手しか
-  持たない `required` な relation を持つ公開は 409 `relation_unpublished`、相手を先に公開すれば通る、
-  公開中の参照元がいる `unpublish` は 409 `relation_required_by`、参照元が未公開なら通る、
-  同じフィールドに公開済みの参照が残るなら通る、任意の relation はどちらも通る、
-  複合・配列の中の `required` は経路つきで拒否、消えた相手は未公開として数える
-- spec(`fields.spec` / `field.spec` / `value-field.spec`): 型の分岐、送信前の正規化、
-  一覧の遅延取得、値の JSON 欄の検証
-- 索引(`RelationIndexChanges::between` の集合差、`referenced_items` の走査、`without_reference`)。
-  契約スイートでは、保存・公開・削除のそれぞれで索引が追いつくこと、両コピーの和を数えること、
-  `?detach=true` が両コピーから参照を外すこと、参照されている削除の 409 と `still_referenced`。
-  参照される側(アイテム・単一ページ)と参照する側(アイテム・単一ページ)の 4 通り。
+- unit (`core/src/models/{schema,values}.rs`): validation of the target, rejection of `has_many` on
+  a Single page, rejection of an Array element, that a Composite definition can hold a relation,
+  the collection of targets that walks into Composite definitions (it stops even for a definition
+  that comes back to itself through an Array), the kind mismatch of `validate_relation_targets`, the
+  canonicalisation of values (sorting and deduplication), a mismatched target, a missing item id,
+  several for a single, the rejection of a Single page's `item`, and the emptiness of `required`
+- service (`core/src/services/{collection,single_page,composite_field}_service.rs`): saving a schema
+  that names a nonexistent target is 400 (a kind mismatch is 400 too). **A relation inside a
+  Composite definition** is 400 both when the definition is saved and when the schema that embeds it
+  is saved
+- contract suite (`crates/tests/suite/relations.rs`, both adapters): **the round trip of an ordered
+  list** (the written order; a duplicate takes the first position), saving a reorder, the shape of a
+  Single page's value, 4 kinds of 400 on schema save (including saving a Composite definition),
+  4 kinds of 400 on values, a publish that leaves a `required` relation empty is 400, **a reference
+  inside a Composite** (both a Composite field and its Array) lands in the index, deletion is
+  rejected with 409, and `?detach=true` detaches all the way into the Composite
+- Consistency of publishing (2026-09, the unit tests of `repositories/relation_rules.rs` + the
+  contract suite): publishing an item with a `required` relation that holds only unpublished targets
+  is 409 `relation_unpublished`; publishing the target first passes; an `unpublish` while a
+  published referrer exists is 409 `relation_required_by`; it passes if the referrer is unpublished;
+  it passes if published references remain in the same field; an optional relation passes both ways;
+  a `required` inside a Composite or an Array is rejected with the path; a vanished target counts as
+  unpublished
+- spec (`fields.spec` / `field.spec` / `value-field.spec`): the branch per type, normalisation before
+  submission, lazy loading of the list, validation of the value's JSON box
+- The index (`RelationIndexChanges::between`'s set difference, the walk of `referenced_items`,
+  `without_reference`). In the contract suite: that the index catches up on each of save, publish
+  and delete; that the union of both copies is counted; that `?detach=true` detaches the references
+  from both copies; and the 409 and `still_referenced` of a referenced deletion. The four
+  combinations of the referenced side (item / Single page) and the referencing side (item / Single
+  page).
 
-**これから要るもの**:
+**What is still needed**:
 
-- **契約スイート**(両アダプタ):
-  - ✅ 公開 API: 既定は対象と id のみ / `?populate=` で 1 段展開 / 未公開の相手は出ない /
-    知らない名前は 400
-  - ✅ 逆引きのフィルタ(`?where=`): 公開済みだけが返り、ページングが効き、公開されていない
-    参照元は出ない
-  - ✅ 逆引きの展開(`?populate=<inverse_name>`): 1 段、公開済みのみ、件数の上限
-  - ✅ `inverse_name` の一意性: 同じ対象への同じ名前は 409、対象が違えば通る、再保存は通る、
-    ページが宣言しても同じ規則
-  - **逆引きのフィルタ**(`?where=category:3`): 公開済みだけが返り、ページングが効き、公開されて
-    いない参照元は出ない
-  - **逆引きの展開**(`?populate=<inverse_name>`): 1 段、公開済みのみ、件数の上限
-  - ✅ **コレクションごとの削除**が参照を見る(409 `still_referenced`。アイテムを消すか参照を
-    外すまで消えない)
-- ✅ **E2E**: スキーマ編集で relation を定義 → ピッカーで選ぶ → 保存 → 公開 → 配信 API で展開
-  (`check-ui.mjs`)。参照元パネルは spec(5 本)で見ている。
-- **移行ツール**: relation のマッピング(片側採用・2 パス・順序の警告)
-- 新しい拒否コード(`detach` が要る / `required` が空になる)は **3 点契約**(Rust ↔
-  `error-codes.json` ↔ en/ja カタログ)に追加する。
+- **Contract suite** (both adapters):
+  - ✅ The public API: by default only the target and the id / one-level expansion with
+    `?populate=` / unpublished targets do not appear / an unknown name is 400
+  - ✅ The reverse-lookup filter (`?where=`): only published ones come back, paging works, and
+    unpublished referrers do not appear
+  - ✅ The expansion of the reverse lookup (`?populate=<inverse_name>`): one level, published only,
+    an upper bound on the count
+  - ✅ The uniqueness of `inverse_name`: the same name for the same target is 409, a different target
+    passes, saving again passes, and a page declaring it follows the same rule
+  - The reverse-lookup filter (`?where=category:3`): only published ones come back, paging works, and
+    unpublished referrers do not appear
+  - The expansion of the reverse lookup (`?populate=<inverse_name>`): one level, published only, an
+    upper bound on the count
+  - ✅ **Deletion per Collection** looks at references (409 `still_referenced`. It does not disappear
+    until the item is deleted or the reference is detached)
+- ✅ **E2E**: define a relation in schema editing → choose it with the picker → save → publish →
+  expand in the delivery API (`check-ui.mjs`). The referenced-by panel is checked by specs (5 of
+  them).
+- **The migration tool**: the mapping of relations (adopting one side, two passes, the order
+  warning)
+- The new rejection codes (a `detach` is needed / `required` becomes empty) are added to the
+  **three-point contract** (Rust ↔ `error-codes.json` ↔ the en/ja catalogue).
 
-## 9. この設計で確定(2026-09)
+## 9. Confirmed by this design (2026-09)
 
-| 論点 | 決定 |
+| Point | Decision |
 |---|---|
-| 未公開の相手を参照したままの公開 | **`required` な relation が空になるなら拒否、任意なら配信で落とす**(§4)。保存時の「required は空を許さない」と同じ規則 |
-| 片面定義 / カーディナリティ / 値の形 | 片面・`has_many` の 2 種類・`{target, item}` の集合 |
-| 対象 | コレクション + 単一ページ(単一ページは `has_many: false` のみ) |
-| 逆引き | インデックス(本体と同一トランザクション)。管理は `references` と画面、配信はフィルタと展開 |
-| 逆側の呼び名 | `inverse_name`(表示と `?populate=` にだけ使う。データは持たない) |
-| 配信の展開 | 明示 `?populate=` のみ、1 段 |
-| 削除 | 拒否が既定、`?detach=true` で参照を全部外して削除 |
-| relation を置ける場所 | フィールドと複合フィールド定義の中(配列の要素型にはできない)。索引・削除の拒否・ detach は複合と配列の中まで届く |
+| Publishing while referencing an unpublished target | **Rejected if a `required` relation becomes empty; an optional one is dropped in delivery** (§4). The same rule as "required does not allow empty" on save |
+| One-sided definition / cardinality / the shape of the value | One side, two kinds via `has_many`, a set of `{target, item}` |
+| The target | Collections + Single pages (a Single page only allows `has_many: false`) |
+| Reverse lookup | An index (the same transaction as the body). Management uses `references` and the screen; delivery uses filters and expansion |
+| The name of the reverse side | `inverse_name` (used only for display and `?populate=`. It holds no data) |
+| Expansion in delivery | Only the explicit `?populate=`, one level |
+| Deletion | Rejection is the default; `?detach=true` detaches all references and deletes |
+| Where a relation can go | In Fields and in Composite field definitions (it cannot be an Array's element type). The index, the rejection of deletion, and detach reach inside Composites and Arrays |
