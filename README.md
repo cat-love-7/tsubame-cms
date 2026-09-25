@@ -44,6 +44,56 @@ brand/                          the mark and the lockup
   permissions.
 * **Webhooks** on publish, signed with a shared secret.
 
+| The items, and what state each one is in | One item |
+|---|---|
+| ![A collection's items, with covers, a relation column and publish state](doc/images/articles.png) | ![Editing an article: a title, a slug, an image, a date, a relation and a Markdown body](doc/images/editor.png) |
+
+| The schema, drawn field by field | The image library |
+|---|---|
+| ![The schema editor: field cards with type, width, height and the title and list flags](doc/images/schema.png) | ![The image library, with thumbnails and per-image actions](doc/images/library.png) |
+
+| A single page | Signing in |
+|---|---|
+| ![A single page: a heading, a hero image and Markdown intro](doc/images/page.png) | ![The sign-in screen](doc/images/sign-in.png) |
+
+A site reads the published copy over HTTP: untyped values beside the schema that gives them
+meaning, paginated, and only what has been published (`doc/content-api.md` is the whole contract).
+
+```bash
+curl 'https://cms.example.com/api/content/collections/articles?limit=2'
+```
+
+```json
+{
+  "schema": [
+    { "name": "title", "field_type": { "Text": {} }, "required": true, "is_title": true, "width": 8 },
+    { "name": "cover", "field_type": "Image", "required": false, "width": 4 },
+    { "name": "category", "field_type": { "Relation": { "target": { "kind": "collection", "name": "categories" } } } },
+    { "name": "body", "field_type": { "Markdown": {} }, "required": false, "width": 12 }
+  ],
+  "items": [
+    {
+      "id": 5,
+      "published_at": "2026-09-25T05:53:12+00:00",
+      "last_published_at": "2026-09-25T05:53:12+00:00",
+      "values": {
+        "title": "Notes from the first deployment",
+        "cover": { "id": 1, "url": "https://cms.example.com/api/images/by-id/1" },
+        "category": [{ "target": "categories", "item": 4 }],
+        "body": "## What an apply does not make"
+      }
+    }
+  ],
+  "total": 4,
+  "limit": 2,
+  "offset": 0,
+  "next_offset": 2
+}
+```
+
+The pictures above come from `scripts/screenshots.sh`, which seeds a small site and takes them;
+run it again after an interface change and they follow.
+
 ## Run it locally
 
 Needs Rust 1.98+ (edition 2024) and Node 24+. Nothing else: the on-premises backend keeps its data

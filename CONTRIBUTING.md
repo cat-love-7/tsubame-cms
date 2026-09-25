@@ -41,6 +41,17 @@ two binaries read.
 that catches what the unit tests cannot: it drives the interface, the API and the storage
 together, and more than one real bug in this project was only visible there.
 
+## The pictures in the README
+
+`doc/images/*.png` are generated rather than drawn. `scripts/screenshots.sh` starts a CMS with
+throwaway data, seeds a small site (four categories, five articles, one page, four images - see
+`frontend/e2e/screenshots.mjs`), and photographs the screens with a real browser. It wants the same
+Chromium as the browser suite and the same two free ports.
+
+Run it when a change moves something a reader would see, and commit what it writes: a picture that
+no longer matches the screen is worse than no picture. If a screen looks wrong while you are at it,
+that is usually the cheapest way to find a layout bug - two of them were found this way.
+
 ## The conventions that matter
 
 * **Code, comments, commit messages and this file are English.** The design documents in `doc/` are

@@ -13,7 +13,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:coverage": "ng test --coverage --no-isolate",
-    "e2e": "node e2e/check-ui.mjs"
+    "e2e": "node e2e/check-ui.mjs",
+    "screenshots": "node e2e/screenshots.mjs"
   },
   "prettier": {
     "printWidth": 100,
