@@ -7,7 +7,7 @@
 # renders CMS HTML. A preview does render it - the draft's Markdown - so a preview on the app's
 # origin would turn any stored XSS in a draft into a stolen token. A separate distribution on a
 # separate host name is what makes it a separate origin, and it is the only reason this exists
-# rather than a `/preview` path (`doc/preview-site.md` §7).
+# rather than a `/preview` path (`docs/preview-site.md` §7).
 #
 # The bucket is the app's own; the preview site lives under the `preview/` prefix and this
 # distribution's origin points at it, so nothing new is stored and `scripts/deploy-preview.sh` only

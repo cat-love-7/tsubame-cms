@@ -11,7 +11,7 @@ import { errorKey, errorMessage, isStatusError } from '../http-error';
  * Kept in this shape rather than as rendered text so that a message already on screen follows a
  * language change: `key` is looked up in the catalogs when it is drawn, with `params` filled in,
  * and `text` is shown as it came — which is what a server error this client has no code for
- * deserves. `cat doc/i18n.md`.
+ * deserves. `cat docs/i18n.md`.
  */
 export type Message = { key: string; params?: Record<string, unknown> } | { text: string };
 

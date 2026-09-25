@@ -1,7 +1,7 @@
 # gatsby-source-tsubame
 
 この CMS(`Tsubame`)の**公開コンテンツ API**(`/api/content/*`)を読む Gatsby の source plugin です。
-`doc/content-api.md` の「Gatsby からの使い方」にある薄いプラグインを、実際に使える形にしたものです。
+`docs/content-api.md` の「Gatsby からの使い方」にある薄いプラグインを、実際に使える形にしたものです。
 
 - **認証不要**。配信 API は公開済みだけを返すので、ビルドにトークンは要りません。
 - CMS のスキーマから **GraphQL の型を組み立てる**。コレクション `blog` は `TsubameBlogItem`、
@@ -33,7 +33,7 @@ module.exports = {
       },
     },
     // Markdown を HTML にする。Tsubame 側は mediaType を付けているだけなので、変換はこの
-    // プラグインに任せる(`doc/content-api.md` §7 の分担どおり)。
+    // プラグインに任せる(`docs/content-api.md` §8 の分担どおり)。
     'gatsby-transformer-remark',
   ],
 }
@@ -60,7 +60,7 @@ module.exports = {
 | `images.requestHeaders` | `{}` | 画像取得時のヘッダ(配信が認証を要求するとき) |
 
 ページは件数ではなく **`next_offset`** で辿ります。配信 API は件数だけでなくバイト数でも
-1 ページを切るため、`offset + limit` で進むと取りこぼすことがあるからです(`doc/content-api.md` §3.1)。
+1 ページを切るため、`offset + limit` で進むと取りこぼすことがあるからです(`docs/content-api.md` §3.1)。
 
 ## 2. 生成されるノード
 
@@ -353,8 +353,8 @@ query {
 ## 6. ライブプレビュー(ビルドを経由しない)
 
 公開前の作業コピーを、アカウントを持たない相手に見せるための入口です。共有プレビュー URL
-(`doc/content-api.md` §5.6)の仕事で、**このプラグインもビルドも通りません**。契約の全体は
-`doc/preview-site.md`、実装は `packages/tsubame-preview/`(このプラグインに依存しない、依存ゼロの
+(`docs/content-api.md` §5.6)の仕事で、**このプラグインもビルドも通りません**。契約の全体は
+`docs/preview-site.md`、実装は `packages/tsubame-preview/`(このプラグインに依存しない、依存ゼロの
 パッケージ)です。
 
 **このプラグインは `tsubame-preview` に依存しません。** サイトが両方をインストールします。
@@ -442,21 +442,21 @@ export default function PreviewPage({ location }) {
   `hast-util-to-html`(両方 `allowDangerousHtml: true`、既定で gfm と footnotes)です。ファイルや
   ノードを必要とする `gatsby-remark-*` はブラウザでは動かないので、AST だけを触るものに限ります。
 - **本番との差**(`localFile`、`excerpt`、逆引き参照など)と、view-model での吸収のしかたは
-  `doc/preview-site.md` §5・§6 にあります。
+  `docs/preview-site.md` §5・§6 にあります。
 
 ### 置き場所
 
 - **AWS**: 管理画面とは別のサブドメインに置きます(`infra/preview.tf`)。管理画面とオリジンを
   分けるのは、下書きの HTML を管理画面の `localStorage` と同じオリジンで描かないためです
-  (`doc/preview-site.md` §7)。
+  (`docs/preview-site.md` §7)。
 - **Cloudflare Pages / オンプレミス**: 別ホスト名で配り、`PREVIEW_SITE_URL` を CMS に設定します。
-  オンプレミスの nginx 例は `doc/preview-site.md` §8 にあります。
+  オンプレミスの nginx 例は `docs/preview-site.md` §8 にあります。
 
 ## 7. この版でできないこと
 
 配信 API の契約から決まる制限です。
 
-- **下書きは見えない**。意図どおりです。プレビューは共有プレビュー URL(`doc/content-api.md` §5.6)
+- **下書きは見えない**。意図どおりです。プレビューは共有プレビュー URL(`docs/content-api.md` §5.6)
   の仕事で、ビルドとは別の入口です。
 - **公開アイテムが 0 件のコレクションはノードも 0 件**。型は宣言されますが、アイテムは
   ありません(`/api/content/collections` が公開アイテムを持つコレクションしか列挙しないため)。
@@ -477,6 +477,6 @@ $ scripts/test-gatsby-source.sh
 $ cd packages/gatsby-source-tsubame && npm test
 ```
 
-テストは契約(`doc/content-api.md`)の形をした偽の配信 API と、Gatsby が渡すのと同じ引数で
+テストは契約(`docs/content-api.md`)の形をした偽の配信 API と、Gatsby が渡すのと同じ引数で
 2 つのフックを動かします。ページの辿り方、型の割り当て、複合定義の解決、参照のリンク、
 Markdown ノードの生成とリンクまでを見ています。

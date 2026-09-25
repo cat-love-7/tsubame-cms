@@ -24,7 +24,7 @@ resource "aws_iam_role" "function" {
 
 data "aws_iam_policy_document" "function" {
   # Reading and writing the CMS's own table: the adapter only ever uses GetItem, PutItem,
-  # DeleteItem, Query, UpdateItem and TransactWriteItems (doc/aws-dynamodb-design.md).
+  # DeleteItem, Query, UpdateItem and TransactWriteItems (docs/aws-dynamodb-design.md).
   statement {
     effect = "Allow"
     actions = [

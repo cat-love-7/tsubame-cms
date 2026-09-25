@@ -8,7 +8,7 @@
  * The schema returned next to the values is the only thing that says which is which, so every
  * decision here takes the field's `field_type` and never the value's own shape.
  *
- * The wire shapes are the contract in `doc/content-api.md` (sections 3 and 3.1) and the Rust
+ * The wire shapes are the contract in `docs/content-api.md` (sections 3 and 3.1) and the Rust
  * `FieldValueResponse` in `backend/crates/core/src/models/values.rs`.
  *
  * This is the same reading the build-time source plugin does

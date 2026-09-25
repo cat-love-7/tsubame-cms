@@ -1,7 +1,7 @@
 /**
  * Which language the interface is in.
  *
- * The order is the decision recorded in `doc/i18n.md`: what the user chose, then what the
+ * The order is the decision recorded in `docs/i18n.md`: what the user chose, then what the
  * browser asks for, then English. Regional values are resolved by dropping the region —
  * `ja-JP` is `ja` — so adding a regional catalogue later does not change this function, only the
  * list of what is available.

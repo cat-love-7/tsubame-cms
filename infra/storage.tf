@@ -1,4 +1,4 @@
-# Everything structured lives in one table (doc/aws-dynamodb-design.md): the keys are the
+# Everything structured lives in one table (docs/aws-dynamodb-design.md): the keys are the
 # layout, and there are deliberately no secondary indexes.
 resource "aws_dynamodb_table" "cms" {
   name         = local.name
@@ -25,7 +25,7 @@ resource "aws_dynamodb_table" "cms" {
 
 # Image bytes. The URL stored in content is the object's own address, so the bucket has to be
 # readable — a presigned URL in a page would expire with the page
-# (doc/aws-dynamodb-design.md, and `AwsSettings::image_url`).
+# (docs/aws-dynamodb-design.md, and `AwsSettings::image_url`).
 resource "aws_s3_bucket" "images" {
   bucket = var.images_bucket != "" ? var.images_bucket : "${local.name}-images"
 }

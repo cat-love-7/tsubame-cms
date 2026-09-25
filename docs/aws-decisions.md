@@ -1,33 +1,28 @@
-# AWS 対応の TODO
+# AWS の決定録
 
-この CMS を AWS(Lambda + DynamoDB + S3)で動かすための作業一覧。**現状のコードを実際に読んで
-確認した事実**だけを前提にしている。推測で書いた項目は「(要確認)」と明記した。
+この CMS を AWS(Lambda + DynamoDB + S3)で動かすと決めたときの判断と、実装して分かったこと。
+スタックそのものは [`infra/README.md`](../infra/README.md)、テーブル設計は
+[`aws-dynamodb-design.md`](aws-dynamodb-design.md)、動かし方は [README](../README.md) にある。
 
-## 0. 現状
+**実装は完了しており、staging で動いている**(2026-09)。§2 の `[x]` は「そう決めた」ではなく
+「そう作り、こう確認した」の記録として残している — 同じ判断をやり直す人にとって、確認の方法まで
+書いてある方が役に立つ。まだ終わっていないものだけが §2 の末尾「残っている課題」にある。
 
-- バックエンドは **コンパイル時のフィーチャー選択**。`Cargo.toml` に `on-premises`(既定)/
-  `aws`/`gcp`/`azure` があり、`main.rs` が「1 つだけ選べ」「0 個は駄目」「`aws` は未実装」を
-  `compile_error!` で表現している。
-- `aws` フィーチャーは `dep:lambda_http` を引くだけで、**`src/aws/` も `run_aws()` も無い**
-  (`lambda_http` は `src/` から一度も参照されていない)。
-- 差し替え口は整っている: `AppModule<R: Storage>`、`http::router` は `R: Storage` でジェネリック、
-  共有層(`http` / `services` / `models`)に rkv への参照は無い。バックエンド固有の都合
-  (rkv のパス、テスト用リポジトリ構築)は `on_premises` 側に寄せてある。
-- 実装すべきトレイトは 5 つ・**計 44 メソッド**:
-  | トレイト | メソッド数 | 主な中身 |
-  |---|---|---|
-  | `CollectionRepository` | 16 | スキーマ、アイテム、**下書き**、**メタデータ**、一覧 |
-  | `SinglePageRepository` | 11 | スキーマ、1 アイテム、下書き、メタデータ |
-  | `ImageRepository` | 7 | 一覧/取得、**アップロード URL 発行**、単回トークン、バイト読み書き |
-  | `UserRepository` | 6 | id/username 取得、作成、更新、一覧、削除 |
-  | `CompositeFieldRepository` | 4 | 定義の一覧/取得/追加/削除 |
-- コンテンツは **2 コピー + メタデータ**: 公開コピー(配信 API が見る)、作業コピー(下書き)、
-  状態/時刻/公開者。DynamoDB では 1 アイテムにつき 3 レコードになる。
-- いまの統合テストは実ルーターを `oneshot` で叩き、**実バックエンド**に対して動く
-  (`http/tests.rs` は `feature = "on-premises"` でゲート、テスト用リポジトリは
-  `on_premises::open_test_repository` が用意する)。CI と compose はリポジトリに無い。
-- プロセス内メモリに依存している箇所が 3 つある: **ログイン試行のカウンタ**、**画像アップロードの
-  単回トークン**、**Webhook のバックグラウンド送信**。Lambda では共有されない/凍結される。
+## 0. いまの形
+
+- バックエンドは**クレートで分かれている**(コンパイル時のフィーチャー選択ではない):
+  `crates/core`(モデル・サービス・HTTP 層)+ `crates/on-premises`(rkv とローカル画像)+
+  `crates/aws`(DynamoDB・S3・Lambda)。差し替え口は `AppModule<R: Storage>` と
+  `http::router`, `crates/tests` が**同じ契約スイートを両方に対して**走らせる。
+- `crates/aws` には 5 つのリポジトリ実装、DynamoDB のヘルパー、S3 のアップロード先、
+  **Lambda の起動点**(`lambda.rs`)、Cognito のアカウント管理(`provisioner.rs`)が入っている。
+- リポジトリのトレイトは async。かつての「同期トレイトをランタイムスレッドで包む」ブリッジは
+  無くなった(`aws-dynamodb-design.md` §7.1)。
+- エミュレータ(DynamoDB Local + MinIO)は `docker-compose.yml`、配備は `infra/`(Terraform)、
+  テストは `scripts/test-rust.sh` が 1 コマンド。
+- プロセス内メモリに依存していた 3 つ(ログイン試行のカウンタ、画像アップロードの単回トークン、
+  Webhook のバックグラウンド送信)は、AWS 側でそれぞれ DynamoDB のレコード、S3 の presigned PUT、
+  予算付きの同期送信に置き換えた。§1 に決定、残る穴は §2 の「残っている課題」。
 
 ## 1. 決めたこと
 
@@ -67,11 +62,11 @@ Cognito を入れると「配備によってできることが違う」状態に
 **この配備で何ができるか**を返す。例: `{"password_login": true/false, "password_reset":
 "link"|"temporary", "image_upload": "proxied"|"presigned", "login_url": …}`。
 
-## 2. TODO
+## 2. 実装の記録
 
-各項目に「完了条件(= 何で確認するか)」を付ける。
+各項目に「完了条件(= 何で確認するか)」を付けてある。`[x]` は実装して確認済み、`[ ]` は残っている。
 
-### P0. 土台(AWS アダプタ無しでも進められる)
+### 土台(AWS アダプタ無しでも進められる)
 
 - [x] 画像のバイト読み書きを共有トレイトから外した(`LocalImageBytes`)。共有層は「どの
       バックエンドも実装する義務があるもの」だけを語るようになり、ルート `GET/PUT
@@ -110,16 +105,16 @@ Cognito を入れると「配備によってできることが違う」状態に
       → **完了**(設定は `crates/aws/src/settings.rs` に移り、`AwsSettings::from_env()` が
       同じ検証をする。`the_jwks_url_is_derived_so_pool_and_region_cannot_disagree` など 4 件)。
 
-### P1. DynamoDB アダプタ(本丸)
+### DynamoDB アダプタ
 
-- [x] **単一テーブルのキー設計**を決めて [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) に
+- [x] **単一テーブルのキー設計**を決めて [`docs/aws-dynamodb-design.md`](aws-dynamodb-design.md) に
       書いた。1 テーブル + `PK`/`SK`、**GSI なし**(一覧はすべてパーティションクエリ)、値は JSON 文字列、
       読み取りは `ConsistentRead`、アイテム ID はゼロ埋め、ユーザー名の一意性は予約アイテム +
       条件付き書き込み、公開は `TransactWriteItems`
       → 確認: 実装が必要とするアクセスパターンを表で網羅(44 メソッド分)。
 - [x] **44 メソッドを実装**(collections 16 / single pages 11 / users 6 / composite fields 4 /
       images 4 + S3)。実装は async で書き、同期トレイトへは `BlockingRuntime` で委譲する
-      (経緯と順序は [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
+      (経緯と順序は [`docs/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
       **HTTP の契約スイートが DynamoDB Local + MinIO に対して全部通る**
       (`cargo test --workspace`、HTTP 契約スイート 43 件 × 2 バックエンドを含む 284 件)。
       実行: `docker compose -f backend/docker-compose.yml up -d` してから上記コマンド。
@@ -160,9 +155,9 @@ Cognito を入れると「配備によってできることが違う」状態に
 - [ ] 配信 API を**カーソル方式**(`LastEvaluatedKey` をそのまま次ページの鍵にする)にするか。
       いまは offset/limit のままなので、`total` を出すために状態レコードを最後まで走査する。
       カーソルにすると `total` を諦める代わりに走査も消えるが、**API の形が変わる**
-      (`doc/content-api.md` §3.1 の余地)。
+      (`docs/content-api.md` §3.1 の余地)。
 
-### P2. S3(画像)
+### S3(画像)
 
 - [x] `generate_image_upload_url` を **presigned PUT** にした(有効期限 15 分)。
       単回トークンは on-prem のローカル PUT 経路のための仕組みで、S3 では不要になった:
@@ -199,7 +194,7 @@ Cognito を入れると「配備によってできることが違う」状態に
       オリジンとして読む前提(`AWS_IMAGE_BASE_URL` を CDN に向けるだけで、CMS もコンテンツも
       変更不要)。**残り**: staging で表示確認(E2E は on-prem の配信経路で通っている)。
 
-### P7. ワークスペース分割(2026-09、完了)
+### ワークスペース分割(2026-09)
 
 feature での切り替えは「1 ビルド = 1 feature 集合」なので、共有層に `#[cfg]` が漏れる
 (`Storage` の二重定義、画像ルートの出し分け、テスト側の型エイリアスと `#![cfg]`)うえ、
@@ -224,19 +219,19 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
   `scripts/test-rust.sh` がポートを見てファイルごとスキップし、CI の `rust-aws` ジョブは
   `docker-compose.yml` からエミュレータを起動して本気で走らせる。
 
-### P8. 保存層を async にそろえる(2026-09、完了)
+### 保存層を async にそろえる(2026-09)
 
-`doc/aws-dynamodb-design.md` §7 の **A**。トレイト 6 つ 48 メソッドを
+`docs/aws-dynamodb-design.md` §7 の **A**。トレイト 6 つ 48 メソッドを
 `impl Future + Send` にし、サービス・ハンドラ・テストを async に、**AWS のブリッジを削除**した。
 
 - core のサービスは `async fn`、on-prem の実装は「await しない async fn」。
 - `crates/aws/src/bridge.rs` は無くなり、AWS 実装は素の `async fn`。
 - 変換は rustc の提案 span から機械的に適用(使い捨ての道具は移行後に削除。教訓は
-  `doc/aws-dynamodb-design.md` §7)。
+  `docs/aws-dynamodb-design.md` §7)。
 - **契約スイート 43 件 × 2 バックエンドは変わらず緑**(`cargo test --workspace` で 281 件)。
   AWS 側の実行時間は 15 秒 → 3.5 秒になった(呼び出しごとのスレッド往復が消えたため)。
 
-### P3. Lambda 起動点
+### Lambda の起動点
 
 - [x] `lambda_http` で既存ルーターを載せた(`crates/aws/src/lambda.rs`)。
       `lambda_http::run(service_fn(...))` に、ルーターを `tower` サービスとして渡す形。
@@ -287,7 +282,7 @@ feature での切り替えは「1 ビルド = 1 feature 集合」なので、共
       → **完了条件**: 「Lambda を 2 インスタンスで動かしても壊れない」項目がゼロ。
       → 残りは上の 2 つ(Webhook とログイン試行)。
 
-### P4. Cognito(採用する。§1 の決定どおり)
+### Cognito(§1 の決定どおり)
 
 #### パスワード認証の置き場所(2026-09 完了)
 
@@ -450,7 +445,7 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
       作成 → 一時パスワード → **本人としてサインインし変更を強制される** → 削除 → 削除後は
       プールが拒否、まで通す(管理者 `cat` と実 Cognito プールに対して)。
 
-### P5. デプロイと運用
+### デプロイと運用
 
 #### 画面の配信(S3 + CloudFront、2026-09)
 
@@ -483,14 +478,27 @@ Function URL で、ビヘイビアは 2 つだけ:
   `/` と `/index.html` を invalidate)。Terraform が持つのはバケット・distribution・
   ポリシーまでで、**中身はビルド成果物**なので IaC に持たせない。
 
-- [ ] IaC でスタック定義(Lambda + Function URL/API Gateway、DynamoDB、S3、CORS、環境変数、
-      シークレットは Secrets Manager)。テスト用の使い捨てスタックも同じ IaC で
-      → **完了条件**: 新規アカウント領域に 1 コマンドで作成・削除できる。
-- [ ] staging に対して既存 E2E を回す(`BASE_URL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` を
-      向けるだけ。ハーネスは変更不要のはず)
-      → **完了条件**: `npm run e2e` が staging で通る(夜間/手動)。
-- [ ] IAM 最小権限、ログ/メトリクス、コスト確認(オンデマンド、テストは TTL と接頭辞で掃除)
-      → **完了条件**: ドキュメント化。
+- [x] IaC でスタック定義(Lambda + Function URL、DynamoDB、S3、CORS、環境変数、シークレットは
+      Secrets Manager)— **完了**。`infra/` がそれで、`terraform apply` 1 回で作れる。
+      API Gateway は挟まない: function URL で足りる。
+- [x] staging に対して既存の E2E を回す — **完了**。管理画面のサインインは
+      `frontend/e2e/hosted-signin.mjs` / `hosted-accounts.mjs` が実ブラウザで通す。
+- [x] IAM 最小権限、ログ/メトリクス、コスト確認 — **完了**。配備用ポリシーは
+      `infra/deployer-policy-*.json`(133 アクション)、ログは保持期間つきのロググループ、
+      コストは README の「What it costs to run」に、実測値つきで書いてある。
+
+### 残っている課題
+
+- **管理画面の一覧の押し下げ**: 配信 API の一覧は状態レコードを id 順に走査して窓に入る本文だけを
+  読む形になったが、管理画面の一覧は公開コピーと作業コピーの**和集合**なので、2 つのキー空間を
+  id 順にマージする必要がある。認証済みで件数も規模に収まるため後回しにしている
+  (設計は同じ「窓をストレージに渡す」)。
+- **配信 API をカーソル方式にするか**: いまは offset/limit で、`total` を出すために状態レコードを
+  最後まで走査する。`LastEvaluatedKey` を次ページの鍵にすれば走査は消えるが、`total` を諦める
+  ことになり、API の形が変わる(`content-api.md` §3.1 の余地)。
+- **Webhook を SQS に載せる**: 応答後に実行環境が凍結されうるので、配信は「予算付きの同期送信」で
+  逃げている(§1)。配信が失われては困る規模になったら、queue + publish 権限 + 配信 Lambda を
+  Terraform に足し、`Notifier` をバックエンドごとに選ぶ。テストには queue のエミュレータが要る。
 
 #### 実行アーキテクチャ(2026-09: **arm64 / Graviton を既定**)
 
@@ -544,15 +552,15 @@ scripts/build-lambda.sh --arch arm64
 Webhook の notifier だけで、Webhook を使わない配備では `HttpJwks` のクライアント生成時に
 パニックしていた。`install_crypto_provider()` を `HttpJwks::new` と AWS バイナリの起動時に呼ぶ。
 
-### P6. 別トピック(今回は対象外)
+### 別トピック(今回は対象外)
 
-- **UI の多言語化**: 方針と用語の決定リストは [`doc/i18n.md`](i18n.md)。コンテンツの
-  多言語化は同じ文書の §4 に TODO として分けてある(UI 文言とは別規模)。
+- **UI の多言語化**: 方針と用語の決定リストは [`docs/i18n.md`](i18n.md)。コンテンツの
+  多言語化はその §4 に TODO として分けてある(UI 文言とは別規模)。
 
 - 他 CMS からの移行スクリプト(別プロジェクトで HTTP を叩く方針で合意済み)。
   件数が多くて耐えられない場合のみ、**一括作成エンドポイントを CMS 側に足す**。
-- ~~`doc/swagger.yaml` の更新~~ → **削除した**(実装の一部しか載っておらず、Petstore の
-  サンプル文が残っていた。契約は `doc/content-api.md` と契約テスト)。
+- ~~`docs/swagger.yaml` の更新~~ → **削除した**(実装の一部しか載っておらず、Petstore の
+  サンプル文が残っていた。契約は `docs/content-api.md` と契約テスト)。
 
 ### 資格情報は「エンドポイント上書き」で判断する(2026-09 修正)
 

@@ -108,7 +108,7 @@ anyone can run it against a deployment without credentials of their own.
 The preview site is a **separate artifact** with its own deployment, and it is deliberately not the
 app: a preview renders *unpublished* HTML, while the app's origin keeps the editor's token in
 `localStorage` and renders no CMS HTML at all, so the two must not share an origin
-(`doc/preview-site.md` §7). It lives in the same bucket under `preview/` and gets its own
+(`docs/preview-site.md` §7). It lives in the same bucket under `preview/` and gets its own
 distribution on its own name (`infra/preview.tf`):
 
 ```bash
@@ -143,7 +143,7 @@ global names or the world outside the account:
 | `jwt_secret_arn` | one secret per environment (`<project>/<environment>/jwt-secret`): two deployments sharing one can mint a token the other accepts |
 | `bootstrap_admin_usernames` | who administers *this* deployment |
 | `app_url`, `frontend_certificate_arn` | the name the provider sends the browser back to, and its certificate |
-| `preview_url`, `preview_certificate_arn` | a name of its own, never a path under `app_url` (`doc/preview-site.md` §7) |
+| `preview_url`, `preview_certificate_arn` | a name of its own, never a path under `app_url` (`docs/preview-site.md` §7) |
 | `cognito_domain_prefix` | unique across *all* accounts in the region, so the default usually has to change |
 | `cors_allowed_origins` | the preview origin, and anything else that calls the API |
 | the state key in `backend.hcl` | one state per environment: `<project>/<environment>/terraform.tfstate` |
@@ -400,7 +400,7 @@ has to stay on x86_64 for some reason.
   "RESPONSE_STREAM"`), which raises the reply ceiling from 6MB to 200MB — the first 6MB uncapped,
   the rest at 2MB/s, billed to the end even if the client leaves. The CMS's answers are JSON built
   in memory, so streaming would move the ceiling without improving the time to first byte; the
-  delivery API cuts its pages to fit instead (`doc/content-api.md`). Streaming earns its place
+  delivery API cuts its pages to fit instead (`docs/content-api.md`). Streaming earns its place
   when an answer is *built* while it is sent (an export), which is a feature, not a setting.
 - **The bucket is publicly readable by default, and that is a choice** (`image_delivery`). Content
   stores an object's own address, which has to keep working long after a signature would have
@@ -411,7 +411,7 @@ has to stay on x86_64 for some reason.
   returns is a signature over the object (`image_url_ttl_seconds`, an hour by default), and a page
   that cached one of those URLs would carry a dead link once it expires.
 - **No Cognito groups.** Roles, per-collection and per-page grants live in the CMS's records
-  (`doc/aws-plan.md`, P4): Cognito answers who someone is, the CMS what they may do.
+  (`docs/aws-decisions.md`): Cognito answers who someone is, the CMS what they may do.
 - **`allow_admin_create_user_only`.** Nobody signs themselves up; an administrator creates the
   account, and `BOOTSTRAP_ADMIN_USERNAMES` is how the first one appears.
 - **The API is served under `/api`.** `tsubame_core::API_PREFIX` nests the whole surface there, so
@@ -420,7 +420,7 @@ has to stay on x86_64 for some reason.
 - **No WAF.** Nothing rate-limits sign-in per address. The pool's own per-category quotas bound
   what a flood can spend (e.g. `UserAuthentication`, 120 requests/second across the account and
   region), and per-account lockout after repeated failures is threat protection, which is the
-  Plus plan's rather than a web ACL's (`doc/aws-plan.md`, P5). So a busy address can still spend
+  Plus plan's rather than a web ACL's (`docs/aws-decisions.md`). So a busy address can still spend
   the pool's share; a regional rate-based rule is what fixes that, and it was left out on purpose
   rather than forgotten - a handful of resources and roughly $5/month plus $1 per rule.
 - **No account recovery by email, for anyone.** Cognito's own recovery sends a code to a verified

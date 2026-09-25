@@ -4,7 +4,7 @@
 小さなパッケージです。**Gatsby にも React にも依存しません**(依存パッケージはゼロ、
 `fetch` と普通のオブジェクトだけ)。
 
-契約の全体は `doc/preview-site.md` にあります。この README は使い方と API だけです。
+契約の全体は `docs/preview-site.md` にあります。この README は使い方と API だけです。
 
 ## 何をするか
 
@@ -79,7 +79,7 @@ const resolved = await resolvePreview({
 
 ### 値を解決する
 
-`resolvePreview(options) → Promise<resolved>`。オプションは `doc/preview-site.md` §4 の表のとおりです。
+`resolvePreview(options) → Promise<resolved>`。オプションは `docs/preview-site.md` §4 の表のとおりです。
 
 | オプション | 既定 | 意味 |
 |---|---|---|
@@ -99,7 +99,7 @@ const resolved = await resolvePreview({
   `remark-parse` → `remark-rehype` → `rehype-stringify` では一致しません。
 - **画像**: ダウンロードしません。`absoluteUrl` を使ってください(§4)。
 - **足りないもの**: `localFile` / `gatsbyImageData`、`excerpt` / `timeToRead` / `headings` /
-  `tableOfContents`、逆引き参照。サイト側の view-model で吸収します(`doc/preview-site.md` §6)。
+  `tableOfContents`、逆引き参照。サイト側の view-model で吸収します(`docs/preview-site.md` §6)。
 
 ## Gatsby サイトの場合
 
@@ -116,4 +116,4 @@ $ scripts/test-preview.sh
 ```
 
 ネットワークも CMS も Gatsby も要りません。`fetch` は注入でき、配信 API は
-`doc/content-api.md` の形をした偽の応答で置き換えています。
+`docs/content-api.md` の形をした偽の応答で置き換えています。

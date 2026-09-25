@@ -12,7 +12,7 @@ const { sanitizeTypeName } = require('./naming');
  * stage has to wonder whether `pageSize` is a number.
  */
 
-/** The delivery API lives under `/api`; see `doc/content-api.md`. */
+/** The delivery API lives under `/api`; see `docs/content-api.md`. */
 const DEFAULT_API_PREFIX = '/api';
 
 /** The API's own default page size; it refuses anything over 200. */

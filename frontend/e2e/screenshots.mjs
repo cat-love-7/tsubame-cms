@@ -20,7 +20,7 @@ const BASE = process.env.BASE_URL ?? 'http://localhost:4200';
 const API = `${BASE}/api`;
 const USERNAME = process.env.ADMIN_USERNAME ?? 'admin@example.com';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin-password';
-const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../../doc/images');
+const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../../docs/images');
 
 const CATEGORIES = ['Engineering', 'Design', 'Product', 'Field notes'];
 

@@ -43,7 +43,7 @@ together, and more than one real bug in this project was only visible there.
 
 ## The pictures in the README, and the favicon
 
-`doc/images/*.png` are generated rather than drawn. `scripts/screenshots.sh` starts a CMS with
+`docs/images/*.png` are generated rather than drawn. `scripts/screenshots.sh` starts a CMS with
 throwaway data, seeds a small site (four categories, five articles, one page, four images - see
 `frontend/e2e/screenshots.mjs`), and photographs the screens with a real browser. It wants the same
 Chromium as the browser suite and the same two free ports.
@@ -59,7 +59,7 @@ follows.
 
 ## The conventions that matter
 
-* **Code, comments, commit messages and this file are English.** The design documents in `doc/` are
+* **Code, comments, commit messages and this file are English.** The design documents in `docs/` are
   Japanese, and stay that way.
 * **One change per commit**, with a subject in the imperative mood ("Add the images bucket
   override") and a body that says *why* - what was wrong, what it costs, what was measured. The

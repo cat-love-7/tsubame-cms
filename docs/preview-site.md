@@ -1,6 +1,6 @@
 # プレビューサイトとの契約
 
-署名付きプレビューリンク(`doc/content-api.md` §5.6)を、**アカウントを持たない相手が読めるページ**に
+署名付きプレビューリンク(`docs/content-api.md` §5.6)を、**アカウントを持たない相手が読めるページ**に
 するための取り決めです。CMS 側の API と、サイト側が実装する `/preview/*` の間のインターフェースを
 定義します。Gatsby 固有の話は §8 だけで、それ以外は任意のフレームワーク(Next.js、素の SPA、
 サーバサイドレンダリング)に当てはまります。
@@ -47,7 +47,7 @@
 ## 3. API が返すもの
 
 `{ schema, values }` です。**値に型タグはありません**。どの値が Markdown で、どれが画像で、どれが
-参照なのかは、隣にある `schema` の `field_type` だけが言います(`doc/content-api.md` §3)。
+参照なのかは、隣にある `schema` の `field_type` だけが言います(`docs/content-api.md` §3)。
 
 | `field_type` の綴り | 意味 |
 |---|---|
@@ -255,4 +255,4 @@ server {
 
 - `packages/tsubame-preview/README.md` — パッケージの API と使用例
 - `packages/gatsby-source-tsubame/README.md` — Gatsby での配線と `previewFieldNames()`
-- `doc/content-api.md` §5.6 — プレビューリンクを発行する側の API
+- `docs/content-api.md` §5.6 — プレビューリンクを発行する側の API

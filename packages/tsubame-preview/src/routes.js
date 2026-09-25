@@ -12,7 +12,7 @@ const { normalizePrefix } = require('./field-types');
  *
  * The spelling is the API's, not a choice made here: `single_pages` has the underscore the API's
  * preview routes use, while the *delivery* API spells the same thing `single-pages`
- * (`doc/content-api.md`). Two spellings for one idea is a bug waiting to be written, so both live
+ * (`docs/content-api.md`). Two spellings for one idea is a bug waiting to be written, so both live
  * in this file and nowhere else.
  */
 

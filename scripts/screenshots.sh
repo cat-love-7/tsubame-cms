@@ -2,7 +2,7 @@
 #
 # Regenerate the pictures in the README: starts a CMS with a throwaway data directory and a dev
 # server, seeds a small site into it, drives a real browser over the screens, and writes
-# `doc/images/*.png`. Both servers are thrown away afterwards.
+# `docs/images/*.png`. Both servers are thrown away afterwards.
 #
 # The seeding is in `frontend/e2e/screenshots.mjs`; this only gives it a server to talk to.
 #

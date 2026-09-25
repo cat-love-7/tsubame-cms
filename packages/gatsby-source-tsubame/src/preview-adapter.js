@@ -16,7 +16,7 @@ const { DEFAULT_TYPE_PREFIX } = require('./options');
  * not naming: there is no node store for a relation to link to, no downloaded image for
  * `gatsbyImageData` to read, and no `gatsby-transformer-remark` node with `excerpt` and `timeToRead`.
  * Those live in the site's own `fromPreview` mapper, which is where the two sources become one
- * view-model - see `doc/preview-site.md`.
+ * view-model - see `docs/preview-site.md`.
  *
  * One known difference from a build: a build also allocates names for a relation's `inverse_name`,
  * which collide with a field's name if an editor chose one that does. The preview's schema carries

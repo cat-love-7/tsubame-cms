@@ -136,7 +136,7 @@ describe('ImageField', () => {
     // The first is the clear that every attempt starts with, so a stale message does not sit
     // over an upload the editor has already replaced.
     // The server's own sentence is kept alongside the site's wording, so the editor can see
-    // why: `cat doc/i18n.md`.
+    // why: `cat docs/i18n.md`.
     expect(errors).toEqual([
       null,
       { key: 'content.uploadFailed', params: { message: 'too large' } },

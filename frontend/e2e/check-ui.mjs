@@ -727,7 +727,7 @@ async function theImageLibrary() {
 
   // A tile shows the small copy the browser made from the file it just uploaded, not the original:
   // 180 pixels of tile for a megabyte of photograph is what made a library cost hundreds of
-  // megabytes (see `doc/content-api.md`).
+  // megabytes (see `docs/content-api.md`).
   check(
     'タイルはブラウザが作った小さなコピーを出す',
     /\/api\/images\/thumb-.*\.webp$/.test(imageSource ?? ''),

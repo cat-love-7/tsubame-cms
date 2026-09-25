@@ -37,7 +37,7 @@ variable "jwt_secret_arn" {
 
 variable "bootstrap_admin_usernames" {
   description = <<-EOT
-    Who may become the first administrators by signing in (see doc/aws-plan.md). Comma-joined
+    Who may become the first administrators by signing in (see docs/aws-decisions.md). Comma-joined
     names or addresses, normalized the way accounts are stored.
   EOT
   type        = list(string)
@@ -92,7 +92,7 @@ variable "preview_url" {
     This is a **name of its own**, not a path under `app_url`, and that is the point. A preview
     renders unpublished HTML, and the CMS keeps its bearer token in `localStorage` on the app's
     origin, so the two must not share an origin: a stored-XSS in a draft could otherwise read the
-    editor's token (`doc/preview-site.md` §7).
+    editor's token (`docs/preview-site.md` §7).
 
     Whatever name is chosen has to be covered by `preview_certificate_arn` (or a wildcard), and its
     DNS record is the operator's to make: `terraform output preview_url` is what to point it at.

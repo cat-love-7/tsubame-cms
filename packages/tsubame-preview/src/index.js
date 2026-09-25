@@ -3,7 +3,7 @@
 /**
  * `tsubame-preview`: a signed working copy, rendered without a build.
  *
- * A deployment mints a preview link (`doc/content-api.md` §5.6) and an admin screen copies it. What
+ * A deployment mints a preview link (`docs/content-api.md` §5.6) and an admin screen copies it. What
  * the API serves at that link is JSON, so a link worth handing to a client or a translator is one
  * the *preview site* opens. This package is everything such a site needs, and nothing about the
  * framework it is written in:
@@ -19,7 +19,7 @@
  * `previewApiPath` / `previewRoutePath` for the two halves separately), which is the same rule the
  * Angular screen applies in `frontend/src/app/shared/share-link.ts`.
  *
- * `doc/preview-site.md` is the contract, including the shape `resolvePreview` answers and the fields
+ * `docs/preview-site.md` is the contract, including the shape `resolvePreview` answers and the fields
  * a preview cannot fill in (a build's downloaded images, excerpts, inverse relations).
  */
 

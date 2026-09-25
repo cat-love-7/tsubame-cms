@@ -26,7 +26,7 @@ const { createUrlResolver, describeFieldType, toImageValue } = require('./field-
  * The result is framework-neutral on purpose: plain objects, strings and arrays, snake_case names as
  * the CMS spells them. A Gatsby site renames them through its adapter
  * (`gatsby-source-tsubame/src/preview-adapter.js`); a Next.js or plain SPA site reads them as they
- * are. See `doc/preview-site.md` for the shape and where it differs from a build.
+ * are. See `docs/preview-site.md` for the shape and where it differs from a build.
  */
 async function resolvePreview(options = {}) {
   const defaults = createUrlResolver({ apiUrl: options.apiUrl, apiPrefix: options.apiPrefix });
@@ -214,7 +214,7 @@ async function resolveRelation(options, value, context, relationDepth) {
  * One reference, as the published content it names - or null.
  *
  * A reference with an `item` is a collection item; one without is a single page, whose identity is
- * its name (`doc/content-api.md` §3.1). The budget is spent here rather than on the whole field,
+ * its name (`docs/content-api.md` §3.1). The budget is spent here rather than on the whole field,
  * because this is the only step that can reach back into the document that points here.
  */
 async function resolveReference(reference, context, relationDepth) {

@@ -30,7 +30,7 @@ packages/
   tsubame-preview/              renders a signed preview link without a build
 infra/                          Terraform: the serverless deployment
 scripts/                        build, test and deploy
-doc/                            the design documents (Japanese)
+docs/                            the design documents (Japanese)
 brand/                          the mark and the lockup
 ```
 
@@ -82,7 +82,7 @@ different backends answer the same tests.
 So another serverless platform is a **bounded** piece of work rather than a rewrite: implement the
 traits, write the deployment, and the contract suite says whether it is really the same CMS. It is
 not a configuration flag, though - the single-table DynamoDB design, Cognito and the Lambda runtime
-are AWS's own decisions, and a port would bring its own (`doc/aws-plan.md` is the reasoning that
+are AWS's own decisions, and a port would bring its own (`docs/aws-decisions.md` is the reasoning that
 went into these).
 
 ## What it does
@@ -103,18 +103,18 @@ went into these).
 
 | The items, and what state each one is in | One item |
 |---|---|
-| ![A collection's items, with covers, a relation column and publish state](doc/images/articles.png) | ![Editing an article: a title, a slug, an image, a date, a relation and a Markdown body](doc/images/editor.png) |
+| ![A collection's items, with covers, a relation column and publish state](docs/images/articles.png) | ![Editing an article: a title, a slug, an image, a date, a relation and a Markdown body](docs/images/editor.png) |
 
 | The schema, drawn field by field | The image library |
 |---|---|
-| ![The schema editor: field cards with type, width, height and the title and list flags](doc/images/schema.png) | ![The image library, with thumbnails and per-image actions](doc/images/library.png) |
+| ![The schema editor: field cards with type, width, height and the title and list flags](docs/images/schema.png) | ![The image library, with thumbnails and per-image actions](docs/images/library.png) |
 
 | A single page | Signing in |
 |---|---|
-| ![A single page: a heading, a hero image and Markdown intro](doc/images/page.png) | ![The sign-in screen](doc/images/sign-in.png) |
+| ![A single page: a heading, a hero image and Markdown intro](docs/images/page.png) | ![The sign-in screen](docs/images/sign-in.png) |
 
 A site reads the published copy over HTTP: untyped values beside the schema that gives them
-meaning, paginated, and only what has been published (`doc/content-api.md` is the whole contract).
+meaning, paginated, and only what has been published (`docs/content-api.md` is the whole contract).
 
 ```bash
 curl 'https://cms.example.com/api/content/collections/articles?limit=2'
@@ -217,10 +217,10 @@ cd backend && cargo build --release -p tsubame-on-premises
 
 ## Design
 
-`doc/` holds the reasoning rather than the summary - the content API (`doc/content-api.md`), the
-schema and relations (`doc/relations-design.md`), the frontend's boundaries
-(`doc/frontend-design.md`), the AWS plan (`doc/aws-plan.md`), and the preview site
-(`doc/preview-site.md`). They are written in Japanese; the code and its comments are in English.
+`docs/` holds the reasoning rather than the summary - the content API (`docs/content-api.md`), the
+schema and relations (`docs/relations-design.md`), the frontend's boundaries
+(`docs/frontend-design.md`), the AWS plan (`docs/aws-decisions.md`), and the preview site
+(`docs/preview-site.md`). They are written in Japanese; the code and its comments are in English.
 `.github/copilot-instructions.md` is the same conventions in short form.
 
 ## Contributing

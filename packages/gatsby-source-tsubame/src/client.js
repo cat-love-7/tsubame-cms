@@ -6,13 +6,13 @@ const { collectRelationTargets } = require('./fields');
  * The delivery API client.
  *
  * Only `/api/content/*` is used: it is unauthenticated and answers published content only, which
- * is exactly what a site build is allowed to see (`doc/content-api.md`, sections 1-3). Nothing here
+ * is exactly what a site build is allowed to see (`docs/content-api.md`, sections 1-3). Nothing here
  * is aware of the admin API or of drafts.
  *
  * Two details of the contract are load-bearing:
  *
  * - A page is followed by `next_offset`, never by counting items: a page is cut by bytes as well as
- *   by count, so `offset + limit` can skip items that did not fit (`doc/content-api.md` §3.1).
+ *   by count, so `offset + limit` can skip items that did not fit (`docs/content-api.md` §3.1).
  * - An unpublished page or item answers 404, not 403. Between listing and reading, content can be
  *   unpublished, and that is a race a build has to tolerate rather than crash on.
  */

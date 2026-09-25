@@ -3,7 +3,7 @@
  *
  * The library and the pickers show tiles a couple of hundred pixels wide, and a photograph is a
  * megabyte: showing the original in every tile is what made a library of a few hundred pictures
- * download hundreds of megabytes (see `doc/content-api.md`). Making the small copy here rather
+ * download hundreds of megabytes (see `docs/content-api.md`). Making the small copy here rather
  * than on the server keeps every adapter free of image decoding - the bytes are opaque to them,
  * as the original's are - and costs the uploader a few milliseconds it already had the pixels for.
  */

@@ -1,7 +1,7 @@
 # Working in this repository
 
 A CMS in two halves: a Rust API (`backend/`) and an Angular admin interface (`frontend/`),
-with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese).
+with the AWS deployment in `infra/` and the design decisions in `docs/` (Japanese).
 
 ## Layout
 
@@ -13,7 +13,7 @@ with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese
 | `backend/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
 | `frontend/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
 | `infra/` | Terraform |
-| `doc/` | design documents, in Japanese: `content-api.md` is the API contract |
+| `docs/` | design documents, in Japanese: `content-api.md` is the API contract |
 
 Both adapters lay their repositories out the same way, and it is worth keeping that way: the
 traits live in `core/src/repositories/<trait>.rs` (one per trait), an adapter implements them in
@@ -55,7 +55,7 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
 
 - **Comments explain why, not what.** A comment that restates the line below it is noise; one that
   says what the alternative would break is the point.
-- **Docs and UI text**: `doc/` is Japanese, code comments and commit messages are English.
+- **Docs and UI text**: `docs/` is Japanese, code comments and commit messages are English.
 - **Contract tests are written once** in `crates/tests/suite/` (one file per topic; `mod.rs` is the
   harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
   permissions) live with the adapter.
@@ -100,7 +100,7 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
   any of them - a misspelt action grants nothing and only shows up as an AccessDenied on the real
   one. The applying side is three files because IAM caps one managed policy at 6144 characters.
 - **Terraform mirrors the deployment's S3 policy** in `deployment_s3_policy`
-  (`crates/aws/src/policy.rs`); changing one means changing the other (`doc/aws-plan.md`).
+  (`crates/aws/src/policy.rs`); changing one means changing the other (`docs/aws-decisions.md`).
 - **Terraform state is remote** (`infra/` uses the S3 backend with `use_lockfile`, configured
   through `infra/backend.hcl`). `infra/bootstrap/` is the one root applied by hand, once: it makes
   the state bucket, and it is the only root whose state is local.

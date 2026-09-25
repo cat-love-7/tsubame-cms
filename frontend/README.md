@@ -6,7 +6,7 @@ server below while working on it.
 
 The rules this code follows - route parameters, the `apiUrl` boundary, the translation-key
 contract, the `error-codes.json` contract, how `repositories/` and `services/` divide the work -
-are in [`doc/frontend-design.md`](../doc/frontend-design.md). The repository root has an
+are in [`docs/frontend-design.md`](../docs/frontend-design.md). The repository root has an
 `.github/copilot-instructions.md` for the same conventions in short form.
 
 ## Development server

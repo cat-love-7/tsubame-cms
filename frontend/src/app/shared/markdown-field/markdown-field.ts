@@ -238,7 +238,7 @@ export class MarkdownField {
       return;
     }
     // The durable link, as an absolute address: Markdown is rendered by the site, which may be
-    // somewhere else entirely, and the id is what survives a replacement (see `doc/content-api.md`).
+    // somewhere else entirely, and the id is what survives a replacement (see `docs/content-api.md`).
     // It is the same link the library's copy button hands out.
     const url = absoluteApiUrl(this.images.imageLink(image.id));
     this.replace(

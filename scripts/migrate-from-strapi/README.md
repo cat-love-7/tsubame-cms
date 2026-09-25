@@ -104,7 +104,7 @@ $ node scripts/migrate-from-strapi/migrate.mjs \
 
 ## 4. リレーション(`--relations=relation`)
 
-CMS は relations を持てるようになったので(`doc/relations-design.md`)、Strapi の
+CMS は relations を持てるようになったので(`docs/relations-design.md`)、Strapi の
 `oneToOne` / `oneToMany` / `manyToOne` / `manyToMany` / one-way を取り込めます。
 
 ```console
@@ -126,7 +126,7 @@ $ node scripts/migrate-from-strapi/migrate.mjs … --relations relation
   逆側はインデックスから答えます。両方を移すと同じリンクが 2 重に入るため、どちらか一方だけを
   採用し、もう一方は警告して落とします。
   - 既定では、**単一参照を持つ側**を採用します(`oneToMany` / `manyToOne` の対なら「多」側。
-    `doc/relations-design.md` の「多側に単一参照を置けば oneToMany」と同じ形)。
+    `docs/relations-design.md` の「多側に単一参照を置けば oneToMany」と同じ形)。
   - many-to-many のように**両側が集合**のときは、**API 名の順で決まる片側**を採用します
     (毎回同じ選択になるので、再実行しても安定します)。
   - **どちらを所有者にするかは指定できます**: `--relation-owner <apiId>.<field>`(後述)。

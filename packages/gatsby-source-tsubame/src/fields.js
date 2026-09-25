@@ -8,7 +8,7 @@
  * The schema returned next to the values is the only thing that says which is which, so every
  * decision in this file takes the field's `field_type` and never the value's own shape.
  *
- * The wire shapes are the contract in `doc/content-api.md` (sections 3 and 3.1) and the Rust
+ * The wire shapes are the contract in `docs/content-api.md` (sections 3 and 3.1) and the Rust
  * `FieldValueResponse` in `backend/crates/core/src/models/values.rs`.
  */
 
@@ -154,7 +154,7 @@ function toRelationValue(value) {
  * Used before the schema is declared: a relation field is typed after its target, so the target's
  * type has to exist even when the target has no published items (and is therefore not in
  * `/content/collections`). Composite definitions are walked too - a relation may sit inside one
- * (`doc/content-api.md` §3.1) - and a definition is walked once, because a composite may reach
+ * (`docs/content-api.md` §3.1) - and a definition is walked once, because a composite may reach
  * itself through an array (a tree).
  *
  * @param {Array<Array<object>>} schemas the field schemas to walk

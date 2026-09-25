@@ -1,4 +1,4 @@
-// The target CMS client: exactly the contract `doc/content-api.md` describes.
+// The target CMS client: exactly the contract `docs/content-api.md` describes.
 //
 // Every call lives under `API_PREFIX` ("/api"), takes a bearer token except the byte-serving
 // `GET /images/{file_name}` (which a browser cannot authenticate), and expects the mutations to

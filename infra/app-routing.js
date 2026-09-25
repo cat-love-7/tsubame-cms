@@ -4,7 +4,7 @@
 // The preview site shares this bucket (its objects live under `preview/`), but it is served by its
 // own distribution on its own name, and it must not be reachable here. This origin holds the
 // editor's bearer token in `localStorage` and the app never renders CMS HTML; a preview renders a
-// *draft*, which is exactly why the two are separate origins (`doc/preview-site.md` §7). Without
+// *draft*, which is exactly why the two are separate origins (`docs/preview-site.md` §7). Without
 // this guard the bucket would serve the preview's script from this origin, so the isolation would
 // rest only on the preview app never rendering anything for a path it does not recognise - which is
 // not a boundary, it is a coincidence.

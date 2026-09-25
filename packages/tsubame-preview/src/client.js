@@ -11,7 +11,7 @@ const { checkTarget, previewApiPath } = require('./routes');
  * - The **preview** API (`/api/preview/...`) answers the unpublished working copy. The signature in
  *   the query string *is* the credential - no account, no Authorization header - which is what makes
  *   a preview link something to hand to a client or a translator
- *   (`doc/content-api.md` §5.6).
+ *   (`docs/content-api.md` §5.6).
  * - The **delivery** API (`/api/content/...`) answers published content only, and needs no
  *   credential at all. A preview uses it for the things a working copy references: a relation that
  *   is already published, and the composite field definitions that say how to read a value tree.

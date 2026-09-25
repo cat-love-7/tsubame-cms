@@ -10,7 +10,7 @@
  * The two hooks are split the way Gatsby's own bootstrap is: `createSchemaCustomization` runs
  * before `sourceNodes`, so the schema is read once to declare the types and once to source the
  * values. Neither hook needs a token: the delivery API serves published content to anyone, which is
- * the contract `doc/content-api.md` defines for a site build.
+ * the contract `docs/content-api.md` defines for a site build.
  */
 
 const { normalizeOptions } = require('./src/options');

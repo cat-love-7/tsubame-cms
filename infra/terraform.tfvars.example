@@ -25,7 +25,7 @@ app_url = "https://cms.example.com"
 frontend_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
 # Where the preview site is served from: a name of its own, never a path under app_url. The app's
 # origin keeps the editor's token in localStorage and the app never renders CMS HTML; a preview does
-# render a draft, so it has to be a different origin (`doc/preview-site.md` §7). Leave this unset for
+# render a draft, so it has to be a different origin (`docs/preview-site.md` §7). Leave this unset for
 # the conventional `https://preview.<app_url's host>`. Point the name at `terraform output
 # preview_url`, and set the site's own build to talk to `TSUBAME_URL` / the app's origin.
 preview_url = "https://preview.cms.example.com"

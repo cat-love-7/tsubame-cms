@@ -168,7 +168,7 @@ fi
 # name that answers nothing is a broken shared link, not a missing extra.
 preview_site_url="$(printf '%s' "$capabilities" | sed -n 's/.*"preview_site_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 if [ -z "$preview_site_url" ]; then
-  note "the deployment advertises no preview site: a shared link would stay JSON (doc/preview-site.md §8)"
+  note "the deployment advertises no preview site: a shared link would stay JSON (docs/preview-site.md §8)"
 else
   status="$(fetch "$preview_site_url/")"
   robots="$(header x-robots-tag)"
@@ -180,7 +180,7 @@ else
 
   # The preview lives in the app's bucket under `preview/`, so the app's origin has to refuse it:
   # the app's origin holds the editor's token in localStorage and renders no CMS HTML, and the
-  # preview renders a draft (`doc/preview-site.md` §7, `infra/app-routing.js`).
+  # preview renders a draft (`docs/preview-site.md` §7, `infra/app-routing.js`).
   status="$(fetch "$app_url/preview/index.html")"
   if [ "$status" = 404 ]; then
     ok "the app's origin refuses the preview site, which shares its bucket"

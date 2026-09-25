@@ -1,6 +1,6 @@
 // A miniature Tsubame delivery API, and the Gatsby API surface the plugin uses.
 //
-// The payloads are the shapes `doc/content-api.md` promises (`{schema, items, total, limit, offset,
+// The payloads are the shapes `docs/content-api.md` promises (`{schema, items, total, limit, offset,
 // next_offset}`, the untagged values from the Rust `FieldValueResponse`, and the composite map from
 // `GET /api/content/composite-fields`), so a test that passes here is a test against the contract
 // rather than against an invention.

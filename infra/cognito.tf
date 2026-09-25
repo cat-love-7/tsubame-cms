@@ -1,5 +1,5 @@
 # Cognito is the identity provider: who someone is. What they may do is the CMS's own records
-# (doc/aws-plan.md, P4), so there are no groups to keep in step here.
+# (docs/aws-decisions.md), so there are no groups to keep in step here.
 resource "aws_cognito_user_pool" "cms" {
   name = local.name
 
@@ -94,4 +94,4 @@ resource "aws_cognito_user_pool_domain" "cms" {
 
 # No WAF on this pool. A rate-based rule would be the volume answer, but the pool's own
 # per-category quotas already bound what a flood can spend, and threat protection - the
-# per-account half - is the Plus plan's, not a web ACL (doc/aws-plan.md, P5).
+# per-account half - is the Plus plan's, not a web ACL (docs/aws-decisions.md`).

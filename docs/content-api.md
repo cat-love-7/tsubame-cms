@@ -204,7 +204,7 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
 ### 3.1 別のコレクション・単一ページへの参照(リレーション)
 
 アイテムが**別のコレクションのアイテム**(または**単一ページ**)を参照できる。設計の全体は
-`doc/relations-design.md`。ここは API から見た形だけを書く。
+`docs/relations-design.md`。ここは API から見た形だけを書く。
 
 ```json
 { "name": "author", "field_type": { "Relation": {
@@ -244,7 +244,7 @@ Markdown 本文などに**手で書くリンクはこれを使う**。ファイ�
   一覧の列とタイトルにはできない(複合の中の 1 項目は指定できない)。
 - **`required` な relation は公開のときに問う**(他の必須項目と同じ規則)。作業コピーは空でも保存でき、
   公開が `field_required` で拒否する。
-- **公開は「公開されている相手」を数える**(`doc/relations-design.md` §4)。`required` な relation の
+- **公開は「公開されている相手」を数える**(`docs/relations-design.md` §4)。`required` な relation の
   参照先が**すべて未公開**なら、埋まっていても公開を **409 `relation_unpublished`** で拒否する
   (配列の一部が公開済みなら通る)。逆に、**公開中の参照元**が `required` な relation で指している
   相手の `unpublish` は **409 `relation_required_by`** で拒否する(そのフィールドに公開済みの参照が
@@ -305,8 +305,9 @@ DELETE /api/models/collections/authors/items/1?detach=true
   `?populate=<inverse_name>` は**このアイテムを参照している公開コンテンツ**を、その側が付けた
   呼び名(`inverse_name`)のキーで返す(単一アイテム / 単一ページでは `?limit=` が件数の上限。
   既定 25)。どちらも索引が候補を答え、**公開コピーが実際に参照を持っているか**で決まる。
-- **まだ無いもの**(設計の第 5・6 段階): 管理画面の参照元パネル、`inverse_name` の一意性検査、
-  コレクションごとの削除の参照チェック。
+- 管理画面の**参照元パネル**、`inverse_name` の一意性検査(スキーマ保存時)、**コレクションごと**の
+  削除の参照チェックまで入っている(2026-09)。アイテム単位の削除と同じく、参照が残るなら 409 で
+  拒否する。
 
 ### 値からアイテムを引く
 
@@ -898,7 +899,7 @@ curl http://127.0.0.1:8000/preview/collections/blog/items/1?token=1758000000.3f9
   JSON が表示される。`GET /api/auth/capabilities` の `preview_site_url` がプレビューサイトの
   origin で、パスは API のパスから `/api` を除いたもの(`/preview/collections/{c}/items/{id}`)。
   `preview_site_url` が無いデプロイでは、管理画面はコピーせず「プレビューサイト未設定」と表示する
-  (生 JSON の URL は渡さない)。契約の全体は `doc/preview-site.md`。
+  (生 JSON の URL は渡さない)。契約の全体は `docs/preview-site.md`。
 
 ### 差し替えの適用は「この画像に与えたアップロード」だけ
 
@@ -1083,19 +1084,20 @@ URL が署名で終わるため、URL を見る比較は**静かに効かなく�
   設定して自動送信する案は未実装で、入れるなら `SMTP_URL` / `MAIL_FROM` / 本文用の絶対 URL が要る。
 - **利用者自身の「パスワードを忘れた」フロー**: 未実装。実装するなら `email` が必須の機能になり、
   アカウントの存在を漏らさないよう常に同じ応答を返す設計が要る(いまは管理者発行のみ)。
-- **機械可読な仕様(OpenAPI)**: かつて `doc/swagger.yaml` があったが、実装済みルートの一部
+- **機械可読な仕様(OpenAPI)**: かつて `docs/swagger.yaml` があったが、実装済みルートの一部
   (4 パス)しか載っておらず、`info.description` には Swagger Petstore のサンプル文がそのまま
   残っていた。**この文書が契約**であり、テストがそれを固定しているので、**削除した**。外部の
   ツールに読ませる仕様が要るなら、コード生成とセットで「新しく書く」判断をする(手で二重管理
   すると必ずずれる)。
 
-## 6.5 AWS 対応
+## 7. AWS 対応
 
-Lambda + DynamoDB + S3 で動かすための作業一覧は [`doc/aws-plan.md`](aws-plan.md) にある。
+Lambda + DynamoDB + S3 で動かすと決めた理由と、実装して分かったことは
+[`docs/aws-decisions.md`](aws-decisions.md) にある。
 決めなければ後戻りする分岐(画像の配信方式、Cognito の採用、Webhook の配信方式、IaC)と、
-フェーズ順の TODO、テスト方針をまとめてある。
+テスト方針、残っている課題をまとめてある。
 
-## 7. CMS 側に GraphQL を持たせない方針
+## 8. CMS 側に GraphQL を持たせない方針
 
 Gatsby の GraphQL は**ビルド時のデータ層**であり、CMS が GraphQL を喋る必要はない。
 `gatsby-source-graphql` は事実上非推奨で、Gatsby 自体も活発ではない。

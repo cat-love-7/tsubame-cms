@@ -209,7 +209,7 @@ function peerNaming(attribute, fieldName, owner, target) {
  *   * an operator's choice (`--relation-owner`) wins over everything below - the flag exists
  *     because which way round a relation is read is a question about the site, not about Strapi;
  *   * when the two sides differ in cardinality (the `oneToMany` / `manyToOne` pair), the **single**
- *     reference is kept. That is the shape `doc/relations-design.md` describes ("put the single
+ *     reference is kept. That is the shape `docs/relations-design.md` describes ("put the single
  *     reference on the many side to express a one-to-many"), and it means the collection of
  *     children is derived rather than stored;
  *   * when both sides hold a set (a many-to-many; the two spellings of a `manyWay`) one is picked
@@ -613,7 +613,7 @@ const UPLOAD_LINK = /(?:https?:\/\/[^\s)"'<>]*?)?\/uploads\/([A-Za-z0-9_.%\-]+)/
  * Repoint the `/uploads/…` links a body carries at the CMS's own, stable image address.
  *
  * The bytes are uploaded again under a name the CMS generates, so the URL the body was written
- * with stops existing. `GET /api/images/by-id/{id}` is what `doc/content-api.md` says a
+ * with stops existing. `GET /api/images/by-id/{id}` is what `docs/content-api.md` says a
  * hand-written link (in a Markdown body, say) should use: it resolves to whatever that image
  * serves now, so replacing the image later does not break the body that points at it.
  *
