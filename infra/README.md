@@ -12,7 +12,7 @@ API, and the Lambda function the API runs as.
 | `terraform fmt -check -recursive` | here |
 | `terraform init -backend=false` + `terraform validate` | here, against the real providers, for `infra/` and `infra/bootstrap/` |
 | `terraform plan` / `apply` | **staging, 2026-09-19** — account `<account-id>`, `ap-northeast-1`, applied from this tree with the three deployer policies; `plan` after it says *No changes* |
-| The built app served by CloudFront | **staging** — `scripts/deploy-frontend.sh`, on `https://cms.example.com` (distribution `<distribution-id>`) |
+| The built app served by CloudFront | **staging** — `scripts/deploy-frontend.sh`, on `https://cms.example.com` |
 | The function actually answering an invocation | **staging** — `scripts/smoke-test.sh https://cms.example.com <function-url>` passes, and `/api/content/collections` answers `200 []` from the DynamoDB table, which is the execution role working rather than just the function being reachable |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`), and `scripts/build-lambda.sh --zig` here |
 | Someone actually signing in | **staging** — `frontend/e2e/hosted-signin.mjs` (a real browser: PKCE handoff, the registered callback, the code exchange, the admin screen, no console errors) |
