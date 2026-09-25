@@ -3,7 +3,7 @@
 # The browser end-to-end suite: starts a CMS with a throwaway data directory and a dev server,
 # drives a real browser against them, then cleans both up.
 #
-# Prerequisites: Chromium for Playwright (see frontend/sl_cms/e2e/README.md), and ports 8080
+# Prerequisites: Chromium for Playwright (see frontend/e2e/README.md), and ports 8080
 # and 4200 free. In this constrained container the browser install also needs
 # `npx playwright install-deps chromium`, and both installs want
 # PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers.
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-frontend="$root/frontend/sl_cms"
+frontend="$root/frontend"
 data_root="$(mktemp -d /tmp/sl-cms-e2e-XXXXXX)"
 # A test fixture, not a secret: this server only ever listens on loopback and is thrown away.
 jwt_secret="0123456789012345678901234567890123456789"
@@ -35,7 +35,7 @@ preview_site="${PREVIEW_SITE_URL:-http://localhost:4200}"
 echo "== starting the backend on 8080 (data in $data_root) =="
 setsid env DATA_ROOT="$data_root" JWT_SECRET="$jwt_secret" PREVIEW_SITE_URL="$preview_site" \
   ADMIN_USERNAME=admin@example.com ADMIN_PASSWORD=admin-password \
-  cargo run --manifest-path "$root/sl_cms/Cargo.toml" >/tmp/sl-cms-e2e-backend.log 2>&1 &
+  cargo run --manifest-path "$root/backend/Cargo.toml" >/tmp/sl-cms-e2e-backend.log 2>&1 &
 backend_pid=$!
 
 echo "== starting the dev server on 4200 =="

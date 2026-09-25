@@ -23,8 +23,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "== Rust (unit + contract suite) =="
-(cd "$root/sl_cms" && cargo llvm-cov --workspace --summary-only)
+(cd "$root/backend" && cargo llvm-cov --workspace --summary-only)
 
 echo
 echo "== Frontend (component suite) =="
-(cd "$root/frontend/sl_cms" && npx ng test --coverage --no-isolate --watch=false)
+(cd "$root/frontend" && npx ng test --coverage --no-isolate --watch=false)

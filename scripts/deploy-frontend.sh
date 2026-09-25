@@ -9,12 +9,12 @@
 #
 # Usage: scripts/deploy-frontend.sh [--skip-build]
 #
-# Needs: npm dependencies installed in `frontend/sl_cms` (`npm ci`), and AWS credentials that may
+# Needs: npm dependencies installed in `frontend` (`npm ci`), and AWS credentials that may
 # write to the bucket and invalidate the distribution.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-frontend="$root/frontend/sl_cms"
+frontend="$root/frontend"
 infra="$root/infra"
 
 skip_build=false

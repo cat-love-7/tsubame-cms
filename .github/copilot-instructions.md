@@ -1,17 +1,17 @@
 # Working in this repository
 
-A CMS in two halves: a Rust API (`sl_cms/`) and an Angular admin interface (`frontend/sl_cms/`),
+A CMS in two halves: a Rust API (`backend/`) and an Angular admin interface (`frontend/`),
 with the AWS deployment in `infra/` and the design decisions in `doc/` (Japanese).
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `sl_cms/crates/core` | domain, HTTP layer, services - storage-agnostic |
-| `sl_cms/crates/on-premises` | the self-hosted adapter (rkv/LMDB; bin `sl-cms`) |
-| `sl_cms/crates/aws` | DynamoDB + S3 + Lambda adapter |
-| `sl_cms/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
-| `frontend/sl_cms/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
+| `backend/crates/core` | domain, HTTP layer, services - storage-agnostic |
+| `backend/crates/on-premises` | the self-hosted adapter (rkv/LMDB; bin `sl-cms`) |
+| `backend/crates/aws` | DynamoDB + S3 + Lambda adapter |
+| `backend/crates/tests` | the **contract suite**: one set of tests, run against both adapters |
+| `frontend/src/app` | `repositories/` (HTTP) and `services/` (state) below the screens |
 | `infra/` | Terraform |
 | `doc/` | design documents, in Japanese: `content-api.md` is the API contract |
 
@@ -32,17 +32,17 @@ in the wrong place (`crates/tests/suite/mod.rs` says so itself).
 ```bash
 ./scripts/test-rust.sh        # both adapters; the AWS half needs the emulators
 ./scripts/test-frontend.sh    # ng test (Vitest) + ng build
-cd frontend/sl_cms && npm run lint && npm run format:check
+cd frontend && npm run lint && npm run format:check
 ./scripts/test-e2e.sh         # real browser against a real backend, own servers on 8080/4200
-docker compose -f sl_cms/docker-compose.yml up -d   # DynamoDB Local + MinIO
+docker compose -f backend/docker-compose.yml up -d   # DynamoDB Local + MinIO
 (cd infra && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
 (cd infra/bootstrap && terraform init -backend=false && terraform validate)
 scripts/check-iam-actions.sh  # every action in the deployer policies exists, and the plan one is a subset
 scripts/deploy-frontend.sh    # ng build + s3 sync + invalidation; needs AWS credentials
 scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS credentials with a URL
 # Against a deployment, with APP_URL/ADMIN_USERNAME/ADMIN_PASSWORD (staging; see e2e/README.md):
-#   node frontend/sl_cms/e2e/hosted-signin.mjs    # sign in through the provider
-#   node frontend/sl_cms/e2e/hosted-accounts.mjs  # create, reset, sign in as it, remove
+#   node frontend/e2e/hosted-signin.mjs    # sign in through the provider
+#   node frontend/e2e/hosted-accounts.mjs  # create, reset, sign in as it, remove
 ```
 
 ## Rules that are easy to get wrong
@@ -60,7 +60,7 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
   harness) and must pass against both adapters. Adapter-specific tests (emulators, presigning,
   permissions) live with the adapter.
 - **Refusal codes are a contract across three places**: the Rust lists in
-  `core/src/models/error.rs`, `frontend/sl_cms/src/assets/error-codes.json`, and the
+  `core/src/models/error.rs`, `frontend/src/assets/error-codes.json`, and the
   `errors.<code>` entries in `assets/i18n/en.json` / `ja.json`. A Rust test fails if the first two
   drift, and a frontend test fails if a catalogue is missing a key.
 - **Every UI string goes through Transloco**; `keys.spec.ts` fails on a key that is in one

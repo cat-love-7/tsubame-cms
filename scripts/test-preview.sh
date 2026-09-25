@@ -14,5 +14,5 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root/frontend/sl-cms-preview"
+cd "$root/packages/tsubame-preview"
 node --test test/*.test.mjs

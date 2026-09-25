@@ -122,7 +122,7 @@ Cognito を入れると「配備によってできることが違う」状態に
       (経緯と順序は [`doc/aws-dynamodb-design.md`](aws-dynamodb-design.md) §7.1)。
       **HTTP の契約スイートが DynamoDB Local + MinIO に対して全部通る**
       (`cargo test --workspace`、HTTP 契約スイート 43 件 × 2 バックエンドを含む 284 件)。
-      実行: `docker compose -f sl_cms/docker-compose.yml up -d` してから上記コマンド。
+      実行: `docker compose -f backend/docker-compose.yml up -d` してから上記コマンド。
       エミュレータが無いときはエミュレータが要るテストだけ自分を飛ばす。
       押さえるべき点:
       - アイテム ID は **`UpdateItem` の `ADD` で原子的に採番**(on-prem の `id_counter` 相当。
@@ -446,7 +446,7 @@ threat protection は Plus プランのリスクスコアリングで、ドキ�
       自分のパスワード変更だけに縮んだ。契約スイートは `Backend::PASSWORD_RESET` で形を断言し、
       AWS 側は in-memory の偽プールで**本物のルート**を通す。
 
-      → **確認(staging、2026-09)**: `frontend/sl_cms/e2e/hosted-accounts.mjs` が実ブラウザで
+      → **確認(staging、2026-09)**: `frontend/e2e/hosted-accounts.mjs` が実ブラウザで
       作成 → 一時パスワード → **本人としてサインインし変更を強制される** → 削除 → 削除後は
       プールが拒否、まで通す(管理者 `cat` と実 Cognito プールに対して)。
 

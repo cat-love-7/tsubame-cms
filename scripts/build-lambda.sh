@@ -9,7 +9,7 @@
 # when it is invoked, not when it is deployed.
 #
 # Cross-compiling from x86_64 needs a toolchain for the target. `ring` (the TLS provider this
-# workspace chose over `aws-lc-rs`, see `sl_cms/Cargo.toml`) compiles C, so a cross *C compiler* is
+# workspace chose over `aws-lc-rs`, see `backend/Cargo.toml`) compiles C, so a cross *C compiler* is
 # required, not only a linker. Either of these does it:
 #
 #   # zig, which brings its own libc and linker (nothing to install system-wide)
@@ -120,17 +120,17 @@ echo "== building the aws backend for Lambda ($arch) =="
 if [[ -n "$use_zig" ]]; then
   # zig is both the C compiler and the linker, and carries its own libc: nothing has to be
   # installed for the target, and the glibc it links against is old enough for the runtime.
-  cargo zigbuild --manifest-path "$root/sl_cms/Cargo.toml" \
+  cargo zigbuild --manifest-path "$root/backend/Cargo.toml" \
     --package sl-cms-aws --bin sl-cms-aws --release --target "$target"
 else
-  cargo build --manifest-path "$root/sl_cms/Cargo.toml" \
+  cargo build --manifest-path "$root/backend/Cargo.toml" \
     --package sl-cms-aws --bin sl-cms-aws --release --target "$target"
 fi
 
 # Where cargo actually wrote it. `CARGO_TARGET_DIR` moves the artifact, and a caller who set it (a
 # CI job sharing a cache, a container with a small workspace) would otherwise get the copy left in
 # the default place - an older binary, which deploys code that looks deployed and is not.
-target_root="${CARGO_TARGET_DIR:-$root/sl_cms/target}"
+target_root="${CARGO_TARGET_DIR:-$root/backend/target}"
 binary="$target_root/$target/release/sl-cms-aws"
 
 # The artifact and the function's `architectures` must agree, and a mismatch is invisible until the

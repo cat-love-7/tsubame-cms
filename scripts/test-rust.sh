@@ -4,14 +4,14 @@
 #
 # The core, the local adapter and the contract suite against it need nothing running. The AWS
 # adapter's own tests and the contract suite against it need DynamoDB Local and MinIO
-# (`docker compose -f sl_cms/docker-compose.yml up -d`); when they are not there this script
+# (`docker compose -f backend/docker-compose.yml up -d`); when they are not there this script
 # says so and skips them rather than failing, and CI starts them as service containers instead.
 #
 # Usage: scripts/test-rust.sh
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root/sl_cms"
+cd "$root/backend"
 
 # Four tests at a time, not one per core.
 #
@@ -43,5 +43,5 @@ if listening 8000 && listening 9000; then
   cargo test -p sl-cms-tests --test aws
 else
   echo "skipped: nothing listening on 8000 (DynamoDB Local) / 9000 (MinIO)"
-  echo "         start them with: docker compose -f sl_cms/docker-compose.yml up -d"
+  echo "         start them with: docker compose -f backend/docker-compose.yml up -d"
 fi

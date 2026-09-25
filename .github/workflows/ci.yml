@@ -27,9 +27,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sl_cms
+          workspaces: backend
       # Formatting is a check, not a separate task: a diff here is a change in meaning.
-      - run: cargo fmt --all --manifest-path sl_cms/Cargo.toml --check
+      - run: cargo fmt --all --manifest-path backend/Cargo.toml --check
       - run: scripts/test-rust.sh
 
   rust-aws:
@@ -45,10 +45,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sl_cms
+          workspaces: backend
       # The same emulators a developer starts, from the same file: DynamoDB Local and MinIO.
       - name: Start the emulators
-        run: docker compose -f sl_cms/docker-compose.yml up -d
+        run: docker compose -f backend/docker-compose.yml up -d
       - name: Wait for them to listen
         run: |
           for _ in $(seq 1 60); do
@@ -58,16 +58,16 @@ jobs:
             fi
             sleep 1
           done
-          docker compose -f sl_cms/docker-compose.yml logs
+          docker compose -f backend/docker-compose.yml logs
           exit 1
       - name: The adapter's own tests and the contract suite against it
-        working-directory: sl_cms
+        working-directory: backend
         run: |
           cargo test -p sl-cms-aws
           cargo test -p sl-cms-tests --test aws
       - name: Stop the emulators
         if: always()
-        run: docker compose -f sl_cms/docker-compose.yml down -v
+        run: docker compose -f backend/docker-compose.yml down -v
 
   frontend:
     name: Angular
@@ -77,14 +77,14 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: frontend/sl_cms
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/sl_cms/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
@@ -146,7 +146,7 @@ jobs:
           targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sl_cms
+          workspaces: backend
       # `ring` (the TLS provider the workspace chose over aws-lc-rs) compiles C, so a cross C
       # compiler is needed, not only a linker. Zig brings its own, which is one download rather
       # than a set of packages whose version has to match the runner.
@@ -182,16 +182,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sl_cms
+          workspaces: backend
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/sl_cms/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-        working-directory: frontend/sl_cms
+        working-directory: frontend
       - run: npx playwright install --with-deps chromium
-        working-directory: frontend/sl_cms
+        working-directory: frontend
       - run: scripts/test-e2e.sh
       # The harness writes what it saw to these logs; without them a failure is a mystery.
       - uses: actions/upload-artifact@v4

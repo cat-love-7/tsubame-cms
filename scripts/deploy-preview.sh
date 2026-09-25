@@ -5,7 +5,7 @@
 # them, exactly as `scripts/deploy-frontend.sh` owns the app's.
 #
 # The preview site itself is not in this repository. A deployment's own site builds it in a preview
-# mode - no source plugin, client-only routes, see `frontend/gatsby-source-sl-cms/README.md` §6 and
+# mode - no source plugin, client-only routes, see `packages/gatsby-source-tsubame/README.md` §6 and
 # `doc/preview-site.md` §8 - and this script only delivers the result. That is also why it does not
 # build: there is nothing here to run a site's build with.
 #

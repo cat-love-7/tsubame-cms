@@ -6,7 +6,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root/frontend/sl_cms"
+cd "$root/frontend"
 
 echo "== unit tests =="
 npx ng test --watch=false

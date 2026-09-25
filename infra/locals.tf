@@ -33,7 +33,7 @@ locals {
   # someone there instead of describing where to go.
   # The hosted sign-in page. The screen does not link here as it stands: it builds the address from
   # this one, adding the PKCE challenge, a state and the redirect it registered - see
-  # `frontend/sl_cms/src/app/core/auth/hosted-login.ts`.
+  # `frontend/src/app/core/auth/hosted-login.ts`.
   login_url = "https://${aws_cognito_user_pool_domain.cms.domain}.auth.${var.region}.amazoncognito.com/login?client_id=${aws_cognito_user_pool_client.browser.id}&response_type=code&scope=openid+email"
 
   # What the function needs to find its way around. Kept in one place because the code reads

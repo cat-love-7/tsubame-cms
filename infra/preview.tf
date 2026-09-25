@@ -3,7 +3,7 @@
 # A preview renders **unpublished** content: the working copy a signed link points at, plus the
 # published things it references. That is a different thing to serve from the app, for one reason
 # that decides the shape of this file: the app's origin keeps the editor's bearer token in
-# `localStorage` (`frontend/sl_cms/src/app/core/auth/auth.service.ts`), and the app itself never
+# `localStorage` (`frontend/src/app/core/auth/auth.service.ts`), and the app itself never
 # renders CMS HTML. A preview does render it - the draft's Markdown - so a preview on the app's
 # origin would turn any stored XSS in a draft into a stolen token. A separate distribution on a
 # separate host name is what makes it a separate origin, and it is the only reason this exists

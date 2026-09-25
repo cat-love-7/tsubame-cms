@@ -89,7 +89,7 @@
 - **S3 は MinIO**: `S3_ENDPOINT_URL`(既定 `http://localhost:9000`)、`force_path_style(true)`、
   `MINIO_ROOT_USER=test` / `MINIO_ROOT_PASSWORD=test-secret`。presign → PUT → GET を実際に往復する
   (MinIO は SigV4 を検証するので、presigner が壊れればテストが落ちる)。
-- 起動: `docker compose up -d`(`sl_cms/docker-compose.yml`)。
+- 起動: `docker compose up -d`(`backend/docker-compose.yml`)。
 
 ## 6. 依存とビルド
 

@@ -5,7 +5,7 @@
 定義します。Gatsby 固有の話は §8 だけで、それ以外は任意のフレームワーク(Next.js、素の SPA、
 サーバサイドレンダリング)に当てはまります。
 
-実装は `frontend/sl-cms-preview/`(依存ゼロの npm パッケージ)にあります。
+実装は `packages/tsubame-preview/`(依存ゼロの npm パッケージ)にあります。
 
 ## 1. 全体の流れ
 
@@ -163,7 +163,7 @@ export function Article({ doc }: { doc: ArticleView }) { … }
 トークンです。
 
 - 管理画面の JWT は `localStorage` にあり、コード自身が「このオリジンのスクリプトから読める」と
-  明記しています(`frontend/sl_cms/src/app/core/auth/auth.service.ts`)。管理画面は CMS の HTML を
+  明記しています(`frontend/src/app/core/auth/auth.service.ts`)。管理画面は CMS の HTML を
   一切描画しないので、今のところ同じオリジンに XSS の入口はありません。**プレビューは下書きの
   Markdown を HTML として描画する**ので、同じオリジンに置けばそこが入口になります(本番サイトは
   別オリジンなので、公開済みの XSS が管理画面に届きません)。
@@ -249,10 +249,10 @@ server {
 
 本番ビルドとプレビュービルドを `BUILD_MODE` などで分け、**本番の成果物に `/preview/*` を含めない**
 でください。プレビュービルドは `gatsby-source-sl-cms` を読み込まず、クライアントオンリーの
-ルートだけを登録します。例は `frontend/gatsby-source-sl-cms/README.md` にあります。
+ルートだけを登録します。例は `packages/gatsby-source-tsubame/README.md` にあります。
 
 ## 9. 関連
 
-- `frontend/sl-cms-preview/README.md` — パッケージの API と使用例
-- `frontend/gatsby-source-sl-cms/README.md` — Gatsby での配線と `previewFieldNames()`
+- `packages/tsubame-preview/README.md` — パッケージの API と使用例
+- `packages/gatsby-source-tsubame/README.md` — Gatsby での配線と `previewFieldNames()`
 - `doc/content-api.md` §5.6 — プレビューリンクを発行する側の API

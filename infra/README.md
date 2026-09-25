@@ -15,8 +15,8 @@ API, and the Lambda function the API runs as.
 | The built app served by CloudFront | **staging** — `scripts/deploy-frontend.sh`, on `https://cms.example.com` (distribution `<distribution-id>`) |
 | The function actually answering an invocation | **staging** — `scripts/smoke-test.sh https://cms.example.com <function-url>` passes, and `/api/content/collections` answers `200 []` from the DynamoDB table, which is the execution role working rather than just the function being reachable |
 | The Lambda artifact building for **arm64** | CI (`.github/workflows/ci.yml`, job `lambda-artifact`), and `scripts/build-lambda.sh --zig` here |
-| Someone actually signing in | **staging** — `frontend/sl_cms/e2e/hosted-signin.mjs` (a real browser: PKCE handoff, the registered callback, the code exchange, the admin screen, no console errors) |
-| Managing an account at the pool | **staging** — `frontend/sl_cms/e2e/hosted-accounts.mjs`: creates an account, resets it to a temporary password, signs in *as it* and changes the password the provider demands, removes it, and finds the pool refusing it afterwards |
+| Someone actually signing in | **staging** — `frontend/e2e/hosted-signin.mjs` (a real browser: PKCE handoff, the registered callback, the code exchange, the admin screen, no console errors) |
+| Managing an account at the pool | **staging** — `frontend/e2e/hosted-accounts.mjs`: creates an account, resets it to a temporary password, signs in *as it* and changes the password the provider demands, removes it, and finds the pool refusing it afterwards |
 
 The first deployment is done, and it is the first deployment that found things a `validate` cannot.
 In the order they surfaced:
@@ -113,7 +113,7 @@ distribution on its own name (`infra/preview.tf`):
 
 ```bash
 # The site's preview build is the deployment's own (no source plugin, client-only routes:
-# `frontend/gatsby-source-sl-cms/README.md` §6); this script only delivers the result.
+# `packages/gatsby-source-tsubame/README.md` §6); this script only delivers the result.
 scripts/deploy-preview.sh --dist ../site/public
 ```
 
@@ -211,7 +211,7 @@ deployment that answers 500 is otherwise a mystery.
 
 `terraform output function_environment` prints exactly the variables the function runs with —
 `sensitive`, so it also prints the secret. The code reads those names in
-`sl_cms/crates/aws/src/settings.rs`, and `AWS_IMAGE_BASE_URL` is what makes the URL stored in
+`backend/crates/aws/src/settings.rs`, and `AWS_IMAGE_BASE_URL` is what makes the URL stored in
 content match the bucket.
 
 ## How the app and the API are reached
@@ -246,7 +246,7 @@ with, and `local.function_zip` derives the artifact name from it, so the bytes a
 cannot disagree — Lambda only reports a mismatch when the function is invoked.
 
 Building it on an x86_64 machine needs a toolchain for the target, because a dependency compiles C
-(`ring`; see `sl_cms/Cargo.toml`). Zig is the one CI uses, and the one that needs nothing installed
+(`ring`; see `backend/Cargo.toml`). Zig is the one CI uses, and the one that needs nothing installed
 system-wide:
 
 ```bash
