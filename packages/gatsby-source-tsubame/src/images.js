@@ -162,7 +162,7 @@ function imageSource(image, client) {
  *
  * The query has to be dropped through the URL parser rather than by splitting on `/`: the CMS itself
  * learned that a signature looks like part of the file name when a URL is read as a string
- * (`docs/content-api.md`, "差し替えの適用…"), and it is the same mistake here. The id link is
+ * (`docs/content-api.md`, "Replacement applies only to …"), and it is the same mistake here. The id link is
  * deliberately given no key: it resolves to whatever the object is now, so its path survives a
  * replacement and reusing it would keep serving the picture that was replaced.
  */

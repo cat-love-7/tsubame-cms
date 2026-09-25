@@ -16,7 +16,7 @@
 # The emulators reproduce the API, not the behaviour that depends on the real service:
 # capacity, throttling, the 400KB item and 1MB query limits, and GSI propagation delays are
 # all different in the cloud. Passing here means the adapter's logic is right, not that the
-# deployment is (see docs/aws-decisions.md, "テスト方針").
+# deployment is (see docs/aws-decisions.md, "Testing policy").
 #
 # One thing they *can* reproduce, now that it matters: the gateway grants a user exactly the
 # policy the deployment has, so a permission-dependent branch is exercised against the same walls
