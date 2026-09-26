@@ -17,6 +17,18 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new
   crate forgets to say it.
 
+### Fixed
+
+- A slug can no longer be an array item. `Array([Slug])` used to save and then refuse every value
+  written to it, and a slug inside an array could not have been unique anyway - a slug's uniqueness
+  is the whole of what it is, and the index is built from a field's own value.
+- A blank array element is no longer reported as a missing required field. `null`, an empty options
+  list and a null composite are empty *values*, so a working copy and publishing agree about them
+  instead of failing only at publish time; `required` still asks the array to hold something.
+- Adding a field type to the model is now a compile error in validation, formatting and
+  `test_required`, rather than a new type that silently validated as a mismatch and formatted to the
+  field's default.
+
 ## [0.1.0] - 2026-09-25
 
 The first release. The same CMS runs either on-premises (rkv and local files, one binary) or on AWS
