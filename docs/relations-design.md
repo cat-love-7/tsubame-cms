@@ -282,11 +282,16 @@ unpublishable (losing the freedom to publish).
 
 ## 6. Screens
 
-- **Schema editing**: choosing `Relation` in the type dropdown brings up three things: the target
-  (Collection / Single page) and the name on the reverse side (`inverse_name`). No
-  dedicated component is made; it is completed inside `dashboard/settings/shared/field` (because
-  there are only two choices).
-- **Content editing**: `shared/relation-field` has chips, a reference picker, and a JSON box. The
+- **Schema editing**: choosing `Relation` in the type dropdown brings up the target (Collection /
+  Single page) and the name on the reverse side (`inverse_name`). Several references are not a
+  checkbox there: they are **the array wrapper**, so the editor adds `Relation` to the array's
+  item-type list, and each relation item type gets its own target and inverse name (a target
+  already claimed by another item type is not offered, which is the server's rule). No dedicated
+  component is made; it is completed inside `dashboard/settings/shared/field`.
+- **Content editing**: `shared/relation-field` has chips, a reference picker, and a JSON box. One
+  widget serves both shapes: `Relation` gets the bare object (`null` for none, no arrows, and
+  re-selecting replaces), while an array of relations gets the list with arrows. A field that
+  declares several targets asks which one in the picker. The
   order is rearranged with the chips, and the name is read from **the title field of the target's
   schema** (if it cannot be read, the reference itself is shown, as in `categories #3`). A reference
   with a mismatched target or shape is rejected on screen before saving.

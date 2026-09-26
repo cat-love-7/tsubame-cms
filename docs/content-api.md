@@ -226,39 +226,52 @@ reference stops resolving (the decision is not to do in-use checks or reference 
 An Item can reference **an Item of another Collection** (or a **Single page**). The full design is in
 `docs/relations-design.md`. Only the shape as seen from the API is written here.
 
+**A relation holds exactly one reference, and several references are an `Array` of relations** -
+the same composition every other field type uses. One array may name **several different targets**
+("related content", of either kind), and it may name each of them once.
+
 ```json
 { "name": "author", "field_type": { "Relation": {
   "target": { "kind": "collection", "name": "authors" },
-  "has_many": false,
   "inverse_name": "articles"
 }}, "required": false, "width": 12, "height": 1 }
+
+{ "name": "related", "field_type": { "Array": [
+  { "Relation": { "target": { "kind": "collection", "name": "authors" },
+                  "inverse_name": "articles" } },
+  { "Relation": { "target": { "kind": "collection", "name": "categories" } } }
+]}, "required": false, "width": 12, "height": 1 }
 ```
 
 - The target is `{ "kind": "collection" | "single_page", "name": "..." }`. **The same name with a
-  different kind is a different target**, and existence is checked on save (400 if missing). A Single
-  page has only one entry, so `has_many: true` is rejected.
+  different kind is a different target**, and existence is checked on save (400 if missing).
 - `inverse_name` is **the name used on the other side** (for screen headings and `?populate=`). It is
-  only a name; no data is held on the other side. **Only one per target**: if another Schema tries to
+  only a name; no data is held on the other side. **One name per target**: if another Schema tries to
   give the same name to the same target, the save is rejected with **409 `conflict`** (because the
   answer to `?populate=<inverse_name>` would change depending on who asked). The same name is fine
-  for a different target (names are looked up from the target).
-- The value is **a list of references with an order**:
+  for a different target (names are looked up from the target), and **the same name twice for one
+  target is refused within one Schema too** - two Fields, or two item types of one array, cannot both
+  call it the same thing. Two Fields of one Schema may point at the same target under *different*
+  names: the reverse direction answers by target, so both names return the same set (a known limit
+  of the index, which is a set of (owner, target)).
+- The value's shape follows the field's:
 
-| Target | Value |
+| Field | Value |
 |---|---|
-| Collection, single (`has_many: false`) | `[{ "target": "authors", "item": 7 }]` |
-| Collection, many (`has_many: true`) | `[{ "target": "authors", "item": 7 }, { "target": "authors", "item": 9 }]` |
-| Single page | `[{ "target": "home" }]` (no `item`, since a page has no id) |
+| `Relation` to a Collection | `{ "target": "authors", "item": 7 }` |
+| `Relation` to a Single page | `{ "target": "home" }` (no `item`, since a page has no id) |
+| `Array([Relation(…)])` | `[{ "target": "authors", "item": 7 }, { "target": "categories", "item": 3 }]` |
 
-- `null` and `[]` both mean "no references". On save only **duplicate identical references** are
-  removed (the first occurrence keeps its position), so **the written order is stored as is and the
-  delivery API returns it in that order**. Reordering is done with the left/right arrows on the chips
-  in the admin screen (the index is a set, so reordering does not move the index).
-- What is rejected (all 400): a reference with a name different from the target; a Collection
-  reference without `item` or with a non-integer `item`; a Single page reference carrying `item`; two
-  or more entries in a single reference; a value that is not an array.
-- `Relation` **cannot be an array element type**. Holding many is `has_many`'s job, and an array
-  would be a second way of saying "a set of sets" (Schema save rejects it).
+- **"No references" is `null` for one relation and `[]` for an array of them**, and a field nobody
+  sent at all is simply absent. On save only **duplicate identical references** are removed (the
+  first occurrence keeps its position), so **the written order is stored as is and the delivery API
+  returns it in that order**. Reordering is done with the left/right arrows on the chips in the admin
+  screen (the index is a set, so reordering does not move the index).
+- What is rejected (all 400): a reference whose target name is not the one the field (or the array
+  item type) declares; a Collection reference without `item` or with a non-integer `item`; a Single
+  page reference carrying `item`; a list where one reference is expected (and the other way round);
+  and, at Schema save, **the same target declared twice in one array** (an element carries its
+  target, not which declaration wrote it).
 - `Slug` **cannot be an array element type either**. A slug is unique by construction and the unique
   index is built from a *field's own* value, so a slug inside an array could never be kept unique -
   which is the whole of what a slug is (Schema save rejects it with 400 `bad_request`). The element
@@ -269,7 +282,7 @@ An Item can reference **an Item of another Collection** (or a **Single page**). 
   it is saved** (walking into the definitions). The value goes inside the Composite's value, and **it
   is the Item that holds the reference**, so the index, reverse lookup, deletion refusal and
   `?detach=true` reach inside composites and arrays:
-  `{ "cta": { "author": [{ "target": "authors", "item": 7 }] } }`. It cannot be a list column or the
+  `{ "cta": { "author": { "target": "authors", "item": 7 } } }`. It cannot be a list column or the
   title (a single entry inside a Composite cannot be designated).
 - **A `required` relation is asked at publish time** (the same rule as other required fields). The
   working copy saves even when empty, and publish rejects it with `field_required`.
@@ -324,6 +337,11 @@ DELETE /api/models/collections/authors/items/1?detach=true
   them as is for editing. Adding `?populate=<field name>` fills that reference with **the published
   copy's value** (the same shape as the screen. Images are `{id,url}`) one level deep. It works on
   lists, single Items and Single pages alike, and **an unknown name is 400** (not silently ignored).
+- **A field that references several targets is expanded by naming one**: `?populate=related.authors`
+  (`?populate=related` on such a field is a 400 that names its targets, because the name alone does
+  not say which one was meant). Only the elements whose target is that name are expanded; the others
+  are returned as they are. `?populate=<field>` without a target is kept for a field that declares
+  one, and for several different fields it can be given more than once, comma separated.
 - **The caller decides the order** (`?sort=`, 2026-09). One of `sort=<key>` / `sort=-<key>`, where
   key is `id` (default) / `published_at` / `created_at` / `updated_at` / **a Field name of that
   Collection**. Ties are **broken by id**, so walking pages with `next_offset` yields no duplicates
@@ -334,7 +352,8 @@ DELETE /api/models/collections/authors/items/1?detach=true
   not read everything. **Reverse-lookup expansion (`?populate=<inverse_name>`) stays in index
   order**, and `?sort=` does not apply (it does apply to a `?where=` list).
 - **Reverse lookup can also be read from delivery** (2026-09). A list can be narrowed with
-  `?where=<field>:<value>` to **only the published Items holding that reference**
+  `?where=<field>:<value>` - or, when that field references several targets,
+  `?where=<field>.<target>:<value>` - to **only the published Items holding that reference**
   (`articles?where=category:3`. The value is the Item id for a Collection target and the page name
   for a Single page target. Paging and `total` apply to **the narrowed set**).
   `?populate=<inverse_name>` returns **the published content referencing this Item** under the key of

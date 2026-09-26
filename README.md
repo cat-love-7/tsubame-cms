@@ -139,7 +139,7 @@ curl 'https://cms.example.com/api/content/collections/articles?limit=2'
       "values": {
         "title": "Notes from the first deployment",
         "cover": { "id": 1, "url": "https://cms.example.com/api/images/by-id/1" },
-        "category": [{ "target": "categories", "item": 4 }],
+        "category": { "target": "categories", "item": 4 },
         "body": "## What an apply does not make"
       }
     }

@@ -56,7 +56,9 @@ which is a reference - only the `field_type` of the neighbouring `schema` says (
 | `"Number"` `"Boolean"` `"Date"` `"DateTime"` `"Image"` | no options, so a bare string |
 | `{"Text":{}}` `{"Slug":{}}` `{"Markdown":{}}` `{"CompositeField":{"id":"seo"}}` `{"Relation":{…}}` `{"Array":[…]}` `{"TextEnum":[…]} ` | they have options, so a one-key object |
 
-A reference value is `{"target":"authors","item":7}` (without `item`, a Single page).
+A reference value is `{"target":"authors","item":7}` (without `item`, a Single page); **one relation
+is one of those, or `null`, and several are an array of them** (the field is an `Array` whose item
+types are relations).
 
 ## 4. The resolved shape (resolved values)
 
@@ -72,8 +74,8 @@ only from plain objects, strings and arrays, and field names keep **the CMS spel
 | `TextEnum` | `string[]` | |
 | `Markdown` | `{ raw, html }` | `html` is the result of the injected `renderMarkdown`. If there is none, `null` |
 | `Image` | `{ id, url, absoluteUrl, stableUrl }` | no download is performed. There is no `localFile` |
-| `Relation` (single) | resolved object \| `null` | unpublished or not found is `null` |
-| `Relation` (multiple) | array \| `[]` | **an unpublished element is kept in place as `null`** |
+| `Relation` | resolved object \| `null` | unpublished or not found is `null` |
+| `Array` of relations | array \| `[]` | **an unpublished element is kept in place as `null`**, and the others stay in the order the CMS served |
 | `CompositeField` | `{ id, values, …each field of the definition }` | if the definition cannot be read, it stays `{id, values}` |
 | `Array` (one element type) | an array resolved per element | |
 | `Array` (mixed or unknown element types) | the raw JSON the API returned | no type tags, so it cannot be decided per element |

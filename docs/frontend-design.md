@@ -63,7 +63,9 @@ the same file.
 - **Relations are now chosen, not written**: a relation on the content editing screen is held as a **chip** rather
   than typing an id as JSON, and "add relation" opens a **picker** (`shared/relation-picker/`) that lists the target Items **by title**.
   **The order is the value**, so the chip's left and right arrows reorder them (the same operation as an image array). Removing is ×.
-  A single relation (`has_many: false`, Single page) has no order, so no arrows are shown and re-selecting is a replacement. The JSON field was kept
+  A `Relation` field holds one reference and has no order, so no arrows are shown and re-selecting is a
+  replacement; **several references are an `Array` of relations** (`Array([Relation(…)])`), which is what the
+  chips with arrows are. The JSON field was kept
   behind "edit as JSON" (for migration, or to write values the picker cannot express).
   Candidates are fetched only when it is opened and up to 100 (filtering on the screen side); beyond that is written as JSON.
 - **Reference-source panel**: below the content editing screen (Item and Single page) is "content referring to this"
@@ -82,7 +84,7 @@ the same file.
 - **Sorting the list**: the column headings (ID and the Fields chosen with "show in list") are buttons, and pressing one sorts by that column. Pressing again reverses it. The direction is shown by an arrow drawn in CSS (▲/▼), and `th`'s `aria-sort` holds the answer for screen readers - **`mat-icon` is not used** because the ligature name gets mixed into the table text (into the reading, and into tests that read the headings). The order is decided by the server (the admin API's `?sort=`), so paging works correctly with the filtered order.
 - **Images and relations in the list**: the image column shows a **thumbnail** rather than the url (an array shows the first 3 + "+N";
   a raw id whose url we do not know shows `id 5`). The relation column shows **`authors #1`** (a Single page shows the page name)
-  rather than JSON like `[{"target":"authors","item":1}]` or a url. Expanding the target's contents is the job of the
+  rather than JSON like `{"target":"authors","item":1}` (or, for several, `[{…},{…}]`) or a url. Expanding the target's contents is the job of the
   delivery API's `?populate=`, not the job of a list cell.
 - Cell values are assembled only once per row (`rows` in `list.ts`). The image column reads one value in two ways,
   "how many" and "how many there were", so calling it repeatedly from template bindings is wasteful.

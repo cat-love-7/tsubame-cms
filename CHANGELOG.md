@@ -13,6 +13,20 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ### Changed
 
+- **A relation holds one reference, and several references are an `Array` of relations.** The
+  `has_many` flag is gone: `Relation` is `{ target, inverse_name }` and its value is
+  `{ "target": "authors", "item": 7 }` (or `null`), while several are `Array([Relation(…)])` with an
+  array value (or `[]`) - and one array may name **several different targets**, one item type each.
+  This is a breaking change to the management and delivery APIs: a single relation that used to read
+  `[{ … }]` now reads `{ … }`, and a field that said `has_many: true` is now an `Array` of relations.
+  Stored content and schemas have to be migrated (the Strapi import is run again for that).
+- **Delivery expansion names a target when a field references several**:
+  `?populate=related.authors`, and `?where=related.authors:3` for the reverse filter.
+  `?populate=<field>` keeps working while the field declares one target;
+  `?populate=<inverse_name>` is unchanged.
+- **`inverse_name` is one name per target**, and a schema can no longer give one target two names -
+  neither through two Fields nor through two item types of one array.
+
 - No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new
   crate forgets to say it.
