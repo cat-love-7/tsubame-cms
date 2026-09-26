@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 use crate::app_module::Storage;
 use crate::http::AppState;
 use crate::models::collection::{CollectionItemId, CollectionName, CollectionSchema};
-use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter};
+use crate::models::delivery::{DeliveredItem, Expansion, Populate, RelationFilter, targets_of};
 use crate::models::error::HttpError;
 use crate::models::pagination::{PageQuery, Pagination};
 use crate::models::single_page::{SinglePageName, SinglePageSchema};
@@ -108,7 +108,7 @@ impl ContentQuery {
         schema: &[crate::models::schema::FieldSchema],
     ) -> Result<Option<RelationFilter>, HttpError> {
         use crate::models::owner::ItemOwner;
-        use crate::models::schema::{FieldType, RelationTarget};
+        use crate::models::schema::RelationTarget;
 
         let Some(raw) = self
             .r#where
@@ -118,21 +118,45 @@ impl ContentQuery {
         else {
             return Ok(None);
         };
-        let (field, value) = raw
+        let (raw_field, value) = raw
             .split_once(':')
             .ok_or_else(|| HttpError::BadRequest("where= takes <field>:<value>"))?;
+        // `field.target` names which of several targets the filter means, the way `?populate=` does.
+        let (field, named) = match raw_field.split_once('.') {
+            None => (raw_field, None),
+            Some((field, target)) => (field.trim(), Some(target.trim())),
+        };
         let Some(found) = schema.iter().find(|candidate| candidate.name == field) else {
             return Err(
                 HttpError::BadRequest(&format!("no field named '{field}'")).with_field(field)
             );
         };
-        let FieldType::Relation(options) = &found.field_type else {
-            return Err(
-                HttpError::BadRequest(&format!("field '{field}' is not a relation"))
-                    .with_field(field),
-            );
+        let targets = targets_of(&found.field_type);
+        let target = match (named, targets.as_slice()) {
+            (Some(named), _) => targets
+                .iter()
+                .find(|target| target.name() == named)
+                .copied()
+                .ok_or_else(|| {
+                    HttpError::BadRequest(&format!("field '{field}' does not reference '{named}'"))
+                        .with_field(field)
+                })?,
+            (None, [only]) => only,
+            (None, []) => {
+                return Err(
+                    HttpError::BadRequest(&format!("field '{field}' is not a relation"))
+                        .with_field(field),
+                );
+            }
+            (None, _) => {
+                return Err(HttpError::BadRequest(&format!(
+                    "field '{field}' references several targets; name one of them \
+                     (?where={field}.target:value)"
+                ))
+                .with_field(field));
+            }
         };
-        let owner = match &options.target {
+        let owner = match target {
             RelationTarget::Collection { name } => {
                 let id: u64 = value.parse().map_err(|_| {
                     HttpError::BadRequest(&format!("where={field} takes an item id"))

@@ -19,11 +19,11 @@ use crate::models::owner::ItemOwner;
 use crate::models::pagination::{Page, Pagination};
 use crate::models::schema::{
     CompositeFieldId, CompositeFieldSchema, RelationTarget, SchemaScope, SchemaSettings,
-    has_unique_fields, referenced_relation_targets, unique_values, validate_composite_references,
-    validate_relation_targets, validate_schema,
+    has_unique_fields, inverse_declarations, referenced_relation_targets, unique_values,
+    validate_composite_references, validate_relation_targets, validate_schema,
 };
 use crate::models::sort::{Sort, compare_delivered, compare_responses};
-use crate::models::values::{FieldType, FieldValue, FieldValueMap, FieldValueResponse};
+use crate::models::values::{FieldValue, FieldValueMap, FieldValueResponse};
 use crate::repositories::collection_repository::ApplyStatusError;
 use crate::repositories::collection_repository::{CollectionRepository, Reservation, UniqueValue};
 use crate::repositories::composite_field_repository::CompositeFieldRepository;
@@ -236,24 +236,33 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         owner: &SchemaOwner,
         schema: &CollectionSchema,
     ) -> Result<(), HttpError> {
-        for field in schema {
-            let FieldType::Relation(options) = &field.field_type else {
-                continue;
-            };
-            let Some(name) = options.inverse_name.as_deref() else {
-                continue;
-            };
+        let mine = inverse_declarations(schema);
+        // One schema cannot give a target two names either: the reverse panel and the expansion
+        // both answer by the target, so the second name would be a coin toss. (The stored ones are
+        // read below, and a conflict with *this* schema's own previous declaration is not one.)
+        for (index, (target, name)) in mine.iter().enumerate() {
+            if mine[index + 1..]
+                .iter()
+                .any(|(other_target, other)| other_target == target && other == name)
+            {
+                return Err(HttpError::Conflict(&format!(
+                    "'{name}' is how this schema already calls its relation to '{}'",
+                    target.name()
+                )));
+            }
+        }
+        for (target, name) in &mine {
             for declared in self
                 .content
-                .declared_inverses(&options.target)
+                .declared_inverses(target)
                 .await
                 .map_err(map_internal_error)?
             {
-                if declared.name == name && &declared.of != owner {
+                if &declared.name == name && &declared.of != owner {
                     return Err(HttpError::Conflict(&format!(
                         "'{name}' is already how {} calls its relation to '{}'",
                         declared.of.describe(),
-                        options.target.name()
+                        target.name()
                     )));
                 }
             }
@@ -1863,10 +1872,24 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
         forward: &Populate,
         into: &mut DeliveredItem,
     ) -> Result<(), HttpError> {
-        for name in expansion.populate.iter().filter(|name| !forward.asks(name)) {
+        for entry in expansion
+            .populate
+            .iter()
+            .filter(|entry| !forward.asks(&entry.name))
+        {
+            // A named target is a forward idea: the reverse side is addressed by its `inverse_name`
+            // alone, and there is no field of that name to look a target up in.
+            if entry.target.is_some() {
+                return Err(HttpError::BadRequest(&format!(
+                    "'{}' is not a target of a field named '{}'",
+                    entry.describe(),
+                    entry.name
+                ))
+                .with_field(&entry.name));
+            }
             let Some(references) = inverse_references(
                 owner,
-                name,
+                &entry.name,
                 expansion.inverse_limit,
                 maps,
                 &*self.content,
@@ -1875,11 +1898,12 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
             .await?
             else {
                 return Err(HttpError::BadRequest(&format!(
-                    "no relation field or inverse name '{name}' to populate"
+                    "no relation field or inverse name '{}' to populate",
+                    entry.name
                 ))
-                .with_field(name));
+                .with_field(&entry.name));
             };
-            into.insert(name.to_string(), DeliveryValue::Relation(references));
+            into.insert(entry.name.clone(), DeliveryValue::RelationList(references));
         }
         Ok(())
     }
@@ -2437,7 +2461,6 @@ mod tests {
                 name: "author".to_string(),
                 field_type: FieldType::Relation(RelationOptions {
                     target,
-                    has_many: false,
                     inverse_name: None,
                 }),
                 required: false,
@@ -2508,7 +2531,6 @@ mod tests {
                     target: RelationTarget::Collection {
                         name: "authors".to_string(),
                     },
-                    has_many: false,
                     inverse_name: None,
                 }),
                 required: false,

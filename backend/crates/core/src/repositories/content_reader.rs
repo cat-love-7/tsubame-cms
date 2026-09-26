@@ -15,7 +15,7 @@ use std::pin::Pin;
 
 use crate::models::collection::{CollectionItemId, CollectionName};
 use crate::models::owner::{ItemOwner, ItemOwnerKind};
-use crate::models::schema::{FieldSchema, RelationTarget};
+use crate::models::schema::{FieldSchema, FieldType, RelationTarget};
 use crate::models::single_page::SinglePageName;
 use crate::models::values::FieldValueMap;
 use crate::repositories::collection_repository::{BoxError, CollectionRepository};
@@ -196,30 +196,48 @@ impl<T: CollectionRepository + SinglePageRepository> ContentReader for T {
 }
 
 /// The inverse names a schema gives a relation to `target`.
+///
+/// An array of relations gives each of its targets its own name, so the item types are walked too
+/// (see `docs/relations-design.md` §3).
 fn inverse_names_for(schema: &[FieldSchema], target: &RelationTarget) -> Vec<String> {
     schema
         .iter()
-        .filter_map(|field| match &field.field_type {
-            crate::models::schema::FieldType::Relation(options) => {
-                if &options.target == target {
-                    options.inverse_name.clone()
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
+        .flat_map(|field| inverse_names_of(&field.field_type, target))
         .collect()
+}
+
+fn inverse_names_of(field_type: &FieldType, target: &RelationTarget) -> Vec<String> {
+    match field_type {
+        FieldType::Relation(options) => {
+            if &options.target == target {
+                options.inverse_name.clone().into_iter().collect()
+            } else {
+                Vec::new()
+            }
+        }
+        FieldType::Array(items) => items
+            .iter()
+            .flat_map(|item| inverse_names_of(item, target))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// Whether a schema gives a relation this name on the other side.
 fn schema_declares_inverse(schema: &[FieldSchema], name: &str) -> bool {
-    schema.iter().any(|field| match &field.field_type {
-        crate::models::schema::FieldType::Relation(options) => {
-            options.inverse_name.as_deref() == Some(name)
-        }
+    schema
+        .iter()
+        .any(|field| field_type_declares_inverse(&field.field_type, name))
+}
+
+fn field_type_declares_inverse(field_type: &FieldType, name: &str) -> bool {
+    match field_type {
+        FieldType::Relation(options) => options.inverse_name.as_deref() == Some(name),
+        FieldType::Array(items) => items
+            .iter()
+            .any(|item| field_type_declares_inverse(item, name)),
         _ => false,
-    })
+    }
 }
 
 /// Content that is always gone, for tests that are not about relations.

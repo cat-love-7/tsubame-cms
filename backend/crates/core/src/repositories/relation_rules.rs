@@ -37,7 +37,7 @@ pub async fn ensure_required_relations_are_published(
             continue;
         }
         let mut served = false;
-        for reference in relation.references {
+        for reference in &relation.references {
             if is_published(&reference.target_owner(), reader).await? {
                 served = true;
                 break;
@@ -90,7 +90,7 @@ pub async fn ensure_unpublish_keeps_required_referrers(
                 continue;
             }
             let mut served = false;
-            for reference in relation.references {
+            for reference in &relation.references {
                 let owner = reference.target_owner();
                 if &owner == target {
                     continue;
@@ -210,18 +210,23 @@ mod tests {
         }
     }
 
-    fn relation_field(name: &str, target: &str, required: bool, has_many: bool) -> FieldSchema {
+    /// A relation: one reference, or - with `multiple` - an array of them.
+    fn relation_field(name: &str, target: &str, required: bool, multiple: bool) -> FieldSchema {
+        let relation = FieldType::Relation(RelationOptions {
+            target: RelationTarget::Collection {
+                name: target.to_string(),
+            },
+            inverse_name: None,
+        });
         FieldSchema {
             is_title: false,
             show_in_list: false,
             name: name.to_string(),
-            field_type: FieldType::Relation(RelationOptions {
-                target: RelationTarget::Collection {
-                    name: target.to_string(),
-                },
-                has_many,
-                inverse_name: None,
-            }),
+            field_type: if multiple {
+                FieldType::Array(vec![relation])
+            } else {
+                relation
+            },
             required,
             width: 12,
             height: 1,
@@ -242,16 +247,25 @@ mod tests {
         }
     }
 
+    /// One reference, which is what a `Relation` field holds.
+    fn one(item: u64) -> FieldValue {
+        FieldValue::Relation(Some(RelationRef {
+            target: "authors".to_string(),
+            item: Some(item),
+        }))
+    }
+
+    /// A single reference in the `author` field.
+    fn a_reference(item: u64) -> FieldValueMap<Vec<FieldSchema>> {
+        values(vec![("author", one(item))])
+    }
+
+    /// A field's references as the array form holds them (the `bool` is whether the fake reader
+    /// publishes that target).
     fn references(items: &[(u64, bool)]) -> FieldValueMap<Vec<FieldSchema>> {
-        let refs: Vec<RelationRef> = items
-            .iter()
-            .map(|(item, _)| RelationRef {
-                target: "authors".to_string(),
-                item: Some(*item),
-            })
-            .collect();
+        let refs: Vec<FieldValue> = items.iter().map(|(item, _)| one(*item)).collect();
         FieldValueMap(
-            HashMap::from([("author".to_string(), FieldValue::Relation(refs))]),
+            HashMap::from([("author".to_string(), FieldValue::Array(refs))]),
             PhantomData,
         )
     }
@@ -289,7 +303,7 @@ mod tests {
         // The only target is a draft: refused, and the refusal names the field and the target.
         let error = ensure_required_relations_are_published(
             &schema,
-            &references(&[(2, false)]),
+            &a_reference(2),
             &HashMap::new(),
             &reader,
         )
@@ -304,10 +318,12 @@ mod tests {
             error.message
         );
 
-        // One published target is enough, wherever in the set it sits.
+        // One published target is enough, wherever in the set it sits - which is what the array
+        // form is for.
+        let many = vec![relation_field("author", "authors", true, true)];
         assert!(
             ensure_required_relations_are_published(
-                &schema,
+                &many,
                 &references(&[(2, false), (1, true)]),
                 &HashMap::new(),
                 &reader,
@@ -319,7 +335,7 @@ mod tests {
         // A target that is gone is not published either.
         let error = ensure_required_relations_are_published(
             &schema,
-            &references(&[(99, false)]),
+            &a_reference(99),
             &HashMap::new(),
             &reader,
         )
@@ -334,7 +350,7 @@ mod tests {
         assert!(
             ensure_required_relations_are_published(
                 &schema,
-                &references(&[(2, false)]),
+                &a_reference(2),
                 &HashMap::new(),
                 &authors(),
             )
@@ -383,7 +399,7 @@ mod tests {
             "cta",
             FieldValue::CompositeField(Some(CompositeFieldValue {
                 id: CompositeFieldId::from("cta"),
-                values: references(&[(2, false)]),
+                values: a_reference(2),
             })),
         )]);
 
@@ -424,7 +440,7 @@ mod tests {
         let element = |item: u64| {
             FieldValue::CompositeField(Some(CompositeFieldValue {
                 id: composite_id.clone(),
-                values: references(&[(item, false)]),
+                values: a_reference(item),
             }))
         };
         let nested = values(vec![(
@@ -449,7 +465,7 @@ mod tests {
         let content = FakeContent::default().draft(
             ItemOwner::collection_item("posts", 1),
             schema,
-            references(&[(1, true)]),
+            a_reference(1),
         );
         let relations = FakeRelations(vec![ItemOwner::collection_item("posts", 1)]);
 
@@ -472,7 +488,7 @@ mod tests {
         let content = FakeContent::default().published(
             ItemOwner::collection_item("posts", 1),
             schema.clone(),
-            references(&[(1, true)]),
+            a_reference(1),
         );
         let relations = FakeRelations(vec![ItemOwner::collection_item("posts", 1)]);
 
@@ -488,11 +504,12 @@ mod tests {
         assert_eq!(error.code, "relation_required_by");
         assert!(error.message.contains("posts item 1"), "{}", error.message);
 
-        // Another published reference in the same field is what the site serves instead.
+        // Another published reference in the same *array* is what the site serves instead.
+        let many = vec![relation_field("author", "authors", true, true)];
         let elsewhere = FakeContent::default()
             .published(
                 ItemOwner::collection_item("posts", 1),
-                schema,
+                many,
                 references(&[(1, true), (3, true)]),
             )
             .published(
@@ -518,7 +535,7 @@ mod tests {
         let content = FakeContent::default().published(
             ItemOwner::collection_item("posts", 1),
             schema,
-            references(&[(1, true)]),
+            a_reference(1),
         );
         let relations = FakeRelations(vec![ItemOwner::collection_item("posts", 1)]);
 

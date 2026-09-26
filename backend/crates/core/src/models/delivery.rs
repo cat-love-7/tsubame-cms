@@ -12,7 +12,7 @@
 //! there may not: the management shape is a *stored* value, and what a site is served is a
 //! rendering of one. Every other kind of field, images included, renders the same way in both.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -29,55 +29,147 @@ use crate::repositories::relation_repository::RelationRepository;
 /// One item's values as the site is served them.
 pub type DeliveredItem = HashMap<String, DeliveryValue>;
 
-/// What `?populate=` asked for: the field names to expand, one level deep.
+/// One `?populate=` entry: a field name (or an `inverse_name`), and - when the field declares
+/// several targets - which of them to expand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PopulateEntry {
+    /// The field name, or the `inverse_name` of the relation pointing here.
+    pub name: String,
+    /// The target named after a dot: `?populate=related.authors`. Needed when the field declares
+    /// more than one target, where the bare name is refused; on a field with one target it is
+    /// accepted and means the same as the bare name, which already says it.
+    pub target: Option<String>,
+}
+
+impl PopulateEntry {
+    /// How the entry reads in a refusal, with the target it named when it named one.
+    pub fn describe(&self) -> String {
+        match &self.target {
+            None => self.name.clone(),
+            Some(target) => format!("{}.{}", self.name, target),
+        }
+    }
+}
+
+/// What `?populate=` asked for: the names to expand, one level deep.
 #[derive(Debug, Clone, Default)]
-pub struct Populate(HashSet<String>);
+pub struct Populate(Vec<PopulateEntry>);
 
 impl Populate {
-    /// Read the query parameter: a comma-separated list of names, blank entries dropped.
+    /// Read the query parameter: a comma-separated list, blank entries dropped.
+    ///
+    /// `field.target` names one target of a field that declares several, which is the only way to
+    /// say which one a client meant.
     pub fn parse(raw: Option<&str>) -> Self {
         Populate(
             raw.unwrap_or_default()
                 .split(',')
                 .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .map(str::to_string)
+                .filter(|entry| !entry.is_empty())
+                .filter_map(|entry| match entry.split_once('.') {
+                    None => Some(PopulateEntry {
+                        name: entry.to_string(),
+                        target: None,
+                    }),
+                    Some((name, target)) => {
+                        let (name, target) = (name.trim(), target.trim());
+                        (!name.is_empty() && !target.is_empty()).then(|| PopulateEntry {
+                            name: name.to_string(),
+                            target: Some(target.to_string()),
+                        })
+                    }
+                })
                 .collect(),
         )
     }
 
-    /// Whether a client asked for this field.
+    /// Whether a client asked for this field, with or without naming one of its targets.
     pub fn asks(&self, name: &str) -> bool {
-        self.0.contains(name)
+        self.0.iter().any(|entry| entry.name == name)
+    }
+
+    /// What the request asks to expand for one field.
+    pub fn ask_for(&self, name: &str) -> Ask<'_> {
+        Ask {
+            entries: self.0.iter().filter(|entry| entry.name == name).collect(),
+        }
     }
 
     /// Nothing asked for: what an expansion inside an expansion uses, because the depth is one.
     pub fn none() -> Self {
-        Populate(HashSet::new())
+        Populate(Vec::new())
     }
 
-    /// The names this schema relates through, so a caller can tell a forward expansion from one
-    /// that has to be answered from the index (`inverse_name`).
-    pub fn relates_through(&self, schema: &[FieldSchema], name: &str) -> bool {
-        schema
-            .iter()
-            .any(|field| field.name == name && matches!(field.field_type, FieldType::Relation(_)))
+    /// The entries asked for, one by one, so a caller can split them itself.
+    pub fn iter(&self) -> impl Iterator<Item = &PopulateEntry> {
+        self.0.iter()
     }
 
-    /// The names asked for, one by one, so a caller can split them itself.
-    pub fn iter(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(String::as_str)
-    }
-
-    /// Just the names this schema relates through: what a forward expansion is given.
+    /// Just the entries this schema relates through: what a forward expansion is given.
     pub fn forward_only(&self, schema: &[FieldSchema]) -> Populate {
         Populate(
             self.0
                 .iter()
-                .filter(|name| self.relates_through(schema, name))
+                .filter(|entry| relates_through(schema, entry))
                 .cloned()
                 .collect(),
         )
+    }
+}
+
+/// Whether this schema relates through the entry: a field (or an array of relations) of that name,
+/// declaring the target the entry named - or any target, when it named none.
+fn relates_through(schema: &[FieldSchema], entry: &PopulateEntry) -> bool {
+    schema.iter().any(|field| {
+        field.name == entry.name
+            && targets_of(&field.field_type).iter().any(|target| {
+                entry
+                    .target
+                    .as_deref()
+                    .is_none_or(|asked| asked == target.name())
+            })
+    })
+}
+
+/// The targets a field may reference: one for a relation, several for an array of them.
+pub fn targets_of(field_type: &FieldType) -> Vec<&crate::models::schema::RelationTarget> {
+    match field_type {
+        FieldType::Relation(options) => vec![&options.target],
+        FieldType::Array(items) => items
+            .iter()
+            .filter_map(|item| match item {
+                FieldType::Relation(options) => Some(&options.target),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// What the request asked to expand for one field.
+#[derive(Debug, Clone, Default)]
+pub struct Ask<'a> {
+    entries: Vec<&'a PopulateEntry>,
+}
+
+impl Ask<'_> {
+    /// Whether the request asked to expand a reference to this target.
+    pub fn wants(&self, target: &crate::models::schema::RelationTarget) -> bool {
+        self.entries.iter().any(|entry| match &entry.target {
+            None => true,
+            Some(name) => name == target.name(),
+        })
+    }
+
+    /// Whether the field was named on its own, which only says which target while the field
+    /// declares one.
+    pub fn bare(&self) -> bool {
+        self.entries.iter().any(|entry| entry.target.is_none())
+    }
+
+    /// Whether anything at all was asked for this field.
+    pub fn any(&self) -> bool {
+        !self.entries.is_empty()
     }
 }
 
@@ -93,7 +185,11 @@ pub enum DeliveryValue {
     DateTime(Option<DateTime<FixedOffset>>),
     Image(Option<ImageResponse>),
     CompositeField(Option<DeliveryComposite>),
-    Relation(Vec<DeliveryReference>),
+    /// A `Relation` field: one reference, or `null` for none.
+    Relation(Option<DeliveryReference>),
+    /// `?populate=<inverse_name>`: the content referring to this, which is a list whatever the
+    /// referring field holds.
+    RelationList(Vec<DeliveryReference>),
     Array(Vec<DeliveryValue>),
     TextEnum(Vec<String>),
 }
@@ -147,7 +243,7 @@ fn deliver_values<'a>(
                 &field.field_type,
                 value,
                 delivery,
-                populate.asks(&field.name),
+                &populate.ask_for(&field.name),
             )
             .await?;
             delivered.insert(field.name.clone(), delivered_value);
@@ -161,7 +257,7 @@ fn deliver_value<'a>(
     field_type: &'a FieldType,
     value: &'a FieldValueResponse,
     delivery: &'a Delivery<'a>,
-    expand: bool,
+    ask: &'a Ask<'a>,
 ) -> DeliveredValueFuture<'a> {
     Box::pin(async move {
         Ok(match (field_type, value) {
@@ -173,8 +269,11 @@ fn deliver_value<'a>(
             (_, FieldValueResponse::DateTime(stamp)) => DeliveryValue::DateTime(*stamp),
             (_, FieldValueResponse::Image(image)) => DeliveryValue::Image(image.clone()),
             (_, FieldValueResponse::TextEnum(options)) => DeliveryValue::TextEnum(options.clone()),
-            (_, FieldValueResponse::Relation(references)) => {
-                DeliveryValue::Relation(deliver_references(references, delivery, expand).await?)
+            (FieldType::Relation(options), FieldValueResponse::Relation(reference)) => {
+                let expand = ask.wants(&options.target);
+                DeliveryValue::Relation(
+                    deliver_reference(reference.as_ref(), delivery, expand).await?,
+                )
             }
             (
                 FieldType::CompositeField(definition),
@@ -197,13 +296,17 @@ fn deliver_value<'a>(
             }
             (_, FieldValueResponse::CompositeField(None)) => DeliveryValue::CompositeField(None),
             (FieldType::Array(items), FieldValueResponse::Array(elements)) => {
+                // An array of relations is how several references are written, so it is the field
+                // the request named - but only the client knows which of its targets it meant when
+                // it declares more than one.
+                refuse_bare_name_among_several(items, ask)?;
                 let mut delivered = Vec::with_capacity(elements.len());
                 for element in elements {
                     // The declared item types are untyped on the wire, so an element is rendered
-                    // by the type it turned out to be: a composite names its own definition, and a
-                    // scalar does not care which type declared it.
+                    // by the type it turned out to be: a composite names its own definition, a
+                    // relation names its target, and a scalar does not care which type declared it.
                     let element_type = element_type_of(items, element);
-                    delivered.push(deliver_value(&element_type, element, delivery, false).await?);
+                    delivered.push(deliver_value(&element_type, element, delivery, ask).await?);
                 }
                 DeliveryValue::Array(delivered)
             }
@@ -214,8 +317,47 @@ fn deliver_value<'a>(
     })
 }
 
+/// Refuse `?populate=<field>` when the field declares several targets: the name does not say which
+/// one the client meant, and guessing would serve a different answer than it asked for.
+fn refuse_bare_name_among_several(items: &[FieldType], ask: &Ask<'_>) -> Result<(), HttpError> {
+    if !ask.bare() {
+        return Ok(());
+    }
+    let names: Vec<&str> = items
+        .iter()
+        .filter_map(|item| match item {
+            FieldType::Relation(options) => Some(options.target.name()),
+            _ => None,
+        })
+        .collect();
+    if names.len() < 2 {
+        return Ok(());
+    }
+    Err(HttpError::BadRequest(&format!(
+        "this field references several targets; name one of them (?populate=field.{})",
+        names.join(" or field.")
+    )))
+}
+
 /// The declared item type an element turned out to be.
 fn element_type_of(items: &[FieldType], element: &FieldValueResponse) -> FieldType {
+    // A reference names its own target, which is what picks the declaration it belongs to - and
+    // with several targets declared, that is the only thing that can.
+    if let FieldValueResponse::Relation(reference) = element {
+        let wanted = reference
+            .as_ref()
+            .map(|reference| reference.target.as_str());
+        let declared = items.iter().find(|item| match item {
+            FieldType::Relation(options) => match wanted {
+                Some(target) => options.target.name() == target,
+                None => true,
+            },
+            _ => false,
+        });
+        if let Some(declared) = declared {
+            return declared.clone();
+        }
+    }
     let FieldValueResponse::CompositeField(Some(composite)) = element else {
         return FieldType::Number;
     };
@@ -227,6 +369,19 @@ fn element_type_of(items: &[FieldType], element: &FieldValueResponse) -> FieldTy
         })
         .cloned()
         .unwrap_or(FieldType::Number)
+}
+
+/// One reference a site can follow, or `None` when there is none or its target is not published.
+async fn deliver_reference(
+    reference: Option<&crate::models::values::RelationRef>,
+    delivery: &Delivery<'_>,
+    expand: bool,
+) -> Result<Option<DeliveryReference>, HttpError> {
+    let Some(reference) = reference else {
+        return Ok(None);
+    };
+    let delivered = deliver_references(std::slice::from_ref(reference), delivery, expand).await?;
+    Ok(delivered.into_iter().next())
 }
 
 /// The references a site can follow: the target has to be published, and its values come along
@@ -283,16 +438,13 @@ fn delivery_of_untyped(value: &FieldValueResponse) -> DeliveryValue {
         FieldValueResponse::DateTime(stamp) => DeliveryValue::DateTime(*stamp),
         FieldValueResponse::Image(image) => DeliveryValue::Image(image.clone()),
         FieldValueResponse::TextEnum(options) => DeliveryValue::TextEnum(options.clone()),
-        FieldValueResponse::Relation(references) => DeliveryValue::Relation(
-            references
-                .iter()
-                .map(|reference| DeliveryReference {
-                    target: reference.target.clone(),
-                    item: reference.item,
-                    values: None,
-                })
-                .collect(),
-        ),
+        FieldValueResponse::Relation(reference) => {
+            DeliveryValue::Relation(reference.as_ref().map(|reference| DeliveryReference {
+                target: reference.target.clone(),
+                item: reference.item,
+                values: None,
+            }))
+        }
         FieldValueResponse::CompositeField(Some(composite)) => {
             DeliveryValue::CompositeField(Some(DeliveryComposite {
                 id: composite.id.clone(),
@@ -343,14 +495,10 @@ pub async fn inverse_references(
         else {
             continue;
         };
-        let calls_it = content.schema.iter().any(|field| match &field.field_type {
-            FieldType::Relation(options) => {
-                options.inverse_name.as_deref() == Some(name)
-                    && options.target.name() == owner.name
-                    && options.target.is_single_page() == owner.is_single_page()
-            }
-            _ => false,
-        });
+        let calls_it = content
+            .schema
+            .iter()
+            .any(|field| declares_inverse_of(&field.field_type, name, owner));
         if !calls_it {
             continue;
         }
@@ -393,6 +541,25 @@ pub async fn inverse_references(
         }
     }
     Ok(Some(delivered))
+}
+
+/// Whether a field type answers to this inverse name for a reference to `owner`.
+///
+/// The item types of an array are relations like any other, so an array of relations calls the
+/// relation whatever its own item types say - which is what makes `?populate=<inverse_name>` work
+/// for several references the way it does for one (see `docs/relations-design.md` §3).
+fn declares_inverse_of(field_type: &FieldType, name: &str, owner: &ItemOwner) -> bool {
+    match field_type {
+        FieldType::Relation(options) => {
+            options.inverse_name.as_deref() == Some(name)
+                && options.target.name() == owner.name
+                && options.target.is_single_page() == owner.is_single_page()
+        }
+        FieldType::Array(items) => items
+            .iter()
+            .any(|item| declares_inverse_of(item, name, owner)),
+        _ => false,
+    }
 }
 
 /// Whether a set of values points at this content anywhere, composites and arrays included.
@@ -468,16 +635,27 @@ pub struct RelationFilter {
 }
 
 /// Whether the relation field `field` of these values points at `owner`.
+///
+/// Both shapes a relation field takes are walked: one reference, or several as an `Array` of them
+/// (`Array([Relation(…)])`). Which of the field's targets counts was settled when the filter was
+/// parsed, so an element is compared by the owner it names.
 pub fn field_holds(
     values: &FieldValueMap<Vec<FieldSchema>>,
     field: &str,
     owner: &ItemOwner,
 ) -> bool {
-    matches!(
-        values.0.get(field),
-        Some(FieldValue::Relation(references))
-            if references.iter().any(|reference| &reference.target_owner() == owner)
-    )
+    match values.0.get(field) {
+        Some(FieldValue::Relation(references)) => references
+            .iter()
+            .any(|reference| &reference.target_owner() == owner),
+        Some(FieldValue::Array(elements)) => elements.iter().any(|element| match element {
+            FieldValue::Relation(references) => references
+                .iter()
+                .any(|reference| &reference.target_owner() == owner),
+            _ => false,
+        }),
+        _ => false,
+    }
 }
 
 /// What the delivery walker needs, built where the maps are already read.

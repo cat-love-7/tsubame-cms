@@ -154,17 +154,14 @@ impl RelationTarget {
     }
 }
 
-/// What a relation field is told: what it points at, whether it may point at several things, and
-/// what the other side is called.
+/// What a relation field is told: what it points at and what the other side is called.
+///
+/// It holds **one** reference. Several are an `Array` of relations (`Array([Relation(…)])`), which
+/// is the same composition every other field type uses - see `validate_field_type` for the one rule
+/// that composition needs (one item type per target).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct RelationOptions {
     pub target: RelationTarget,
-    /// Whether several may be referenced at once.
-    ///
-    /// A single page is one item whose whole identity is its name, so it can only ever be a
-    /// single reference: a field pointing at two pages would be two fields.
-    #[serde(default)]
-    pub has_many: bool,
     /// What the other side is called in the screens and in `?populate=`.
     ///
     /// A **label**, not a second field: nothing about the relation is stored on the target, and
@@ -172,16 +169,6 @@ pub struct RelationOptions {
     /// can say "articles" without the schema having to define a field called that.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inverse_name: Option<String>,
-}
-
-impl RelationOptions {
-    /// Whether this holds at most one reference, which is what a value is checked against.
-    ///
-    /// A page target is always one, whatever `has_many` says - which `validate_relation_options`
-    /// refuses to store in the first place, so this stays true about a stored schema.
-    pub fn is_single(&self) -> bool {
-        !self.has_many || self.target.is_single_page()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -228,9 +215,7 @@ impl FieldType {
             FieldType::DateTime => matches!(value, FieldValue::DateTime(Some(_))),
             FieldType::Image => matches!(value, FieldValue::Image(Some(_))),
             FieldType::CompositeField(_) => matches!(value, FieldValue::CompositeField(Some(_))),
-            FieldType::Relation(_) => {
-                matches!(value, FieldValue::Relation(refs) if !refs.is_empty())
-            }
+            FieldType::Relation(_) => matches!(value, FieldValue::Relation(Some(_))),
             FieldType::Array(_) => matches!(value, FieldValue::Array(values) if !values.is_empty()),
             FieldType::TextEnum(_) => {
                 matches!(value, FieldValue::TextEnum(vals) if !vals.is_empty())
@@ -292,7 +277,7 @@ impl FieldSchema {
             FieldType::DateTime => FieldValue::DateTime(None),
             FieldType::Image => FieldValue::Image(None),
             FieldType::CompositeField(_) => FieldValue::CompositeField(None),
-            FieldType::Relation(_) => FieldValue::Relation(vec![]),
+            FieldType::Relation(_) => FieldValue::Relation(None),
             FieldType::Array(_schema) => FieldValue::Array(vec![]),
             FieldType::TextEnum(_options) => FieldValue::TextEnum(vec![]),
         }
@@ -426,17 +411,11 @@ fn validate_relation_options(name: &str, field_type: &FieldType) -> Result<(), S
                     "field '{name}': the inverse name must not be blank - leave it out instead"
                 ));
             }
-            if options.target.is_single_page() && options.has_many {
-                return Err(format!(
-                    "field '{name}': a single page is one item, so a relation to one can only be a \
-                     single reference"
-                ));
-            }
             Ok(())
         }
         FieldType::Array(items) => {
-            // An array cannot hold one (see `validate_field_type`), for the same reason the walk
-            // above looks inside them.
+            // The array's item types are relations like any other, so they answer to the same
+            // rules.
             for item in items {
                 validate_relation_options(name, item)?;
             }
@@ -538,6 +517,34 @@ fn collect_field_relation_targets(
     }
 }
 
+/// Every `(target, inverse_name)` a schema declares, arrays of relations included.
+///
+/// The names are what `?populate=` and the reverse panel answer to, so "one target, one name" is a
+/// rule about this list and the stored ones together (see `ensure_inverse_names_are_unique`).
+pub fn inverse_declarations(fields: &[FieldSchema]) -> Vec<(RelationTarget, String)> {
+    let mut declared = Vec::new();
+    for field in fields {
+        collect_inverse_declarations(&field.field_type, &mut declared);
+    }
+    declared
+}
+
+fn collect_inverse_declarations(field_type: &FieldType, into: &mut Vec<(RelationTarget, String)>) {
+    match field_type {
+        FieldType::Relation(options) => {
+            if let Some(name) = options.inverse_name.as_deref() {
+                into.push((options.target.clone(), name.to_string()));
+            }
+        }
+        FieldType::Array(items) => {
+            for item in items {
+                collect_inverse_declarations(item, into);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Every relation a schema declares has to point at something that exists.
 ///
 /// `composites` is every composite definition of the site, which is what lets a target declared
@@ -620,15 +627,6 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
         if let FieldType::Array(_) = item {
             return Err(format!("field '{name}': nested arrays are not supported"));
         }
-        // A relation is a set already, and how many it holds is its own `has_many`: an array of
-        // relations would be a second way to say "several references", with nothing that could
-        // edit or deliver it.
-        if matches!(item, FieldType::Relation(_)) {
-            return Err(format!(
-                "field '{name}': a relation cannot be an array item; a relation already holds \
-                 several references when it asks for them"
-            ));
-        }
         // A slug is unique by construction (`FieldSchema::is_unique`), and the unique index is
         // built from a *field's own* value (`unique_values`), which never looks inside an array -
         // so a slug as an array item could not be kept unique, which is the whole of what a slug
@@ -641,6 +639,27 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
                  field's own value is indexed for uniqueness"
             ));
         }
+    }
+
+    // Several references are exactly this: an array of relations, and the array may reference
+    // several *different* targets ("related content" of either kind). The same target twice is what
+    // it may not do - a value's element is `{target, item}` and does not record which declaration
+    // wrote it, so the reverse lookup could not tell the two apart, and two `inverse_name`s for one
+    // target would answer the same question twice.
+    let mut targets: Vec<&RelationTarget> = Vec::new();
+    for item in items {
+        let FieldType::Relation(options) = item else {
+            continue;
+        };
+        if targets.iter().any(|target| **target == options.target) {
+            return Err(format!(
+                "field '{name}': '{}' is declared twice as an array item; one array holds one item \
+                 type per target, because an element carries its target and not which declaration \
+                 wrote it",
+                options.target.name()
+            ));
+        }
+        targets.push(&options.target);
     }
 
     // Array items are untyped, and an image id is a JSON number, so a bare number would
@@ -880,7 +899,7 @@ mod tests {
                 }),
                 "composite field",
             ),
-            (relation(collection_target("authors"), true), "relation"),
+            (relation(collection_target("authors"), false), "relation"),
         ] {
             let error =
                 validate_schema(&[named("bad", field_type)], SchemaScope::Collection).unwrap_err();
@@ -1224,12 +1243,18 @@ mod tests {
         }
     }
 
-    fn relation(target: RelationTarget, has_many: bool) -> FieldType {
-        FieldType::Relation(RelationOptions {
+    /// A relation field type: one reference, or - with `multiple` - an array of them, which is how
+    /// several are declared.
+    fn relation(target: RelationTarget, multiple: bool) -> FieldType {
+        let relation = FieldType::Relation(RelationOptions {
             target,
-            has_many,
             inverse_name: None,
-        })
+        });
+        if multiple {
+            FieldType::Array(vec![relation])
+        } else {
+            relation
+        }
     }
 
     #[test]
@@ -1262,21 +1287,20 @@ mod tests {
             .contains("must name the collection")
         );
 
-        // A page is one item whose identity is its name, so asking for several is asking for
-        // something that cannot exist.
+        // An array of page references is "several different pages", which a schema may say; what
+        // it may not say is the same page twice (see
+        // `an_array_of_relations_may_name_several_targets_once_each`).
         assert!(
             validate_schema(
                 &[field("homes", relation(page_target("home"), true))],
                 SchemaScope::Collection
             )
-            .unwrap_err()
-            .contains("can only be a single reference")
+            .is_ok()
         );
 
         // A blank inverse name is a label with nothing in it; leaving it out says more.
         let blank_inverse = FieldType::Relation(RelationOptions {
             target: collection_target("authors"),
-            has_many: false,
             inverse_name: Some("   ".to_string()),
         });
         assert!(
@@ -1287,12 +1311,51 @@ mod tests {
     }
 
     #[test]
-    fn a_relation_is_never_an_array_item() {
-        let array = FieldType::Array(vec![relation(collection_target("authors"), true)]);
+    fn an_array_of_relations_may_name_several_targets_once_each() {
+        // Several references, to several different things: a relation is an array item, and one
+        // array may name more than one target.
+        validate_schema(
+            &[field(
+                "related",
+                FieldType::Array(vec![
+                    relation(collection_target("authors"), false),
+                    relation(collection_target("categories"), false),
+                    relation(page_target("home"), false),
+                ]),
+            )],
+            SchemaScope::Collection,
+        )
+        .expect("one array may name several targets");
+
+        // The same name on a different kind is a different target.
+        validate_schema(
+            &[field(
+                "related",
+                FieldType::Array(vec![
+                    relation(collection_target("home"), false),
+                    relation(page_target("home"), false),
+                ]),
+            )],
+            SchemaScope::Collection,
+        )
+        .expect("a collection and a page of the same name are different targets");
+
+        // The same target twice is what it may not do: an element carries its target and not which
+        // declaration wrote it, so the reverse lookup could not tell them apart.
+        let error = validate_schema(
+            &[field(
+                "related",
+                FieldType::Array(vec![
+                    relation(collection_target("authors"), false),
+                    relation(collection_target("authors"), false),
+                ]),
+            )],
+            SchemaScope::Collection,
+        )
+        .unwrap_err();
         assert!(
-            validate_schema(&[field("related", array)], SchemaScope::Collection)
-                .unwrap_err()
-                .contains("cannot be an array item")
+            error.contains("is declared twice as an array item"),
+            "{error}"
         );
     }
 
@@ -1440,20 +1503,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("'about' is not a single page"), "{error}");
-    }
-
-    #[test]
-    fn only_a_multiple_reference_to_a_collection_is_not_single() {
-        let single = |target: RelationTarget, has_many: bool| RelationOptions {
-            target,
-            has_many,
-            inverse_name: None,
-        };
-
-        assert!(single(collection_target("authors"), false).is_single());
-        // A page is a single reference whatever the flag says, which the schema refuses anyway.
-        assert!(single(page_target("home"), true).is_single());
-        assert!(!single(collection_target("authors"), true).is_single());
     }
 
     #[test]

@@ -210,7 +210,6 @@ mod tests {
                 target: RelationTarget::Collection {
                     name: target.to_string(),
                 },
-                has_many: false,
                 inverse_name: None,
             }),
             required: false,

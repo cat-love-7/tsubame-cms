@@ -178,6 +178,15 @@ fn parse_field_value(
                     composite_schemas,
                 )?);
             }
+            // An array of relations is several references, and a set has no duplicates: the same
+            // one written twice is written once, at the place it first appeared (see
+            // `docs/relations-design.md` §3). Nothing else in an array is deduplicated - two equal
+            // numbers are two numbers.
+            let mut seen = std::collections::HashSet::new();
+            values.retain(|value| match value {
+                FieldValue::Relation(Some(reference)) => seen.insert(reference.target_owner()),
+                _ => true,
+            });
             Ok(FieldValue::Array(values))
         }
         FieldType::CompositeField(reference) => match raw {
@@ -293,66 +302,14 @@ fn parse_untagged_scalar(
             }
             Ok(FieldValue::TextEnum(values))
         }
+        // One reference, or none: the wire says the cardinality the way the Rust type does, so a
+        // list here is a client sending the shape several references used to have.
         FieldType::Relation(options) => match raw {
-            // A field nobody filled in is an empty set, which is what "no references" is.
-            serde_json::Value::Null => Ok(FieldValue::Relation(vec![])),
-            serde_json::Value::Array(items) => {
-                let mut refs = Vec::with_capacity(items.len());
-                for item in items {
-                    let object = item.as_object().ok_or_else(|| {
-                        mismatch(field, "an array of { target, item } references")
-                    })?;
-                    let target = object
-                        .get("target")
-                        .and_then(|target| target.as_str())
-                        .ok_or_else(|| mismatch(field, "a reference with a target name"))?;
-                    if target != options.target.name() {
-                        return Err(format!(
-                            "Field '{}': this field points at '{}', but the value names '{target}'",
-                            field.name,
-                            options.target.name()
-                        ));
-                    }
-                    let item = match options.target {
-                        // A page's identity is its name, so there is no id to read - and one sent
-                        // anyway is a value the schema has nowhere to keep.
-                        RelationTarget::SinglePage { .. } => match object.get("item") {
-                            None | Some(serde_json::Value::Null) => None,
-                            Some(_) => {
-                                return Err(mismatch(
-                                    field,
-                                    "a reference to a single page, which has no item id",
-                                ));
-                            }
-                        },
-                        RelationTarget::Collection { .. } => Some(
-                            object
-                                .get("item")
-                                .and_then(|item| item.as_u64())
-                                .ok_or_else(|| mismatch(field, "an item id (unsigned integer)"))?,
-                        ),
-                    };
-                    refs.push(RelationRef {
-                        target: target.to_string(),
-                        item,
-                    });
-                }
-                // A list, not a set: the order is the one the editor put the references in, which
-                // is what a site showing "featured articles" in their chosen order needs. Writing
-                // the same reference twice is still writing it once, and the first place is where
-                // it stays.
-                let mut seen = std::collections::HashSet::new();
-                refs.retain(|reference| seen.insert(reference.target_owner()));
-                if options.is_single() && refs.len() > 1 {
-                    return Err(format!(
-                        "Field '{}': this field holds one reference, but {} were given",
-                        field.name,
-                        refs.len()
-                    ));
-                }
-                Ok(FieldValue::Relation(refs))
-            }
-            _ => Err(mismatch(field, "an array of { target, item } references")),
+            serde_json::Value::Null => Ok(FieldValue::Relation(None)),
+            serde_json::Value::Object(_) => Ok(FieldValue::Relation(Some(parse_reference(
+                field, options, raw,
+            )?))),
+            _ => Err(mismatch(field, "one { target, item } reference, or null")),
         },
         // Handled by `parse_field_value` before reaching here.
         FieldType::Array(_) | FieldType::CompositeField(_) => {
@@ -401,6 +358,53 @@ fn parse_array_element(
         "Field '{}[{index}]': value does not match any declared array item type",
         field.name
     ))
+}
+
+/// One reference off the wire: `{ "target": "…", "item": n }`, checked against the target the
+/// schema (or the array item type) declares.
+///
+/// A page's identity is its name, so a page reference carries no `item` - and one sent anyway is a
+/// value the schema has nowhere to keep.
+fn parse_reference(
+    field: &FieldSchema,
+    options: &RelationOptions,
+    raw: &serde_json::Value,
+) -> Result<RelationRef, String> {
+    let object = raw
+        .as_object()
+        .ok_or_else(|| mismatch(field, "a { target, item } reference"))?;
+    let target = object
+        .get("target")
+        .and_then(|target| target.as_str())
+        .ok_or_else(|| mismatch(field, "a reference with a target name"))?;
+    if target != options.target.name() {
+        return Err(format!(
+            "Field '{}': this field points at '{}', but the value names '{target}'",
+            field.name,
+            options.target.name()
+        ));
+    }
+    let item = match options.target {
+        RelationTarget::SinglePage { .. } => match object.get("item") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(_) => {
+                return Err(mismatch(
+                    field,
+                    "a reference to a single page, which has no item id",
+                ));
+            }
+        },
+        RelationTarget::Collection { .. } => Some(
+            object
+                .get("item")
+                .and_then(|item| item.as_u64())
+                .ok_or_else(|| mismatch(field, "an item id (unsigned integer)"))?,
+        ),
+    };
+    Ok(RelationRef {
+        target: target.to_string(),
+        item,
+    })
 }
 
 fn mismatch(field: &FieldSchema, expected: &str) -> String {
@@ -625,14 +629,20 @@ mod untyped_parsing_tests {
         assert!(FieldValueMap::from_untyped(&json!({ "seo": {} }), &schemas, &unknown).is_err());
     }
 
-    fn relation_field(name: &str, target: RelationTarget, has_many: bool) -> FieldSchema {
+    /// A relation: one reference, or - with `multiple` - an array of them, which is how several
+    /// are declared (see `docs/relations-design.md` §3).
+    fn relation_field(name: &str, target: RelationTarget, multiple: bool) -> FieldSchema {
+        let relation = FieldType::Relation(RelationOptions {
+            target,
+            inverse_name: None,
+        });
         field(
             name,
-            FieldType::Relation(RelationOptions {
-                target,
-                has_many,
-                inverse_name: None,
-            }),
+            if multiple {
+                FieldType::Array(vec![relation])
+            } else {
+                relation
+            },
             false,
         )
     }
@@ -644,7 +654,7 @@ mod untyped_parsing_tests {
     }
 
     #[test]
-    fn a_relation_value_keeps_the_order_it_was_written_in() {
+    fn an_array_of_relations_keeps_the_order_it_was_written_in() {
         let schema = vec![relation_field("author", author_target(), true)];
 
         // The order is the editor's, not the id order; the same reference written twice is written
@@ -661,28 +671,26 @@ mod untyped_parsing_tests {
         .unwrap();
         assert_eq!(
             parsed.0["author"],
-            FieldValue::Relation(vec![
-                RelationRef {
+            FieldValue::Array(vec![
+                FieldValue::Relation(Some(RelationRef {
                     target: "authors".to_string(),
                     item: Some(3),
-                },
-                RelationRef {
+                })),
+                FieldValue::Relation(Some(RelationRef {
                     target: "authors".to_string(),
                     item: Some(1),
-                },
+                })),
             ])
         );
 
-        // Nothing filled in is an empty set: null and an empty array both say the same, while a
-        // field nobody sent at all is simply absent (see the omitted-fields test).
-        for empty in [json!({ "author": null }), json!({ "author": [] })] {
-            assert_eq!(
-                FieldValueMap::from_untyped(&empty, &HashMap::new(), &schema)
-                    .unwrap()
-                    .0["author"],
-                FieldValue::Relation(vec![])
-            );
-        }
+        // Several references are an array, so "none" is the empty array - while a field nobody sent
+        // at all is simply absent (see the omitted-fields test).
+        assert_eq!(
+            FieldValueMap::from_untyped(&json!({ "author": [] }), &HashMap::new(), &schema)
+                .unwrap()
+                .0["author"],
+            FieldValue::Array(vec![])
+        );
         assert!(
             !FieldValueMap::from_untyped(&json!({}), &HashMap::new(), &schema)
                 .unwrap()
@@ -704,24 +712,20 @@ mod untyped_parsing_tests {
             json!({ "target": "home", "item": null }),
         ] {
             assert_eq!(
-                FieldValueMap::from_untyped(
-                    &json!({ "landing": [value] }),
-                    &HashMap::new(),
-                    &schema
-                )
-                .unwrap()
-                .0["landing"],
-                FieldValue::Relation(vec![RelationRef {
+                FieldValueMap::from_untyped(&json!({ "landing": value }), &HashMap::new(), &schema)
+                    .unwrap()
+                    .0["landing"],
+                FieldValue::Relation(Some(RelationRef {
                     target: "home".to_string(),
                     item: None,
-                }])
+                }))
             );
         }
 
         // An id for a page names something the schema has nowhere to keep.
         assert!(
             FieldValueMap::from_untyped(
-                &json!({ "landing": [{ "target": "home", "item": 1 }] }),
+                &json!({ "landing": { "target": "home", "item": 1 } }),
                 &HashMap::new(),
                 &schema
             )
@@ -752,7 +756,7 @@ mod untyped_parsing_tests {
             )
             .is_err()
         );
-        // A single reference holds one, not two; several is what `has_many` is for.
+        // A single reference holds one, not two; several is what an array of relations is for.
         assert!(
             FieldValueMap::from_untyped(
                 &json!({ "author": [
@@ -796,7 +800,7 @@ mod untyped_parsing_tests {
         let parsed = FieldValueMap::from_untyped(
             &json!({
                 "title": "Hello",
-                "author": [{ "target": "authors", "item": 1 }],
+                "author": { "target": "authors", "item": 1 },
                 "also": [
                     { "target": "authors", "item": 2 },
                     { "target": "authors", "item": 1 },
@@ -823,13 +827,13 @@ mod untyped_parsing_tests {
             vec![ItemOwner::collection_item("authors", 2)]
         );
         assert_eq!(stripped.0["title"], FieldValue::Text("Hello".to_string()));
-        assert_eq!(stripped.0["author"], FieldValue::Relation(vec![]));
+        assert_eq!(stripped.0["author"], FieldValue::Relation(None));
         assert_eq!(
             stripped.0["also"],
-            FieldValue::Relation(vec![RelationRef {
+            FieldValue::Array(vec![FieldValue::Relation(Some(RelationRef {
                 target: "authors".to_string(),
                 item: Some(2),
-            }])
+            }))])
         );
 
         // A value that does not name the target is not rewritten at all.
@@ -842,7 +846,7 @@ mod untyped_parsing_tests {
 
         // A page reference is a different target from a collection of the same name.
         let page = FieldValueMap::from_untyped(
-            &json!({ "author": [{ "target": "authors", "item": 1 }] }),
+            &json!({ "author": { "target": "authors", "item": 1 } }),
             &HashMap::new(),
             &schema,
         )
@@ -888,10 +892,10 @@ mod untyped_parsing_tests {
         ];
         let parsed = FieldValueMap::from_untyped(
             &json!({
-                "cta": { "label": "read this", "author": [{ "target": "authors", "item": 1 }] },
+                "cta": { "label": "read this", "author": { "target": "authors", "item": 1 } },
                 "blocks": [
-                    { "label": "first", "author": [{ "target": "authors", "item": 2 }] },
-                    { "label": "second", "author": [] },
+                    { "label": "first", "author": { "target": "authors", "item": 2 } },
+                    { "label": "second", "author": null },
                 ],
             }),
             &composites,
@@ -916,7 +920,7 @@ mod untyped_parsing_tests {
         let FieldValue::CompositeField(Some(cta)) = &stripped.0["cta"] else {
             panic!("expected a composite value");
         };
-        assert_eq!(cta.values.0["author"], FieldValue::Relation(vec![]));
+        assert_eq!(cta.values.0["author"], FieldValue::Relation(None));
         assert_eq!(
             cta.values.0["label"],
             FieldValue::Text("read this".to_string())
@@ -944,16 +948,26 @@ mod untyped_parsing_tests {
 
     #[test]
     fn a_required_relation_needs_at_least_one_reference() {
-        let required = |has_many| {
-            let mut field = relation_field("author", author_target(), has_many);
+        let required = |multiple| {
+            let mut field = relation_field("author", author_target(), multiple);
             field.required = true;
             field
         };
 
-        // A required relation is a relation that says something, whether it holds one or many.
-        for has_many in [false, true] {
-            let schema = required(has_many);
-            let empty = FieldValue::Relation(vec![]);
+        // A required relation says something whether it holds one reference or an array of them.
+        for multiple in [false, true] {
+            let schema = required(multiple);
+            let reference = RelationRef {
+                target: "authors".to_string(),
+                item: Some(1),
+            };
+            // Empty is `null` for one reference and `[]` for an array of them; both are "nothing",
+            // and a required field is refused either way.
+            let empty = if multiple {
+                FieldValue::Array(vec![])
+            } else {
+                FieldValue::Relation(None)
+            };
             assert_eq!(
                 empty
                     .validate_field_value(&schema, &HashMap::new())
@@ -961,10 +975,11 @@ mod untyped_parsing_tests {
                     .code,
                 "field_required"
             );
-            let filled = FieldValue::Relation(vec![RelationRef {
-                target: "authors".to_string(),
-                item: Some(1),
-            }]);
+            let filled = if multiple {
+                FieldValue::Array(vec![FieldValue::Relation(Some(reference))])
+            } else {
+                FieldValue::Relation(Some(reference))
+            };
             assert!(
                 filled
                     .validate_field_value(&schema, &HashMap::new())
@@ -1102,7 +1117,11 @@ pub enum FieldValue {
     DateTime(Option<DateTime<FixedOffset>>),
     Image(Option<ImageId>),
     CompositeField(Option<CompositeFieldValue>),
-    Relation(Vec<RelationRef>),
+    /// A reference to another collection's item, or to a single page: one, or none.
+    ///
+    /// Several references are an `Array` of these (see `docs/relations-design.md` §3): the element
+    /// carries its own target, which is what lets one array name more than one.
+    Relation(Option<RelationRef>),
     Array(Vec<FieldValue>),
     TextEnum(Vec<String>),
 }
@@ -1155,8 +1174,14 @@ impl<T> FieldValueMap<T> {
 /// Drop one reference from a value, wherever it sits.
 fn drop_reference(value: &mut FieldValue, target: &ItemOwner) {
     match value {
-        FieldValue::Relation(references) => {
-            references.retain(|reference| &reference.target_owner() != target);
+        FieldValue::Relation(reference) => {
+            // One reference: detaching it leaves the field holding nothing, which is `None`.
+            if reference
+                .as_ref()
+                .is_some_and(|reference| &reference.target_owner() == target)
+            {
+                *reference = None;
+            }
         }
         FieldValue::CompositeField(Some(composite)) => {
             for nested in composite.values.0.values_mut() {
@@ -1164,7 +1189,14 @@ fn drop_reference(value: &mut FieldValue, target: &ItemOwner) {
             }
         }
         FieldValue::Array(items) => {
-            for item in items {
+            // An array of relations is a list of references: detaching one takes it out rather than
+            // leaving a blank element where it was. A composite element that holds it is kept, and
+            // the recursion below is what empties it.
+            items.retain(|item| match item {
+                FieldValue::Relation(Some(reference)) => &reference.target_owner() != target,
+                _ => true,
+            });
+            for item in items.iter_mut() {
                 drop_reference(item, target);
             }
         }
@@ -1181,10 +1213,10 @@ pub struct RelationValue<'a> {
     pub path: String,
     /// Whether the schema asks for this field, which is what the publish-time rules turn on.
     pub required: bool,
-    /// What the references point at, as the schema declares it.
-    pub target: RelationTarget,
-    /// The references the value holds, in the canonical order they were stored in.
-    pub references: &'a [RelationRef],
+    /// The references the value holds, in the canonical order they were stored in: one for a
+    /// `Relation`, several for an array of them. Each carries its own target, because an array may
+    /// name more than one.
+    pub references: Vec<&'a RelationRef>,
 }
 
 /// Every relation a value holds, with the schema that declares it.
@@ -1216,13 +1248,12 @@ fn collect_relation_values<'a>(
     for field in schema {
         let path = format!("{prefix}{}", field.name);
         match &field.field_type {
-            FieldType::Relation(options) => {
-                if let Some(FieldValue::Relation(references)) = values.0.get(&field.name) {
+            FieldType::Relation(_) => {
+                if let Some(FieldValue::Relation(Some(reference))) = values.0.get(&field.name) {
                     found.push(RelationValue {
                         path,
                         required: field.required,
-                        target: options.target.clone(),
-                        references,
+                        references: vec![reference],
                     });
                 }
             }
@@ -1244,9 +1275,25 @@ fn collect_relation_values<'a>(
                 let Some(FieldValue::Array(elements)) = values.0.get(&field.name) else {
                     continue;
                 };
+                // An array of relations *is* several references, and they are one field's: the rule
+                // is "this field has no published target left", which a partially published array
+                // passes (see `docs/relations-design.md` §4). Its elements may name different
+                // targets, so the set is what is gathered, not each element on its own.
+                let references: Vec<&RelationRef> = elements
+                    .iter()
+                    .filter_map(|element| match element {
+                        FieldValue::Relation(Some(reference)) => Some(reference),
+                        _ => None,
+                    })
+                    .collect();
+                if !references.is_empty() {
+                    found.push(RelationValue {
+                        path: path.clone(),
+                        required: field.required,
+                        references,
+                    });
+                }
                 for (index, element) in elements.iter().enumerate() {
-                    // Only a composite element can hold a relation: a relation is never an array
-                    // item itself (see `validate_field_type`).
                     let FieldValue::CompositeField(Some(composite)) = element else {
                         continue;
                     };
@@ -1293,11 +1340,10 @@ pub fn referenced_items<T>(item: &FieldValueMap<T>) -> Vec<ItemOwner> {
 /// Add every item a value points at, wherever the references in it sit.
 fn collect_referenced_items(value: &FieldValue, found: &mut std::collections::BTreeSet<ItemOwner>) {
     match value {
-        FieldValue::Relation(references) => {
-            for reference in references {
-                found.insert(reference.target_owner());
-            }
+        FieldValue::Relation(Some(reference)) => {
+            found.insert(reference.target_owner());
         }
+        FieldValue::Relation(None) => {}
         FieldValue::CompositeField(Some(composite)) => {
             for nested in composite.values.0.values() {
                 collect_referenced_items(nested, found);
@@ -1324,7 +1370,7 @@ pub enum FieldValueResponse {
     DateTime(Option<DateTime<FixedOffset>>),
     Image(Option<ImageResponse>),
     CompositeField(Option<CompositeFieldValueResponse>),
-    Relation(Vec<RelationRef>),
+    Relation(Option<RelationRef>),
     Array(Vec<FieldValueResponse>),
     TextEnum(Vec<String>),
 }
@@ -1683,10 +1729,22 @@ impl FieldValue {
                                     }
                                 }
                             }
-                            FieldValue::Relation(_) => {
-                                // A relation can never be an array item (see `validate_field_type`),
-                                // so an element that turned out to be one is the wrong kind.
-                                return Err(FieldRefusal::type_mismatch(&item));
+                            FieldValue::Relation(reference) => {
+                                // An element is one reference, and the target it names has to be
+                                // one this array declares - which is also how the targets are told
+                                // apart, since the element carries it. A blank element holds
+                                // nothing, which every array allows.
+                                let declared = reference.as_ref().is_none_or(|reference| {
+                                    schemas.iter().any(|candidate| match candidate {
+                                        FieldType::Relation(options) => {
+                                            options.target.name() == reference.target
+                                        }
+                                        _ => false,
+                                    })
+                                });
+                                if !declared {
+                                    return Err(FieldRefusal::type_mismatch(&item));
+                                }
                             }
                         }
                     }
@@ -1762,7 +1820,8 @@ impl FieldValue {
                             | FieldValue::Boolean(_)
                             | FieldValue::Date(_)
                             | FieldValue::DateTime(_)
-                            | FieldValue::Image(_) => {
+                            | FieldValue::Image(_)
+                            | FieldValue::Relation(_) => {
                                 if schemas
                                     .iter()
                                     .any(|field_type| value.matches_type(field_type))
@@ -1770,9 +1829,6 @@ impl FieldValue {
                                     formatted_values.push(value.clone());
                                 }
                             }
-                            // A relation is never an array item (see `validate_field_type`), so there
-                            // is no declared type for it to belong to.
-                            FieldValue::Relation(_) => continue,
                             FieldValue::CompositeField(cv) => match cv {
                                 Some(cv) => {
                                     let s = schemas
@@ -2445,19 +2501,18 @@ mod tests {
                         is_title: false,
                         show_in_list: false,
                         name: "author".to_string(),
-                        field_type: FieldType::Relation(RelationOptions {
+                        field_type: FieldType::Array(vec![FieldType::Relation(RelationOptions {
                             target: RelationTarget::Collection {
                                 name: "authors".to_string(),
                             },
-                            has_many: true,
                             inverse_name: Some("articles".to_string()),
-                        }),
+                        })]),
                         required: true,
                         width: 12,
                         height: 1,
                         unique: false,
                     };
-                    let json_schema = r#"{"name":"author","field_type":{"Relation":{"target":{"kind":"collection","name":"authors"},"has_many":true,"inverse_name":"articles"}},"required":true,"width":12,"height":1}"#;
+                    let json_schema = r#"{"name":"author","field_type":{"Array":[{"Relation":{"target":{"kind":"collection","name":"authors"},"inverse_name":"articles"}}]},"required":true,"width":12,"height":1}"#;
                     (field_schema, json_schema)
                 }
                 FieldType::Array(_) => {
@@ -2557,11 +2612,11 @@ mod tests {
                     r#"{"CompositeField":{"id":"comp_1","values":{"sub_field":{"Text":"Value"}}}}"#,
                 ),
                 FieldType::Relation(_) => (
-                    FieldValue::Relation(vec![RelationRef {
+                    FieldValue::Relation(Some(RelationRef {
                         target: "authors".to_string(),
                         item: Some(7),
-                    }]),
-                    r#"{"Relation":[{"target":"authors","item":7}]}"#,
+                    })),
+                    r#"{"Relation":{"target":"authors","item":7}}"#,
                 ),
                 FieldType::Array(_) => (
                     FieldValue::Array(vec![
@@ -2597,7 +2652,7 @@ mod tests {
                 FieldType::Date => (FieldValue::Date(None), r#"{"Date":null}"#),
                 FieldType::DateTime => (FieldValue::DateTime(None), r#"{"DateTime":null}"#),
                 FieldType::Image => (FieldValue::Image(None), r#"{"Image":null}"#),
-                FieldType::Relation(_) => (FieldValue::Relation(vec![]), r#"{"Relation":[]}"#),
+                FieldType::Relation(_) => (FieldValue::Relation(None), r#"{"Relation":null}"#),
                 FieldType::Array(_) => (FieldValue::Array(vec![]), r#"{"Array":[]}"#),
                 FieldType::TextEnum(_) => (FieldValue::TextEnum(vec![]), r#"{"TextEnum":[]}"#),
                 _ => continue,
@@ -2648,7 +2703,7 @@ mod tests {
                     assert_eq!(default_value, FieldValue::CompositeField(None))
                 }
                 FieldType::Array(_) => assert_eq!(default_value, FieldValue::Array(vec![])),
-                FieldType::Relation(_) => assert_eq!(default_value, FieldValue::Relation(vec![])),
+                FieldType::Relation(_) => assert_eq!(default_value, FieldValue::Relation(None)),
                 FieldType::TextEnum(_) => assert_eq!(default_value, FieldValue::TextEnum(vec![])),
             }
         }
@@ -2881,23 +2936,22 @@ mod tests {
                         is_title: false,
                         show_in_list: false,
                         name: "author".to_string(),
-                        field_type: FieldType::Relation(RelationOptions {
+                        field_type: FieldType::Array(vec![FieldType::Relation(RelationOptions {
                             target: RelationTarget::Collection {
                                 name: "authors".to_string(),
                             },
-                            has_many: true,
                             inverse_name: None,
-                        }),
+                        })]),
                         required: true,
                         width: 12,
                         height: 1,
                         unique: false,
                     },
                     HashMap::new(),
-                    FieldValue::Relation(vec![RelationRef {
+                    FieldValue::Array(vec![FieldValue::Relation(Some(RelationRef {
                         target: "authors".to_string(),
                         item: Some(7),
-                    }]),
+                    }))]),
                 ),
             };
             let result = field_value.validate_field_value(&field_schema, &composite_schemas);
@@ -2925,10 +2979,10 @@ mod tests {
                 FieldType::Array(_) => {
                     FieldValue::Array(vec![FieldValue::Text("Item".to_string())])
                 }
-                FieldType::Relation(_) => FieldValue::Relation(vec![RelationRef {
+                FieldType::Relation(_) => FieldValue::Relation(Some(RelationRef {
                     target: "authors".to_string(),
                     item: Some(1),
-                }]),
+                })),
                 FieldType::TextEnum(_) => FieldValue::TextEnum(vec!["Option".to_string()]),
             };
             assert!(
@@ -3297,10 +3351,10 @@ mod tests {
                 ),
                 FieldType::Image => (FieldValue::Image(Some(ImageId::from_u64(1))), true),
                 FieldType::Relation(_) => (
-                    FieldValue::Relation(vec![RelationRef {
+                    FieldValue::Relation(Some(RelationRef {
                         target: "authors".to_string(),
                         item: Some(3),
-                    }]),
+                    })),
                     true,
                 ),
                 FieldType::CompositeField(_) | FieldType::Array(_) | FieldType::TextEnum(_) => {
@@ -4005,14 +4059,14 @@ mod tests {
                 FieldType::Relation(_) => (
                     field_type,
                     HashMap::new(),
-                    FieldValue::Relation(vec![RelationRef {
+                    FieldValue::Relation(Some(RelationRef {
                         target: "authors".to_string(),
                         item: Some(7),
-                    }]),
-                    FieldValue::Relation(vec![RelationRef {
+                    })),
+                    FieldValue::Relation(Some(RelationRef {
                         target: "authors".to_string(),
                         item: Some(7),
-                    }]),
+                    })),
                 ),
                 FieldType::TextEnum(_) => (
                     FieldType::TextEnum(vec!["Option1".to_string()]),
