@@ -1,6 +1,7 @@
-import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -12,7 +13,7 @@ import { FieldSchema, isMarkdownFieldSchema } from 'app/models/schema/fields';
 import { FieldValue } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
-import { LibraryPicker } from 'app/shared/library-picker/library-picker';
+import { openImagePicker } from 'app/shared/library-picker/library-picker';
 import { absoluteApiUrl } from 'app/shared/share-link';
 
 /** One of the buttons that writes syntax, and what it wraps or prefixes. */
@@ -43,7 +44,6 @@ interface MarkdownAction {
   selector: 'app-markdown-field',
   imports: [
     FormsModule,
-    LibraryPicker,
     MatButtonModule,
     MatFormFieldModule,
     MatIconModule,
@@ -56,6 +56,7 @@ interface MarkdownAction {
 })
 export class MarkdownField {
   private images = inject(ImagesService);
+  private dialog = inject(MatDialog);
   /** The wording of the placeholders and prompts the buttons put up. */
   private i18n = inject(TranslocoService);
 
@@ -67,8 +68,6 @@ export class MarkdownField {
   @Output() valueChange = new EventEmitter<FieldValue>();
   @Output() errorChange = new EventEmitter<Message | null>();
 
-  /** Whether the library picker is open, for the image button. */
-  public pickerOpen = signal(false);
   /**
    * Where a chosen image goes: the box and the range that was selected when the button was pressed.
    *
@@ -223,17 +222,20 @@ export class MarkdownField {
     this.wrap(input, '[', `](${address})`, 'content.mdLinkPlaceholder');
   }
 
-  /** The image button: pick from the library, and put the durable link where the caret is. */
+  /** The image button: pick from the library (or upload there), and put the link where the caret is. */
   private pickImage(input: HTMLTextAreaElement) {
     this.imageTarget = { input, start: input.selectionStart, end: input.selectionEnd };
-    this.pickerOpen.set(true);
+    openImagePicker(this.dialog).subscribe((image) => {
+      if (image) {
+        this.insertImage(image);
+      }
+    });
   }
 
   /** The image the picker chose: the durable link, where the caret was. */
   insertImage(image: ImageEntry) {
     const target = this.imageTarget;
     this.imageTarget = null;
-    this.pickerOpen.set(false);
     if (target === null) {
       return;
     }

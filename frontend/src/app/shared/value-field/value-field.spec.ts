@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { of } from 'rxjs';
 
 import { FieldSchema } from 'app/models/schema/fields';
@@ -39,6 +40,12 @@ describe('ValueField', () => {
   });
 
   /** Uses `setInput` so the inputs are in place before the first change detection. */
+  // A dialog is attached to the document rather than to the fixture, so one left open is a `.thumb`
+  // the next spec finds.
+  afterEach(() => {
+    TestBed.inject(MatDialog).closeAll();
+  });
+
   function create(fieldSchema: FieldSchema, value: FieldValue = null): ValueField {
     fixture = TestBed.createComponent(ValueField);
     fixture.componentRef.setInput('field', fieldSchema);
@@ -296,14 +303,16 @@ describe('ValueField', () => {
 
     // The image comes from the same library the image fields use, and goes in as the durable link
     // the library's own copy button hands out.
-    it('inserts a library image at the caret', () => {
+    it('inserts a library image at the caret', async () => {
       const { emitted, pressed } = markdown('before after', [7, 7]);
 
       pressed('Image');
-      fixture.detectChanges();
-      const thumbnail = fixture.nativeElement.querySelector('.library .thumb') as HTMLButtonElement;
+      // The picker is a dialog now: its wall is attached to the document, not to the field.
+      await fixture.whenStable();
+      const thumbnail = document.querySelector('.thumb') as HTMLButtonElement;
       expect(thumbnail, 'the library picker').toBeTruthy();
       thumbnail.click();
+      await fixture.whenStable();
 
       expect(emitted.length).toBe(1);
       // A Markdown value is a string on the wire; the cast is what says so.
@@ -543,7 +552,7 @@ describe('ValueField', () => {
     expect(component.value).toEqual({ id: 4, url: '/images/photo.png' });
   });
 
-  it('edits an image array that lives inside a composite', () => {
+  it('edits an image array that lives inside a composite', async () => {
     const component = create(field('block', { CompositeField: { id: 'gallery' } }), {
       images: [{ id: 3, url: '/images/logo.png' }],
     });
@@ -554,12 +563,12 @@ describe('ValueField', () => {
     expect(nested.length).toBe(1);
 
     (query('fieldset.composite button.array-add') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    (
-      fixture.nativeElement.querySelectorAll('fieldset.composite .thumb')[1] as HTMLButtonElement
-    ).click();
-    fixture.detectChanges();
-    (query('fieldset.composite button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    // One picker serves the whole form, so the wall is in the document rather than inside the field.
+    (document.querySelectorAll('.thumb')[1] as HTMLButtonElement).click();
+    await fixture.whenStable();
+    (document.querySelector('button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(component.value).toEqual({

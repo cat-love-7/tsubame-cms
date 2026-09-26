@@ -275,10 +275,31 @@ page.on('dialog', answerDialog);
  * The form's own save button.
  *
  * By accessible name and exact: the toolbar offers "Save and publish" whenever the form holds
- * unsaved edits, and a substring match would press that instead - which publishes.
+ * unsaved edits, and a substring match would press that instead - which publishes. The toolbar
+ * carries a plain "Save" of its own now, so this takes the last match, which is the one at the end
+ * of the form - the one that is there whatever the form holds.
  */
-const save = () => page.getByRole('button', { name: 'Save', exact: true });
+const save = () => page.getByRole('button', { name: 'Save', exact: true }).last();
 
+/**
+ * Save the open form and wait for the save to land.
+ *
+ * Saving keeps the reader on the item now, so the navigation that used to announce "the save
+ * finished" is gone; the save's own answer is what says so, and waiting for it is what keeps the
+ * API reads below from racing the write.
+ */
+async function saveAndWait() {
+  const answered = page
+    .waitForResponse(
+      (response) =>
+        /\/items(\/\d+)?$/.test(new URL(response.url()).pathname) &&
+        ['POST', 'PUT'].includes(response.request().method()),
+      { timeout: 15000 },
+    )
+    .catch(() => {});
+  await save().click();
+  await answered;
+}
 /** Data rows only: the "No items yet." row has no status badge. */
 const dataRows = () => page.locator('table.items tbody tr:has(app-item-status)');
 const firstRow = () => dataRows().first();
@@ -486,8 +507,7 @@ async function aPlainArrayEditedAsJSON() {
 
   // Put it back so the rest of the run sees a valid item.
   await scores.fill('[1, 2]');
-  await save().click();
-  await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  await saveAndWait();
   const savedScores = await api(
     'GET',
     `/models/collections/${COLLECTION}/items/1`,
@@ -875,10 +895,7 @@ async function pickImagesWhileEditing() {
     `${arrayItems} → ${arrayAfterUpload}`,
   );
 
-  await save().click();
-  await page
-    .waitForURL(`${BASE}/collections/${IMAGE_COLLECTION}`, { timeout: 15000 })
-    .catch(() => {});
+  await saveAndWait();
 
   const saved = await api(
     'GET',
@@ -973,10 +990,7 @@ async function anImageArrayInsideAComposite() {
   const compositeItems = await composite.locator('.array-item').count();
   check('複合フィールド内の画像配列にも追加できる', compositeItems === 2, `${compositeItems} 件`);
 
-  await save().click();
-  await page
-    .waitForURL(`${BASE}/collections/${COMPOSITE_COLLECTION}`, { timeout: 15000 })
-    .catch(() => {});
+  await saveAndWait();
   const compositeSaved = await api(
     'GET',
     `/models/collections/${COMPOSITE_COLLECTION}/items/1`,
@@ -1139,8 +1153,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   await titleField.waitFor({ timeout: 15000 });
   const previewWording = `preview wording ${Date.now()}`;
   await titleField.fill(previewWording);
-  await save().click();
-  await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
+  await saveAndWait();
 
   // Saving was not publishing: the delivery API still serves the older wording...
   const publishedCopy = await api('GET', `/content/collections/${COLLECTION}/items/1`);
@@ -1434,9 +1447,10 @@ async function rolesDecideWhatIsOffered() {
 
   await editor.page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await editor.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
+  // Two: the toolbar's and the form's. An editor is offered both acts of saving and no publishing.
   check(
     '編集ロール: 保存はできるが公開はできない',
-    (await editor.page.getByRole('button', { name: 'Save', exact: true }).count()) === 1 &&
+    (await editor.page.getByRole('button', { name: 'Save', exact: true }).count()) === 2 &&
       (await editor.page.locator('button:has-text("Publish")').count()) === 0,
   );
 
@@ -2037,10 +2051,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // The item the relation points at exists: the lists in the schema editor are the site's.
   await related.fill(`[{"target":"${COLLECTION}","item":1}]`);
 
-  await save().click();
-  await page
-    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
-    .catch(() => {});
+  await saveAndWait();
   const builtItem = await api(
     'GET',
     `/models/collections/${SCHEMA_COLLECTION}/items/1`,
@@ -2186,10 +2197,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
       .catch(() => false),
   );
 
-  await save().click();
-  await page
-    .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
-    .catch(() => {});
+  await saveAndWait();
   const nestedItem = await api(
     'GET',
     `/models/collections/${SCHEMA_COLLECTION}/items/1`,
@@ -2344,7 +2352,11 @@ async function theSchemaEditorDrivenFromTheScreen() {
 
   // Saving it with a title of its own is the point of clearing the field.
   await page.locator('app-value-field input').first().fill('a copied item');
-  await save().click();
+  await saveAndWait();
+  // Saving stays on the item now; the list below is the toolbar's own button, which is also what
+  // the batch checks that follow are looking at.
+  check('保存しても編集画面にとどまる', page.url().includes('/edit/'), page.url());
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});

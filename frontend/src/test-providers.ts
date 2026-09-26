@@ -1,3 +1,5 @@
+import { ANIMATION_MODULE_TYPE } from '@angular/core';
+
 import { provideTestTransloco } from './app/core/i18n/testing';
 
 /**
@@ -8,4 +10,10 @@ import { provideTestTransloco } from './app/core/i18n/testing';
  * confusing failure when one was forgotten. The tests fixed to English is exactly step 5 of
  * `docs/i18n.md`.
  */
-export default [...provideTestTransloco()];
+export default [
+  // Material reads this to decide whether a component's transition has to be waited for. A test
+  // environment has no animation clock, so a dialog's close would be a timer the spec never reaches;
+  // with it the close completes in a microtask, and `whenStable()` is enough to see the result.
+  { provide: ANIMATION_MODULE_TYPE, useValue: 'NoopAnimations' },
+  ...provideTestTransloco(),
+];

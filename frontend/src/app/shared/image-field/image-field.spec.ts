@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { of, throwError } from 'rxjs';
 
 import { apiUrl } from 'app/core/api-url';
@@ -49,6 +50,11 @@ class StubImagesService {
     });
   };
   deleteImage = () => of(void 0);
+}
+
+/** Close every dialog: they are attached to the document, not to the fixture. */
+function closeDialogs() {
+  TestBed.inject(MatDialog).closeAll();
 }
 
 /** A change event for a file input that was given one file. */
@@ -145,41 +151,50 @@ describe('ImageField', () => {
     expect(component.uploading()).toBe(false);
   });
 
-  it('loads the image library when the picker is opened, and only then', () => {
+  // The picker is a dialog: nothing is read until it is opened, because nothing is on screen until
+  // then.
+  it('reads the library when the picker is opened, and not before', async () => {
     const component = create();
     expect(images.listCalls).toBe(0);
 
-    // The picker reads the library when it is shown, which is a change detection away: what this
-    // widget does is open it.
     component.openLibrary();
-    fixture.detectChanges();
-    expect(images.listCalls).toBe(1);
-
-    // Closing and reopening reuses what was already fetched.
-    component.closePicker();
-    fixture.detectChanges();
-    component.openLibrary();
-    fixture.detectChanges();
+    await fixture.whenStable();
     expect(images.listCalls).toBe(1);
   });
 
-  it('picks an already uploaded image instead of uploading a new one', () => {
+  it('re-reads the library for each opening, not once for the screen', async () => {
+    const component = create();
+    component.openLibrary();
+    await fixture.whenStable();
+    closeDialogs();
+    await fixture.whenStable();
+
+    // A fresh read is the point of a shared library: an image somebody else uploaded a minute ago
+    // should be there.
+    component.openLibrary();
+    await fixture.whenStable();
+    expect(images.listCalls).toBe(2);
+  });
+
+  it('picks an already uploaded image instead of uploading a new one', async () => {
     const component = create();
     const chosen: unknown[] = [];
     component.valueChange.subscribe((value) => chosen.push(value));
 
     component.openLibrary();
-    fixture.detectChanges();
+    await fixture.whenStable();
 
-    const thumbs = fixture.nativeElement.querySelectorAll<HTMLElement>('.thumb');
+    const thumbs = document.querySelectorAll<HTMLElement>('.thumb');
     expect(thumbs.length).toBe(2);
 
     thumbs[0].click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     // The value keeps the shape an upload produces, so the server cannot tell them apart.
     expect(chosen).toEqual([{ id: 3, url: '/images/logo.png' }]);
-    expect(component.pickerOpen()).toBe(false);
+    // Choosing is the whole gesture: the dialog closes itself rather than asking for a second press.
+    expect(document.querySelector('.thumb')).toBeNull();
   });
 
   it('leaves the file control out where the value is only being shown', () => {
@@ -196,6 +211,9 @@ describe('ImageField', () => {
   // The HTTP client is provided because the library picker reads through it; nothing in these
   // specs talks to it directly, so anything outstanding would be a leak.
   afterEach(() => {
+    // A dialog lives in the document rather than in the fixture, so one left open is a `.thumb`
+    // the next spec finds.
+    closeDialogs();
     TestBed.inject(HttpTestingController).verify();
   });
 });

@@ -1,14 +1,23 @@
-/// The picker takes a row of its own, under the preview and the buttons.
+/// The wall of tiles, which is now the whole body of the dialog rather than a row under a control.
 .library {
-  flex-basis: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 8px;
-  max-height: 200px;
+  padding: 4px;
+  // Two rows' worth before it scrolls: the wall is what the dialog is for, and the form behind it is
+  // not on screen to be crowded.
+  max-height: 46vh;
   overflow-y: auto;
-  padding: 8px;
-  border: 1px solid var(--mat-sys-outline-variant);
-  border-radius: 8px;
+}
+
+.note {
+  grid-column: 1 / -1;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.error {
+  margin: 0 0 8px;
+  color: var(--mat-sys-error);
 }
 
 .thumb {
@@ -49,6 +58,11 @@
   }
 }
 
-.picker-actions {
+.load-more {
   margin-top: 8px;
+}
+
+/* Upload on the left, the choices on the right. */
+.spacer {
+  flex: 1 1 auto;
 }

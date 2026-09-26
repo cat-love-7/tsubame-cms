@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { By } from '@angular/platform-browser';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { of } from 'rxjs';
 
 import { FieldSchema } from 'app/models/schema/fields';
@@ -94,6 +95,12 @@ describe('ArrayField', () => {
         { provide: ImagesService, useValue: images },
       ],
     }).compileComponents();
+  });
+
+  // A dialog lives in the document rather than in the fixture, so one left open is a `.thumb` the
+  // next spec finds.
+  afterEach(() => {
+    TestBed.inject(MatDialog).closeAll();
   });
 
   /** Uses the host's inputs, so they are in place before the first change detection. */
@@ -228,26 +235,27 @@ describe('ArrayField', () => {
     expect(fixture.nativeElement.querySelectorAll('.array-item').length).toBe(0);
   });
 
-  it('adds several images from the library at once', () => {
+  it('adds several images from the library at once', async () => {
     const component = create(field('covers', { Array: ['Image'] }), []);
     const changes: FieldValue[] = [];
     component.valueChange.subscribe((value) => changes.push(value));
 
     (query('button.array-add') as HTMLButtonElement).click();
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     // Multi mode: clicking ticks rather than choosing, until the add button is pressed.
-    const thumbs = fixture.nativeElement.querySelectorAll<HTMLElement>('.thumb');
+    const thumbs = document.querySelectorAll<HTMLElement>('.thumb');
     thumbs[0].click();
     thumbs[1].click();
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     // Tick marks are the picker's own state: what matters to the editor is only that ticking
     // has not chosen anything yet.
-    expect(fixture.nativeElement.querySelectorAll('.thumb.selected').length).toBe(2);
+    expect(document.querySelectorAll('.thumb.selected').length).toBe(2);
     expect(changes).toEqual([]);
 
-    (query('button.array-add-selected') as HTMLButtonElement).click();
+    (document.querySelector('button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(changes).toEqual([
@@ -257,21 +265,23 @@ describe('ArrayField', () => {
       ],
     ]);
     expect(fixture.nativeElement.querySelectorAll('.array-item').length).toBe(2);
-    expect(component.pickerOpen()).toBe(false);
+    // Confirming is the whole gesture: the dialog is gone.
+    expect(document.querySelector('.thumb')).toBeNull();
   });
 
-  it('appends to the images an array already holds', () => {
+  it('appends to the images an array already holds', async () => {
     const component = create(field('covers', { Array: ['Image'] }), [
       { id: 4, url: '/images/photo.png' },
     ]);
 
     (query('button.array-add') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    (fixture.nativeElement.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
-    fixture.detectChanges();
+    await fixture.whenStable();
+    (document.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
+    await fixture.whenStable();
     const chosen: FieldValue[] = [];
     component.valueChange.subscribe((value) => chosen.push(value));
-    (query('button.array-add-selected') as HTMLButtonElement).click();
+    (document.querySelector('button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(chosen.at(-1)).toEqual([
@@ -299,14 +309,15 @@ describe('ArrayField', () => {
     expect(emitted.at(-1)).toEqual([{ id: 3, url: '/images/logo.png' }]);
   });
 
-  it('keeps the JSON view in step with the thumbnails', () => {
+  it('keeps the JSON view in step with the thumbnails', async () => {
     const component = create(field('covers', { Array: ['Image'] }), []);
 
     (query('button.array-add') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    (fixture.nativeElement.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
-    fixture.detectChanges();
-    (query('button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    (document.querySelectorAll('.thumb')[0] as HTMLButtonElement).click();
+    await fixture.whenStable();
+    (document.querySelector('button.array-add-selected') as HTMLButtonElement).click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
     expect(component.arrayText).toBe('[{"id":3,"url":"/images/logo.png"}]');

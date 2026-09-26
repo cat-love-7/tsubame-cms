@@ -13,6 +13,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -35,7 +36,7 @@ import { FieldValue, withDefaults } from 'app/models/values/fields';
 import { ImageEntry } from 'app/repositories/media/images.repository';
 import { ImagesService } from 'app/services/media/images.service';
 import { CompositeFieldsService } from 'app/services/schema/composite-fields.service';
-import { LibraryPicker } from 'app/shared/library-picker/library-picker';
+import { openImagePickerMany } from 'app/shared/library-picker/library-picker';
 import { ProblemCollector } from 'app/shared/value-field/problem-collector';
 
 /**
@@ -70,7 +71,6 @@ export interface ArrayElementContext {
   selector: 'app-array-field',
   imports: [
     NgTemplateOutlet,
-    LibraryPicker,
     FormsModule,
     MatButtonModule,
     MatFormFieldModule,
@@ -86,6 +86,7 @@ export interface ArrayElementContext {
 export class ArrayField implements OnInit, OnChanges {
   private images = inject(ImagesService);
   private compositeFields = inject(CompositeFieldsService);
+  private dialog = inject(MatDialog);
 
   @Input({ required: true }) field!: FieldSchema;
   @Input() value: FieldValue = null;
@@ -101,8 +102,6 @@ export class ArrayField implements OnInit, OnChanges {
   public arrayText = '';
   /** An image array is shown as thumbnails unless the JSON view is asked for. */
   public jsonMode = signal(false);
-  /** Whether the library picker is open. */
-  public pickerOpen = signal(false);
   public uploading = signal(false);
   public imageUrl = apiUrl;
 
@@ -260,18 +259,17 @@ export class ArrayField implements OnInit, OnChanges {
 
   /** Show the library, to add images to an image array. */
   openLibrary() {
-    this.pickerOpen.set(true);
-  }
-
-  closePicker() {
-    this.pickerOpen.set(false);
+    openImagePickerMany(this.dialog).subscribe((chosen) => {
+      if (chosen) {
+        this.addChosenImages(chosen);
+      }
+    });
   }
 
   /** Append the images the picker confirmed, in the order it listed them. */
   addChosenImages(chosen: ImageEntry[]) {
     const images = chosen.map((image) => ({ id: image.id, url: image.url }));
     this.updateArray([...this.arrayItems(), ...images]);
-    this.closePicker();
     this.errorChange.emit(null);
   }
 

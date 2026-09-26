@@ -43,11 +43,3 @@
     }
   </mat-form-field>
 </div>
-
-<!-- The image button's picker: one image, inserted where the caret was. -->
-<app-library-picker
-  [open]="pickerOpen()"
-  (chosen)="insertImage($event)"
-  (closed)="pickerOpen.set(false)"
-  (failed)="errorChange.emit($event)"
-/>

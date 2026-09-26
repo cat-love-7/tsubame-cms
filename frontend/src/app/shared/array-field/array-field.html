@@ -189,13 +189,3 @@
 } @else {
   <ng-container *ngTemplateOutlet="jsonArray" />
 }
-
-<!-- The library, for adding images to an image array: the picker owns what is only about picking,
-     and this widget decides what a chosen image means. -->
-<app-library-picker
-  [open]="pickerOpen()"
-  [multi]="true"
-  (chosenMany)="addChosenImages($event)"
-  (closed)="closePicker()"
-  (failed)="errorChange.emit($event)"
-/>

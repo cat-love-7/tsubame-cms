@@ -29,7 +29,7 @@ slightly different greys and reds per screen - and that is what was actually hap
 | Message | `.error` / `.status` / `.notice` / `.note` / `.hint` | Failure, success, caution, supplement. All the same shape, only the colour separates the meanings |
 | Chip | `.draft-note` | A small state next to the heading, such as unpublished changes |
 | Supporting text | `.updated` / `.publisher` / `.user-email` / `.count` | Date and time, publisher, count. Do not let them compete with the body |
-| Action row | `.actions` / `.array-actions` / `.picker-actions` / `.resource-actions` / `.schema-actions` / `.element-actions` | A row of buttons. Do not decide the spacing per screen |
+| Action row | `.actions` / `.array-actions` / `.picker-actions` / `.resource-actions` / `.schema-actions` / `.element-actions` | A row of buttons. Do not decide the spacing per screen. A row inside a dialog is Material's `mat-dialog-actions` |
 | Table | `table.items` / `table.accounts`, `.mat-mdc-table`, `.empty` | A plain table and a `mat-table` look the same |
 | Link | `.preview-link` | The URL to hand out (long, so it wraps) |
 | Field | `.field-grid` / `.field-cell` / `.field-cell.problem` | The same grid in schema editing and content editing. `problem` is a field the server rejected |
@@ -112,6 +112,13 @@ the same file.
   ignored on the content editing screen, and the contents were all stacked vertically at the same width (which also disagreed with
   the preview on the schema editing screen). Inside a composite is now drawn with the same 12-column grid. The column count counts **the composite
   field's own width** as 12 (`.field-grid` is nested inside `.composite`).
+- **The image picker is a dialog, and it uploads** (added 2026-09). The wall of tiles used to be a panel
+  *under* the control that opened it: taller than the form around it, so it pushed everything below it down
+  and then scrolled inside a 200px box - and the Markdown box has no upload of its own, so an empty library
+  was a dead end there ("upload one first" with nothing to upload with). It is `MatDialog` now - the only
+  dialog in the app - carrying its own upload, closing as soon as an image is chosen. The same component
+  serves the image field, the image array and the Markdown image button; the file controls those fields
+  already had stay, because a file in hand is one gesture instead of two.
 
 ## 5. Discrepancies between schema editing and content editing (found and fixed in the 2026-09 audit)
 

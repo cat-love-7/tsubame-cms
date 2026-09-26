@@ -187,6 +187,7 @@
     "allPages": "All pages",
     "editSchema": "Edit schema",
     "imagesEmptyHint": "No images yet. Upload one here, or from an image field while editing content.",
+    "chooseImage": "Choose an image",
     "uploadImage": "Upload image",
     "imageMeta": "id {{id}} · {{uploaded}}",
     "imageTooLarge": "This image is {{size}} MB; images may be up to {{max}} MB.",

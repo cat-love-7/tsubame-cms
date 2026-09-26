@@ -22,10 +22,3 @@
     <span>{{ 'content.uploading' | transloco }}</span>
   }
 </div>
-
-<app-library-picker
-  [open]="pickerOpen()"
-  (chosen)="chooseImage($event)"
-  (closed)="closePicker()"
-  (failed)="errorChange.emit($event)"
-/>

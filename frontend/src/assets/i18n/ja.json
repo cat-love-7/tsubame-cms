@@ -187,6 +187,7 @@
     "allPages": "ページ一覧",
     "editSchema": "スキーマを編集",
     "imagesEmptyHint": "まだ画像がありません。ここでアップロードするか、コンテンツ編集中に画像フィールドからアップロードしてください。",
+    "chooseImage": "画像を選ぶ",
     "uploadImage": "画像をアップロード",
     "imageMeta": "ID {{id}} · {{uploaded}}",
     "imageTooLarge": "この画像は {{size}} MB です。画像は {{max}} MB までです。",
