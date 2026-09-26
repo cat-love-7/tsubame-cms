@@ -33,6 +33,7 @@ two binaries read.
 | `scripts/test-frontend.sh` | the Angular specs | `npm ci` |
 | `scripts/test-e2e.sh` | a real browser against a real server, end to end | Chromium; ports 8080 and 4200 free |
 | `scripts/test-gatsby-source.sh` | the Gatsby source plugin | `node` |
+| `scripts/test-gatsby-build.sh` | the plugin under a real `gatsby build` | `npm install` in `packages/gatsby-source-tsubame` (it is skipped without it) |
 | `scripts/test-preview.sh` | the preview renderer | `node` |
 | `scripts/coverage.sh` | coverage for the Rust and Angular suites | `cargo-llvm-cov` |
 | `scripts/smoke-test.sh <url>` | a deployment, over HTTP | nothing (no credentials) |

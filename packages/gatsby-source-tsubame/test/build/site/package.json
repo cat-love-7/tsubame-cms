@@ -1,0 +1,12 @@
+{
+  "name": "tsubame-gatsby-build-test-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The throwaway site the plugin's build test runs `gatsby build` on. It declares the dependencies Gatsby insists a site has, but installs nothing: the test copies it beside the plugin's own `node_modules`.",
+  "license": "MIT",
+  "dependencies": {
+    "gatsby": "^5.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

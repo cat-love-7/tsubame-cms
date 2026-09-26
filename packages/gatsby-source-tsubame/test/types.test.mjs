@@ -8,7 +8,7 @@ import typesModule from '../src/types.js';
 import { createModel } from './fixtures.mjs';
 
 const { buildTypeDefinitions } = typesModule;
-const sdl = buildTypeDefinitions(createModel());
+const { sdl, relationUnions } = buildTypeDefinitions(createModel());
 
 /** The body of one declared type, for assertions that are about one type only. */
 function typeBody(text, name) {
@@ -52,9 +52,24 @@ describe('relation fields', () => {
     assert.match(sdl, /^\s+editors: \[TsubameEditorsItem\] @link$/m);
   });
 
-  it('keeps an array that declares several targets as a list of references', () => {
-    // No single node type can stand for both, so the list carries the references themselves.
-    assert.match(sdl, /^\s+related: \[TsubameRelationRef\]$/m);
+  it('types an array that declares several targets as a union, with no @link of its own', () => {
+    // The elements need not be the same node type; the union's resolver links them, so the field
+    // carries no `@link` (which could only resolve ids).
+    assert.match(sdl, /^\s+related: \[TsubameBlogItemRelated\]$/m);
+    assert.match(sdl, /^\s+mentions: \[TsubameBlogItemMentions\]$/m);
+  });
+
+  it('leaves the union types themselves to the plugin entry point', () => {
+    // A union of node types and the reference type needs a `resolveType` SDL cannot carry, so the
+    // SDL declares the field's type only and `gatsby-node.js` builds the union.
+    assert.equal(/^union /m.test(sdl), false);
+    assert.deepEqual(
+      relationUnions.map((union) => [union.name, union.members]),
+      [
+        ['TsubameBlogItemRelated', ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef']],
+        ['TsubameBlogItemMentions', ['TsubameAuthorsItem', 'TsubameRelationRef']],
+      ],
+    );
   });
 
   it('links a page reference to the page type', () => {
@@ -138,7 +153,7 @@ describe('image files', () => {
   });
 
   it('links the downloaded file when images.download is on', () => {
-    const withFiles = buildTypeDefinitions(
+    const { sdl: withFiles } = buildTypeDefinitions(
       createModel({ images: { download: true, concurrency: 4, requestHeaders: {} } }),
     );
     assert.match(withFiles, /^\s+localFile: File @link$/m);

@@ -160,21 +160,110 @@ function mappingToObject(mapping) {
 }
 
 /** The type of one relation's target, or null when the target is not part of this build. */
-function relationTargetTypeName(model, target) {
+function relationTargetTypeName(plan, target) {
   const normalized = normalizeTarget(target);
   if (normalized === null) {
     return null;
   }
   if (normalized.kind === 'single_page') {
-    return model.plan.pages.get(normalized.name) ?? null;
+    return plan.pages.get(normalized.name) ?? null;
   }
-  return model.plan.collections.get(normalized.name) ?? null;
+  return plan.collections.get(normalized.name) ?? null;
+}
+
+/** The key a planned relation union is looked up by: one field of one type. */
+function relationUnionKey(ownerTypeName, fieldName) {
+  return `${ownerTypeName}\u0000${fieldName}`;
+}
+
+/**
+ * The members of the union a field needs, or null when it needs none.
+ *
+ * Only an `Array` whose item types are relations can hold more than one kind of node, and only when
+ * it declares more than one target: with one target the list itself is already that type. The
+ * reference type is always the last member, so an element whose target is not part of this build
+ * still has a type to resolve to (and a query may name that case whether or not this build has one).
+ */
+function relationUnionMembers(plan, names, fieldType) {
+  const { options } = describeFieldType(fieldType);
+  if (!isRelationArray(fieldType) || !Array.isArray(options) || options.length < 2) {
+    return null;
+  }
+
+  const members = [];
+  for (const item of options) {
+    const relation = describeFieldType(item).options ?? {};
+    const typeName = relationTargetTypeName(plan, relation.target);
+    if (typeName !== null && !members.includes(typeName)) {
+      members.push(typeName);
+    }
+  }
+  // No target of this field is part of the build, so every element is a reference: a union would
+  // have the reference type as its only member, and `[<that type>]` says the same thing.
+  if (members.length === 0) {
+    return null;
+  }
+  return [...members, names.relation];
+}
+
+/**
+ * The union each field that can hold more than one kind of node gets.
+ *
+ * The name is built from the type that owns the field and the field's GraphQL name, so it is the
+ * same name on every build that has the same schema - and a query that names its fragments keeps
+ * working across builds. The allocator is seeded with every type name already taken, so a union can
+ * never take a name a collection, page or composite wants.
+ */
+function planRelationUnions(plan, names, fieldNames, snapshot) {
+  const allocator = createNameAllocator([
+    ...STATIC_TYPE_SUFFIXES.map((suffix) => `${plan.prefix}${suffix}`),
+    ...plan.collections.values(),
+    ...plan.pages.values(),
+    ...plan.composites.values(),
+  ]);
+  const unions = new Map();
+
+  const consider = (ownerTypeName, schema, mapping) => {
+    if (ownerTypeName === undefined || mapping === undefined) {
+      return;
+    }
+    for (const field of Array.isArray(schema) ? schema : []) {
+      const graphqlName = mapping.get(String(field.name));
+      if (graphqlName === undefined) {
+        continue;
+      }
+      const members = relationUnionMembers(plan, names, field.field_type);
+      if (members === null) {
+        continue;
+      }
+      unions.set(relationUnionKey(ownerTypeName, graphqlName), {
+        name: allocator.take(`${ownerTypeName}${sanitizeTypeName(graphqlName)}`),
+        ownerType: ownerTypeName,
+        field: graphqlName,
+        members,
+      });
+    }
+  };
+
+  // Sorted, for the same reason `planTypeNames` sorts: the API does not promise an order, and the
+  // allocator's answer depends on who asked first.
+  for (const name of [...snapshot.collections.keys()].sort()) {
+    consider(plan.collections.get(name), snapshot.collections.get(name), fieldNames.collections.get(name));
+  }
+  for (const name of [...plan.pages.keys()].sort()) {
+    consider(plan.pages.get(name), snapshot.pages.get(name) ?? [], fieldNames.pages.get(name));
+  }
+  for (const id of [...snapshot.composites.keys()].sort()) {
+    consider(plan.composites.get(id), snapshot.composites.get(id), fieldNames.composites.get(id));
+  }
+
+  return unions;
 }
 
 /**
  * The GraphQL type of a field, and whether its value is a link to a node.
  *
- * Four choices are worth stating:
+ * Five choices are worth stating:
  *
  * - `Number` is `Float`, not `Int`: the CMS stores `f64`, and a GraphQL `Int` would make a value
  *   like `1.5` a query error rather than a value.
@@ -182,15 +271,19 @@ function relationTargetTypeName(model, target) {
  *   consumer does not have to parse strings by hand.
  * - A `Relation` field is a link to the target's type, and an `Array` of relations to a list of it
  *   when the item types name one target. A target that is not part of the build falls back to
- *   `TsubameRelationRef`, and an array naming several targets to `[TsubameRelationRef]` because no
- *   single node type can stand for it - so the schema still compiles.
+ *   `TsubameRelationRef`.
+ * - An `Array` of relations that names several targets is a **union** of those targets' types (plus
+ *   the reference type), because its elements need not be the same node type; `unionName` is what
+ *   the model planned for this field, and `link` is false because the union's field resolver does
+ *   the linking (see `src/relations.js`). With no target in the build it stays
+ *   `[TsubameRelationRef]`.
  * - A `CompositeField` is typed after its definition once `/api/content/composite-fields` answers
  *   it, and by the opaque `TsubameComposite` otherwise.
  *
  * `JSON` is the last fallback that keeps an unknown or ambiguous field queryable: the whole value
  * is still there, under `values`.
  */
-function graphqlFieldType(model, fieldType) {
+function graphqlFieldType(model, fieldType, unionName) {
   const { kind, options } = describeFieldType(fieldType);
   switch (kind) {
     case 'Text':
@@ -216,7 +309,7 @@ function graphqlFieldType(model, fieldType) {
     }
     case 'Relation': {
       const relation = options === null || typeof options !== 'object' ? {} : options;
-      const targetType = relationTargetTypeName(model, relation.target);
+      const targetType = relationTargetTypeName(model.plan, relation.target);
       return targetType === null
         ? { type: model.names.relation, link: false }
         : { type: targetType, link: true };
@@ -226,17 +319,19 @@ function graphqlFieldType(model, fieldType) {
         return { type: 'JSON', link: false };
       }
       // Several references are an `Array` whose item types are all relations. One item type means
-      // one target, which a list of that node type can hold; several targets cannot be one GraphQL
-      // list, so each element keeps the reference shape that carries its own target.
+      // one target, which a list of that node type can hold; several targets are the union the
+      // model planned, whose field resolver links the elements that are node ids.
       if (isRelationArray(fieldType)) {
         if (options.length === 1) {
           const relation = describeFieldType(options[0]).options ?? {};
-          const targetType = relationTargetTypeName(model, relation.target);
+          const targetType = relationTargetTypeName(model.plan, relation.target);
           return targetType === null
             ? { type: `[${model.names.relation}]`, link: false }
             : { type: `[${targetType}]`, link: true };
         }
-        return { type: `[${model.names.relation}]`, link: false };
+        return unionName === undefined
+          ? { type: `[${model.names.relation}]`, link: false }
+          : { type: `[${unionName}]`, link: false };
       }
       // An array with more than one declared item type is left untyped: the server reads each
       // element with the first type that fits, so the elements need not be the same type.
@@ -397,6 +492,8 @@ function buildContentModel(snapshot, options) {
     fieldNames.composites.set(id, planFieldNames('composite', schema, names));
   }
 
+  const relationUnions = planRelationUnions(plan, names, fieldNames, snapshot);
+
   return {
     options,
     names,
@@ -405,6 +502,7 @@ function buildContentModel(snapshot, options) {
     inverseFieldNames,
     inverseDeclarationsBySchema: bySchema,
     inverseDeclarationsByTarget: byTarget,
+    relationUnions,
     snapshot,
   };
 }
@@ -422,6 +520,9 @@ module.exports = {
   planFieldNames,
   mappingToObject,
   relationTargetTypeName,
+  relationUnionKey,
+  relationUnionMembers,
+  planRelationUnions,
   graphqlFieldType,
   collectInverseDeclarations,
   contentFieldNames,

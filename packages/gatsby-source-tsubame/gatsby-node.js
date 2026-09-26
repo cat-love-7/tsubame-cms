@@ -17,6 +17,7 @@ const { normalizeOptions } = require('./src/options');
 const { TsubameClient } = require('./src/client');
 const { buildContentModel } = require('./src/model');
 const { buildTypeDefinitions } = require('./src/types');
+const { relationUnionResolveType, linkRelationElements } = require('./src/relations');
 const { sourceAll } = require('./src/nodes');
 const { loadRemoteFileCreator } = require('./src/images');
 
@@ -77,7 +78,7 @@ exports.pluginOptionsSchema = ({ Joi }) =>
     }).description('Image files: whether to download them for the sharp plugins.'),
   });
 
-exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions) => {
+exports.createSchemaCustomization = async ({ actions, schema, reporter }, pluginOptions) => {
   const options = normalizeOptions(pluginOptions, reporter);
 
   // Declaring `localFile: File` only works if the type is there, which means the package has to be
@@ -90,11 +91,34 @@ exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions)
 
   const snapshot = await client.fetchSchemaSnapshot();
   const model = buildContentModel(snapshot, options);
+  const { sdl, relationUnions } = buildTypeDefinitions(model);
 
-  actions.createTypes(buildTypeDefinitions(model));
+  // A relation union cannot be said in SDL: it mixes node types with the reference type, so
+  // Gatsby's default `resolveType` (a node's `internal.type`) would answer undefined for a
+  // reference. It is built here, with the resolver that links the elements that are node ids, and
+  // merged into the type the SDL declared.
+  const types = [sdl];
+  for (const union of relationUnions) {
+    types.push(
+      schema.buildUnionType({
+        name: union.name,
+        types: union.members,
+        resolveType: relationUnionResolveType(model.names.relation),
+      }),
+      schema.buildObjectType({
+        name: union.ownerType,
+        fields: {
+          [union.field]: { type: `[${union.name}]`, resolve: linkRelationElements },
+        },
+      }),
+    );
+  }
+  actions.createTypes(types);
+
   reporter.verbose(
     `[gatsby-source-tsubame] declared ${snapshot.collections.size} collection type(s), ` +
-      `${model.plan.pages.size} single-page type(s) and ${snapshot.composites.size} composite type(s)`,
+      `${model.plan.pages.size} single-page type(s), ${snapshot.composites.size} composite type(s) ` +
+      `and ${relationUnions.length} relation union(s)`,
   );
 };
 

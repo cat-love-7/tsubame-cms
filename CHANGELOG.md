@@ -26,6 +26,13 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   `?populate=<inverse_name>` is unchanged.
 - **`inverse_name` is one name per target**, and a schema can no longer give one target two names -
   neither through two Fields nor through two item types of one array.
+- **`gatsby-source-tsubame` types a multi-target relation array as a GraphQL union** of the targets'
+  node types plus `TsubameRelationRef`, named after the type and field that own it
+  (`TsubameBlogItemRelated`), so an element whose target is part of the build is still the node it
+  names while an element whose target has no node type is served as the reference. A query names the
+  member it wants with an inline fragment. That shape used to be `[TsubameRelationRef]` throughout,
+  so a site that queried it as a reference must change the query. The delivered values are unchanged
+  for every other shape, including an array that names one target.
 
 - No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new

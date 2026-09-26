@@ -13,8 +13,9 @@ const {
   contentFieldNames,
   graphqlFieldType,
   planTypeNames,
-  reservedFieldNames,
   relationTargetTypeName,
+  relationUnionKey,
+  reservedFieldNames,
   schemaKey,
 } = modelModule;
 
@@ -128,15 +129,20 @@ describe('graphqlFieldType', () => {
     });
   });
 
-  it('keeps the reference type for an array that declares several targets', () => {
-    // One GraphQL list cannot hold nodes of two types, so it carries the references instead; each
-    // element's own target says which node it names.
+  it('types an array that declares several targets as the union planned for the field', () => {
     const relation = {
       Array: [
         { Relation: { target: { kind: 'collection', name: 'authors' } } },
         { Relation: { target: { kind: 'collection', name: 'editors' } } },
       ],
     };
+    // With the union the model planned for this field: its elements need not be the same node type.
+    assert.deepEqual(graphqlFieldType(model, relation, 'TsubameBlogItemRelated'), {
+      type: '[TsubameBlogItemRelated]',
+      link: false,
+    });
+    // Without one - no owner planned a field of this shape - the references themselves are what is
+    // left to serve.
     assert.deepEqual(graphqlFieldType(model, relation), { type: '[TsubameRelationRef]', link: false });
   });
 
@@ -167,9 +173,81 @@ describe('graphqlFieldType', () => {
 
 describe('relationTargetTypeName', () => {
   it('answers the type a relation points at', () => {
-    assert.equal(relationTargetTypeName(model, { kind: 'collection', name: 'authors' }), 'TsubameAuthorsItem');
-    assert.equal(relationTargetTypeName(model, { kind: 'single_page', name: 'contact' }), 'TsubameContactPage');
-    assert.equal(relationTargetTypeName(model, { kind: 'collection', name: 'nowhere' }), null);
+    assert.equal(relationTargetTypeName(model.plan, { kind: 'collection', name: 'authors' }), 'TsubameAuthorsItem');
+    assert.equal(relationTargetTypeName(model.plan, { kind: 'single_page', name: 'contact' }), 'TsubameContactPage');
+    assert.equal(relationTargetTypeName(model.plan, { kind: 'collection', name: 'nowhere' }), null);
+  });
+});
+
+describe('relationUnions', () => {
+  it('plans one per field whose elements need not be the same node type', () => {
+    const related = model.relationUnions.get(relationUnionKey('TsubameBlogItem', 'related'));
+    // The reference type is always the last member, so an element whose target is not part of the
+    // build still has a type to resolve to.
+    assert.deepEqual(related, {
+      name: 'TsubameBlogItemRelated',
+      ownerType: 'TsubameBlogItem',
+      field: 'related',
+      members: ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef'],
+    });
+
+    // One target that has no node type leaves the other one and the reference type.
+    assert.deepEqual(model.relationUnions.get(relationUnionKey('TsubameBlogItem', 'mentions')).members, [
+      'TsubameAuthorsItem',
+      'TsubameRelationRef',
+    ]);
+  });
+
+  it('plans none for a field that is one node type, or for one whose targets are all absent', () => {
+    // One item type is a list of that type; nothing to choose between.
+    assert.equal(model.relationUnions.has(relationUnionKey('TsubameBlogItem', 'editors')), false);
+    assert.equal(model.relationUnions.has(relationUnionKey('TsubameBlogItem', 'author')), false);
+
+    const snapshot = createSnapshot();
+    snapshot.collections.set('blog', [
+      {
+        name: 'related',
+        field_type: {
+          Array: [
+            { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
+            { Relation: { target: { kind: 'collection', name: 'gone' } } },
+          ],
+        },
+      },
+    ]);
+    const plain = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
+    assert.equal(plain.relationUnions.size, 0);
+  });
+
+  it('plans one for a field inside a composite definition too', () => {
+    const snapshot = createSnapshot();
+    snapshot.composites.set('block', [
+      {
+        name: 'related',
+        field_type: {
+          Array: [
+            { Relation: { target: { kind: 'collection', name: 'authors' } } },
+            { Relation: { target: { kind: 'single_page', name: 'home' } } },
+          ],
+        },
+      },
+    ]);
+    const withComposite = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
+    assert.deepEqual(withComposite.relationUnions.get(relationUnionKey('TsubameCompositeBlock', 'related')), {
+      name: 'TsubameCompositeBlockRelated',
+      ownerType: 'TsubameCompositeBlock',
+      field: 'related',
+      members: ['TsubameAuthorsItem', 'TsubameHomePage', 'TsubameRelationRef'],
+    });
+  });
+
+  it('does not depend on the order the API listed things in', () => {
+    const first = buildContentModel(createSnapshot(), { typePrefix: 'Tsubame' });
+    const reversed = createSnapshot();
+    reversed.collections = new Map([...reversed.collections].reverse());
+    reversed.composites = new Map([...reversed.composites].reverse());
+    const second = buildContentModel(reversed, { typePrefix: 'Tsubame' });
+    assert.deepEqual([...first.relationUnions], [...second.relationUnions]);
   });
 });
 

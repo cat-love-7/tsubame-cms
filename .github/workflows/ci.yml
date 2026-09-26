@@ -134,6 +134,27 @@ jobs:
           node-version: 24
       - run: scripts/test-gatsby-source.sh
 
+  gatsby-build:
+    name: Gatsby build
+    runs-on: ubuntu-latest
+    # The one test that runs a real `gatsby build`: it downloads Gatsby (a few hundred megabytes)
+    # and takes about a minute, which is why it is its own job rather than a step in the source
+    # plugin's. It is also the only test that can show that the GraphQL schema the plugin declares
+    # - relation unions included - is one Gatsby accepts and resolves.
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/gatsby-source-tsubame
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/gatsby-source-tsubame/package-lock.json
+      - run: npm ci
+      - run: ../../scripts/test-gatsby-build.sh
+
   preview:
     name: Preview package
     runs-on: ubuntu-latest

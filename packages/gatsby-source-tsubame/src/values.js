@@ -1,6 +1,6 @@
 'use strict';
 
-const { describeFieldType, imageKey, isRelationArray, normalizeImageValue, toImageValue, toCompositeValue, toRelationValue } = require('./fields');
+const { describeFieldType, imageKey, isRelationArray, normalizeImageValue, toImageValue, toCompositeValue, toRelationReference, toRelationValue } = require('./fields');
 const { ownerNodeKey, relationTargetTypeName } = require('./model');
 
 /**
@@ -113,7 +113,7 @@ function resolveRelation(fieldTypeDescriptor, value, context) {
   const { options } = describeFieldType(fieldTypeDescriptor);
   const relation = options === null || typeof options !== 'object' ? {} : options;
 
-  if (relationTargetTypeName(context.model, relation.target) === null) {
+  if (relationTargetTypeName(context.model.plan, relation.target) === null) {
     return toRelationValue(value);
   }
   if (
@@ -128,23 +128,30 @@ function resolveRelation(fieldTypeDescriptor, value, context) {
 }
 
 /**
- * An `Array` of relations: one node id per element.
+ * An `Array` of relations: one node id per element, or a reference for an element that has no node.
  *
- * One item type means one target, which is the one type a GraphQL list can hold. An array that
- * declares several targets has no single node type, so it keeps the reference shape - each element
- * carries its own target, and a consumer reads it rather than following `@link`.
+ * One item type means one target, which is the one type a GraphQL list can hold. Several targets
+ * are a union of their types (`src/model.js`), and the elements are then linked one by one: an
+ * element whose target is part of the build becomes that node's id, and one whose target is not
+ * stays a reference, because the union cannot carry a node type it does not have - and dropping the
+ * element would lose the target the value names. `src/relations.js` resolves the mix.
  */
 function resolveRelationArray(options, value, context) {
+  const references = value.filter(
+    (reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string',
+  );
   if (options.length !== 1) {
-    return toRelationValue(value);
+    return references.map((reference) =>
+      relationTargetTypeName(context.model.plan, referenceDescriptor(reference)) === null
+        ? toRelationReference(reference)
+        : relationNodeId(reference, context.createNodeId),
+    );
   }
   const relation = describeFieldType(options[0]).options ?? {};
-  if (relationTargetTypeName(context.model, relation.target) === null) {
+  if (relationTargetTypeName(context.model.plan, relation.target) === null) {
     return toRelationValue(value);
   }
-  return value
-    .filter((reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string')
-    .map((reference) => relationNodeId(reference, context.createNodeId));
+  return references.map((reference) => relationNodeId(reference, context.createNodeId));
 }
 
 /**

@@ -38,10 +38,29 @@ async function run(pluginOptions = PLUGIN_OPTIONS) {
 describe('createSchemaCustomization', () => {
   it('declares the schema it read from the CMS', async () => {
     const { types } = await run();
-    assert.equal(types.length, 1);
+    assert.equal(types.filter((type) => typeof type === 'string').length, 1);
     assert.match(types[0], /type TsubameBlogItem implements Node \{/);
     assert.match(types[0], /^\s+body: TsubameMarkdown @link$/m);
     assert.match(types[0], /type TsubameHomePage implements Node \{/);
+  });
+
+  it('declares a union for a field that holds several kinds of node, and the resolver that links it', async () => {
+    const { types } = await run();
+
+    // `blog.related` names authors and editors, so its elements need not be the same node type.
+    assert.match(types[0], /^\s+related: \[TsubameBlogItemRelated\]$/m);
+
+    const union = types.find((type) => type.kind === 'UNION').config;
+    assert.equal(union.name, 'TsubameBlogItemRelated');
+    // The reference type is a member too, so an element whose target is not part of the build still
+    // has a type to resolve to.
+    assert.deepEqual(union.types, ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef']);
+    assert.equal(union.resolveType({ internal: { type: 'TsubameAuthorsItem' } }), 'TsubameAuthorsItem');
+    assert.equal(union.resolveType({ target: 'nowhere', item: 1, kind: 'collection' }), 'TsubameRelationRef');
+
+    const field = types.find((type) => type.kind === 'OBJECT' && type.config.name === 'TsubameBlogItem').config;
+    assert.equal(field.fields.related.type, '[TsubameBlogItemRelated]');
+    assert.equal(typeof field.fields.related.resolve, 'function');
   });
 
   it('declares a type per composite definition, so a composite field can be followed', async () => {
@@ -133,14 +152,12 @@ describe('references', () => {
     assert.deepEqual(item.values.author, { target: 'authors', item: 7 });
   });
 
-  it('keeps an array that declares several targets as references', async () => {
+  it('links the elements of an array that declares several targets, one target at a time', async () => {
     const { nodes } = await run();
     const item = nodes.get('node:tsubame-item:blog:1');
-    // Two targets, so no single node type: the elements keep their own target.
-    assert.deepEqual(item.related, [
-      { target: 'authors', item: 7, kind: 'collection' },
-      { target: 'editors', item: 2, kind: 'collection' },
-    ]);
+    // Both targets are part of this build, so every element is the node it names; the union's
+    // resolver turns those ids into nodes at query time (the unit test for that is `relations`).
+    assert.deepEqual(item.related, ['node:tsubame-item:authors:7', 'node:tsubame-item:editors:2']);
   });
 
   it('links a relation declared inside a composite definition', async () => {

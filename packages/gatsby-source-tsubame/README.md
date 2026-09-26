@@ -141,11 +141,25 @@ query {
   are removed, and the first position stays). The plugin links the nodes in that order, so
   "featured articles in this order" shows up on the site as is. Reordering is the CMS's business,
   and the site can see the same order through `values.<field>` too.
+- **An array that names several targets is a union**, because its elements need not be the same node
+  type. The union is named after the type that owns the field and the field itself
+  (`TsubameBlogItemRelated` for `blog.related`), so the name is the same on every build with the
+  same schema, and it is queried with inline fragments (above). It is declared by
+  `createSchemaCustomization` rather than in SDL because Gatsby's default `resolveType` reads a
+  node's `internal.type`, which the fallback reference below has not.
+- **An element whose target is not part of the build stays a reference**: `TsubameRelationRef` is a
+  member of every such union, holding `target`, `item` (the item id, absent for a single page) and
+  `kind`. It is the same shape the field falls back to when *no* target of the array has a type, and
+  it is the honest answer - the target is still named, and the elements that do have a node type are
+  still nodes. Gatsby's type inference sees an array holding an id in one element and an object in
+  another and prints a "conflicting field types" warning; the field's type is declared explicitly,
+  so the warning is about inference only and can be ignored.
 - When you need **the reference itself (the counterpart's name and id)**, read `values.<field>`.
   It is the delivery API response as is.
 - When **the referenced target is unpublished**, that node does not exist, so the value is `null`
-  (an empty array when multiple). The build does not fail. It is the plain answer that a
-  "counterpart not yet on the site" cannot be traversed.
+  (an empty array when multiple, and one element of a union array is dropped, the way `@link` drops
+  it). The build does not fail. It is the plain answer that a "counterpart not yet on the site"
+  cannot be traversed.
 - **Even when the referenced collection has no published items**, its type is declared. That is
   because the plugin walks `/api/content/collections/{name}` (which returns the schema even when
   empty) and reads the definition. Only an unpublished single page has no published schema (404),
@@ -490,7 +504,8 @@ These are limits decided by the delivery API contract.
 
 ## 8. Tests
 
-Neither Gatsby nor the CMS is needed. There are no dependencies (only `fetch` and Node's `node:test`).
+The unit tests need neither Gatsby nor the CMS. There are no dependencies (only `fetch` and Node's
+`node:test`).
 
 ```console
 $ scripts/test-gatsby-source.sh
@@ -502,3 +517,17 @@ The tests run the two hooks against a fake delivery API shaped like the contract
 (`docs/content-api.md`) and with the same arguments Gatsby passes. They cover walking pages,
 assigning types, resolving composite definitions, linking references, and creating and linking
 Markdown nodes.
+
+**One test runs the real thing**: `scripts/test-gatsby-build.sh` copies a three-file site to a
+temporary directory, points it at a stub delivery API, runs `gatsby build` and reads the page data
+back. Only a build can show that Gatsby accepts the relation union and the inline fragments a site
+has to write, and that `resolveType` and the field resolver answer what the schema promises. It
+needs Gatsby installed in this package, which is why it is separate:
+
+```console
+$ cd packages/gatsby-source-tsubame && npm install   # gatsby, react, react-dom
+$ scripts/test-gatsby-build.sh
+```
+
+Without that install the script says so and skips, the way the AWS half of `scripts/test-rust.sh`
+skips when the emulators are down.

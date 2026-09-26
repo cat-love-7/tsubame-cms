@@ -1,6 +1,6 @@
 'use strict';
 
-const { graphqlFieldType, schemaKey } = require('./model');
+const { graphqlFieldType, relationUnionKey, schemaKey } = require('./model');
 
 /**
  * The GraphQL schema this plugin asks Gatsby to use.
@@ -24,6 +24,13 @@ const { graphqlFieldType, schemaKey } = require('./model');
  * of declarations either way, and SDL is what a reader can paste into GraphiQL to see what the
  * build produced.
  *
+ * The one thing SDL cannot say is a relation union: a union of node types *and* the reference type
+ * needs a `resolveType` that reads `internal.type` or falls back, and SDL gets Gatsby's default
+ * (`node => node.internal.type`) - which is undefined for a reference. Those unions are therefore
+ * returned beside the SDL (`relationUnions`) for `gatsby-node.js` to build with
+ * `schema.buildUnionType`, and the fields that use them carry no `@link` because `src/relations.js`
+ * resolves them instead.
+ *
  * The collection type asks for `@dontInfer` and the others must not. Gatsby adds the child fields a
  * consumer uses - `childMarkdownRemark` on a markdown node, `childrenTsubameMarkdown` on its owner -
  * through inference, and `@dontInfer` takes those away with it (verified by building: the query
@@ -31,9 +38,12 @@ const { graphqlFieldType, schemaKey } = require('./model');
  * has no children and no inferred field worth having, while its `schema` is the one value that is
  * polymorphic on purpose - a field type is a string (`"Image"`) in one entry and an object
  * (`{"Text":{}}`) in the next - which is what makes Gatsby warn about conflicting field types.
+ *
+ * @returns {{ sdl: string, relationUnions: Array<{name: string, ownerType: string, field: string,
+ *   members: string[]}> }}
  */
 function buildTypeDefinitions(model) {
-  const { names, plan, fieldNames } = model;
+  const { names, plan, fieldNames, relationUnions } = model;
   const parts = [staticTypeDefinitions(names, model)];
 
   for (const [name, schema] of model.snapshot.collections) {
@@ -81,7 +91,7 @@ function buildTypeDefinitions(model) {
     );
   }
 
-  return parts.join('\n\n');
+  return { sdl: parts.join('\n\n'), relationUnions: [...relationUnions.values()] };
 }
 
 function contentTypeDefinition({ typeName, kind, name, schema, mapping, model }) {
@@ -96,7 +106,7 @@ function contentTypeDefinition({ typeName, kind, name, schema, mapping, model })
   lines.push('  lastPublishedAt: Date');
   lines.push('  values: JSON!');
   lines.push('  fieldNames: JSON!');
-  lines.push(...fieldLines(schema, mapping, model));
+  lines.push(...fieldLines(schema, mapping, model, typeName));
   lines.push(...inverseFieldLines(kind, name, model));
   lines.push('}');
   return lines.join('\n');
@@ -135,12 +145,18 @@ function compositeTypeDefinition({ typeName, schema, mapping, model }) {
   const lines = [`type ${typeName} {`];
   lines.push('  id: String!');
   lines.push('  values: JSON!');
-  lines.push(...fieldLines(schema, mapping, model));
+  lines.push(...fieldLines(schema, mapping, model, typeName));
   lines.push('}');
   return lines.join('\n');
 }
 
-function fieldLines(schema, mapping, model) {
+/**
+ * One field per line, with the union the model planned for it when it has one.
+ *
+ * A union field is typed `[<union>]` and carries no `@link`: the union's own resolver does the
+ * linking (`src/relations.js`), because an element may be a reference rather than a node id.
+ */
+function fieldLines(schema, mapping, model, ownerTypeName) {
   const lines = [];
   const emitted = new Set();
   for (const field of Array.isArray(schema) ? schema : []) {
@@ -149,7 +165,8 @@ function fieldLines(schema, mapping, model) {
       continue;
     }
     emitted.add(graphqlName);
-    const { type, link } = graphqlFieldType(model, field.field_type);
+    const union = model.relationUnions.get(relationUnionKey(ownerTypeName, graphqlName));
+    const { type, link } = graphqlFieldType(model, field.field_type, union?.name);
     lines.push(`  ${graphqlName}: ${type}${link ? ' @link' : ''}`);
   }
   return lines;
@@ -205,9 +222,10 @@ type ${names.composite} {
   values: JSON!
 }
 
-# One reference of a relation, used when the target is not part of the build or when a list names
-# several targets. A relation field is normally a link to the target node instead; the reference
-# itself is always under \`values\`.
+# One reference of a relation, used when the target is not part of the build. A relation field is
+# normally a link to the target node instead; when an array names several targets it is a union of
+# those node types *and* this type, so an element whose target has no node type is still served. The
+# reference is always under \`values\` as well.
 type ${names.relation} {
   target: String!
   item: Int

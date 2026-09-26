@@ -99,6 +99,20 @@ export const BLOG_SCHEMA = [
     width: 12,
     height: 1,
   },
+  // The same, with a target no list names: that element has no node type to link to, so it stays a
+  // reference while the other element is a node.
+  {
+    name: 'mentions',
+    field_type: {
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
+      ],
+    },
+    required: false,
+    width: 12,
+    height: 1,
+  },
   { name: 'seo', field_type: { CompositeField: { id: 'seo' } }, required: false, width: 12, height: 1 },
   {
     name: 'blocks',
@@ -170,6 +184,12 @@ export const BLOG_ITEMS = [
       related: [
         { target: 'authors', item: 7 },
         { target: 'editors', item: 2 },
+      ],
+      // One target of this field is part of the build and one is not (`nowhere` is in no list), so
+      // the elements are an id and a reference in the same array.
+      mentions: [
+        { target: 'authors', item: 7 },
+        { target: 'nowhere', item: 5 },
       ],
       seo: { id: 'seo', values: { description: 'about hello', og_image: { id: 9, url: '/api/images/og.png' } } },
       blocks: [
@@ -317,8 +337,12 @@ export function createGatsbyApi({ files = [] } = {}) {
 
   const api = {
     actions: {
-      createTypes(sdl) {
-        types.push(sdl);
+      createTypes(definition) {
+        // `createTypes` takes SDL, type-builder objects, or an array of both; the fake keeps them in
+        // the order they were handed over, so a test can read what the plugin declared.
+        for (const entry of Array.isArray(definition) ? definition : [definition]) {
+          types.push(entry);
+        }
       },
       createNode(node) {
         nodes.set(node.id, node);
@@ -332,6 +356,13 @@ export function createGatsbyApi({ files = [] } = {}) {
       touchNode(node) {
         touched.push(node.id);
       },
+    },
+    // The type builders Gatsby hands `createSchemaCustomization`, with the shape they really have
+    // (`{kind, config}`, `gatsby/dist/schema/types/type-builders.js`). The unit tests read those
+    // descriptors instead of Gatsby's schema.
+    schema: {
+      buildUnionType: (config) => ({ kind: 'UNION', config }),
+      buildObjectType: (config) => ({ kind: 'OBJECT', config }),
     },
     createNodeId: (key) => `node:${key}`,
     createContentDigest: (data) => `digest:${typeof data === 'string' ? data : JSON.stringify(data)}`,

@@ -136,7 +136,9 @@ describe('collectRelationTargets', () => {
     const targets = collectRelationTargets([BLOG_SCHEMA], composites);
     assert.deepEqual(
       targets.map((target) => `${target.kind}:${target.name}`).sort(),
-      ['collection:authors', 'collection:editors'],
+      // `blog.mentions` names `nowhere` as one of its targets; the schema is read and the target has
+      // no type in this build, which is what the union's reference member is for.
+      ['collection:authors', 'collection:editors', 'collection:nowhere'],
     );
   });
 

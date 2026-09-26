@@ -170,9 +170,9 @@ describe('relations', () => {
     ]);
   });
 
-  it('keeps the references of an array that declares several targets', () => {
-    // No single GraphQL list can hold two node types, so the references stay as they are; each
-    // element's own target says which node it names.
+  it('links each element of an array that declares several targets, by its own target', () => {
+    // The field is a union of the two node types, so every element whose target is part of the build
+    // is that node's id; the union's resolver turns them into nodes at query time.
     const { context } = makeContext();
     const fieldType = {
       Array: [AUTHOR, { Relation: { target: { kind: 'collection', name: 'editors' } } }],
@@ -183,10 +183,24 @@ describe('relations', () => {
         [{ target: 'authors', item: 7 }, { target: 'editors', item: 2 }],
         context,
       ),
-      [
-        { target: 'authors', item: 7, kind: 'collection' },
-        { target: 'editors', item: 2, kind: 'collection' },
-      ],
+      ['node:tsubame-item:authors:7', 'node:tsubame-item:editors:2'],
+    );
+  });
+
+  it('keeps the reference of an element whose target is not part of the build', () => {
+    // The union cannot carry a node type it does not have, and dropping the element would lose the
+    // target the value names - so that element stays a reference in the same list.
+    const { context } = makeContext();
+    const fieldType = {
+      Array: [AUTHOR, { Relation: { target: { kind: 'collection', name: 'nowhere' } } }],
+    };
+    assert.deepEqual(
+      resolveFieldValue(
+        fieldType,
+        [{ target: 'authors', item: 7 }, { target: 'nowhere', item: 5 }],
+        context,
+      ),
+      ['node:tsubame-item:authors:7', { target: 'nowhere', item: 5, kind: 'collection' }],
     );
   });
 });
@@ -202,7 +216,13 @@ describe('relationNodeId', () => {
 describe('collectReferenceKeys', () => {
   it('finds the content a set of values points at, composites included', () => {
     const found = collectReferenceKeys(BLOG_SCHEMA, BLOG_ITEMS[0].values, composites);
-    assert.deepEqual(found.map(ownerNodeKey).sort(), ['tsubame-item:authors:7', 'tsubame-item:editors:2']);
+    // `mentions` names a target the build has no node type for; the reference is still a target the
+    // index has to know about.
+    assert.deepEqual(found.map(ownerNodeKey).sort(), [
+      'tsubame-item:authors:7',
+      'tsubame-item:editors:2',
+      'tsubame-item:nowhere:5',
+    ]);
   });
 
   it('answers each target once, however many fields point at it', () => {
