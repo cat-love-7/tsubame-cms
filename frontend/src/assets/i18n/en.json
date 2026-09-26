@@ -241,6 +241,7 @@
     "saveFailed": "Save failed: {{message}}",
     "deleteFailed": "Delete failed: {{message}}",
     "loadFailed": "Load failed: {{message}}",
+    "duplicateItemConfirm": "Copy item {{id}}? The copy opens straight away.",
     "deleteItemConfirm": "Delete item {{id}}?",
     "publishItemConfirm": "Publish item {{id}}?",
     "unpublishItemConfirm": "Unpublish item {{id}}?",

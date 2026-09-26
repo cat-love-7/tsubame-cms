@@ -453,12 +453,19 @@ export class CollectionItemList {
   }
 
   /**
-   * Copy an item and open the copy.
+   * Copy an item and open the copy, after asking.
    *
    * The copy is a draft with its unique fields empty (the server's rule), so the editor lands in a
-   * form that only needs the parts which have to be new.
+   * form that only needs the parts which have to be new. It also *leaves the list*, and the button
+   * sits next to "edit" with an icon that reads the same at a glance - so a mis-click used to cost
+   * the reader their place in the list and an item they did not ask for. Every other button that
+   * changes what the site serves asks first (delete, publish, unpublish, discard); this one now
+   * does too, in the same shape.
    */
   duplicate(id: number) {
+    if (!confirm(this.i18n.translate('content.duplicateItemConfirm', { id }))) {
+      return;
+    }
     this.collectionsService.duplicateItem(this.collectionName(), id).subscribe({
       next: (created) => {
         this.error.set(null);

@@ -241,6 +241,7 @@
     "saveFailed": "保存に失敗しました: {{message}}",
     "deleteFailed": "削除に失敗しました: {{message}}",
     "loadFailed": "読み込みに失敗しました: {{message}}",
+    "duplicateItemConfirm": "アイテム {{id}} を複製しますか?複製したものをすぐに開きます。",
     "deleteItemConfirm": "アイテム {{id}} を削除しますか?",
     "publishItemConfirm": "アイテム {{id}} を公開しますか?",
     "unpublishItemConfirm": "アイテム {{id}} を非公開にしますか?",

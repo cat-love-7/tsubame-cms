@@ -756,8 +756,23 @@ describe('CollectionItemList', () => {
 
     fresh.componentInstance.duplicate(1);
 
+    expect(confirmSpy).toHaveBeenCalledWith('Copy item 1? The copy opens straight away.');
     expect(stub.duplicated).toEqual([1]);
     expect(navigate).toHaveBeenCalledWith(['/collections', 'blog', 'edit', 99]);
+  });
+
+  // The copy is one click from "edit" and takes the reader off the list, so the answer has to be
+  // theirs: declining leaves the list - and the server - alone.
+  it('copies nothing when the confirmation is declined', () => {
+    confirmSpy.mockReturnValue(false);
+    const fresh: TypedFixture<CollectionItemList> = TestBed.createComponent(CollectionItemList);
+    fresh.detectChanges();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    fresh.componentInstance.duplicate(1);
+
+    expect(stub.duplicated).toEqual([]);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('stays on the same page when the deletion leaves it populated', () => {

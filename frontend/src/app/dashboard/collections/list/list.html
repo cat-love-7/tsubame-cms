@@ -203,8 +203,8 @@
             <mat-icon>edit</mat-icon>
           </button>
           @if (canEdit()) {
-            <!-- The copy opens straight away: duplicating is only useful if the next act is
-                 editing it. -->
+            <!-- The copy opens straight away, after a confirmation: duplicating is only useful
+                 if the next act is editing it, and the button is easy to hit on the way to "edit". -->
             <button
               matIconButton
               (click)="duplicate(row.id)"
