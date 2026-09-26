@@ -166,6 +166,7 @@
     "duplicateFailed": "Could not copy the item: {{message}}",
     "failedToLoadReferences": "Could not check what uses the image: {{message}}",
     "leaveUnsaved": "This screen has edits that have not been saved. Leave and lose them?",
+    "leaveWithoutSaving": "Back to the list without saving",
     "draftNotPublished": "The saved content is not published yet. Press Publish changes to put it on the site.",
     "publishedBy": "Account that published this",
     "previewLink": "Preview link",

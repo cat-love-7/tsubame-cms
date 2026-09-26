@@ -63,8 +63,10 @@
     }
   }
   <span class="spacer"></span>
+  <!-- Leaving is its own act, and it does not save: "Cancel" said neither, and a reader who has
+       just pressed save is not cancelling anything. -->
   <button matButton [routerLink]="['/collections', collectionName()]">
-    {{ 'common.cancel' | transloco }}
+    {{ 'content.leaveWithoutSaving' | transloco }}
   </button>
 </div>
 

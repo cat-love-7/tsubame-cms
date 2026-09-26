@@ -166,6 +166,7 @@
     "duplicateFailed": "複製できませんでした: {{message}}",
     "failedToLoadReferences": "画像の使用箇所を確認できませんでした: {{message}}",
     "leaveUnsaved": "保存していない変更があります。破棄して移動しますか?",
+    "leaveWithoutSaving": "保存せず一覧に戻る",
     "draftNotPublished": "保存した内容はまだ公開されていません。「変更を公開」を押すまでサイトには反映されません。",
     "publishedBy": "公開したアカウント",
     "previewLink": "プレビュー URL",

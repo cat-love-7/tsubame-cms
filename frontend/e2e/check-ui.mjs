@@ -1362,7 +1362,7 @@ async function whatIsLiveAndTakingChangesBack() {
   // Leaving with unsaved edits asks first: the answer is the person's.
   await titleField.fill(`left behind ${Date.now()}`);
   dialogAnswer = 'dismiss';
-  await page.click('button:has-text("Cancel")');
+  await page.click('button:has-text("Back to the list without saving")');
   await page.waitForTimeout(500);
   check('未保存で離れようとすると確認が出る', page.url().includes('/edit/1'), page.url());
   check(
@@ -1371,7 +1371,7 @@ async function whatIsLiveAndTakingChangesBack() {
   );
 
   dialogAnswer = 'accept';
-  await page.click('button:has-text("Cancel")');
+  await page.click('button:has-text("Back to the list without saving")');
   await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
   check('確認に同意すると移動する', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
 }
@@ -2315,7 +2315,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // the one whose `title` is unique, so it is the one where clearing it shows.
   // The refused form still holds edits, so it is left through its own Cancel (the guard asks, and
   // the page's dialog handler accepts).
-  await page.click('button:has-text("Cancel")');
+  await page.click('button:has-text("Back to the list without saving")');
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});
@@ -2356,7 +2356,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // Saving stays on the item now; the list below is the toolbar's own button, which is also what
   // the batch checks that follow are looking at.
   check('保存しても編集画面にとどまる', page.url().includes('/edit/'), page.url());
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to the list without saving', exact: true }).click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
     .catch(() => {});

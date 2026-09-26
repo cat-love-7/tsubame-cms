@@ -355,6 +355,18 @@ describe('CollectionItemEdit', () => {
     });
   });
 
+  // Leaving is its own act: it goes to the list and it does not save, which "Cancel" said neither
+  // of - and a reader who has just saved is not cancelling anything.
+  it('names the way out of the screen for what it does', () => {
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+
+    const back = Array.from(fresh.nativeElement.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Back to the list without saving',
+    );
+    expect(back).toBeTruthy();
+  });
+
   // "Save" and "Save and publish" belong together: the form's own button is at the end of a long
   // form, so the same act is offered in the toolbar as well.
   it('offers save in the toolbar as well as at the end of the form', async () => {
