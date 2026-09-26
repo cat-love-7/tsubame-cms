@@ -1,24 +1,28 @@
 <div class="toolbar">
   <h2>{{ pageName() }}</h2>
-  @if (canEdit()) {
-    <!-- The same act as the button at the end of the form, put here so that "save" is beside the
-         publish controls instead of a screenful away from them. A long form still has the bottom
-         one. -->
-    <button matButton color="primary" [disabled]="!loaded()" (click)="save()">
-      {{ 'common.save' | transloco }}
-    </button>
-  }
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
     @if (meta.status === 'published' && meta.has_draft) {
       <span class="draft-note">{{ 'content.unsaved' | transloco }}</span>
     }
-    <!-- The audit trail: who put this version on the site. -->
+    <!-- The audit trail: who last put this version on the site. `published_by` is the Account that
+         published it, not the one that wrote it (`docs/content-api.md`), and a name on its own said
+         neither - so it carries its label. -->
     @if (meta.published_by; as publisher) {
-      <span class="publisher" [title]="'content.publishedBy' | transloco">{{
-        publisher.username
-      }}</span>
+      <span class="publisher" [title]="'content.publishedBy' | transloco">
+        {{ 'content.publisher' | transloco }}: {{ publisher.username }}
+      </span>
     }
+  }
+  @if (canEdit()) {
+    <!-- Save belongs with the other actions, after the state it acts on - which is why the metadata
+         is looked at twice: the state comes before this button, the actions come after it. It is the
+         same act as the button at the end of the form, which a long form still has. -->
+    <button matButton color="primary" [disabled]="!loaded()" (click)="save()">
+      {{ 'common.save' | transloco }}
+    </button>
+  }
+  @if (metadata(); as meta) {
     @if (unsavedChanges()) {
       <!-- The form holds edits the server has not seen; the note says so, so the buttons below
            are read as "save first" rather than "the old version is about to go live". -->

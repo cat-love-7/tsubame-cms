@@ -367,6 +367,21 @@ describe('CollectionItemEdit', () => {
     expect(back).toBeTruthy();
   });
 
+  // The toolbar's save sits with the other actions rather than before the state they act on: the
+  // status and the publisher it is read against come first.
+  it('puts the toolbar save after the state it acts on', () => {
+    stub.metadata = {
+      ...stub.metadata,
+      published_by: { id: 'u1', username: 'admin@example.com' },
+    };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+
+    const publisher = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
+    const save = saveButton(fresh.nativeElement);
+    expect(publisher.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   // "Save" and "Save and publish" belong together: the form's own button is at the end of a long
   // form, so the same act is offered in the toolbar as well.
   it('offers save in the toolbar as well as at the end of the form', async () => {
@@ -1019,9 +1034,11 @@ describe('CollectionItemEdit', () => {
     const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
     fresh.detectChanges();
 
-    // The editor names whoever published the version that is live.
+    // The editor names whoever published the version that is live, and labels the name: on its own
+    // it read as the author, which it is not - `published_by` is the Account that *published*.
     const publisher = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
-    expect(publisher.textContent?.trim()).toBe('admin@example.com');
+    expect(publisher.textContent?.trim()).toBe('Published by: admin@example.com');
+    expect(publisher.getAttribute('title')).toBe('Account that published this');
 
     publishButton(fresh.nativeElement, 'Unpublish').click();
     fresh.detectChanges();

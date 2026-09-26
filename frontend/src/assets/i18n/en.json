@@ -169,6 +169,7 @@
     "leaveWithoutSaving": "Back to the list without saving",
     "draftNotPublished": "The saved content is not published yet. Press Publish changes to put it on the site.",
     "publishedBy": "Account that published this",
+    "publisher": "Published by",
     "previewLink": "Preview link",
     "previewCopied": "The preview link was copied (valid until {{expires}}).",
     "previewNotCopied": "The preview link was created (valid until {{expires}}). It could not be copied, so copy it from below.",

@@ -169,6 +169,7 @@
     "leaveWithoutSaving": "保存せず一覧に戻る",
     "draftNotPublished": "保存した内容はまだ公開されていません。「変更を公開」を押すまでサイトには反映されません。",
     "publishedBy": "公開したアカウント",
+    "publisher": "公開者",
     "previewLink": "プレビュー URL",
     "previewCopied": "プレビュー URL をコピーしました(有効期限: {{expires}})",
     "previewNotCopied": "プレビュー URL を作成しました(有効期限: {{expires}})。コピーできなかったので下から手動でコピーしてください",

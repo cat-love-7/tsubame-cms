@@ -588,9 +588,11 @@ describe('SinglePageEdit', () => {
     const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.detectChanges();
 
-    // The editor names whoever published the version that is live.
+    // The editor names whoever published the version that is live, and labels the name: on its own
+    // it read as the author, which it is not - `published_by` is the Account that *published*.
     const publisher = fresh.nativeElement.querySelector('.publisher') as HTMLElement;
-    expect(publisher.textContent?.trim()).toBe('admin@example.com');
+    expect(publisher.textContent?.trim()).toBe('Published by: admin@example.com');
+    expect(publisher.getAttribute('title')).toBe('Account that published this');
 
     publishButton(fresh.nativeElement, 'Unpublish').click();
     fresh.detectChanges();
