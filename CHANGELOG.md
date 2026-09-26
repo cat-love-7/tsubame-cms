@@ -16,6 +16,15 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 - No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new
   crate forgets to say it.
+- The image library opens as a **dialog** with an **upload** of its own, rather than a wall of tiles
+  under the control that opened it. The Markdown box had no upload at all, so an empty library was a
+  dead end there. The same picker serves the image field, the image array and the Markdown image
+  button, and it closes as soon as an image is chosen.
+- An item editor offers **save in the toolbar** as well as at the end of the form, so "save" and
+  "save and publish" are no longer a screen apart, and **saving no longer returns to the list** - a
+  second edit used to mean finding the item again.
+- **Copying an item asks first**, like every other button on that row (delete, publish, unpublish,
+  discard): the copy is created and opened only once the question is answered.
 
 ### Fixed
 
