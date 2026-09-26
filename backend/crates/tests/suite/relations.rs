@@ -44,21 +44,70 @@ fn text_field(name: &str, required: bool) -> Value {
     json!({ "name": name, "field_type": { "Text": {} }, "required": required, "width": 12, "height": 1 })
 }
 
-/// A relation field as the Angular client sends it.
-fn relation_field(name: &str, kind: &str, target: &str, has_many: bool) -> Value {
+/// A relation field as the Angular client sends it: `Relation` holds exactly one reference.
+fn relation_field(name: &str, kind: &str, target: &str) -> Value {
+    json!({
+        "name": name,
+        "field_type": { "Relation": { "target": { "kind": kind, "name": target } } },
+        "required": false, "width": 12, "height": 1,
+    })
+}
+
+/// The same, naming the other side (`inverse_name`), which is how `?populate=` addresses it.
+fn relation_field_named(name: &str, kind: &str, target: &str, inverse_name: &str) -> Value {
     json!({
         "name": name,
         "field_type": { "Relation": {
             "target": { "kind": kind, "name": target },
-            "has_many": has_many,
-            "inverse_name": "articles",
+            "inverse_name": inverse_name,
         }},
         "required": false, "width": 12, "height": 1,
     })
 }
 
-/// A relation to a collection's items round-trips as a list of `{target, item}`, and the list is a
-/// set: the order it was sent in does not survive, and the same reference twice is one reference.
+/// The same relation, required: `null` saves as a draft and publishing asks for one.
+fn required_relation_field(name: &str, kind: &str, target: &str) -> Value {
+    let mut field = relation_field(name, kind, target);
+    field["required"] = json!(true);
+    field
+}
+
+/// Several references: an array whose item types are relations, each target named once.
+fn relation_array_field(name: &str, targets: &[(&str, &str)]) -> Value {
+    let item_types: Vec<Value> = targets
+        .iter()
+        .map(|(kind, target)| json!({ "Relation": { "target": { "kind": kind, "name": target } } }))
+        .collect();
+    json!({
+        "name": name,
+        "field_type": { "Array": item_types },
+        "required": false, "width": 12, "height": 1,
+    })
+}
+
+/// The same array, required: `[]` saves as a draft and publishing asks for one.
+fn required_relation_array_field(name: &str, targets: &[(&str, &str)]) -> Value {
+    let mut field = relation_array_field(name, targets);
+    field["required"] = json!(true);
+    field
+}
+
+/// Several references to one target, where the other side calls the relation by name: the inverse
+/// direction has to reach into an array's item type, not only a bare `Relation`.
+fn relation_array_field_named(name: &str, kind: &str, target: &str, inverse_name: &str) -> Value {
+    json!({
+        "name": name,
+        "field_type": { "Array": [{ "Relation": {
+            "target": { "kind": kind, "name": target },
+            "inverse_name": inverse_name,
+        }}]},
+        "required": false, "width": 12, "height": 1,
+    })
+}
+
+/// A relation to a collection round-trips as one `{target, item}` reference, and several are an
+/// `Array` of them: the array keeps the order it was written in, and the same reference twice is
+/// one reference at the place it first appeared.
 #[tokio::test]
 async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references() {
     let app = test_app().await;
@@ -85,10 +134,10 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("author", "collection", "authors", false),
-            relation_field("also", "collection", "authors", true),
+            relation_field_named("author", "collection", "authors", "articles"),
+            relation_array_field("also", &[("collection", "authors")]),
         ]),
     )
     .await;
@@ -100,7 +149,7 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
         Some(&token),
         Some(json!({
             "title": "Hello",
-            "author": [{ "target": "authors", "item": 1 }],
+            "author": { "target": "authors", "item": 1 },
             "also": [
                 { "target": "authors", "item": 3 },
                 { "target": "authors", "item": 1 },
@@ -122,7 +171,7 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["author"], json!([{ "target": "authors", "item": 1 }]));
+    assert_eq!(body["author"], json!({ "target": "authors", "item": 1 }));
     assert_eq!(
         body["also"],
         json!([
@@ -139,7 +188,7 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
         "/api/models/collections/posts/items/1",
         json!({
             "title": "Hello",
-            "author": [{ "target": "authors", "item": 1 }],
+            "author": { "target": "authors", "item": 1 },
             "also": [
                 { "target": "authors", "item": 1 },
                 { "target": "authors", "item": 3 },
@@ -176,7 +225,8 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 
-    // The schema kept what it was told, including the name the other side is known by.
+    // The schema kept what it was told, including the name the other side is known by. One target
+    // is a bare `Relation`; several are an `Array` whose item type is a relation.
     let (status, body) = send(
         &app.router,
         Method::GET,
@@ -190,13 +240,14 @@ async fn a_relation_to_a_collection_round_trips_as_an_ordered_list_of_references
         body[1]["field_type"]["Relation"]["target"]["name"],
         "authors"
     );
-    assert_eq!(body[1]["field_type"]["Relation"]["has_many"], false);
     assert_eq!(
         body[1]["field_type"]["Relation"]["inverse_name"],
         "articles"
     );
-    // A reference to several is the same field with the flag set.
-    assert_eq!(body[2]["field_type"]["Relation"]["has_many"], true);
+    assert_eq!(
+        body[2]["field_type"]["Array"][0]["Relation"]["target"]["name"],
+        "authors"
+    );
 }
 
 /// A single page is one item whose identity is its name, so a reference to it is the name and
@@ -217,9 +268,9 @@ async fn a_relation_to_a_single_page_is_the_page_name() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("landing", "single_page", "home", false),
+            relation_field("landing", "single_page", "home"),
         ]),
     )
     .await;
@@ -231,7 +282,7 @@ async fn a_relation_to_a_single_page_is_the_page_name() {
         Some(&token),
         Some(json!({
             "title": "Hello",
-            "landing": [{ "target": "home" }],
+            "landing": { "target": "home" },
         })),
     )
     .await;
@@ -246,7 +297,7 @@ async fn a_relation_to_a_single_page_is_the_page_name() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["landing"], json!([{ "target": "home" }]));
+    assert_eq!(body["landing"], json!({ "target": "home" }));
 
     // An id for a page is a value the schema has nowhere to keep.
     let (status, body) = send_raw(
@@ -256,7 +307,7 @@ async fn a_relation_to_a_single_page_is_the_page_name() {
         Some(&token),
         Some(json!({
             "title": "Hello",
-            "landing": [{ "target": "home", "item": 1 }],
+            "landing": { "target": "home", "item": 1 },
         })),
     )
     .await;
@@ -294,12 +345,7 @@ async fn a_relation_may_only_point_at_what_the_site_has() {
         &token,
         Method::POST,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![relation_field(
-            "author",
-            "collection",
-            "writers",
-            false,
-        )]),
+        json!([relation_field("author", "collection", "writers")]),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -311,52 +357,11 @@ async fn a_relation_may_only_point_at_what_the_site_has() {
         &token,
         Method::POST,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![relation_field(
-            "home",
-            "single_page",
-            "authors",
-            false,
-        )]),
+        json!([relation_field("home", "single_page", "authors")]),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.contains("'authors' is not a single page"), "{body}");
-
-    // A page is one item, so a relation to one cannot ask for several.
-    let (status, body) = send_json(
-        &app,
-        &token,
-        Method::POST,
-        "/api/models/collections/posts/schema",
-        Value::Array(vec![relation_field(
-            "homes",
-            "single_page",
-            "authors",
-            true,
-        )]),
-    )
-    .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.contains("can only be a single reference"), "{body}");
-
-    // ...and a relation cannot be an array item: how many it holds is its own `has_many`.
-    let (status, body) = send_json(
-        &app,
-        &token,
-        Method::POST,
-        "/api/models/collections/posts/schema",
-        json!([{
-            "name": "related",
-            "field_type": { "Array": [{ "Relation": {
-                "target": { "kind": "collection", "name": "authors" },
-                "has_many": true,
-            }}]},
-            "required": false, "width": 12, "height": 1,
-        }]),
-    )
-    .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.contains("cannot be an array item"), "{body}");
 
     // A composite definition is stored on its own and reused, so its save is where its own
     // relation's target is checked - and it is checked again when a schema embeds it.
@@ -365,12 +370,7 @@ async fn a_relation_may_only_point_at_what_the_site_has() {
         &token,
         Method::POST,
         "/api/models/composite_fields/cta",
-        Value::Array(vec![relation_field(
-            "author",
-            "collection",
-            "writers",
-            false,
-        )]),
+        json!([relation_field("author", "collection", "writers")]),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -382,18 +382,97 @@ async fn a_relation_may_only_point_at_what_the_site_has() {
         &token,
         Method::POST,
         "/api/models/composite_fields/cta",
-        Value::Array(vec![relation_field(
-            "author",
-            "collection",
-            "authors",
-            false,
-        )]),
+        json!([relation_field("author", "collection", "authors")]),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// A reference has to match the field that holds it, and how many it holds has to match too.
+/// Several references are an `Array` of relations, and one array may name several *different*
+/// targets. What it may not do is name the same target twice: an element carries its target and
+/// not which declaration wrote it, so the reverse lookup could not tell the two apart.
+#[tokio::test]
+async fn an_array_of_relations_may_name_each_target_once() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    for name in ["authors", "categories"] {
+        save_schema(
+            &app,
+            &token,
+            &format!("/api/models/collections/{name}/schema"),
+            json!([text_field("title", true)]),
+        )
+        .await;
+    }
+    for name in ["home", "about"] {
+        save_schema(
+            &app,
+            &token,
+            &format!("/api/models/single_pages/{name}/schema"),
+            json!([]),
+        )
+        .await;
+    }
+
+    // Several different collections, and several different pages: both are what an array may hold.
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/good/schema",
+        json!([
+            text_field("title", true),
+            relation_array_field(
+                "related",
+                &[("collection", "authors"), ("collection", "categories")],
+            ),
+            relation_array_field(
+                "landing",
+                &[("single_page", "home"), ("single_page", "about")]
+            ),
+        ]),
+    )
+    .await;
+
+    // A collection declared twice in one array is what it may not do.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/twice/schema",
+        json!([
+            text_field("title", true),
+            relation_array_field(
+                "related",
+                &[("collection", "authors"), ("collection", "authors")],
+            ),
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("'authors' is declared twice"), "{body}");
+
+    // A second item type for one page is the same target twice.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/twice/schema",
+        json!([
+            text_field("title", true),
+            relation_array_field(
+                "landing",
+                &[("single_page", "home"), ("single_page", "home")],
+            ),
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("'home' is declared twice"), "{body}");
+}
+
+/// A reference has to match the field that holds it, and the shape has to match too: a `Relation`
+/// holds one (or `null`), and several are an `Array` (or `[]`).
 #[tokio::test]
 async fn a_relation_value_has_to_match_the_field_holding_it() {
     let app = test_app().await;
@@ -410,10 +489,10 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("author", "collection", "authors", false),
-            relation_field("also", "collection", "authors", true),
+            relation_field("author", "collection", "authors"),
+            relation_array_field("also", &[("collection", "authors")]),
         ]),
     )
     .await;
@@ -426,7 +505,7 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
         "/api/models/collections/posts/item",
         json!({
             "title": "Hello",
-            "author": [{ "target": "writers", "item": 1 }],
+            "author": { "target": "writers", "item": 1 },
         }),
     )
     .await;
@@ -441,14 +520,14 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
         "/api/models/collections/posts/item",
         json!({
             "title": "Hello",
-            "author": [{ "target": "authors" }],
+            "author": { "target": "authors" },
         }),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.contains("item id"), "{body}");
 
-    // A single reference holds one, not two.
+    // A single reference holds one, and the shape that several references use is not one.
     let (status, body) = send_json(
         &app,
         &token,
@@ -464,15 +543,33 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert!(body.contains("holds one reference"), "{body}");
+    assert!(
+        body.contains("expected one { target, item } reference"),
+        "{body}"
+    );
 
-    // A relation is a list of references, not a scalar.
+    // A single reference is an object, not a scalar either.
     let (status, body) = send_json(
         &app,
         &token,
         Method::POST,
         "/api/models/collections/posts/item",
         json!({ "title": "Hello", "author": 3 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body.contains("expected one { target, item } reference"),
+        "{body}"
+    );
+
+    // Several references are a list, not a scalar.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/posts/item",
+        json!({ "title": "Hello", "also": 3 }),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -485,14 +582,10 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
         &app,
         &token,
         "/api/models/collections/strict/schema",
-        json!([{
-            "name": "author",
-            "field_type": { "Relation": {
-                "target": { "kind": "collection", "name": "authors" },
-                "has_many": true,
-            }},
-            "required": true, "width": 12, "height": 1,
-        }]),
+        json!([required_relation_array_field(
+            "author",
+            &[("collection", "authors")],
+        )]),
     )
     .await;
     let (status, body) = send_json(
@@ -501,6 +594,57 @@ async fn a_relation_value_has_to_match_the_field_holding_it() {
         Method::POST,
         "/api/models/collections/strict/item",
         json!({ "author": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let empty = body.parse::<u64>().expect("the new item's id");
+
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        &format!("/api/models/collections/strict/items/{empty}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let body = String::from_utf8_lossy(&body);
+    assert!(body.contains("field_required"), "{body}");
+    assert!(body.contains("author"), "{body}");
+}
+
+/// The same emptiness rule for a bare `Relation`: `null` saves as a draft, publishing asks for one.
+#[tokio::test]
+async fn a_single_required_relation_is_empty_until_it_has_a_target() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/strict/schema",
+        json!([required_relation_field("author", "collection", "authors")]),
+    )
+    .await;
+
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/strict/item",
+        json!({ "author": null }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -558,10 +702,10 @@ async fn the_reference_index_follows_what_content_holds() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("author", "collection", "authors", false),
-            relation_field("also", "collection", "authors", true),
+            relation_field("author", "collection", "authors"),
+            relation_array_field("also", &[("collection", "authors")]),
         ]),
     )
     .await;
@@ -586,7 +730,7 @@ async fn the_reference_index_follows_what_content_holds() {
         "/api/models/collections/posts/item",
         json!({
             "title": "Hello",
-            "author": [{ "target": "authors", "item": 1 }],
+            "author": { "target": "authors", "item": 1 },
             "also": [{ "target": "authors", "item": 2 }],
         }),
     )
@@ -612,7 +756,7 @@ async fn the_reference_index_follows_what_content_holds() {
         "/api/models/collections/posts/items/1",
         json!({
             "title": "Hello",
-            "author": [],
+            "author": null,
             "also": [{ "target": "authors", "item": 2 }],
         }),
     )
@@ -651,7 +795,7 @@ async fn the_reference_index_follows_what_content_holds() {
         "/api/models/collections/posts/items/1",
         json!({
             "title": "Hello",
-            "author": [{ "target": "authors", "item": 1 }],
+            "author": { "target": "authors", "item": 1 },
             "also": [],
         }),
     )
@@ -747,7 +891,7 @@ async fn a_relation_inside_a_composite_is_indexed_and_detached_like_any_other() 
         &token,
         Method::POST,
         "/api/models/composite_fields/cta",
-        json!([relation_field("author", "collection", "authors", false)]),
+        json!([relation_field("author", "collection", "authors")]),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -774,8 +918,8 @@ async fn a_relation_inside_a_composite_is_indexed_and_detached_like_any_other() 
         &format!("{posts}/item"),
         json!({
             "title": "Hello",
-            "cta": { "author": [{ "target": "authors", "item": 1 }] },
-            "blocks": [{ "author": [] }],
+            "cta": { "author": { "target": "authors", "item": 1 } },
+            "blocks": [{ "author": null }],
         }),
     )
     .await;
@@ -794,8 +938,8 @@ async fn a_relation_inside_a_composite_is_indexed_and_detached_like_any_other() 
         &format!("{posts}/items/1"),
         json!({
             "title": "Hello",
-            "cta": { "author": [] },
-            "blocks": [{ "author": [{ "target": "authors", "item": 1 }] }],
+            "cta": { "author": null },
+            "blocks": [{ "author": { "target": "authors", "item": 1 } }],
         }),
     )
     .await;
@@ -840,8 +984,8 @@ async fn a_relation_inside_a_composite_is_indexed_and_detached_like_any_other() 
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["title"], "Hello");
-    assert_eq!(body["cta"]["values"]["author"], json!([]));
-    assert_eq!(body["blocks"][0]["values"]["author"], json!([]));
+    assert_eq!(body["cta"]["values"]["author"], json!(null));
+    assert_eq!(body["blocks"][0]["values"]["author"], json!(null));
 }
 
 /// The same index, with a single page as the thing being pointed at.
@@ -861,9 +1005,9 @@ async fn a_page_can_be_referenced_too() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("landing", "single_page", "home", false),
+            relation_field("landing", "single_page", "home"),
         ]),
     )
     .await;
@@ -873,7 +1017,7 @@ async fn a_page_can_be_referenced_too() {
         &token,
         Method::POST,
         "/api/models/collections/posts/item",
-        json!({ "title": "Hello", "landing": [{ "target": "home" }] }),
+        json!({ "title": "Hello", "landing": { "target": "home" } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -931,12 +1075,7 @@ async fn a_page_that_references_an_item_is_indexed() {
         &app,
         &token,
         "/api/models/single_pages/about/schema",
-        Value::Array(vec![relation_field(
-            "author",
-            "collection",
-            "authors",
-            false,
-        )]),
+        json!([relation_field("author", "collection", "authors")]),
     )
     .await;
 
@@ -945,7 +1084,7 @@ async fn a_page_that_references_an_item_is_indexed() {
         &token,
         Method::PUT,
         "/api/models/single_pages/about/item",
-        json!({ "author": [{ "target": "authors", "item": 1 }] }),
+        json!({ "author": { "target": "authors", "item": 1 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1015,10 +1154,10 @@ async fn content_something_points_at_is_not_deleted_until_the_references_go() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("author", "collection", "authors", false),
-            relation_field("also", "collection", "authors", true),
+            relation_field("author", "collection", "authors"),
+            relation_array_field("also", &[("collection", "authors")]),
         ]),
     )
     .await;
@@ -1029,7 +1168,7 @@ async fn content_something_points_at_is_not_deleted_until_the_references_go() {
         "/api/models/collections/posts/item",
         json!({
             "title": "About Ada",
-            "author": [{ "target": "authors", "item": 1 }],
+            "author": { "target": "authors", "item": 1 },
             "also": [{ "target": "authors", "item": 1 }],
         }),
     )
@@ -1096,7 +1235,7 @@ async fn content_something_points_at_is_not_deleted_until_the_references_go() {
     assert_eq!(status, StatusCode::NOT_FOUND, "the author was deleted");
 
     // What pointed at it no longer does, in the values the delivery API would serve and in the
-    // working copy an editor would open.
+    // working copy an editor would open. One relation is emptied to `null`, an array to `[]`.
     let (status, body) = send(
         &app.router,
         Method::GET,
@@ -1106,7 +1245,7 @@ async fn content_something_points_at_is_not_deleted_until_the_references_go() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["author"], json!([]));
+    assert_eq!(body["author"], json!(null));
     assert_eq!(body["also"], json!([]));
     assert_eq!(
         body["title"], "About Ada",
@@ -1160,9 +1299,9 @@ async fn a_referenced_page_is_not_deleted_until_the_references_go() {
         &app,
         &token,
         "/api/models/collections/posts/schema",
-        Value::Array(vec![
+        json!([
             text_field("title", true),
-            relation_field("landing", "single_page", "home", false),
+            relation_field("landing", "single_page", "home"),
         ]),
     )
     .await;
@@ -1171,7 +1310,7 @@ async fn a_referenced_page_is_not_deleted_until_the_references_go() {
         &token,
         Method::POST,
         "/api/models/collections/posts/item",
-        json!({ "title": "Hello", "landing": [{ "target": "home" }] }),
+        json!({ "title": "Hello", "landing": { "target": "home" } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1217,7 +1356,7 @@ async fn a_referenced_page_is_not_deleted_until_the_references_go() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["landing"], json!([]));
+    assert_eq!(body["landing"], json!(null));
 
     // Nothing references it any more, so a second delete attempt would not be refused for that
     // reason - it is simply gone.
@@ -1258,8 +1397,9 @@ async fn a_delete_nothing_points_at_goes_straight_through() {
         assert_eq!(status, StatusCode::OK, "{body}");
     }
 
-    // Author 2 points at author 1. Deleting author 2 is about *being* referenced, not about
-    // referencing something, so it goes through and takes its entry with it.
+    // Nothing in this schema is a relation, so no author references any other. Deleting is about
+    // *being* referenced, not about referencing something; a collection of plain text fields is
+    // therefore deletable without the detach flag, which is the floor this file's rules sit on.
     let (status, body) = send_json(
         &app,
         &token,
@@ -1315,14 +1455,7 @@ async fn a_required_relation_needs_a_published_target_to_go_live() {
         &format!("{categories}/schema"),
         json!([
             text_field("title", true),
-            {
-                "name": "author",
-                "field_type": { "Relation": {
-                    "target": { "kind": "collection", "name": "authors" },
-                    "has_many": false,
-                }},
-                "required": true, "width": 12, "height": 1,
-            },
+            required_relation_field("author", "collection", "authors"),
         ]),
     )
     .await;
@@ -1331,7 +1464,7 @@ async fn a_required_relation_needs_a_published_target_to_go_live() {
         &token,
         Method::POST,
         &format!("{categories}/item"),
-        json!({ "title": "Tech", "author": [{ "target": "authors", "item": 1 }] }),
+        json!({ "title": "Tech", "author": { "target": "authors", "item": 1 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1452,14 +1585,7 @@ async fn only_a_required_relation_that_would_be_left_empty_holds_a_target() {
         &format!("{categories}/schema"),
         json!([
             text_field("title", true),
-            {
-                "name": "authors",
-                "field_type": { "Relation": {
-                    "target": { "kind": "collection", "name": "authors" },
-                    "has_many": true,
-                }},
-                "required": true, "width": 12, "height": 1,
-            },
+            required_relation_array_field("authors", &[("collection", "authors")]),
         ]),
     )
     .await;
@@ -1517,14 +1643,7 @@ async fn only_a_required_relation_that_would_be_left_empty_holds_a_target() {
         &format!("{posts}/schema"),
         json!([
             text_field("title", true),
-            {
-                "name": "author",
-                "field_type": { "Relation": {
-                    "target": { "kind": "collection", "name": "authors" },
-                    "has_many": false,
-                }},
-                "required": false, "width": 12, "height": 1,
-            },
+            relation_field("author", "collection", "authors"),
         ]),
     )
     .await;
@@ -1533,7 +1652,7 @@ async fn only_a_required_relation_that_would_be_left_empty_holds_a_target() {
         &token,
         Method::POST,
         &format!("{posts}/item"),
-        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 2 }] }),
+        json!({ "title": "Hello", "author": { "target": "authors", "item": 2 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1614,14 +1733,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
         &format!("{posts}/schema"),
         json!([
             text_field("title", true),
-            {
-                "name": "author",
-                "field_type": { "Relation": {
-                    "target": { "kind": "collection", "name": "authors" },
-                    "has_many": false,
-                }},
-                "required": false, "width": 12, "height": 1,
-            },
+            relation_field("author", "collection", "authors"),
         ]),
     )
     .await;
@@ -1633,7 +1745,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
         &token,
         Method::POST,
         &format!("{posts}/item"),
-        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 2 }] }),
+        json!({ "title": "Hello", "author": { "target": "authors", "item": 2 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1657,7 +1769,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
     .await;
     assert_eq!(
         delivered["values"]["author"],
-        json!([]),
+        json!(null),
         "a site cannot follow it"
     );
 
@@ -1670,10 +1782,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
         None,
     )
     .await;
-    assert_eq!(
-        managed["author"],
-        json!([{ "target": "authors", "item": 2 }])
-    );
+    assert_eq!(managed["author"], json!({ "target": "authors", "item": 2 }));
 
     // Pointed at the author that is on the site, the reference is served - bare by default.
     let (status, body) = send_json(
@@ -1681,7 +1790,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
         &token,
         Method::PUT,
         &format!("{posts}/items/1"),
-        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 1 }] }),
+        json!({ "title": "Hello", "author": { "target": "authors", "item": 1 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1704,7 +1813,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
     .await;
     assert_eq!(
         delivered["values"]["author"],
-        json!([{ "target": "authors", "item": 1 }]),
+        json!({ "target": "authors", "item": 1 }),
         "the reference, without the values behind it"
     );
 
@@ -1719,11 +1828,11 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
     .await;
     assert_eq!(
         populated["values"]["author"],
-        json!([{
+        json!({
             "target": "authors",
             "item": 1,
             "values": { "title": "Ada" },
-        }])
+        })
     );
 
     // The list route expands the same way, so a site does not need a request per row.
@@ -1736,7 +1845,7 @@ async fn the_delivery_api_drops_unpublished_references_and_expands_what_it_is_as
     )
     .await;
     assert_eq!(
-        listed["items"][0]["values"]["author"][0]["values"]["title"],
+        listed["items"][0]["values"]["author"]["values"]["title"],
         "Ada"
     );
 
@@ -1792,14 +1901,7 @@ async fn a_page_is_served_the_references_it_can_follow() {
         Some(&token),
         Some(json!([
             text_field("title", true),
-            {
-                "name": "author",
-                "field_type": { "Relation": {
-                    "target": { "kind": "collection", "name": "authors" },
-                    "has_many": false,
-                }},
-                "required": false, "width": 12, "height": 1,
-            },
+            relation_field("author", "collection", "authors"),
         ])),
     )
     .await;
@@ -1809,7 +1911,7 @@ async fn a_page_is_served_the_references_it_can_follow() {
         Method::PUT,
         "/api/models/single_pages/home/item",
         Some(&token),
-        Some(json!({ "title": "Home", "author": [{ "target": "authors", "item": 1 }] })),
+        Some(json!({ "title": "Home", "author": { "target": "authors", "item": 1 } })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1833,7 +1935,7 @@ async fn a_page_is_served_the_references_it_can_follow() {
     .await;
     assert_eq!(
         page["values"]["author"],
-        json!([{ "target": "authors", "item": 1, "values": { "title": "Ada" } }])
+        json!({ "target": "authors", "item": 1, "values": { "title": "Ada" } })
     );
 }
 
@@ -1882,7 +1984,7 @@ async fn a_site_can_read_a_relation_from_the_other_side() {
         &format!("{articles}/schema"),
         json!([
             text_field("title", true),
-            relation_field("category", "collection", "categories", false),
+            relation_field_named("category", "collection", "categories", "articles"),
         ]),
     )
     .await;
@@ -1896,7 +1998,7 @@ async fn a_site_can_read_a_relation_from_the_other_side() {
             &format!("{articles}/item"),
             json!({
                 "title": format!("Article {}", index + 1),
-                "category": [{ "target": "categories", "item": category }],
+                "category": { "target": "categories", "item": category },
             }),
         )
         .await;
@@ -1985,7 +2087,7 @@ async fn a_site_can_read_a_relation_from_the_other_side() {
         json!([{
             "target": "articles",
             "item": 1,
-            "values": { "title": "Article 1", "category": [{ "target": "categories", "item": 1 }] },
+            "values": { "title": "Article 1", "category": { "target": "categories", "item": 1 } },
         }])
     );
 
@@ -2044,6 +2146,341 @@ async fn a_site_can_read_a_relation_from_the_other_side() {
     );
 }
 
+/// The inverse direction reaches into an array item type: the referrer holds several references,
+/// and still answers `?populate=<inverse_name>` as one list of the content that holds the target.
+#[tokio::test]
+async fn an_array_of_relations_answers_the_inverse_direction_too() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let articles = "/api/models/collections/articles";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/categories/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/categories/item",
+        json!({ "title": "Tech" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/categories/items/1/publish",
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The array's item type is the one that names the other side.
+    save_schema(
+        &app,
+        &token,
+        &format!("{articles}/schema"),
+        json!([
+            text_field("title", true),
+            relation_array_field_named("topics", "collection", "categories", "articles"),
+        ]),
+    )
+    .await;
+
+    // One published article holding the reference, one published holding none, and one draft
+    // that holds it but is not on the site yet.
+    for (index, title) in ["Holds it", "Holds none", "Still a draft"]
+        .iter()
+        .enumerate()
+    {
+        let topics = if index == 1 {
+            json!([])
+        } else {
+            json!([{ "target": "categories", "item": 1 }])
+        };
+        let (status, body) = send_json(
+            &app,
+            &token,
+            Method::POST,
+            &format!("{articles}/item"),
+            json!({ "title": title, "topics": topics }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if index < 2 {
+            let (status, body) = send_json(
+                &app,
+                &token,
+                Method::POST,
+                &format!("{articles}/items/{}/publish", index + 1),
+                json!(null),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+    }
+
+    // The published referrer comes back under the inverse name, as a list; the one holding nothing
+    // and the draft do not.
+    let (status, category) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/1?populate=articles",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        category["values"]["articles"],
+        json!([{
+            "target": "articles",
+            "item": 1,
+            "values": {
+                "title": "Holds it",
+                "topics": [{ "target": "categories", "item": 1 }],
+            },
+        }])
+    );
+
+    // A name nothing declares is still 400, array or not.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/categories/items/1?populate=nope",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Several references of several targets: the value keeps the written order, a duplicate is one
+/// entry, and delivery expands only the target the client names.
+#[tokio::test]
+async fn an_array_of_relations_round_trips_and_delivery_expands_the_named_target() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let posts = "/api/models/collections/posts";
+
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/authors/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    save_schema(
+        &app,
+        &token,
+        "/api/models/collections/categories/schema",
+        json!([text_field("title", true)]),
+    )
+    .await;
+    for (path, title) in [
+        ("/api/models/collections/authors/item", "Ada"),
+        ("/api/models/collections/categories/item", "Tech"),
+    ] {
+        let (status, body) =
+            send_json(&app, &token, Method::POST, path, json!({ "title": title })).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    for path in [
+        "/api/models/collections/authors/items/1/publish",
+        "/api/models/collections/categories/items/1/publish",
+    ] {
+        let (status, body) = send_json(&app, &token, Method::POST, path, json!(null)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    save_schema(
+        &app,
+        &token,
+        &format!("{posts}/schema"),
+        json!([
+            text_field("title", true),
+            relation_array_field(
+                "related",
+                &[("collection", "authors"), ("collection", "categories")],
+            ),
+            relation_array_field("coauthors", &[("collection", "authors")]),
+        ]),
+    )
+    .await;
+
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/item"),
+        json!({
+            "title": "Hello",
+            "related": [
+                { "target": "authors", "item": 1 },
+                { "target": "categories", "item": 1 },
+                { "target": "authors", "item": 1 },
+            ],
+            "coauthors": [{ "target": "authors", "item": 1 }],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // The duplicate is one entry, at the place it first appeared; both targets stay.
+    let (status, body) = send(
+        &app.router,
+        Method::GET,
+        &format!("{posts}/items/1"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["related"],
+        json!([
+            { "target": "authors", "item": 1 },
+            { "target": "categories", "item": 1 },
+        ])
+    );
+
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        &format!("{posts}/items/1/publish"),
+        json!(null),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Bare: both references, no values behind them.
+    let (_, delivered) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        delivered["values"]["related"],
+        json!([
+            { "target": "authors", "item": 1 },
+            { "target": "categories", "item": 1 },
+        ])
+    );
+
+    // The name alone cannot say which target: refused, because guessing would serve the other one.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=related",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Naming one target expands only those elements; the others come back as they are.
+    let (_, populated) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=related.authors",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        populated["values"]["related"],
+        json!([
+            { "target": "authors", "item": 1, "values": { "title": "Ada" } },
+            { "target": "categories", "item": 1 },
+        ])
+    );
+    let (_, populated) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=related.categories",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        populated["values"]["related"],
+        json!([
+            { "target": "authors", "item": 1 },
+            { "target": "categories", "item": 1, "values": { "title": "Tech" } },
+        ])
+    );
+
+    // One target declared: the field name is enough.
+    let (_, populated) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=coauthors",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        populated["values"]["coauthors"],
+        json!([{ "target": "authors", "item": 1, "values": { "title": "Ada" } }])
+    );
+
+    // A target the field does not name is refused, and the filter's bare form is refused too:
+    // with several targets the name alone does not say which one the caller meant.
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts/items/1?populate=related.nope",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts?where=related:1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The filter names one target of several, and the index answers who holds it.
+    let (status, filtered) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts?where=related.authors:1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(filtered["total"], 1, "{filtered}");
+    assert_eq!(filtered["items"][0]["id"], 1);
+
+    // With one target declared the field name already says which one, so the bare form works.
+    let (status, filtered) = send(
+        &app.router,
+        Method::GET,
+        "/api/content/collections/posts?where=coauthors:1",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(filtered["total"], 1, "{filtered}");
+    assert_eq!(filtered["items"][0]["id"], 1);
+}
+
 /// Deleting a whole collection is the same rule as deleting one item: nothing that points at what
 /// goes may be left behind.
 #[tokio::test]
@@ -2073,7 +2510,7 @@ async fn a_collection_that_is_pointed_at_is_not_deleted() {
         "/api/models/collections/posts/schema",
         json!([
             text_field("title", true),
-            relation_field("author", "collection", "authors", false),
+            relation_field("author", "collection", "authors"),
         ]),
     )
     .await;
@@ -2082,7 +2519,7 @@ async fn a_collection_that_is_pointed_at_is_not_deleted() {
         &token,
         Method::POST,
         "/api/models/collections/posts/item",
-        json!({ "title": "Hello", "author": [{ "target": "authors", "item": 1 }] }),
+        json!({ "title": "Hello", "author": { "target": "authors", "item": 1 } }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -2107,7 +2544,7 @@ async fn a_collection_that_is_pointed_at_is_not_deleted() {
         &token,
         Method::PUT,
         "/api/models/collections/posts/items/1",
-        json!({ "title": "Hello", "author": [] }),
+        json!({ "title": "Hello", "author": null }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -2164,7 +2601,7 @@ async fn an_inverse_name_belongs_to_one_relation() {
         "/api/models/collections/articles/schema",
         json!([
             text_field("title", true),
-            relation_field("category", "collection", "categories", false),
+            relation_field_named("category", "collection", "categories", "articles"),
         ]),
     )
     .await;
@@ -2176,11 +2613,27 @@ async fn an_inverse_name_belongs_to_one_relation() {
         Some(&token),
         Some(json!([
             text_field("title", true),
-            relation_field("category", "collection", "categories", false),
+            relation_field_named("category", "collection", "categories", "articles"),
         ])),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+
+    // One schema cannot give the same target the same name twice either.
+    let (status, body) = send_json(
+        &app,
+        &token,
+        Method::POST,
+        "/api/models/collections/dupes/schema",
+        json!([
+            text_field("title", true),
+            relation_field_named("category", "collection", "categories", "articles"),
+            relation_field_named("topic", "collection", "categories", "articles"),
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.contains("'articles'"), "{body}");
 
     // Another collection calling the *same target* the same name is refused, and the refusal says
     // who has it.
@@ -2191,7 +2644,7 @@ async fn an_inverse_name_belongs_to_one_relation() {
         "/api/models/collections/cards/schema",
         json!([
             text_field("title", true),
-            relation_field("category", "collection", "categories", false),
+            relation_field_named("category", "collection", "categories", "articles"),
         ]),
     )
     .await;
@@ -2207,7 +2660,7 @@ async fn an_inverse_name_belongs_to_one_relation() {
         "/api/models/collections/cards/schema",
         json!([
             text_field("title", true),
-            relation_field("section", "collection", "sections", false),
+            relation_field_named("section", "collection", "sections", "articles"),
         ]),
     )
     .await;
@@ -2220,7 +2673,7 @@ async fn an_inverse_name_belongs_to_one_relation() {
         Some(&token),
         Some(json!([
             text_field("title", true),
-            relation_field("category", "collection", "categories", false),
+            relation_field_named("category", "collection", "categories", "articles"),
         ])),
     )
     .await;
