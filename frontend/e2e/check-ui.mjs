@@ -1732,14 +1732,34 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await slugField.locator('input[name=fieldName]').fill('address');
   await slugField.locator('mat-select[name=fieldType]').click();
   await page.locator('mat-option', { hasText: 'Slug' }).click();
+  // The select draws its own value through `FieldTypeString`: a type that pipe does not name has
+  // no option to match, and the field it was chosen in reads as blank ("I chose Slug and the type
+  // went empty"). The chosen text is what tells one from the other - the element's `textContent`
+  // also holds every option, chosen or not.
+  // The chosen text, waited for: the value element is redrawn a beat after the option is picked,
+  // and reading it too early answers what it held before.
+  const chosen = async (select, expected) => {
+    const value = select.locator('.mat-mdc-select-value-text');
+    await value
+      .filter({ hasText: expected })
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
+    return ((await value.textContent()) ?? '').trim();
+  };
+  const typeSelect = slugField.locator('mat-select[name=fieldType]');
+  check(
+    '型に Slug と出る',
+    (await chosen(typeSelect, 'Slug')) === 'Slug',
+    await chosen(typeSelect, 'Slug'),
+  );
   await slugField.locator('mat-select[name=slugGenerateFrom]').click();
   await page.locator('mat-option', { hasText: 'title' }).click();
   await page.keyboard.press('Escape');
+  const sourceSelect = slugField.locator('mat-select[name=slugGenerateFrom]');
   check(
     'Slug を画面で選び、生成元を指定できる',
-    ((await slugField.locator('mat-select[name=slugGenerateFrom]').textContent()) ?? '').includes(
-      'title',
-    ),
+    (await chosen(sourceSelect, 'title')) === 'title',
+    await chosen(sourceSelect, 'title'),
   );
 
   // A relation points at another collection's items - or at a single page. Several references are
@@ -2116,6 +2136,19 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // picked, is that name.
   await page.goto(`${BASE}/collections/${SCHEMA_COLLECTION}`, { waitUntil: 'networkidle' });
   await page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
+  // The name is looked up after the row is drawn, so the fallback (`e2e_blog #1`) is on screen for
+  // a moment: wait for the name rather than reading whichever of the two came first.
+  await page
+    .waitForFunction(
+      (expected) =>
+        (
+          document.querySelectorAll('table.items tbody tr')[0]?.querySelectorAll('td.value')[1]
+            ?.textContent ?? ''
+        ).trim() === expected,
+      referencedTitle,
+      { timeout: 10000 },
+    )
+    .catch(() => {});
   const referenceCell = (
     await page.locator('table.items tbody tr').first().locator('td.value').nth(1).textContent()
   )?.trim();

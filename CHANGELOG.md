@@ -86,6 +86,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ### Fixed
 
+- **Changing a field's type to `Slug` in the schema editor no longer leaves the type blank or is
+  refused as "already unique".** The dropdown draws its value through the pipe that names the types,
+  and that pipe did not know `Slug`: with no option to match, the field it was chosen in was drawn
+  empty. A field that had been marked unique carried the flag into its life as a slug, which the
+  server refuses because a slug is unique by construction - the flag is now left off the wire for a
+  slug (the checkbox is not shown for one, so a save is the only place that can be settled).
 - A slug can no longer be an array item. `Array([Slug])` used to save and then refuse every value
   written to it, and a slug inside an array could not have been unique anyway - a slug's uniqueness
   is the whole of what it is, and the index is built from a field's own value.

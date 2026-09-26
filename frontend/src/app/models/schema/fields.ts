@@ -237,6 +237,12 @@ export function schemaForSaving(fields: FieldSchema[]): FieldSchema[] {
         },
       };
     }
+    if (isSlugFieldSchema(type)) {
+      // A slug is unique by being one, and the server refuses the redundant flag - so a field that
+      // was unique as a Text must not carry it into its life as a slug. The checkbox is not shown
+      // for a slug, so this is the only place it can be settled.
+      return { ...field, unique: false };
+    }
     if (isRelationFieldSchema(type)) {
       return {
         ...field,
@@ -437,6 +443,8 @@ export class FieldTypeStringPipe implements PipeTransform {
       return field;
     } else if (isTextFieldSchema(field)) {
       return 'Text';
+    } else if (isSlugFieldSchema(field)) {
+      return 'Slug';
     } else if (isMarkdownFieldSchema(field)) {
       return 'Markdown';
     } else if (isCompositeFieldSchema(field)) {

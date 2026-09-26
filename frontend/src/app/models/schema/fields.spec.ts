@@ -129,6 +129,21 @@ describe('what a new field starts as', () => {
   });
 });
 
+describe('FieldTypeStringPipe', () => {
+  // The select binds its value to this, and a value no option matches is drawn as an empty field:
+  // "I chose Slug and the type went blank" is this, not a lost type.
+  it('names every type the editor can choose', () => {
+    for (const name of Object.keys(FieldDefaults) as (keyof typeof FieldDefaults)[]) {
+      expect(new FieldTypeStringPipe().transform(newFieldType(name))).toBe(name);
+    }
+  });
+
+  it('names a slug, which is an object rather than one of the bare strings', () => {
+    expect(new FieldTypeStringPipe().transform({ Slug: {} })).toBe('Slug');
+    expect(new FieldTypeStringPipe().transform({ Slug: { generate_from: 'title' } })).toBe('Slug');
+  });
+});
+
 describe('relation fields', () => {
   const relation = (options: Record<string, unknown>) => ({
     name: 'author',
@@ -142,6 +157,24 @@ describe('relation fields', () => {
     expect(new FieldTypeStringPipe().transform(newFieldType('Relation'))).toBe('Relation');
     expect(isRelationFieldSchema(newFieldType('Relation'))).toBe(true);
     expect(isRelationFieldSchema('Number')).toBe(false);
+  });
+
+  // A slug is unique by construction, and the server refuses the redundant flag: a field that was
+  // unique as a Text has to lose it when it becomes a slug, or the save comes back "already unique".
+  it('does not send the unique flag for a slug', () => {
+    const saved = schemaForSaving([
+      {
+        name: 'address',
+        field_type: { Slug: { generate_from: 'title' } },
+        required: false,
+        unique: true,
+        width: 12,
+        height: 1,
+      },
+    ] as never);
+
+    expect(saved[0].unique).toBe(false);
+    expect(saved[0].field_type).toEqual({ Slug: { generate_from: 'title' } });
   });
 
   // A blank name is not a label, and the server refuses one: it is left off the wire instead.
