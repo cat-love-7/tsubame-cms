@@ -314,6 +314,65 @@ describe('CollectionItemEdit', () => {
     expect(fixture.componentInstance.isNew()).toBe(false);
   });
 
+  // Saving used to land back on the list, so a second edit meant finding the item again. The list
+  // is one button away; the save should leave the reader where they are.
+  it('stays on the item after a plain save', async () => {
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'Edited',
+    );
+    component.save();
+    await fixture.whenStable();
+
+    expect(stub.updated).toEqual([{ id: 7, values: { title: 'Edited' } }]);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  // A new item has no address until the create answers, so that much still moves - to the item the
+  // save created, not back to the list it came from.
+  it("moves a new item's address to the id its save answered", async () => {
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    route.navigate({ name: 'blog' });
+    await fixture.whenStable();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+
+    component.setValue(
+      { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
+      'New one',
+    );
+    component.save();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(['/collections', 'blog', 'edit', 11], {
+      replaceUrl: true,
+    });
+  });
+
+  // "Save" and "Save and publish" belong together: the form's own button is at the end of a long
+  // form, so the same act is offered in the toolbar as well.
+  it('offers save in the toolbar as well as at the end of the form', async () => {
+    const fixture: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fixture.detectChanges();
+
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('button'))
+      .map((button) => button.textContent?.trim())
+      .filter((label) => label === 'Save');
+    expect(labels.length).toBe(2);
+
+    // The first one in the DOM is the toolbar's, and it is the same act.
+    saveButton(fixture.nativeElement).click();
+    await fixture.whenStable();
+
+    expect(stub.updated).toEqual([{ id: 7, values: { title: 'Hello' } }]);
+  });
+
   // Publishing copies what the server has, so with edits still in the form it would put the
   // previous version on the site while the screen showed the new one.
   it('saves before publishing when the form has unsaved edits, and only then', async () => {

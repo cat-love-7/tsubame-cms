@@ -11,6 +11,13 @@
       {{ 'content.unsavedEdits' | transloco }}
     </span>
   }
+  @if (canEdit()) {
+    <!-- The same act as the button at the end of the form, put here so that "save" is beside "save
+         and publish" instead of a screenful away from it. A long form still has the bottom one. -->
+    <button matButton color="primary" [disabled]="!loaded()" (click)="save()">
+      {{ 'common.save' | transloco }}
+    </button>
+  }
   @if (metadata(); as meta) {
     <app-item-status [status]="meta.status" />
     @if (meta.status === 'published' && meta.has_draft) {

@@ -195,13 +195,14 @@ export class CollectionItemEdit implements HasUnsavedChanges {
   }
 
   /**
-   * Save the working copy, and go back to the list.
+   * Save the working copy and stay on the item.
    *
-   * The save was pressed from the list, so that is where the reader is going; a save that answers
-   * after they have moved on is dropped rather than navigating them from wherever they are.
+   * Only a *new* item's address moves, to the id the create answered; an existing item keeps the
+   * reader where they are, which is what the single-page form does too. Saving used to land back on
+   * the list, so a second edit meant finding the item again.
    */
   save() {
-    this.editor.save(() => this.goBackToList());
+    this.editor.save(() => this.addressTheNewItem());
   }
 
   saveAndPublish() {
@@ -258,9 +259,5 @@ export class CollectionItemEdit implements HasUnsavedChanges {
     void this.router.navigate(['/collections', this.collectionName(), 'edit', this.itemId()], {
       replaceUrl: true,
     });
-  }
-
-  private goBackToList() {
-    void this.router.navigate(['/collections', this.collectionName()]);
   }
 }

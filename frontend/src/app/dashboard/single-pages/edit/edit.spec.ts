@@ -303,6 +303,25 @@ describe('SinglePageEdit', () => {
     expect(fresh.nativeElement.querySelector('app-item-status')).toBeTruthy();
   });
 
+  // The form's own save button is at the end of a long form, so "save" is offered in the toolbar
+  // too - beside the publish controls it belongs with.
+  it('offers save in the toolbar as well as at the end of the form', () => {
+    const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
+    fresh.componentInstance.values.set({ title: 'About us' });
+    fresh.detectChanges();
+
+    const labels = Array.from(fresh.nativeElement.querySelectorAll('button'))
+      .map((button) => button.textContent?.trim())
+      .filter((label) => label === 'Save');
+    expect(labels.length).toBe(2);
+
+    // The first one in the DOM is the toolbar's, and it is the same act.
+    saveButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+
+    expect(stub.saved).toEqual([{ title: 'About us' }]);
+  });
+
   it('saves and publishes in one act', () => {
     const fresh: TypedFixture<SinglePageEdit> = TestBed.createComponent(SinglePageEdit);
     fresh.componentInstance.values.set({ title: 'About us' });
