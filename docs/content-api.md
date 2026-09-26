@@ -515,6 +515,8 @@ machine-readable shape.
 | The Composite's id differs from the Schema | same as above | `composite_id_mismatch` |
 | An array inside an array | `Array` | `nested_arrays` |
 | A Slug with no URL-usable character | `{"Slug":{}}` | `invalid_slug` |
+| Two Items already hold the value a Schema save would make unique | `"unique": true` / `Slug` | `duplicate_values` |
+| A stored value is not a Slug yet, on the save that makes the field one | `{"Slug":{}}` | `slug_not_canonical` |
 
 - **Length counts characters (code points)**. It is not bytes, so `max_length: 20` passes both 20
   Japanese characters and 20 Latin characters. The screen counts the same way (`[...value].length`).
@@ -542,9 +544,17 @@ machine-readable shape.
 - Situational codes other than value validation (auth, conflicts, publish races, etc.) are listed
   under `situational` in `assets/error-codes.json`. For example, **`draft_changed`** is the 409 when a
   publish raced with a save (below).
-- A refusal is **400 + `code` + `field` + an English `message`**. `code` is part of the
-  `assets/error-codes.json` contract, and the screen shows wording in its own language. `message` is
-  for clients that do not know the code and for logs.
+- A refusal is **400 + `code` + `field` + an English `message`**, and - when the code is about
+  *something* - **`details`**: a flat object of strings naming it, e.g.
+  `{"value":"intro","item":"3","owner":"1"}`. `code` is part of the `assets/error-codes.json`
+  contract, and the screen shows wording in its own language, filling it with `field` and `details`
+  (`The value 'intro' of 'slug' is already used by item 1.`). `message` is for clients that do not
+  know the code and for logs; it names the same things in one English sentence.
+- **Making a field unique or a slug checks the stored values, and says which ones stop it**:
+  `duplicate_values` (two items hold the same value - `details.value`, `details.item`,
+  `details.owner`) and `slug_not_canonical` (a stored value is not a slug yet - `details.value`,
+  `details.item`). Both are 409s on the Schema save, and the screen tells the editor which items to
+  fix rather than "a value is taken".
 - On the screen, length limits are applied to the input **before saving** (`maxlength` / `minlength`
   and a count hint). Some lower bounds the browser cannot enforce, so the widget itself reports the
   problem and stops the save.

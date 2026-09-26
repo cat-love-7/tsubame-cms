@@ -563,9 +563,22 @@ async fn making_a_field_unique_indexes_the_items_already_stored() {
         "{}",
         String::from_utf8_lossy(&body)
     );
-    assert_eq!(
-        serde_json::from_slice::<Value>(&body).unwrap()["code"],
-        "value_taken"
+    let refusal: Value = serde_json::from_slice(&body).unwrap();
+    // Two stored items hold the same value, which is a different answer from a save that names a
+    // value somebody else has: both items are named, because the editor has to change one of them.
+    // (Which of the two the scan reached first is its business, so the pair is checked as a pair.)
+    assert_eq!(refusal["code"], "duplicate_values");
+    assert_eq!(refusal["field"], "slug");
+    assert_eq!(refusal["details"]["value"], "intro");
+    let item = refusal["details"]["item"].as_str().expect("an item id");
+    let owner = refusal["details"]["owner"].as_str().expect("an item id");
+    assert_ne!(item, owner, "both items have to be named: {refusal}");
+    // The message is the log's, and it names the same pair, so an operator reading either sees
+    // which two items to look at.
+    let message = refusal["message"].as_str().expect("a message");
+    assert!(
+        message.contains(item) && message.contains(owner),
+        "{refusal}"
     );
 }
 

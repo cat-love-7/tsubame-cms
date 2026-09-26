@@ -827,7 +827,9 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                         value.field, value.value, owner
                     ))
                     .with_code("value_taken")
-                    .with_field(&value.field));
+                    .with_field(&value.field)
+                    .with_detail("value", &value.value)
+                    .with_detail("owner", owner));
                 }
             }
         }
@@ -1014,8 +1016,10 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                          (lower-case letters, digits and hyphens) before the field becomes a slug",
                         value.field, item_id, value.value
                     ))
-                    .with_code("invalid_slug")
-                    .with_field(&value.field));
+                    .with_code("slug_not_canonical")
+                    .with_field(&value.field)
+                    .with_detail("value", &value.value)
+                    .with_detail("item", item_id));
                 }
             }
             for value in held {
@@ -1031,11 +1035,15 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     Reservation::AlreadyHeld => {}
                     Reservation::Taken { owner } => {
                         return Err(HttpError::Conflict(&format!(
-                            "field '{}': the value '{}' is already used by item {}",
-                            value.field, value.value, owner
+                            "field '{}': items {} and {} both hold '{}', so it cannot be unique \
+                             until one of them changes",
+                            value.field, item_id, owner, value.value
                         ))
-                        .with_code("value_taken")
-                        .with_field(&value.field));
+                        .with_code("duplicate_values")
+                        .with_field(&value.field)
+                        .with_detail("value", &value.value)
+                        .with_detail("item", item_id)
+                        .with_detail("owner", owner));
                     }
                 }
             }
@@ -2850,7 +2858,9 @@ mod tests {
             .update_collection_schema(&name, &adding_slug)
             .await
             .unwrap_err();
-        assert_eq!(refusal.code, "invalid_slug");
+        assert_eq!(refusal.code, "slug_not_canonical");
+        assert_eq!(refusal.details["value"], "Not A Slug");
+        assert_eq!(refusal.details["item"], "1");
 
         // The title it claimed on the way is not in the index any more.
         assert!(

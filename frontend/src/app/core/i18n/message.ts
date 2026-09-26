@@ -38,6 +38,27 @@ export function isMessage(error: unknown): error is Message {
 }
 
 /**
+ * What a refusal was about, when the server named it.
+ *
+ * `details` is the API's own flat map (`docs/content-api.md`): `{value: "hello", owner: "3"}` for a
+ * value somebody else holds. They arrive as strings, which is what a wording interpolates, so they
+ * are handed to the catalog as they came.
+ */
+export function detailsOf(error: unknown): Record<string, string> {
+  const details = (error as { error?: { details?: unknown } })?.error?.details;
+  if (typeof details !== 'object' || details === null) {
+    return {};
+  }
+  const named: Record<string, string> = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (typeof value === 'string' && value !== '') {
+      named[key] = value;
+    }
+  }
+  return named;
+}
+
+/**
  * The field a refusal is about, when the server named one.
  *
  * Screens use it to mark the input; the message wording fills the same name in, so the reader
@@ -61,9 +82,15 @@ export function failure(
   const key = errorKey(error);
   if (key && !isStatusError(error)) {
     // A refusal that is about one field names it, so the wording can point at the input
-    // rather than leaving the reader to find which one it meant.
+    // rather than leaving the reader to find which one it meant - and `details` carries what it
+    // was about (the value that collided, the item that holds it), which is the part a reader
+    // otherwise has to go looking for.
+    const named = { ...detailsOf(error), ...params };
     const field = fieldOf(error);
-    return field ? { key, params: { field, ...params } } : { key };
+    if (field) {
+      named['field'] = field;
+    }
+    return Object.keys(named).length > 0 ? { key, params: named } : { key };
   }
   return { key: siteKey, params: { ...params, message: errorMessage(error) } };
 }

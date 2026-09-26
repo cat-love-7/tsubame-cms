@@ -36,6 +36,15 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   that target when the field has others (an array that loses one target of two becomes a plain list).
   A site that queries such a field fails with "Cannot query field", with the warning above saying
   why; the raw value stays readable under `values`.
+- **A refusal that is about a value now says which value, and which Item.** `code`s that mean "that
+  value is taken" carried the detail in the English `message` only, so a screen showing its own
+  wording said "a value is already used by another item" and left the reader to find out which.
+  Responses now carry a `details` object (`{"value":"intro","owner":"1"}`), and a Schema save that
+  makes a field unique or a slug **answers codes of its own** - `duplicate_values` (two stored Items
+  hold one value; both are named) and `slug_not_canonical` (a stored value has to become a slug
+  first; the Item is named) - instead of `value_taken` / `invalid_slug`. A client keying on those
+  two has to accept the new ones for a Schema save; a save of an Item is unchanged apart from
+  `details`. The screen fills its wording with them.
 - **Adding an account that the identity provider already had no longer resets its password.** The
   create answer carries `needs_credential`, which is `true` only for an account the provider had to
   create: an account that was already there (made in the provider's console, or coming back after the

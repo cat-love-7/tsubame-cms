@@ -55,6 +55,43 @@ describe('message helpers', () => {
     });
   });
 
+  it('fills the wording with what the refusal was about', () => {
+    // `details` is the API's own map of what collided: without it the reader is told a value is
+    // taken and left to find out which one, and which item has it.
+    const refused = response(409, {
+      code: 'value_taken',
+      message: "field 'slug': the value 'intro' is already used by item 3",
+      field: 'slug',
+      details: { value: 'intro', owner: '3' },
+    });
+
+    expect(failure('content.saveFailed', refused)).toEqual({
+      key: 'errors.value_taken',
+      params: { value: 'intro', owner: '3', field: 'slug' },
+    });
+
+    // The screen's own parameters win, so a caller can override one it knows better.
+    expect(failure('content.saveFailed', refused, { owner: 'other' })).toEqual({
+      key: 'errors.value_taken',
+      params: { value: 'intro', owner: 'other', field: 'slug' },
+    });
+  });
+
+  it('ignores details that are not strings, and an empty one', () => {
+    // The map is the server's, and a client that met a number would rather show the sentence it
+    // has than "undefined".
+    const refused = response(409, {
+      code: 'duplicate_values',
+      message: 'two items hold it',
+      details: { value: 'intro', item: 3, owner: '' },
+    });
+
+    expect(failure('content.saveFailed', refused)).toEqual({
+      key: 'errors.duplicate_values',
+      params: { value: 'intro' },
+    });
+  });
+
   it('shows a code it does not know as the server wrote it', () => {
     // A code added since this client was built: the message is what makes that survivable.
     const future = response(400, { code: 'invented_later', message: 'something new went wrong' });

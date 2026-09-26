@@ -10,6 +10,8 @@
     "username_taken",
     "last_administrator",
     "value_taken",
+    "duplicate_values",
+    "slug_not_canonical",
     "field_required",
     "field_too_long",
     "field_too_short",

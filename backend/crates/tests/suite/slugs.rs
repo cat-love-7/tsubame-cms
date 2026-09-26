@@ -62,6 +62,10 @@ async fn a_slug_is_normalised_and_no_two_items_can_spell_it_differently() {
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "value_taken");
     assert_eq!(body["field"], "address");
+    // What collided travels beside the code, so the screen can say which value and which item
+    // rather than "a value is taken".
+    assert_eq!(body["details"]["value"], "hello-world");
+    assert_eq!(body["details"]["owner"], "1");
 
     // Empty is not a slug: nothing is reserved, so two items may leave it out.
     let (status, _) = send(
@@ -192,8 +196,12 @@ async fn a_text_field_cannot_become_a_slug_while_its_values_are_not_canonical() 
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
     let body: Value = serde_json::from_slice(&body).expect("an error body");
-    assert_eq!(body["code"], "invalid_slug");
+    // A code of its own, because this is not the same refusal as writing a value that cannot be a
+    // slug: the value is already stored, and the answer has to say which item to fix.
+    assert_eq!(body["code"], "slug_not_canonical");
     assert_eq!(body["field"], "address");
+    assert_eq!(body["details"]["value"], "Hello World");
+    assert_eq!(body["details"]["item"], "1");
 
     // While the field is still text, a save stores what it is given: the value has to be made a
     // slug by hand (which is what the refusal asks for), and then the schema is accepted.

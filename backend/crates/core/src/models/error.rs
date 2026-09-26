@@ -17,6 +17,11 @@ pub const SITUATIONAL_ERROR_CODES: &[&str] = &[
     "last_administrator",
     // A value a field declared unique already holds.
     "value_taken",
+    // Two items already stored hold the same value, which is what stops a field becoming unique
+    // (or a slug) until one of them changes.
+    "duplicate_values",
+    // A value already stored is not a slug yet, which is what stops a field becoming one.
+    "slug_not_canonical",
     // What a schema said about a value, named precisely enough to mark the input it belongs to.
     "field_required",
     "field_too_long",
@@ -80,6 +85,8 @@ pub const ERROR_CODES: &[&str] = &[
     "username_taken",
     "last_administrator",
     "value_taken",
+    "duplicate_values",
+    "slug_not_canonical",
     "field_required",
     "field_too_long",
     "field_too_short",
@@ -278,6 +285,12 @@ pub struct HttpError {
     /// A form can mark that input rather than showing a sentence about nothing in particular;
     /// codes and messages alone leave it guessing.
     pub field: Option<String>,
+    /// What the refusal was about, named: the value that collided, the item that holds it.
+    ///
+    /// The `message` is English and belongs to a log; a client that words a `code` in the reader's
+    /// language has nothing to put in its place without these. Named rather than positional so a
+    /// client reads `details.value` whatever the error is.
+    pub details: std::collections::BTreeMap<String, String>,
     /// Set by the 429 answers so the response can carry `Retry-After`.
     pub retry_after_seconds: Option<u64>,
 }
@@ -375,12 +388,23 @@ impl HttpError {
         self
     }
 
+    /// Attach one named detail of the refusal, for a client that words the `code` itself.
+    ///
+    /// `value_taken` and its neighbours are about *something* - a value, an item - and a sentence
+    /// saying only "that value is taken" leaves the reader to find out which one. The message here
+    /// stays English (it is the log's), so the detail travels beside it.
+    pub fn with_detail(mut self, key: &str, value: impl std::fmt::Display) -> Self {
+        self.details.insert(key.to_string(), value.to_string());
+        self
+    }
+
     pub fn new(status_code: u16, message: &str) -> Self {
         HttpError {
             code: default_code(status_code),
             status_code,
             message: message.to_string(),
             field: None,
+            details: Default::default(),
             retry_after_seconds: None,
         }
     }
@@ -436,6 +460,7 @@ impl HttpError {
             code: default_code(STATUS_TOO_MANY_REQUESTS),
             status_code: STATUS_TOO_MANY_REQUESTS,
             field: None,
+            details: Default::default(),
             message: format!("too many failed attempts; try again in {seconds} seconds"),
             retry_after_seconds: Some(seconds),
         }

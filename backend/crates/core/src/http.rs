@@ -343,6 +343,12 @@ impl IntoResponse for HttpError {
         if let Some(field) = &self.field {
             body["field"] = serde_json::Value::String(field.clone());
         }
+        // What the refusal was about, when the code alone does not say: the value that collided,
+        // the item that holds it. A client wording the code itself reads these
+        // (`docs/content-api.md`).
+        if !self.details.is_empty() {
+            body["details"] = serde_json::json!(self.details);
+        }
         let mut response = (status, axum::Json(body)).into_response();
         // Only the 429 answers set this, and a client that knows when to come back does not
         // have to guess.

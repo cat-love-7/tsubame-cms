@@ -313,7 +313,7 @@
     "payload_too_large": "The request was larger than this deployment accepts.",
     "internal_error": "Something went wrong on the server.",
     "not_implemented": "This deployment does not support that.",
-    "value_taken": "The value of '{{field}}' is already used by another item.",
+    "value_taken": "The value '{{value}}' of '{{field}}' is already used by item {{owner}}.",
     "field_required": "'{{field}}' is required.",
     "field_too_long": "'{{field}}' is longer than its schema allows.",
     "field_too_short": "'{{field}}' is shorter than its schema allows.",
@@ -328,7 +328,9 @@
     "still_referenced": "Other content references this, so it was not deleted. Remove those references first.",
     "relation_unpublished": "A required relation points at content that is not published yet. Publish it first.",
     "relation_required_by": "Published content references this through a required relation. Change that content, or unpublish it, first.",
-    "preview_disabled": "Preview links are not enabled for this schema. An administrator can turn them on in the schema editor."
+    "preview_disabled": "Preview links are not enabled for this schema. An administrator can turn them on in the schema editor.",
+    "duplicate_values": "Items {{item}} and {{owner}} both hold '{{value}}' in '{{field}}', so it cannot be unique until one of them changes.",
+    "slug_not_canonical": "Item {{item}} holds '{{value}}' in '{{field}}', which is not a slug yet. Make it one (lower-case letters, digits and hyphens) before the field becomes a slug."
   },
   "nav": {
     "documents": "Documents",
