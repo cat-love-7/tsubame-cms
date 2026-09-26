@@ -13,7 +13,8 @@ than bringing in a new concept, this generalises the mechanism that works for im
 
 - A **reference field** can be defined on an item of a Collection (the target is another Collection,
   or a Single page)
-- The value is a **set** of references (it has no order). One (single) or several (`has_many`)
+- The value is **one reference, or several as an Array of them** (an array has an order; a single
+  reference does not)
 - **Reverse lookup** (the content referencing this item) is visible in the API and on screen.
   **It can also be read in the delivery API** - "the articles of category 3" comes back with paging
   (a filter), and "this category and its articles" comes back in one level (the expansion of the
@@ -33,9 +34,9 @@ comes automatically from the index).
 | Point | Decision | Reason |
 |---|---|---|
 | The defining side | **One side only**. The side with the field is the "owning" side; the reverse side is read from the index | Removes the double management of Strapi's `mappedBy`/`inversedBy`. The same as image references |
-| Cardinality | **Only two kinds, via `has_many: bool`** | Strapi's oneToOne / oneToMany / manyToOne fold into these two (putting a single reference on the many side gives oneToMany) |
+| Cardinality | **One reference, or an Array of them** (`Array([Relation(…)])`, one item type per target) | Strapi's oneToOne / oneToMany / manyToOne fold into these two, and the array is also what lets one Field reference several targets |
 | The shape of the value | An **ordered list** of `{ "target": "<collection or page>", "id"?: n }` | Changed from a set in 2026-09. The order carries meaning, as in "featured articles in this order", and the site serves it as it is. On save, **only duplicates of the same reference** are removed, and the order stays as written (the index, deletion and detach treat it as a set, so they are unaffected) |
-| The target | **Both Collections and Single pages**. A Single page only allows `has_many: false` | A page has no id, so only "is it referenced" becomes the value (holding several is meaningless) |
+| The target | **Both Collections and Single pages**. A Single page is referenced by name only, so it is always one reference per Field | A page has no id, but several *different* pages can be referenced at once by one array |
 | Reverse lookup | **An index** (the schema only holds the name). Management reads it with `GET …/references`; delivery sees it through filters and expansion | The same as the image's `GET /models/images/{id}/references`. **No recomputation is needed to read it** (the index is updated when writing) |
 | The name of the reverse side | `inverse_name: Option<String>` can be written in the schema. **It holds no data** | Used for the heading on screen ("the articles of this category") and for `?populate=<inverse_name>` in delivery. Unlike Strapi's `mappedBy`, it is not doubly managed |
 | Writing the index | **Together with the body** (`TransactWriteItems` on DynamoDB; the same lock on-prem) | Because it is used to decide deletion, it is stricter than image references (an image takes two steps, body then index, and a drift only makes deletion conservative) |
@@ -44,7 +45,7 @@ comes automatically from the index).
 | The side being deleted | **Rejection is the default**. `?detach=true` detaches the references first, then deletes (all references are detached) | The same idea as the image's "trash → check references → delete permanently" |
 | Expansion in the public API | **By default only the id**; `?populate=<field>` expands one level | Images are always expanded, but many-to-many makes responses heavy, and cycles and unpublished targets need explaining. Being explicit is safer |
 | Cycles and self-references | **Allowed** | They are values, not definitions, so there is no creation-order problem. Expansion is one level, so it does not recurse |
-| The element type of an Array | **Cannot be one**. Only `has_many` holds several | A relation is already a set, so making it an Array would be a second way of saying "a set of sets". It could be neither edited nor delivered (rejected by validation) |
+| The element type of an Array | **A relation may be one**, and that is what several references are | A `has_many` flag on the relation was the alternative; it is a second vocabulary for what `Array` already says, and it cannot express one Field referencing several targets |
 | Where it can go | **In Fields and in Composite field definitions**. It cannot be the element type of an Array | A definition is stored and reused independently, so the target is decided by the site's Collections / Single pages (it does not depend on the embedding side). The value goes inside the Composite, but **the item is what holds the references**, so the owner of the index does not change |
 
 ## 3. The shape of the data
@@ -54,14 +55,26 @@ comes automatically from the index).
 ```rust
 FieldType::Relation(RelationOptions {
     target: RelationTarget,       // Collection(name) | SinglePage(name)
-    has_many: bool,               // only false for a Single page target (rejected by validation)
     inverse_name: Option<String>, // the name on the reverse side. Used only for display and ?populate=
 })
 ```
 
-- Validation happens **in the same place as Composite field references**: that the target exists,
-  that a Single page has `has_many: false`, and that `inverse_name` is unique on the target
-  (`referenced_targets` is added next to `referenced_composite_ids`).
+- **A relation holds exactly one reference, and several references are an `Array` of them**
+  (`Array([Relation(…)])`). Cardinality is the array wrapper - the same composition Text, Number and
+  Image use - rather than a flag of its own, so `has_many` is gone. `Array([Relation(authors)])` is
+  what `has_many: true` used to be, and it says the same thing with the vocabulary that already
+  exists.
+- **An array may declare several different targets**:
+  `Array([Relation(authors), Relation(categories)])` is "related content", of either kind, and the
+  values `[]`, `[authors#7]`, `[categories#3]`, `[authors#7, categories#3]` are all meanings it can
+  carry. That is the capability the old flag could not express at all.
+- **What an array may not do is declare the same target twice.** A value's element is
+  `{target, item}` and does not record which of two declarations it was written as, so two item
+  types for one target would make the reverse lookup undecidable - and with different `inverse_name`s
+  the same reference would answer to two names. The rule is **one item type per target**.
+- Validation happens **in the same place as Composite field references**: that the target exists and
+  that `inverse_name` is unique (`referenced_targets` is added next to
+  `referenced_composite_ids`).
   - **The existence of the target** needs the list of Collections and Single pages, so it is checked
     in the schema save service (`RelationTargetSource` answers both names). **A relation inside a
     Composite definition has the same target**, so `referenced_relation_targets` walks into
@@ -71,7 +84,14 @@ FieldType::Relation(RelationOptions {
     **when the embedding side's schema is saved** (a Collection / Single page).
   - **The uniqueness of `inverse_name`** is checked when the schema is saved
     (`ensure_inverse_names_are_unique`). Giving the same name twice to the same target would make
-    it undecidable which one the expansion of the reverse lookup returns.
+    it undecidable which one the expansion of the reverse lookup returns. The check reads the schema
+    being saved as well as the stored ones, so two Fields (or two item types) of one schema cannot
+    slip past it either.
+  - **Two Fields of one schema pointing at the same target is allowed** (`author` and `reviewer`,
+    both to `authors`), and it is a known limit: the index is a set of (owner, target), so the
+    reverse direction cannot say which of the two Fields a reference came from. The forward
+    direction does not have that limit - an element carries its target, and
+    `?populate=<field>.<target>` names it (§5).
 - `inverse_name` is **only a name** and holds no data. The reverse lookup is always read from the
   index.
 - A constraint on the order of creating definitions appears (the target comes first). Strapi's
@@ -81,27 +101,26 @@ FieldType::Relation(RelationOptions {
 
 ```rust
 // The value is only "the target's name" and "the item's id". The schema knows which kind it is.
-FieldValue::Relation(Vec<RelationRef>)    // RelationRef { target: String, item: Option<u64> }
-FieldValueResponse::Relation(Vec<RelationResponse>)   // the shape of §5
+FieldValue::Relation(Option<RelationRef>)   // RelationRef { target: String, item: Option<u64> }
+FieldValueResponse::Relation(Option<RelationResponse>)   // the shape of §5
 ```
 
 - For a Collection target, `{ "target": "authors", "item": 7 }`; for a Single page,
-  `{ "target": "home", "item": null }` (a page has no id). A value whose shape disagrees with the
-  schema's kind is rejected by `from_untyped`.
-- **A single reference is a set of one, not a bare object.** `has_many` is what the schema *allows*,
-  not what the value *is*, so the shape is the same either way: `[{ ... }]` for both, and `null` or
-  `[]` for "none". The cardinality is therefore one rule in one place - `is_single() && refs.len() > 1`
-  is refused as "this field holds one reference, but N were given" - while every other reader (the
-  `refs#` / `rel#` index lines, the reverse lookup, the deletion check and `?detach=true`, the publish
-  rules, `?populate=`, the chips) walks one shape without asking the schema first. Changing `has_many`
-  also stays a schema edit: a single already is a list of at most one, so no stored value moves. The
-  cost is that `[{ ... }]` for one reference reads oddly, and a client that ignores the schema cannot
-  tell single from many - which is the same trade the design makes everywhere else (values are untyped
-  on the wire, and the schema is what reads them).
+  `{ "target": "home" }` (a page has no id). A value whose shape disagrees with the schema's kind is
+  rejected by `from_untyped`.
+- **One reference is one object, and several are an array of them.** `Relation` is `Some` or `None`
+  (the wire's `null`), and `Array([Relation(…)])` is a list whose elements are the same objects:
+  `[]`, `[{ "target": "authors", "item": 7 }]`, `[{ "target": "authors", "item": 7 }, { "target":
+  "categories", "item": 3 }]`. The schema is still the only type information, but the *shape* now
+  says the cardinality too, so a client that ignores the schema is not left guessing, and no reader
+  has to ask "is this field single?" before walking a value: a `Relation` is one reference and an
+  `Array` of them is a list, which is what their Rust types say.
 - **The order is the value**: the order written is stored as it is, and the delivery API returns it
   in that order too. The same reference written twice is one entry and stays at **the position where
-  it first appeared** (`from_untyped`). The index is a set of (owner, target), so **reordering does
-  not move the index** (`RelationIndexChanges::between` is a set difference).
+  it first appeared** (`from_untyped`; for an array of relations the deduplication runs over the
+  array, because the elements carry their target). The index is a set of (owner, target), so
+  **reordering does not move the index** (`RelationIndexChanges::between` is a set difference).
+  A single reference has no order, so it has no arrows in the admin screen.
 - The chips in the admin screen are **reordered with left and right arrows**, and the picker appends
   to the end in the order chosen (a single reference has no order, so no arrows appear).
 - **Store it as a set**: on save, sort and deduplicate by `(target, item)`. Without an order, it is
@@ -112,13 +131,13 @@ What has to be added is every branch the existing types pass through:
 
 | Place | Content |
 |---|---|
-| `FieldValue` / `FieldValueResponse` | A new variant |
-| `from_untyped` | Accepts `[{"target": "...", "item": n}, ...]` (the same shape as Array element type validation) |
-| `test_required` | `has_many: false` requires one or more; `true` allows empty |
-| `FieldSchema::get_default_value` (schema.rs L150) | An empty array |
+| `FieldValue` / `FieldValueResponse` | The variant holds one reference or none; an array of relations is the existing `Array` of them |
+| `from_untyped` | A `Relation` field takes `{"target": "…", "item": n}` or `null`; array elements take the same objects, and their target must be one the field declares |
+| `test_required` | A relation needs `Some`; an array of them needs to be non-empty (the same rule as every other array) |
+| `FieldSchema::get_default_value` (schema.rs L150) | `None` for a relation, an empty array for an array of them |
 | `FieldValue::to_response` (values.rs L721) | Make it **pass in the information for resolution**, as with images (today it takes `&HashMap<ImageId, Image>`) |
 | Next to `referenced_images` | `referenced_items` (walks the value tree; it also looks inside Arrays and Composites; `without_reference` is the same) |
-| The frontend `value-field` | The branch per type (§6) |
+| The frontend `value-field` | The branch per type (§6): one relation, or an array whose item types are all relations |
 
 **The shape the management API returns** (`FieldValueResponse` returns the array of references as it
 is; only the delivery API expands):
@@ -128,8 +147,10 @@ is; only the delivery API expands):
   list for each kind.
 - A Single page's value is `{ "target": "home" }` (`item` is not attached). Sending `item` is
   rejected.
-- It cannot be an Array's element type (`validate_field_type` rejects it). On read, `validate_at`
-  also returns "an Array element was a relation" as a type mismatch.
+- **It can be an Array's element type**, which is how several references are written
+  (`Array([Relation(authors)])`), and an array may declare several different targets. What is
+  rejected is the same target declared twice in one array (§3), and a value whose element names a
+  target the field does not declare.
 
 ### The reverse-lookup index
 
@@ -185,11 +206,11 @@ be named the same way as the owner.
 There is **only one** rule: **if, as a result of publishing, a `required` relation no longer holds
 any "published target", that publish is rejected** (409 + which field points at which target).
 
-- In an Array (`has_many: true`), if part is unpublished → the rest is served, so it **passes** (the
+- In an Array (`Array([Relation(…)])`), if part is unpublished → the rest is served, so it **passes** (the
   site just has one fewer).
 - In an Array, if all are unpublished → it becomes empty, so if `required` it is rejected, and if
   optional it passes.
-- In a single (`has_many: false`), if the target is unpublished → it becomes empty, so if `required`
+- In a single (`Relation`), if the target is unpublished → it becomes empty, so if `required`
   it is rejected, and if optional it passes.
 - **An optional relation is silently dropped** (the delivery API returns only "published targets").
   On the site it appears as "there is no such reference" for an Array, or as "not set" for a single.
@@ -214,7 +235,7 @@ unpublishable (losing the freedom to publish).
 
 | Method | Path | Content |
 |---|---|---|
-| (existing) | `POST/PUT …/items` | Send `values: { "author": [{"target":"authors","item":7}] }` as the value |
+| (existing) | `POST/PUT …/items` | Send `values: { "author": {"target":"authors","item":7} }` for a relation, or `values: { "related": [{"target":"authors","item":7},{"target":"categories","item":3}] }` for an array of them |
 | GET | `/api/models/collections/{name}/items/{id}/references` | The content referencing this item (reverse lookup) |
 | GET | `/api/models/collections/{name}/items/{id}/related?field=<name>` | The candidates for the picker (search and paging) |
 | DELETE | `…/items/{id}?detach=true` | Detach the references and delete (the default is 409) |
@@ -226,10 +247,15 @@ unpublishable (losing the freedom to publish).
 
 ```jsonc
 // 1) Forward direction: by default only the target and the id (published targets only)
-"category": [{ "target": "categories", "item": 3 }]
+"category": { "target": "categories", "item": 3 }          // a relation
+"related":  [{ "target": "authors", "item": 7 }, …]        // an array of them (targets may differ)
+// "no reference" is null for a relation and [] for an array of them
 
-// 2) Forward expansion: ?populate=category (published targets only)
-"category": [{ "target": "categories", "item": 3, "values": { "name": "Engineering" } }]
+// 2) Forward expansion: ?populate=category (one target declared), or
+//    ?populate=related.authors (which target of a field that declares several)
+"category": { "target": "categories", "item": 3, "values": { "name": "Engineering" } }
+"related":  [{ "target": "authors", "item": 7, "values": { … } }, { "target": "categories", "item": 3 }]
+// Only the named target is expanded; the other elements are returned as they are.
 
 // 3) Filter: read from the reverse side ("the articles of category 3"). Paging is the existing limit/offset
 //    GET /api/content/collections/articles?where=category:3&limit=25&offset=0
@@ -238,8 +264,12 @@ unpublishable (losing the freedom to publish).
 "articles": [{ "target": "articles", "item": 12, "values": { … } }]
 ```
 
-- The depth of expansion is fixed at one level (`populate` is only an enumeration of field names or
-  `inverse_name`. There is no recursive specification).
+- The depth of expansion is fixed at one level (`populate` is an enumeration of a field name, a field
+  name and one of its targets (`field.target`), or an `inverse_name`. There is no recursive
+  specification).
+- `?populate=<field>` without a target is only accepted while the field declares **one** target; with
+  several it is a 400 that names the targets, so a client cannot silently get a different target than
+  it meant.
 - **The filter is only equality on a relation**: `?where=<field>:<id>` (several separated by
   commas). No further query language is built (it is the only form "narrow by category" actually
   needs, and the existing paging can be used as it is).
@@ -253,7 +283,7 @@ unpublishable (losing the freedom to publish).
 ## 6. Screens
 
 - **Schema editing**: choosing `Relation` in the type dropdown brings up three things: the target
-  (Collection / Single page), `has_many`, and the name on the reverse side (`inverse_name`). No
+  (Collection / Single page) and the name on the reverse side (`inverse_name`). No
   dedicated component is made; it is completed inside `dashboard/settings/shared/field` (because
   there are only two choices).
 - **Content editing**: `shared/relation-field` has chips, a reference picker, and a JSON box. The
@@ -269,7 +299,7 @@ unpublishable (losing the freedom to publish).
 ## 7. Migration (Strapi)
 
 - Strapi v3's `oneToOne` / `oneToMany` / `manyToMany` / `oneWay` / `manyWay` are **folded into "one
-  side + `has_many`"**. When both sides have a definition, **only one side is adopted** and the
+  side + one reference each"**. When both sides have a definition, **only one side is adopted** and the
   other is put out as a warning (the CMS's reverse lookup is automatic, so no information is lost).
 - References to a `single type` (Single page) can also be migrated (they were included in the
   targets by the 2026-09 design change).
@@ -290,7 +320,7 @@ unpublishable (losing the freedom to publish).
 
 **What this design brought in**:
 
-- unit (`core/src/models/{schema,values}.rs`): validation of the target, rejection of `has_many` on
+- unit (`core/src/models/{schema,values}.rs`): validation of the target and of one item type per
   a Single page, rejection of an Array element, that a Composite definition can hold a relation,
   the collection of targets that walks into Composite definitions (it stops even for a definition
   that comes back to itself through an Array), the kind mismatch of `validate_relation_targets`, the
@@ -352,8 +382,8 @@ unpublishable (losing the freedom to publish).
 | Point | Decision |
 |---|---|
 | Publishing while referencing an unpublished target | **Rejected if a `required` relation becomes empty; an optional one is dropped in delivery** (§4). The same rule as "required does not allow empty" on save |
-| One-sided definition / cardinality / the shape of the value | One side, two kinds via `has_many`, a set of `{target, item}` |
-| The target | Collections + Single pages (a Single page only allows `has_many: false`) |
+| One-sided definition / cardinality / the shape of the value | One side; a relation holds one `{target, item}` (or `null`), and several are an `Array` of them |
+| The target | Collections + Single pages (a page is referenced by name, one reference per Field) |
 | Reverse lookup | An index (the same transaction as the body). Management uses `references` and the screen; delivery uses filters and expansion |
 | The name of the reverse side | `inverse_name` (used only for display and `?populate=`. It holds no data) |
 | Expansion in delivery | Only the explicit `?populate=`, one level |
