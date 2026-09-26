@@ -120,6 +120,10 @@ query {
       title
       author { name }          # single reference → the referenced node
       editors { name }         # multiple references → an array of nodes
+      related {                # several *targets* → a union: name the member you want
+        ... on TsubameAuthorsItem { name }
+        ... on TsubameEditorsItem { name }
+      }
       seo { description og_image { absoluteUrl } }
       blocks {                 # composite fields are typed too
         caption
@@ -144,18 +148,21 @@ query {
 - **An array that names several targets is a union**, because its elements need not be the same node
   type. The union is named after the type that owns the field and the field itself
   (`TsubameBlogItemRelated` for `blog.related`), so the name is the same on every build with the
-  same schema, and it is queried with inline fragments (above). It is declared by
-  `createSchemaCustomization` rather than in SDL because Gatsby's default `resolveType` reads a
-  node's `internal.type`, which the fallback reference below has not.
-- **An element whose target is not part of the build stays a reference**: `TsubameRelationRef` is a
-  member of every such union, holding `target`, `item` (the item id, absent for a single page) and
-  `kind`. It is the same shape the field falls back to when *no* target of the array has a type, and
-  it is the honest answer - the target is still named, and the elements that do have a node type are
-  still nodes. Gatsby's type inference sees an array holding an id in one element and an object in
-  another and prints a "conflicting field types" warning; the field's type is declared explicitly,
-  so the warning is about inference only and can be ignored.
+  same schema, and it is queried with inline fragments (above). Every member is a node type, so
+  Gatsby's own `resolveType` (`node.internal.type`) is the right one and `@link` resolves the ids
+  element by element - a union of node types is what `@link` is for.
+- **A target the CMS does not answer is left out, with a warning.** A relation target is read from
+  `/api/content/collections/{name}`, which answers 404 only when the CMS does not have that
+  collection at all (a collection with no published items still returns its schema), so a 404 means
+  the schema names something somebody deleted. There is nothing to link - the delivery API drops
+  references it cannot serve - so the plugin warns and leaves the target out: the whole field when
+  none of its targets has a type, or just that target when the others do (an array that loses one
+  target of two becomes a plain list of the one that is left, not a union). A site that queries the
+  field gets "Cannot query field", with the warning above it saying why. The alternatives were worse:
+  a field typed as a reference that can never hold anything makes the same query fail with a message
+  about the wrong thing.
 - When you need **the reference itself (the counterpart's name and id)**, read `values.<field>`.
-  It is the delivery API response as is.
+  It is the delivery API response as is, including for a field the plugin left out.
 - When **the referenced target is unpublished**, that node does not exist, so the value is `null`
   (an empty array when multiple, and one element of a union array is dropped, the way `@link` drops
   it). The build does not fail. It is the plain answer that a "counterpart not yet on the site"

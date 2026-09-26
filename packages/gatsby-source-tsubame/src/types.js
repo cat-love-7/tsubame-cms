@@ -22,14 +22,8 @@ const { graphqlFieldType, relationUnionKey, schemaKey } = require('./model');
  *
  * `createTypes` is given SDL rather than type-builder objects because the whole schema is a string
  * of declarations either way, and SDL is what a reader can paste into GraphiQL to see what the
- * build produced.
- *
- * The one thing SDL cannot say is a relation union: a union of node types *and* the reference type
- * needs a `resolveType` that reads `internal.type` or falls back, and SDL gets Gatsby's default
- * (`node => node.internal.type`) - which is undefined for a reference. Those unions are therefore
- * returned beside the SDL (`relationUnions`) for `gatsby-node.js` to build with
- * `schema.buildUnionType`, and the fields that use them carry no `@link` because `src/relations.js`
- * resolves them instead.
+ * build produced. That includes the relation unions: their members are node types, so Gatsby's own
+ * `resolveType` (`node => node.internal.type`) is the right one, and `@link` resolves the ids.
  *
  * The collection type asks for `@dontInfer` and the others must not. Gatsby adds the child fields a
  * consumer uses - `childMarkdownRemark` on a markdown node, `childrenTsubameMarkdown` on its owner -
@@ -39,12 +33,15 @@ const { graphqlFieldType, relationUnionKey, schemaKey } = require('./model');
  * polymorphic on purpose - a field type is a string (`"Image"`) in one entry and an object
  * (`{"Text":{}}`) in the next - which is what makes Gatsby warn about conflicting field types.
  *
- * @returns {{ sdl: string, relationUnions: Array<{name: string, ownerType: string, field: string,
- *   members: string[]}> }}
+ * @returns {string} the SDL the plugin declares
  */
 function buildTypeDefinitions(model) {
   const { names, plan, fieldNames, relationUnions } = model;
   const parts = [staticTypeDefinitions(names, model)];
+
+  for (const union of relationUnions.values()) {
+    parts.push(`union ${union.name} = ${union.members.join(' | ')}`);
+  }
 
   for (const [name, schema] of model.snapshot.collections) {
     const typeName = plan.collections.get(name);
@@ -91,7 +88,7 @@ function buildTypeDefinitions(model) {
     );
   }
 
-  return { sdl: parts.join('\n\n'), relationUnions: [...relationUnions.values()] };
+  return parts.join('\n\n');
 }
 
 function contentTypeDefinition({ typeName, kind, name, schema, mapping, model }) {
@@ -153,8 +150,8 @@ function compositeTypeDefinition({ typeName, schema, mapping, model }) {
 /**
  * One field per line, with the union the model planned for it when it has one.
  *
- * A union field is typed `[<union>]` and carries no `@link`: the union's own resolver does the
- * linking (`src/relations.js`), because an element may be a reference rather than a node id.
+ * A field the model left out is not in the mapping, so it is not declared here either; that is the
+ * one place the "left out" decision has to be read, and `src/nodes.js` reads the same mapping.
  */
 function fieldLines(schema, mapping, model, ownerTypeName) {
   const lines = [];
@@ -220,16 +217,6 @@ type ${names.image} {
 type ${names.composite} {
   id: String!
   values: JSON!
-}
-
-# One reference of a relation, used when the target is not part of the build. A relation field is
-# normally a link to the target node instead; when an array names several targets it is a union of
-# those node types *and* this type, so an element whose target has no node type is still served. The
-# reference is always under \`values\` as well.
-type ${names.relation} {
-  target: String!
-  item: Int
-  kind: String!
 }`;
 }
 

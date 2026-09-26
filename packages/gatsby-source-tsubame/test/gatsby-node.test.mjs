@@ -44,23 +44,33 @@ describe('createSchemaCustomization', () => {
     assert.match(types[0], /type TsubameHomePage implements Node \{/);
   });
 
-  it('declares a union for a field that holds several kinds of node, and the resolver that links it', async () => {
-    const { types } = await run();
+  it('declares a union for a field that holds several kinds of node', async () => {
+    const { types, warnings } = await run();
 
     // `blog.related` names authors and editors, so its elements need not be the same node type.
-    assert.match(types[0], /^\s+related: \[TsubameBlogItemRelated\]$/m);
+    assert.match(types[0], /^union TsubameBlogItemRelated = TsubameAuthorsItem \| TsubameEditorsItem$/m);
+    assert.match(types[0], /^\s+related: \[TsubameBlogItemRelated\] @link$/m);
+    // This field is not what the warnings are about: every target it declares is part of the build.
+    assert.equal(warnings.some((warning) => warning.includes('related')), false);
+  });
 
-    const union = types.find((type) => type.kind === 'UNION').config;
-    assert.equal(union.name, 'TsubameBlogItemRelated');
-    // The reference type is a member too, so an element whose target is not part of the build still
-    // has a type to resolve to.
-    assert.deepEqual(union.types, ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef']);
-    assert.equal(union.resolveType({ internal: { type: 'TsubameAuthorsItem' } }), 'TsubameAuthorsItem');
-    assert.equal(union.resolveType({ target: 'nowhere', item: 1, kind: 'collection' }), 'TsubameRelationRef');
+  it('warns about a target the CMS does not answer, and leaves the field out', async () => {
+    const { types, warnings } = await run();
 
-    const field = types.find((type) => type.kind === 'OBJECT' && type.config.name === 'TsubameBlogItem').config;
-    assert.equal(field.fields.related.type, '[TsubameBlogItemRelated]');
-    assert.equal(typeof field.fields.related.resolve, 'function');
+    // `blog.ghost` names `nowhere` and nothing else: no field, and a warning that says what to fix.
+    assert.equal(/^\s+ghost:/m.test(types[0]), false);
+    // `blog.mentions` names it too, but keeps the target it does have.
+    assert.equal(warnings.length, 2);
+    assert.match(
+      warnings.find((warning) => warning.includes('.ghost ')),
+      /TsubameBlogItem\.ghost names collection 'nowhere'.*the field is left out of the schema/,
+    );
+    assert.match(
+      warnings.find((warning) => warning.includes('.mentions ')),
+      /TsubameBlogItem\.mentions names collection 'nowhere'.*that target is left out of the field/,
+    );
+    // `blog.mentions` names authors and `nowhere`: the field stays, as a list of the target it has.
+    assert.match(types[0], /^\s+mentions: \[TsubameAuthorsItem\] @link$/m);
   });
 
   it('declares a type per composite definition, so a composite field can be followed', async () => {
@@ -152,12 +162,22 @@ describe('references', () => {
     assert.deepEqual(item.values.author, { target: 'authors', item: 7 });
   });
 
-  it('links the elements of an array that declares several targets, one target at a time', async () => {
+  it('links every element of an array that declares several targets, by its own target', async () => {
     const { nodes } = await run();
     const item = nodes.get('node:tsubame-item:blog:1');
-    // Both targets are part of this build, so every element is the node it names; the union's
-    // resolver turns those ids into nodes at query time (the unit test for that is `relations`).
+    // Both targets are part of this build, so every element is the node it names; the field is a
+    // union of the two node types and `@link` resolves each id to the node it names.
     assert.deepEqual(item.related, ['node:tsubame-item:authors:7', 'node:tsubame-item:editors:2']);
+  });
+
+  it('does not put a field whose target the CMS does not answer on the node', async () => {
+    const { nodes } = await run();
+    const item = nodes.get('node:tsubame-item:blog:1');
+    // The field is not in the type, so it is not on the node and not in `fieldNames` either - the
+    // three places have to agree, and the raw value is still under `values` for anyone who wants it.
+    assert.equal('ghost' in item, false);
+    assert.equal('ghost' in item.fieldNames, false);
+    assert.deepEqual(item.values.ghost, { target: 'nowhere', item: 5 });
   });
 
   it('links a relation declared inside a composite definition', async () => {

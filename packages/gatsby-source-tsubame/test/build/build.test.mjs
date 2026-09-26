@@ -1,10 +1,12 @@
 // The one test that runs the real thing: `gatsby build`, with the plugin loaded by Gatsby.
 //
 // Everything else in `test/` drives the plugin's own functions with a fake API, which is fast and
-// checks the shapes - but it cannot check the two things a relation union is: that Gatsby accepts
-// the union and the inline fragments the site has to write, and that its `resolveType` and field
-// resolver answer what the schema promises. Only a build can. So this copies a three-file site to a
-// temporary directory, points it at a stub delivery API, builds it, and reads the page data back.
+// checks the shapes - but it cannot check the two things a relation union is: that Gatsby accepts the
+// union and the inline fragments a site has to write, and that `@link` resolves a union of node types
+// element by element. Only a build can. So this copies a three-file site to a temporary directory,
+// points it at a stub delivery API, builds it, and then reads three things back: the warning the
+// plugin printed, the schema Gatsby generated (`.cache/schema.gql`), and the data the page's query
+// answered (`public/page-data/index/page-data.json`).
 //
 // It is not part of `scripts/test-gatsby-source.sh`: it needs `gatsby` installed in this package
 // (`npm install`) and it takes about a minute, while the unit tests need neither. Run it with
@@ -17,7 +19,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { startDeliveryStub } from './delivery-stub.mjs';
@@ -46,6 +48,8 @@ describe('a real Gatsby build', { skip: gatsbyCli === null ? 'gatsby is not inst
   let buildDir;
   let homeDir;
   let output;
+  let schema;
+  let pageData;
 
   before(async () => {
     stub = await startDeliveryStub();
@@ -75,11 +79,16 @@ describe('a real Gatsby build', { skip: gatsbyCli === null ? 'gatsby is not inst
           TSUBAME_PLUGIN_PATH: PACKAGE_DIR,
         },
       });
-      output = result.stdout;
+      output = `${result.stdout}\n${result.stderr}`;
     } catch (error) {
       output = `${error.stdout ?? ''}\n${error.stderr ?? ''}`;
       throw new Error(`the build failed:\n${output}`);
     }
+
+    schema = await readFile(path.join(buildDir, '.cache', 'schema.gql'), 'utf8');
+    pageData = JSON.parse(
+      await readFile(path.join(buildDir, 'public', 'page-data', 'index', 'page-data.json'), 'utf8'),
+    );
   });
 
   after(async () => {
@@ -93,48 +102,57 @@ describe('a real Gatsby build', { skip: gatsbyCli === null ? 'gatsby is not inst
     }
   });
 
-  it('declares the relation union, so the query with inline fragments compiles', () => {
-    // The build only gets this far if the schema the plugin declared accepted the page's query.
-    assert.match(output, /Done building/);
+  const item = () => pageData.result.data.allTsubameBlogItem.nodes[0];
+
+  it('declares the union of the targets the field has, and links it', () => {
+    // Gatsby's generated schema is the one a site is written against.
+    assert.match(schema, /union TsubameBlogItemRelated = TsubameAuthorsItem \| TsubameEditorsItem/);
+    assert.match(schema, /related: \[TsubameBlogItemRelated\]/);
+    // The same inside a composite definition, which is not a node type.
+    assert.match(schema, /union TsubameCompositeCardRelated = TsubameAuthorsItem \| TsubameEditorsItem/);
+    assert.match(schema, /related: \[TsubameCompositeCardRelated\]/);
   });
 
-  it('resolves the elements to the nodes they name, and an unknown target to the reference', async () => {
-    const pageData = JSON.parse(await readFile(path.join(buildDir, 'public', 'page-data', 'index', 'page-data.json'), 'utf8'));
-    const [item] = pageData.result.data.allTsubameBlogItem.nodes;
-
-    // `related` names authors and editors, both part of this build: every element is its node.
-    assert.deepEqual(item.related, [
-      { name: 'Ada', __typename: 'TsubameAuthorsItem' },
-      { name: 'Grace', __typename: 'TsubameEditorsItem' },
-    ]);
-
-    // `mentions` names authors (here) and `nowhere` (404, so no node type): the element whose target
-    // has no type stays the reference the union declares, in the same list, in the same order.
-    assert.deepEqual(item.mentions, [
-      { name: 'Ada', __typename: 'TsubameAuthorsItem' },
-      { target: 'nowhere', item: 5, kind: 'collection', __typename: 'TsubameRelationRef' },
-    ]);
-  });
-
-  it('keeps the raw references readable under values', async () => {
-    const pageData = JSON.parse(await readFile(path.join(buildDir, 'public', 'page-data', 'index', 'page-data.json'), 'utf8'));
-    const [item] = pageData.result.data.allTsubameBlogItem.nodes;
-
-    // Read through `values`, where `docs/content-api.md` promises the value as the API sent it.
-    assert.deepEqual(item.values.mentions, [
-      { target: 'authors', item: 7 },
-      { target: 'nowhere', item: 5 },
-    ]);
-  });
-
-  it('does the same for an array of relations inside a composite definition', async () => {
-    const pageData = JSON.parse(await readFile(path.join(buildDir, 'public', 'page-data', 'index', 'page-data.json'), 'utf8'));
-    const [item] = pageData.result.data.allTsubameBlogItem.nodes;
-
-    // A composite is not a node type, so its own union is declared and resolved there instead.
-    assert.deepEqual(item.card.related, [
+  it('resolves every element of the union to the node it names', () => {
+    assert.deepEqual(item().related, [
       { __typename: 'TsubameAuthorsItem', name: 'Ada' },
       { __typename: 'TsubameEditorsItem', name: 'Grace' },
+    ]);
+    assert.deepEqual(item().card.related, [
+      { __typename: 'TsubameAuthorsItem', name: 'Ada' },
+      { __typename: 'TsubameEditorsItem', name: 'Grace' },
+    ]);
+  });
+
+  it('types a field that lost a target as a list of the target it kept', () => {
+    // `mentions` names authors and `nowhere`; only authors is part of the build, so the field is not
+    // a union at all, and the element the delivery API served is the node it names.
+    assert.match(schema, /mentions: \[TsubameAuthorsItem\]/);
+    assert.deepEqual(item().mentions, [{ __typename: 'TsubameAuthorsItem', name: 'Ada' }]);
+  });
+
+  it('leaves out a field whose target the CMS does not answer, and says so', () => {
+    // `ghost` names `nowhere` and nothing else: it is in no type (`TsubameBlogItem` included), and
+    // the reference type the plugin used to fall back to is gone with it.
+    assert.equal(/ghost:/.test(schema), false);
+    assert.equal(/RelationRef/.test(schema), false);
+
+    // The reporter wraps a long warning, so the lines are joined before they are read.
+    const flat = output.replace(/\s+/g, ' ');
+    assert.match(flat, /TsubameBlogItem\.ghost names collection 'nowhere'/);
+    assert.match(flat, /the field is left out of the schema/);
+    // The same target inside a field that kept another one is reported as the target, not the field.
+    assert.match(flat, /TsubameBlogItem\.mentions names collection 'nowhere'/);
+    assert.match(flat, /that target is left out of the field/);
+  });
+
+  it('keeps the raw values readable under values', async () => {
+    // What the delivery API sent is on the node as is, for a site that wants the reference rather
+    // than the node it points at.
+    assert.deepEqual(item().values.mentions, [{ target: 'authors', item: 7 }]);
+    assert.deepEqual(item().values.related, [
+      { target: 'authors', item: 7 },
+      { target: 'editors', item: 2 },
     ]);
   });
 });

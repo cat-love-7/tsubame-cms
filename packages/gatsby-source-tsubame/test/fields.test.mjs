@@ -14,7 +14,6 @@ const {
   isRelationArray,
   toCompositeValue,
   toImageValue,
-  toRelationValue,
 } = fields;
 
 const resolveUrl = (path) => `https://cms.example.com${path}`;
@@ -100,34 +99,6 @@ describe('isRelationArray', () => {
     assert.equal(isRelationArray({ Array: [relation, { Text: {} }] }), false);
     assert.equal(isRelationArray({ Array: [] }), false);
     assert.equal(isRelationArray({ Array: ['Image'] }), false);
-  });
-});
-
-describe('toRelationValue', () => {
-  it('spells out one reference, and whether it is a collection item or a single page', () => {
-    assert.deepEqual(toRelationValue({ target: 'authors', item: 7 }), {
-      target: 'authors',
-      item: 7,
-      kind: 'collection',
-    });
-    assert.deepEqual(toRelationValue({ target: 'home' }), {
-      target: 'home',
-      item: null,
-      kind: 'single_page',
-    });
-  });
-
-  it('maps the array of an Array of relations', () => {
-    assert.deepEqual(toRelationValue([{ target: 'authors', item: 7 }, { target: 'home' }]), [
-      { target: 'authors', item: 7, kind: 'collection' },
-      { target: 'home', item: null, kind: 'single_page' },
-    ]);
-  });
-
-  it('treats one missing reference as empty and no references as an empty list', () => {
-    assert.equal(toRelationValue(null), null);
-    assert.equal(toRelationValue(undefined), null);
-    assert.deepEqual(toRelationValue([]), []);
   });
 });
 

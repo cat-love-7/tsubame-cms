@@ -16,7 +16,7 @@ const { describeFieldType, isRelationArray, relationOptionsOf } = require('./fie
  */
 
 /** The types that are the same for every project, after the configurable prefix. */
-const STATIC_TYPE_SUFFIXES = ['Collection', 'Markdown', 'Image', 'Composite', 'RelationRef'];
+const STATIC_TYPE_SUFFIXES = ['Collection', 'Markdown', 'Image', 'Composite'];
 
 /** The GraphQL names this plugin uses, all built from the configured prefix. */
 function graphqlNamesFor(prefix) {
@@ -25,7 +25,6 @@ function graphqlNamesFor(prefix) {
     markdown: `${prefix}Markdown`,
     image: `${prefix}Image`,
     composite: `${prefix}Composite`,
-    relation: `${prefix}RelationRef`,
   };
 }
 
@@ -177,44 +176,53 @@ function relationUnionKey(ownerTypeName, fieldName) {
 }
 
 /**
- * The members of the union a field needs, or null when it needs none.
+ * The targets a relation field declares, split by whether this build has a node type for them.
  *
- * Only an `Array` whose item types are relations can hold more than one kind of node, and only when
- * it declares more than one target: with one target the list itself is already that type. The
- * reference type is always the last member, so an element whose target is not part of this build
- * still has a type to resolve to (and a query may name that case whether or not this build has one).
+ * `typed` is the type name per target (deduped, in the order the field declares them) and
+ * `missing` is the targets the CMS does not answer. A collection answers 404 only when the CMS does
+ * not have it at all - a collection with no published items still has a schema - and a single page a
+ * relation names always gets a type, published or not, so `missing` is a **dangling declaration**:
+ * the schema still names a collection somebody deleted, and the delivery API therefore has no
+ * reference to serve either (it drops references whose target is not published content).
  */
-function relationUnionMembers(plan, names, fieldType) {
-  const { options } = describeFieldType(fieldType);
-  if (!isRelationArray(fieldType) || !Array.isArray(options) || options.length < 2) {
-    return null;
-  }
-
-  const members = [];
-  for (const item of options) {
-    const relation = describeFieldType(item).options ?? {};
-    const typeName = relationTargetTypeName(plan, relation.target);
-    if (typeName !== null && !members.includes(typeName)) {
-      members.push(typeName);
+function relationTargetTypes(plan, fieldType) {
+  const typed = [];
+  const missing = [];
+  for (const options of relationOptionsOf(fieldType)) {
+    const target = normalizeTarget(options.target);
+    if (target === null) {
+      continue;
+    }
+    const typeName = relationTargetTypeName(plan, target);
+    if (typeName === null) {
+      missing.push(target);
+    } else if (!typed.includes(typeName)) {
+      typed.push(typeName);
     }
   }
-  // No target of this field is part of the build, so every element is a reference: a union would
-  // have the reference type as its only member, and `[<that type>]` says the same thing.
-  if (members.length === 0) {
-    return null;
-  }
-  return [...members, names.relation];
+  return { typed, missing };
 }
 
 /**
- * The union each field that can hold more than one kind of node gets.
+ * How each relation field is declared, once the targets the CMS does not answer are known.
  *
- * The name is built from the type that owns the field and the field's GraphQL name, so it is the
- * same name on every build that has the same schema - and a query that names its fragments keeps
- * working across builds. The allocator is seeded with every type name already taken, so a union can
- * never take a name a collection, page or composite wants.
+ * A field with no typed target is **left out** - it cannot be typed, and pretending otherwise (a
+ * reference type) would make a site's query fail with a message about the wrong thing. It is
+ * reported in `missing` for the caller to warn about, and the raw `values` still hold whatever the
+ * delivery API sent.
+ *
+ * An array that declares several targets is a union of the targets that have a type; with only one
+ * left it is a plain list of that type, and the missing target is left out of the field. The union
+ * is allocated from the same namespace as the type names (seeded with every name already taken, in
+ * sorted order) so it can never take a name a collection, page or composite wants.
+ *
+ * The mappings handed in are **trimmed in place**, so a field that is left out is in none of the
+ * three places that have to agree: the GraphQL type, the node's own fields, and `fieldNames`.
+ *
+ * @returns {{ unions: Map<string, {name: string, ownerType: string, field: string, members: string[]}>,
+ *   missing: Array<{ownerType: string, field: string, target: object, fieldLeftOut: boolean}> }}
  */
-function planRelationUnions(plan, names, fieldNames, snapshot) {
+function planRelationFields(plan, names, fieldNames, snapshot) {
   const allocator = createNameAllocator([
     ...STATIC_TYPE_SUFFIXES.map((suffix) => `${plan.prefix}${suffix}`),
     ...plan.collections.values(),
@@ -222,26 +230,37 @@ function planRelationUnions(plan, names, fieldNames, snapshot) {
     ...plan.composites.values(),
   ]);
   const unions = new Map();
+  const missing = [];
 
   const consider = (ownerTypeName, schema, mapping) => {
     if (ownerTypeName === undefined || mapping === undefined) {
       return;
     }
     for (const field of Array.isArray(schema) ? schema : []) {
-      const graphqlName = mapping.get(String(field.name));
+      const originalName = String(field.name);
+      const graphqlName = mapping.get(originalName);
       if (graphqlName === undefined) {
         continue;
       }
-      const members = relationUnionMembers(plan, names, field.field_type);
-      if (members === null) {
+      const { typed, missing: untyped } = relationTargetTypes(plan, field.field_type);
+      if (typed.length === 0 && untyped.length === 0) {
         continue;
       }
-      unions.set(relationUnionKey(ownerTypeName, graphqlName), {
-        name: allocator.take(`${ownerTypeName}${sanitizeTypeName(graphqlName)}`),
-        ownerType: ownerTypeName,
-        field: graphqlName,
-        members,
-      });
+      const fieldLeftOut = typed.length === 0;
+      if (fieldLeftOut) {
+        mapping.delete(originalName);
+      }
+      for (const target of untyped) {
+        missing.push({ ownerType: ownerTypeName, field: graphqlName, target, fieldLeftOut });
+      }
+      if (typed.length >= 2) {
+        unions.set(relationUnionKey(ownerTypeName, graphqlName), {
+          name: allocator.take(`${ownerTypeName}${sanitizeTypeName(graphqlName)}`),
+          ownerType: ownerTypeName,
+          field: graphqlName,
+          members: typed,
+        });
+      }
     }
   };
 
@@ -257,7 +276,7 @@ function planRelationUnions(plan, names, fieldNames, snapshot) {
     consider(plan.composites.get(id), snapshot.composites.get(id), fieldNames.composites.get(id));
   }
 
-  return unions;
+  return { unions, missing };
 }
 
 /**
@@ -270,13 +289,14 @@ function planRelationUnions(plan, names, fieldNames, snapshot) {
  * - `Date` and `DateTime` are the `Date` scalar Gatsby already has, so `formatString` works and the
  *   consumer does not have to parse strings by hand.
  * - A `Relation` field is a link to the target's type, and an `Array` of relations to a list of it
- *   when the item types name one target. A target that is not part of the build falls back to
- *   `TsubameRelationRef`.
- * - An `Array` of relations that names several targets is a **union** of those targets' types (plus
- *   the reference type), because its elements need not be the same node type; `unionName` is what
- *   the model planned for this field, and `link` is false because the union's field resolver does
- *   the linking (see `src/relations.js`). With no target in the build it stays
- *   `[TsubameRelationRef]`.
+ *   when the item types name one target. A relation field with no typed target is left out of the
+ *   schema altogether (`planRelationFields`), so the `JSON` fallback below is unreachable for a
+ *   field that was declared - it is what a caller that asks about such a field in isolation gets.
+ * - An `Array` of relations that names several targets is a **union** of those targets' types,
+ *   because its elements need not be the same node type; `unionName` is what the model planned for
+ *   this field, and the field is still `@link`ed, because every element is a node id and Gatsby
+ *   resolves a union of node types by id (it expands the union to its node members). A union
+ *   without a planned name is a programming error, and answers `JSON` rather than a wrong type.
  * - A `CompositeField` is typed after its definition once `/api/content/composite-fields` answers
  *   it, and by the opaque `TsubameComposite` otherwise.
  *
@@ -308,30 +328,29 @@ function graphqlFieldType(model, fieldType, unionName) {
       return { type: typeName ?? model.names.composite, link: false };
     }
     case 'Relation': {
-      const relation = options === null || typeof options !== 'object' ? {} : options;
-      const targetType = relationTargetTypeName(model.plan, relation.target);
-      return targetType === null
-        ? { type: model.names.relation, link: false }
+      const [targetType] = relationTargetTypes(model.plan, fieldType).typed;
+      return targetType === undefined
+        ? { type: 'JSON', link: false }
         : { type: targetType, link: true };
     }
     case 'Array': {
       if (!Array.isArray(options) || options.length === 0) {
         return { type: 'JSON', link: false };
       }
-      // Several references are an `Array` whose item types are all relations. One item type means
-      // one target, which a list of that node type can hold; several targets are the union the
-      // model planned, whose field resolver links the elements that are node ids.
+      // Several references are an `Array` whose item types are all relations. One typed target means
+      // one node type, which a list of it can hold; several are the union the model planned, which
+      // `@link` resolves element by element.
       if (isRelationArray(fieldType)) {
-        if (options.length === 1) {
-          const relation = describeFieldType(options[0]).options ?? {};
-          const targetType = relationTargetTypeName(model.plan, relation.target);
-          return targetType === null
-            ? { type: `[${model.names.relation}]`, link: false }
-            : { type: `[${targetType}]`, link: true };
+        const { typed } = relationTargetTypes(model.plan, fieldType);
+        if (typed.length === 0) {
+          return { type: 'JSON', link: false };
+        }
+        if (typed.length === 1) {
+          return { type: `[${typed[0]}]`, link: true };
         }
         return unionName === undefined
-          ? { type: `[${model.names.relation}]`, link: false }
-          : { type: `[${unionName}]`, link: false };
+          ? { type: 'JSON', link: false }
+          : { type: `[${unionName}]`, link: true };
       }
       // An array with more than one declared item type is left untyped: the server reads each
       // element with the first type that fits, so the elements need not be the same type.
@@ -492,7 +511,10 @@ function buildContentModel(snapshot, options) {
     fieldNames.composites.set(id, planFieldNames('composite', schema, names));
   }
 
-  const relationUnions = planRelationUnions(plan, names, fieldNames, snapshot);
+  // Last, because it trims the mappings it is handed: a field whose target the CMS does not answer
+  // is left out of the type, the node and `fieldNames`, and the union names are allocated after
+  // every type name is known.
+  const relationFields = planRelationFields(plan, names, fieldNames, snapshot);
 
   return {
     options,
@@ -502,7 +524,8 @@ function buildContentModel(snapshot, options) {
     inverseFieldNames,
     inverseDeclarationsBySchema: bySchema,
     inverseDeclarationsByTarget: byTarget,
-    relationUnions,
+    relationUnions: relationFields.unions,
+    missingRelationTargets: relationFields.missing,
     snapshot,
   };
 }
@@ -520,9 +543,9 @@ module.exports = {
   planFieldNames,
   mappingToObject,
   relationTargetTypeName,
+  relationTargetTypes,
   relationUnionKey,
-  relationUnionMembers,
-  planRelationUnions,
+  planRelationFields,
   graphqlFieldType,
   collectInverseDeclarations,
   contentFieldNames,

@@ -157,22 +157,23 @@ describe('relations', () => {
     assert.deepEqual(resolveFieldValue({ Array: [AUTHOR] }, [], context), []);
   });
 
-  it('keeps the reference when the target is not part of the build', () => {
+  it('answers the id of a reference even when its target has no type in this build', () => {
+    // A field like this is left out of the schema (`src/model.js`), so no value is ever resolved for
+    // it; the resolver stays total rather than guessing, and the raw value is what a reader uses.
     const { context } = makeContext();
     const single = { Relation: { target: { kind: 'collection', name: 'nowhere' } } };
-    assert.deepEqual(resolveFieldValue(single, { target: 'nowhere', item: 2 }, context), {
-      target: 'nowhere',
-      item: 2,
-      kind: 'collection',
-    });
+    assert.equal(
+      resolveFieldValue(single, { target: 'nowhere', item: 2 }, context),
+      'node:tsubame-item:nowhere:2',
+    );
     assert.deepEqual(resolveFieldValue({ Array: [single] }, [{ target: 'nowhere', item: 2 }], context), [
-      { target: 'nowhere', item: 2, kind: 'collection' },
+      'node:tsubame-item:nowhere:2',
     ]);
   });
 
   it('links each element of an array that declares several targets, by its own target', () => {
-    // The field is a union of the two node types, so every element whose target is part of the build
-    // is that node's id; the union's resolver turns them into nodes at query time.
+    // The field is a union of the two node types and every element is the id of the node it names:
+    // `@link` resolves a union of node types by id, one element at a time.
     const { context } = makeContext();
     const fieldType = {
       Array: [AUTHOR, { Relation: { target: { kind: 'collection', name: 'editors' } } }],
@@ -187,9 +188,10 @@ describe('relations', () => {
     );
   });
 
-  it('keeps the reference of an element whose target is not part of the build', () => {
-    // The union cannot carry a node type it does not have, and dropping the element would lose the
-    // target the value names - so that element stays a reference in the same list.
+  it('answers an id for an element the delivery API would not have served at all', () => {
+    // A reference to a target the CMS does not answer is dropped by the delivery API before the
+    // plugin sees it; a value left behind by an older schema is still read the same way, so a stale
+    // element cannot make the build fail. The field is a list of the target that does have a type.
     const { context } = makeContext();
     const fieldType = {
       Array: [AUTHOR, { Relation: { target: { kind: 'collection', name: 'nowhere' } } }],
@@ -200,7 +202,7 @@ describe('relations', () => {
         [{ target: 'authors', item: 7 }, { target: 'nowhere', item: 5 }],
         context,
       ),
-      ['node:tsubame-item:authors:7', { target: 'nowhere', item: 5, kind: 'collection' }],
+      ['node:tsubame-item:authors:7', 'node:tsubame-item:nowhere:5'],
     );
   });
 });

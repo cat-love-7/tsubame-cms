@@ -8,7 +8,7 @@ import typesModule from '../src/types.js';
 import { createModel } from './fixtures.mjs';
 
 const { buildTypeDefinitions } = typesModule;
-const { sdl, relationUnions } = buildTypeDefinitions(createModel());
+const sdl = buildTypeDefinitions(createModel());
 
 /** The body of one declared type, for assertions that are about one type only. */
 function typeBody(text, name) {
@@ -52,24 +52,24 @@ describe('relation fields', () => {
     assert.match(sdl, /^\s+editors: \[TsubameEditorsItem\] @link$/m);
   });
 
-  it('types an array that declares several targets as a union, with no @link of its own', () => {
-    // The elements need not be the same node type; the union's resolver links them, so the field
-    // carries no `@link` (which could only resolve ids).
-    assert.match(sdl, /^\s+related: \[TsubameBlogItemRelated\]$/m);
-    assert.match(sdl, /^\s+mentions: \[TsubameBlogItemMentions\]$/m);
+  it('types an array that declares several targets as a union, declared in SDL and linked', () => {
+    // The elements need not be the same node type; every member is a node type, so Gatsby's own
+    // `resolveType` (`node.internal.type`) is the right one and `@link` resolves the ids.
+    assert.match(sdl, /^union TsubameBlogItemRelated = TsubameAuthorsItem \| TsubameEditorsItem$/m);
+    assert.match(sdl, /^\s+related: \[TsubameBlogItemRelated\] @link$/m);
   });
 
-  it('leaves the union types themselves to the plugin entry point', () => {
-    // A union of node types and the reference type needs a `resolveType` SDL cannot carry, so the
-    // SDL declares the field's type only and `gatsby-node.js` builds the union.
-    assert.equal(/^union /m.test(sdl), false);
-    assert.deepEqual(
-      relationUnions.map((union) => [union.name, union.members]),
-      [
-        ['TsubameBlogItemRelated', ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef']],
-        ['TsubameBlogItemMentions', ['TsubameAuthorsItem', 'TsubameRelationRef']],
-      ],
-    );
+  it('types a field with one typed target as a plain list, and leaves the missing target out', () => {
+    // `blog.mentions` names authors and `nowhere`; only authors has a type, so the field is a list
+    // of it rather than a one-member union.
+    assert.match(sdl, /^\s+mentions: \[TsubameAuthorsItem\] @link$/m);
+    assert.match(sdl, /^\s+editors: \[TsubameEditorsItem\] @link$/m);
+  });
+
+  it('leaves a field out when the CMS does not answer its target', () => {
+    // `blog.ghost` names `nowhere` and nothing else: no line for it, so a query for it fails with
+    // "Cannot query field" instead of promising a type that could never hold a value.
+    assert.equal(/^\s+ghost:/m.test(sdl), false);
   });
 
   it('links a page reference to the page type', () => {
@@ -141,7 +141,6 @@ describe('the fields the plugin owns', () => {
     assert.match(sdl, /type TsubameMarkdown implements Node \{/);
     assert.match(sdl, /type TsubameImage \{/);
     assert.match(sdl, /type TsubameComposite \{/);
-    assert.match(sdl, /type TsubameRelationRef \{/);
   });
 });
 
@@ -153,7 +152,7 @@ describe('image files', () => {
   });
 
   it('links the downloaded file when images.download is on', () => {
-    const { sdl: withFiles } = buildTypeDefinitions(
+    const withFiles = buildTypeDefinitions(
       createModel({ images: { download: true, concurrency: 4, requestHeaders: {} } }),
     );
     assert.match(withFiles, /^\s+localFile: File @link$/m);

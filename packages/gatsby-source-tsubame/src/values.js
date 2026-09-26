@@ -1,7 +1,7 @@
 'use strict';
 
-const { describeFieldType, imageKey, isRelationArray, normalizeImageValue, toImageValue, toCompositeValue, toRelationReference, toRelationValue } = require('./fields');
-const { ownerNodeKey, relationTargetTypeName } = require('./model');
+const { describeFieldType, imageKey, isRelationArray, normalizeImageValue, toImageValue, toCompositeValue } = require('./fields');
+const { ownerNodeKey } = require('./model');
 
 /**
  * A value, shaped for the GraphQL type the model declared for it.
@@ -32,9 +32,10 @@ function resolveFieldValue(fieldTypeDescriptor, value, context) {
         return [];
       }
       // Several references are an `Array` whose item types are all relations. Their elements may
-      // name different targets, so they are resolved as references and not through one item type.
+      // name different targets, so each one is read by the target it names rather than through one
+      // item type of the array.
       if (isRelationArray(fieldTypeDescriptor)) {
-        return resolveRelationArray(options, value, context);
+        return resolveRelationArray(value, context);
       }
       // A mixed list stays the JSON the API sent; the model declared it `JSON` for the same reason.
       if (!Array.isArray(options) || options.length !== 1) {
@@ -47,7 +48,7 @@ function resolveFieldValue(fieldTypeDescriptor, value, context) {
     case 'CompositeField':
       return resolveComposite(value, context);
     case 'Relation':
-      return resolveRelation(fieldTypeDescriptor, value, context);
+      return resolveRelation(value, context);
     case 'Image':
       return toImageValue(value, context);
     case 'Text':
@@ -104,18 +105,13 @@ function resolveComposite(value, context) {
 /**
  * One relation: the id of the node it points at, so `@link` can resolve it.
  *
- * A target that was not published is simply not a node, and `@link` answers null for it rather than
- * failing the build - which is the honest answer to "show me the author of this article" when the
- * author is not on the site yet. The reference itself (target and item id) stays readable under
- * `values`.
+ * A target that is not published (or whose item is gone) is simply not a node, and `@link` answers
+ * null for it rather than failing the build - which is the honest answer to "show me the author of
+ * this article" when the author is not on the site yet. A target the CMS does not have at all is not
+ * a value that can arrive here: the delivery API drops references it cannot serve, and a field that
+ * declares such a target is left out of the schema (`src/model.js`).
  */
-function resolveRelation(fieldTypeDescriptor, value, context) {
-  const { options } = describeFieldType(fieldTypeDescriptor);
-  const relation = options === null || typeof options !== 'object' ? {} : options;
-
-  if (relationTargetTypeName(context.model.plan, relation.target) === null) {
-    return toRelationValue(value);
-  }
+function resolveRelation(value, context) {
   if (
     value === null ||
     typeof value !== 'object' ||
@@ -128,30 +124,21 @@ function resolveRelation(fieldTypeDescriptor, value, context) {
 }
 
 /**
- * An `Array` of relations: one node id per element, or a reference for an element that has no node.
+ * An `Array` of relations: one node id per element.
  *
- * One item type means one target, which is the one type a GraphQL list can hold. Several targets
- * are a union of their types (`src/model.js`), and the elements are then linked one by one: an
- * element whose target is part of the build becomes that node's id, and one whose target is not
- * stays a reference, because the union cannot carry a node type it does not have - and dropping the
- * element would lose the target the value names. `src/relations.js` resolves the mix.
+ * Every element is a reference the delivery API served, which means the content it names is
+ * published and this build has a node for it, so every element is that node's id. The field is
+ * `[T]` for one target and a union of node types for several, and `@link` resolves both.
  */
-function resolveRelationArray(options, value, context) {
-  const references = value.filter(
+function resolveRelationArray(value, context) {
+  return references(value).map((reference) => relationNodeId(reference, context.createNodeId));
+}
+
+/** The references of an array value, without the entries that are not references at all. */
+function references(value) {
+  return (Array.isArray(value) ? value : []).filter(
     (reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string',
   );
-  if (options.length !== 1) {
-    return references.map((reference) =>
-      relationTargetTypeName(context.model.plan, referenceDescriptor(reference)) === null
-        ? toRelationReference(reference)
-        : relationNodeId(reference, context.createNodeId),
-    );
-  }
-  const relation = describeFieldType(options[0]).options ?? {};
-  if (relationTargetTypeName(context.model.plan, relation.target) === null) {
-    return toRelationValue(value);
-  }
-  return references.map((reference) => relationNodeId(reference, context.createNodeId));
 }
 
 /**

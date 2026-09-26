@@ -99,8 +99,8 @@ export const BLOG_SCHEMA = [
     width: 12,
     height: 1,
   },
-  // The same, with a target no list names: that element has no node type to link to, so it stays a
-  // reference while the other element is a node.
+  // The same, with a target no list names: the plugin leaves that target out of the field, which is
+  // then a plain list of the target that is there (`TsubameAuthorsItem`).
   {
     name: 'mentions',
     field_type: {
@@ -109,6 +109,14 @@ export const BLOG_SCHEMA = [
         { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
       ],
     },
+    required: false,
+    width: 12,
+    height: 1,
+  },
+  // A field whose only target the CMS does not answer: the plugin leaves the field itself out.
+  {
+    name: 'ghost',
+    field_type: { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
     required: false,
     width: 12,
     height: 1,
@@ -185,12 +193,16 @@ export const BLOG_ITEMS = [
         { target: 'authors', item: 7 },
         { target: 'editors', item: 2 },
       ],
-      // One target of this field is part of the build and one is not (`nowhere` is in no list), so
-      // the elements are an id and a reference in the same array.
+      // One target of this field is part of the build and one is not (`nowhere` is in no list): the
+      // field is a list of the target that is there, and the element naming the other one is not
+      // something the delivery API would serve (it drops references it cannot resolve), so it is
+      // here only to prove the plugin does not choke on a value left behind by an older schema.
       mentions: [
         { target: 'authors', item: 7 },
         { target: 'nowhere', item: 5 },
       ],
+      // `ghost` names a collection the CMS does not answer, so the field is left out of the schema.
+      ghost: { target: 'nowhere', item: 5 },
       seo: { id: 'seo', values: { description: 'about hello', og_image: { id: 9, url: '/api/images/og.png' } } },
       blocks: [
         {

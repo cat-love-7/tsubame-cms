@@ -24,15 +24,20 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   `?populate=related.authors`, and `?where=related.authors:3` for the reverse filter.
   `?populate=<field>` keeps working while the field declares one target;
   `?populate=<inverse_name>` is unchanged.
+- **`gatsby-source-tsubame` types a multi-target relation array as a GraphQL union** of the targets'
+  node types, named after the type and field that own it (`TsubameBlogItemRelated`), so every element
+  is still the node it names and a query names the member it wants with an inline fragment. That
+  shape used to be `[TsubameRelationRef]`, so a site that queried it as a reference must change the
+  query, and the `TsubameRelationRef` type is gone.
+- **A relation target the CMS does not answer is warned about and left out of the schema**, instead
+  of being served as a reference that could never hold anything. The delivery API drops references it
+  cannot resolve, and `/api/content/collections/{name}` only answers 404 when the collection does not
+  exist, so this is a schema naming something somebody deleted: the whole field is left out, or just
+  that target when the field has others (an array that loses one target of two becomes a plain list).
+  A site that queries such a field fails with "Cannot query field", with the warning above saying
+  why; the raw value stays readable under `values`.
 - **`inverse_name` is one name per target**, and a schema can no longer give one target two names -
   neither through two Fields nor through two item types of one array.
-- **`gatsby-source-tsubame` types a multi-target relation array as a GraphQL union** of the targets'
-  node types plus `TsubameRelationRef`, named after the type and field that own it
-  (`TsubameBlogItemRelated`), so an element whose target is part of the build is still the node it
-  names while an element whose target has no node type is served as the reference. A query names the
-  member it wants with an inline fragment. That shape used to be `[TsubameRelationRef]` throughout,
-  so a site that queried it as a reference must change the query. The delivered values are unchanged
-  for every other shape, including an array that names one target.
 
 - No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new

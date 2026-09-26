@@ -162,41 +162,6 @@ function toCompositeValue(value) {
 }
 
 /**
- * One reference of a relation, with the kind of target made explicit.
- *
- * The schema says whether the field points at a collection or a single page; the value only shows
- * it by whether `item` is there. `kind` spells it out so a reader does not have to test for a
- * missing field to know which collection to look the item up in.
- */
-function toRelationReference(reference) {
-  if (
-    reference === null ||
-    typeof reference !== 'object' ||
-    Array.isArray(reference) ||
-    typeof reference.target !== 'string'
-  ) {
-    return null;
-  }
-  const item = typeof reference.item === 'number' ? reference.item : null;
-  return { target: reference.target, item, kind: item === null ? 'single_page' : 'collection' };
-}
-
-/**
- * A relation value, with the kind of each reference's target made explicit.
- *
- * One relation is one object (or `null`); several are the array an `Array` of relations holds. This
- * is the *fallback* shape: the normal case is a link to the target node (see `resolveRelation`),
- * and it is what a consumer reads when the target's type is not part of the build, or when a list
- * names several targets and no single GraphQL node type can stand for it.
- */
-function toRelationValue(value) {
-  if (Array.isArray(value)) {
-    return value.map(toRelationReference).filter((reference) => reference !== null);
-  }
-  return toRelationReference(value);
-}
-
-/**
  * Every content target the given schemas point at, directly or through a composite definition.
  *
  * Used before the schema is declared: a relation field is typed after its target, so the target's
@@ -261,7 +226,5 @@ module.exports = {
   imageKey,
   normalizeImageValue,
   toCompositeValue,
-  toRelationReference,
-  toRelationValue,
   collectRelationTargets,
 };

@@ -17,7 +17,6 @@ const { normalizeOptions } = require('./src/options');
 const { TsubameClient } = require('./src/client');
 const { buildContentModel } = require('./src/model');
 const { buildTypeDefinitions } = require('./src/types');
-const { relationUnionResolveType, linkRelationElements } = require('./src/relations');
 const { sourceAll } = require('./src/nodes');
 const { loadRemoteFileCreator } = require('./src/images');
 
@@ -78,7 +77,7 @@ exports.pluginOptionsSchema = ({ Joi }) =>
     }).description('Image files: whether to download them for the sharp plugins.'),
   });
 
-exports.createSchemaCustomization = async ({ actions, schema, reporter }, pluginOptions) => {
+exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions) => {
   const options = normalizeOptions(pluginOptions, reporter);
 
   // Declaring `localFile: File` only works if the type is there, which means the package has to be
@@ -91,34 +90,27 @@ exports.createSchemaCustomization = async ({ actions, schema, reporter }, plugin
 
   const snapshot = await client.fetchSchemaSnapshot();
   const model = buildContentModel(snapshot, options);
-  const { sdl, relationUnions } = buildTypeDefinitions(model);
 
-  // A relation union cannot be said in SDL: it mixes node types with the reference type, so
-  // Gatsby's default `resolveType` (a node's `internal.type`) would answer undefined for a
-  // reference. It is built here, with the resolver that links the elements that are node ids, and
-  // merged into the type the SDL declared.
-  const types = [sdl];
-  for (const union of relationUnions) {
-    types.push(
-      schema.buildUnionType({
-        name: union.name,
-        types: union.members,
-        resolveType: relationUnionResolveType(model.names.relation),
-      }),
-      schema.buildObjectType({
-        name: union.ownerType,
-        fields: {
-          [union.field]: { type: `[${union.name}]`, resolve: linkRelationElements },
-        },
-      }),
+  // A relation whose target the CMS does not answer is a schema that names a collection somebody
+  // deleted - the one thing this build cannot type, and cannot serve a value for either (the
+  // delivery API drops references it cannot resolve). It is said out loud rather than served as a
+  // field that could never hold anything; the raw value stays readable under `values`.
+  for (const { ownerType, field, target, fieldLeftOut } of model.missingRelationTargets) {
+    reporter.warn(
+      `[gatsby-source-tsubame] ${ownerType}.${field} names ${target.kind === 'single_page' ? 'single page' : 'collection'} ` +
+        `'${target.name}', which the CMS does not answer (404); ` +
+        (fieldLeftOut ? 'the field is left out of the schema' : 'that target is left out of the field') +
+        '. Remove the field in the CMS, or restore the target.',
     );
   }
-  actions.createTypes(types);
+
+  actions.createTypes(buildTypeDefinitions(model));
 
   reporter.verbose(
     `[gatsby-source-tsubame] declared ${snapshot.collections.size} collection type(s), ` +
-      `${model.plan.pages.size} single-page type(s), ${snapshot.composites.size} composite type(s) ` +
-      `and ${relationUnions.length} relation union(s)`,
+      `${model.plan.pages.size} single-page type(s), ${snapshot.composites.size} composite type(s), ` +
+      `${model.relationUnions.size} relation union(s) and ${model.missingRelationTargets.length} ` +
+      `missing relation target(s)`,
   );
 };
 

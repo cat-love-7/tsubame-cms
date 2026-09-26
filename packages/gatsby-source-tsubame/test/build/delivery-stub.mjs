@@ -2,9 +2,9 @@
 //
 // The unit tests in `test/` fake `fetch`; a build cannot - the plugin is loaded by Gatsby, in
 // Gatsby's process - so the build test needs a server. This one answers the same shapes
-// `docs/content-api.md` promises, and nothing else: three collections, one item each, and one
-// relation target (`nowhere`) that is in no list and answers 404, so an element of a multi-target
-// array has a target this build has no node type for.
+// `docs/content-api.md` promises, and nothing else: three collections, one item each, one composite
+// definition, and one relation target (`nowhere`) that is in no list and answers 404. That target is
+// what the plugin warns about and leaves out of the schema.
 
 import { createServer } from 'node:http';
 
@@ -19,34 +19,25 @@ const field = (name, field_type, extra = {}) => ({
 
 const TEXT = (name, extra) => field(name, { Text: {} }, extra);
 
+const relationTo = (name) => ({ Relation: { target: { kind: 'collection', name } } });
+
 export const BLOG_SCHEMA = [
   TEXT('title', { required: true, is_title: true, show_in_list: true }),
-  field('related', {
-    Array: [
-      { Relation: { target: { kind: 'collection', name: 'authors' } } },
-      { Relation: { target: { kind: 'collection', name: 'editors' } } },
-    ],
-  }),
-  field('mentions', {
-    Array: [
-      { Relation: { target: { kind: 'collection', name: 'authors' } } },
-      { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
-    ],
-  }),
+  // Two targets that exist: the field is a union of their types.
+  field('related', { Array: [relationTo('authors'), relationTo('editors')] }),
+  // One target that exists and one that does not: the field is a list of the one that does.
+  field('mentions', { Array: [relationTo('authors'), relationTo('nowhere')] }),
+  // No target that exists: the field is left out of the schema, with a warning.
+  field('ghost', relationTo('nowhere')),
   field('card', { CompositeField: { id: 'card' } }),
 ];
 
-// A composite definition holds a relation array too, and it is not a node type: the union's field
-// resolver is attached to the composite's own type, which is the second place it has to work.
+// A composite definition holds a relation array too, and it is not a node type: the union is
+// declared and linked there as well.
 export const COMPOSITE_FIELDS = {
   card: [
     TEXT('label'),
-    field('related', {
-      Array: [
-        { Relation: { target: { kind: 'collection', name: 'authors' } } },
-        { Relation: { target: { kind: 'collection', name: 'editors' } } },
-      ],
-    }),
+    field('related', { Array: [relationTo('authors'), relationTo('editors')] }),
   ],
 };
 
@@ -63,10 +54,10 @@ const BLOG_ITEM = {
       { target: 'authors', item: 7 },
       { target: 'editors', item: 2 },
     ],
-    mentions: [
-      { target: 'authors', item: 7 },
-      { target: 'nowhere', item: 5 },
-    ],
+    // The delivery API drops a reference whose target it cannot serve, so the element naming
+    // `nowhere` is simply not in the response - which is why the plugin can leave that target out
+    // of the field without losing anything a site could have read.
+    mentions: [{ target: 'authors', item: 7 }],
     card: {
       id: 'card',
       values: {
@@ -115,8 +106,8 @@ export async function startDeliveryStub() {
     if (collection !== null) {
       const name = decodeURIComponent(collection[1]);
       const found = COLLECTIONS.get(name);
-      // `nowhere` is not in any list and answers 404: the plugin reads that as "no node type for
-      // this target in this build", which is the case a relation union's reference member is for.
+      // `nowhere` is not in any list and answers 404: the plugin reads that as "the CMS does not
+      // have this collection", which is the dangling declaration it warns about.
       if (found === undefined) {
         return send(response, 404, { code: 'not_found', message: `no collection '${name}'` });
       }

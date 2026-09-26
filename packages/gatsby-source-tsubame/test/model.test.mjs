@@ -14,6 +14,7 @@ const {
   graphqlFieldType,
   planTypeNames,
   relationTargetTypeName,
+  relationTargetTypes,
   relationUnionKey,
   reservedFieldNames,
   schemaKey,
@@ -120,13 +121,12 @@ describe('graphqlFieldType', () => {
     assert.deepEqual(graphqlFieldType(model, many), { type: '[TsubameHomePage]', link: true });
   });
 
-  it('falls back to the reference type when the target is not part of the build', () => {
+  it('leaves a relation whose target is not in the build untyped, and says so', () => {
     const single = { Relation: { target: { kind: 'collection', name: 'nowhere' } } };
-    assert.deepEqual(graphqlFieldType(model, single), { type: 'TsubameRelationRef', link: false });
-    assert.deepEqual(graphqlFieldType(model, { Array: [single] }), {
-      type: '[TsubameRelationRef]',
-      link: false,
-    });
+    // A field like this is left out of the schema (`planRelationFields`), so this is what a caller
+    // that asks about it in isolation gets: the raw value stays readable under `values`.
+    assert.deepEqual(graphqlFieldType(model, single), { type: 'JSON', link: false });
+    assert.deepEqual(graphqlFieldType(model, { Array: [single] }), { type: 'JSON', link: false });
   });
 
   it('types an array that declares several targets as the union planned for the field', () => {
@@ -136,14 +136,15 @@ describe('graphqlFieldType', () => {
         { Relation: { target: { kind: 'collection', name: 'editors' } } },
       ],
     };
-    // With the union the model planned for this field: its elements need not be the same node type.
+    // With the union the model planned for this field: its elements need not be the same node type,
+    // and `@link` resolves them (Gatsby expands a union of node types to its members).
     assert.deepEqual(graphqlFieldType(model, relation, 'TsubameBlogItemRelated'), {
       type: '[TsubameBlogItemRelated]',
-      link: false,
+      link: true,
     });
-    // Without one - no owner planned a field of this shape - the references themselves are what is
-    // left to serve.
-    assert.deepEqual(graphqlFieldType(model, relation), { type: '[TsubameRelationRef]', link: false });
+    // Without one - no owner planned a field of this shape - nothing is declared rather than a type
+    // that could not hold the elements.
+    assert.deepEqual(graphqlFieldType(model, relation), { type: 'JSON', link: false });
   });
 
   it('types a composite after its definition', () => {
@@ -179,47 +180,65 @@ describe('relationTargetTypeName', () => {
   });
 });
 
-describe('relationUnions', () => {
-  it('plans one per field whose elements need not be the same node type', () => {
-    const related = model.relationUnions.get(relationUnionKey('TsubameBlogItem', 'related'));
-    // The reference type is always the last member, so an element whose target is not part of the
-    // build still has a type to resolve to.
-    assert.deepEqual(related, {
+describe('relationTargetTypes', () => {
+  it('splits a field\'s declared targets into the ones this build can type and the ones it cannot', () => {
+    const mentions = {
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
+      ],
+    };
+    assert.deepEqual(relationTargetTypes(model.plan, mentions), {
+      typed: ['TsubameAuthorsItem'],
+      missing: [{ kind: 'collection', name: 'nowhere' }],
+    });
+
+    // A target named twice is one member (the CMS refuses it, but the planner does not care).
+    const twice = { Array: [{ Relation: { target: { kind: 'collection', name: 'authors' } } }, { Relation: { target: { kind: 'collection', name: 'authors' } } }] };
+    assert.deepEqual(relationTargetTypes(model.plan, twice), { typed: ['TsubameAuthorsItem'], missing: [] });
+
+    // A field that is not a relation declares no targets at all.
+    assert.deepEqual(relationTargetTypes(model.plan, { Text: {} }), { typed: [], missing: [] });
+  });
+});
+
+describe('relation fields', () => {
+  it('plans a union only for a field whose elements need not be the same node type', () => {
+    // `blog.related` names authors and editors, both of which have a type.
+    assert.deepEqual(model.relationUnions.get(relationUnionKey('TsubameBlogItem', 'related')), {
       name: 'TsubameBlogItemRelated',
       ownerType: 'TsubameBlogItem',
       field: 'related',
-      members: ['TsubameAuthorsItem', 'TsubameEditorsItem', 'TsubameRelationRef'],
+      members: ['TsubameAuthorsItem', 'TsubameEditorsItem'],
     });
 
-    // One target that has no node type leaves the other one and the reference type.
-    assert.deepEqual(model.relationUnions.get(relationUnionKey('TsubameBlogItem', 'mentions')).members, [
-      'TsubameAuthorsItem',
-      'TsubameRelationRef',
-    ]);
-  });
-
-  it('plans none for a field that is one node type, or for one whose targets are all absent', () => {
-    // One item type is a list of that type; nothing to choose between.
+    // One typed target is a plain list of that type; so is a single relation.
     assert.equal(model.relationUnions.has(relationUnionKey('TsubameBlogItem', 'editors')), false);
     assert.equal(model.relationUnions.has(relationUnionKey('TsubameBlogItem', 'author')), false);
-
-    const snapshot = createSnapshot();
-    snapshot.collections.set('blog', [
-      {
-        name: 'related',
-        field_type: {
-          Array: [
-            { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
-            { Relation: { target: { kind: 'collection', name: 'gone' } } },
-          ],
-        },
-      },
-    ]);
-    const plain = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
-    assert.equal(plain.relationUnions.size, 0);
+    // `blog.mentions` names authors and `nowhere`: the target that is there is the field's type.
+    assert.equal(model.relationUnions.has(relationUnionKey('TsubameBlogItem', 'mentions')), false);
   });
 
-  it('plans one for a field inside a composite definition too', () => {
+  it('leaves out a target the CMS does not answer, and reports it', () => {
+    const reported = model.missingRelationTargets
+      .map((entry) => `${entry.ownerType}.${entry.field}->${entry.target.name}:${entry.fieldLeftOut}`)
+      .sort();
+    assert.deepEqual(reported, [
+      // `blog.ghost` points at `nowhere` and nothing else, so the whole field is left out.
+      'TsubameBlogItem.ghost->nowhere:true',
+      // `blog.mentions` keeps the target it has; only the missing one is left out of the field.
+      'TsubameBlogItem.mentions->nowhere:false',
+    ]);
+  });
+
+  it('trims a field that is left out of the mapping, so type, node and fieldNames agree', () => {
+    assert.equal(model.fieldNames.collections.get('blog').has('ghost'), false);
+    // The fields that stay keep their names.
+    assert.equal(model.fieldNames.collections.get('blog').get('title'), 'title');
+    assert.equal(model.fieldNames.collections.get('blog').get('mentions'), 'mentions');
+  });
+
+  it('plans a union for a field inside a composite definition too', () => {
     const snapshot = createSnapshot();
     snapshot.composites.set('block', [
       {
@@ -237,7 +256,7 @@ describe('relationUnions', () => {
       name: 'TsubameCompositeBlockRelated',
       ownerType: 'TsubameCompositeBlock',
       field: 'related',
-      members: ['TsubameAuthorsItem', 'TsubameHomePage', 'TsubameRelationRef'],
+      members: ['TsubameAuthorsItem', 'TsubameHomePage'],
     });
   });
 
@@ -248,6 +267,26 @@ describe('relationUnions', () => {
     reversed.composites = new Map([...reversed.composites].reverse());
     const second = buildContentModel(reversed, { typePrefix: 'Tsubame' });
     assert.deepEqual([...first.relationUnions], [...second.relationUnions]);
+    assert.deepEqual(first.missingRelationTargets, second.missingRelationTargets);
+  });
+
+  it('leaves a field out when none of its targets has a type, without planning a union', () => {
+    const snapshot = createSnapshot();
+    snapshot.collections.set('blog', [
+      {
+        name: 'related',
+        field_type: {
+          Array: [
+            { Relation: { target: { kind: 'collection', name: 'nowhere' } } },
+            { Relation: { target: { kind: 'collection', name: 'gone' } } },
+          ],
+        },
+      },
+    ]);
+    const plain = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
+    assert.equal(plain.relationUnions.size, 0);
+    assert.equal(plain.missingRelationTargets.length, 2);
+    assert.equal(plain.fieldNames.collections.get('blog').has('related'), false);
   });
 });
 
@@ -304,6 +343,8 @@ describe('the model over the fixture blog schema', () => {
     for (const name of model.plan.collections.keys()) {
       assert.ok(model.fieldNames.collections.has(name), name);
     }
-    assert.equal(BLOG_SCHEMA.length, model.fieldNames.collections.get('blog').size);
+    // One less than the schema, because `blog.ghost` names a target the CMS does not answer and is
+    // left out of the mapping with the type.
+    assert.equal(BLOG_SCHEMA.length - 1, model.fieldNames.collections.get('blog').size);
   });
 });
