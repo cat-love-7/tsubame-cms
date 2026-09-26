@@ -209,20 +209,32 @@ impl Default for FieldType {
     }
 }
 impl FieldType {
+    /// Whether `value` counts as filled in for a field of this type.
+    ///
+    /// Every field type is named, so a new one has to answer this rather than fall through a
+    /// catch-all; the only case the inner patterns leave out is a value of the wrong kind, which is
+    /// not filled in either.
     pub fn test_required(&self, value: &FieldValue) -> bool {
-        match (self, value) {
-            (FieldType::Text(_) | FieldType::Slug(_), FieldValue::Text(text)) => !text.is_empty(),
-            (FieldType::Markdown(_), FieldValue::Markdown(markdown)) => !markdown.is_empty(),
-            (FieldType::Number, FieldValue::Number(num_opt)) => num_opt.is_some(),
-            (FieldType::Boolean, FieldValue::Boolean(_)) => true,
-            (FieldType::Date, FieldValue::Date(date_opt)) => date_opt.is_some(),
-            (FieldType::DateTime, FieldValue::DateTime(date_time_opt)) => date_time_opt.is_some(),
-            (FieldType::Image, FieldValue::Image(img_opt)) => img_opt.is_some(),
-            (FieldType::CompositeField(_), FieldValue::CompositeField(value)) => value.is_some(),
-            (FieldType::Relation(_), FieldValue::Relation(refs)) => !refs.is_empty(),
-            (FieldType::Array(_), FieldValue::Array(values)) => !values.is_empty(),
-            (FieldType::TextEnum(_), FieldValue::TextEnum(vals)) => !vals.is_empty(),
-            _ => false,
+        match self {
+            FieldType::Text(_) | FieldType::Slug(_) => {
+                matches!(value, FieldValue::Text(text) if !text.is_empty())
+            }
+            FieldType::Markdown(_) => {
+                matches!(value, FieldValue::Markdown(markdown) if !markdown.is_empty())
+            }
+            FieldType::Number => matches!(value, FieldValue::Number(Some(_))),
+            FieldType::Boolean => matches!(value, FieldValue::Boolean(_)),
+            FieldType::Date => matches!(value, FieldValue::Date(Some(_))),
+            FieldType::DateTime => matches!(value, FieldValue::DateTime(Some(_))),
+            FieldType::Image => matches!(value, FieldValue::Image(Some(_))),
+            FieldType::CompositeField(_) => matches!(value, FieldValue::CompositeField(Some(_))),
+            FieldType::Relation(_) => {
+                matches!(value, FieldValue::Relation(refs) if !refs.is_empty())
+            }
+            FieldType::Array(_) => matches!(value, FieldValue::Array(values) if !values.is_empty()),
+            FieldType::TextEnum(_) => {
+                matches!(value, FieldValue::TextEnum(vals) if !vals.is_empty())
+            }
         }
     }
 }

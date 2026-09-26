@@ -1382,6 +1382,37 @@ impl FieldValue {
 }
 
 impl FieldValue {
+    /// Whether `field_type` is the kind of field this value belongs to.
+    ///
+    /// The dispatch is on the **field type**, with every variant named, so that adding one is a
+    /// compile error here rather than a value that quietly falls through a catch-all. `get_type`
+    /// below is the same guard on the other axis: it names every `FieldValue`, so a new *value* kind
+    /// is caught there (and by `to_response`). A value of the wrong kind is `false`, which is what
+    /// the `matches!` inside each arm is for.
+    pub fn matches_type(&self, field_type: &FieldType) -> bool {
+        match field_type {
+            FieldType::Text(_) | FieldType::Slug(_) => matches!(self, FieldValue::Text(_)),
+            FieldType::Markdown(_) => matches!(self, FieldValue::Markdown(_)),
+            FieldType::Number => matches!(self, FieldValue::Number(_)),
+            FieldType::Boolean => matches!(self, FieldValue::Boolean(_)),
+            FieldType::Date => matches!(self, FieldValue::Date(_)),
+            FieldType::DateTime => matches!(self, FieldValue::DateTime(_)),
+            FieldType::Image => matches!(self, FieldValue::Image(_)),
+            FieldType::CompositeField(_) => matches!(self, FieldValue::CompositeField(_)),
+            FieldType::Relation(_) => matches!(self, FieldValue::Relation(_)),
+            FieldType::Array(_) => matches!(self, FieldValue::Array(_)),
+            FieldType::TextEnum(_) => matches!(self, FieldValue::TextEnum(_)),
+        }
+    }
+
+    /// The field type a value of this kind answers to, as something to talk *about* rather than a
+    /// check to make.
+    ///
+    /// It is lossy on purpose, and nothing in the server asks it any more: a text value does not
+    /// remember whether it was written for a `Text` or a `Slug` field (the schema is where that
+    /// lives), and the options come back empty. Asking a question about a value and a field is
+    /// `matches_type`'s job. This stays because it describes a value's kind, and because it names
+    /// every `FieldValue` - which is half of what makes a new value kind a compile error.
     pub fn get_type(&self) -> FieldType {
         match self {
             FieldValue::Text(_) => FieldType::Text(TextFieldOptions::default()),
@@ -1455,199 +1486,228 @@ impl FieldValue {
         prefix: &str,
     ) -> Result<(), FieldRefusal> {
         let path = format!("{prefix}{}", schema.name);
-        match (&schema.field_type, self) {
-            (FieldType::Text(field_params), FieldValue::Text(text))
-            | (FieldType::Markdown(field_params), FieldValue::Markdown(text)) => {
-                if schema.required && !schema.field_type.test_required(self) {
-                    return Err(FieldRefusal::required(&path));
-                }
-                schema.validate_text_length(text, field_params, &path)?;
-                Ok(())
-            }
-            (FieldType::Slug(_), FieldValue::Text(slug)) => {
-                if schema.required && !schema.field_type.test_required(self) {
-                    return Err(FieldRefusal::required(&path));
-                }
-                if slug.chars().count() > crate::models::slug::SLUG_MAX_LENGTH {
-                    return Err(FieldRefusal::too_long(
-                        &path,
-                        crate::models::slug::SLUG_MAX_LENGTH,
-                    ));
-                }
-                // Everything a slug may hold, and nothing else. A value that is not canonical is
-                // refused rather than rewritten here: normalising on this side would quietly store
-                // something other than what was sent, and the caller would never learn.
-                let canonical = slug
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-                if !canonical {
-                    return Err(FieldRefusal::invalid_slug(&path));
-                }
-                Ok(())
-            }
-            (FieldType::Number, FieldValue::Number(_))
-            | (FieldType::Boolean, FieldValue::Boolean(_))
-            | (FieldType::Date, FieldValue::Date(_))
-            | (FieldType::DateTime, FieldValue::DateTime(_))
-            | (FieldType::Image, FieldValue::Image(_))
-            | (FieldType::Relation(_), FieldValue::Relation(_)) => {
-                if schema.required && !schema.field_type.test_required(self) {
-                    return Err(FieldRefusal::required(&path));
-                }
-                Ok(())
-            }
-            (FieldType::CompositeField(s), FieldValue::CompositeField(field_value)) => {
-                if schema.required && !schema.field_type.test_required(self) {
-                    return Err(FieldRefusal::required(&path));
-                }
-                if let Some(v) = field_value {
-                    if s.id != v.id {
-                        return Err(FieldRefusal::composite_mismatch(&path));
+        // The dispatch is on the **field type**, with every variant named, so that adding one is a
+        // compile error here rather than a value that quietly falls through a catch-all. Inside an
+        // arm, `_` is a value of the wrong kind, and `matches_type` is where the pairs live.
+        match &schema.field_type {
+            FieldType::Text(params) => match self {
+                FieldValue::Text(text) => {
+                    if schema.required && !schema.field_type.test_required(self) {
+                        return Err(FieldRefusal::required(&path));
                     }
-                    let composite_schema = composite_schemas
-                        .get(&s.id)
-                        .ok_or_else(|| FieldRefusal::unknown_composite(&path, &s.id))?;
-                    v.values.validate_at(
-                        &format!("{path}."),
-                        composite_schemas,
-                        composite_schema,
-                    )?;
-                    Ok(())
-                } else {
+                    schema.validate_text_length(text, params, &path)
+                }
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
+            FieldType::Markdown(params) => match self {
+                FieldValue::Markdown(text) => {
+                    if schema.required && !schema.field_type.test_required(self) {
+                        return Err(FieldRefusal::required(&path));
+                    }
+                    schema.validate_text_length(text, params, &path)
+                }
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
+            FieldType::Slug(_) => match self {
+                FieldValue::Text(slug) => {
+                    if schema.required && !schema.field_type.test_required(self) {
+                        return Err(FieldRefusal::required(&path));
+                    }
+                    if slug.chars().count() > crate::models::slug::SLUG_MAX_LENGTH {
+                        return Err(FieldRefusal::too_long(
+                            &path,
+                            crate::models::slug::SLUG_MAX_LENGTH,
+                        ));
+                    }
+                    // Everything a slug may hold, and nothing else. A value that is not canonical
+                    // is refused rather than rewritten here: normalising on this side would quietly
+                    // store something other than what was sent, and the caller would never learn.
+                    let canonical = slug
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+                    if !canonical {
+                        return Err(FieldRefusal::invalid_slug(&path));
+                    }
                     Ok(())
                 }
-            }
-            (FieldType::Array(schemas), FieldValue::Array(values)) => {
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
+            FieldType::Number
+            | FieldType::Boolean
+            | FieldType::Date
+            | FieldType::DateTime
+            | FieldType::Image
+            | FieldType::Relation(_) => {
+                if !self.matches_type(&schema.field_type) {
+                    return Err(FieldRefusal::type_mismatch(&path));
+                }
                 if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
-                // An element that holds nothing is a value like any other: `required` asks the
-                // *array* to hold something (see `test_required`, which is `!values.is_empty()`),
-                // and a blank element is what a text element has always been allowed to be -
-                // `[""]` passes. An element used to be refused here as `field_required`, which a
-                // working copy swallows and publishing does not, so a draft could be saved and
-                // never published, on a field that nobody had marked required.
-                for (index, value) in values.iter().enumerate() {
-                    // An array item is named by the path plus its index: `tags[2]`.
-                    let item = format!("{path}[{index}]");
-                    match value {
-                        FieldValue::Text(value) => {
-                            let option = Self::extract_text_options(schemas, |ft| {
-                                if let FieldType::Text(options) = ft {
-                                    Some(options)
-                                } else {
-                                    None
-                                }
-                            });
-                            match option {
-                                Some(options) => {
-                                    schema.validate_text_length(value, &options, &item)?;
-                                }
-                                None => {
-                                    return Err(FieldRefusal::type_mismatch(&item));
-                                }
-                            }
+                Ok(())
+            }
+            FieldType::CompositeField(s) => match self {
+                FieldValue::CompositeField(field_value) => {
+                    if schema.required && !schema.field_type.test_required(self) {
+                        return Err(FieldRefusal::required(&path));
+                    }
+                    if let Some(v) = field_value {
+                        if s.id != v.id {
+                            return Err(FieldRefusal::composite_mismatch(&path));
                         }
-                        FieldValue::Markdown(value) => {
-                            let option = Self::extract_text_options(schemas, |ft| {
-                                if let FieldType::Markdown(options) = ft {
-                                    Some(options)
-                                } else {
-                                    None
-                                }
-                            });
-                            match option {
-                                Some(options) => {
-                                    schema.validate_text_length(value, &options, &item)?;
-                                }
-                                None => {
-                                    return Err(FieldRefusal::type_mismatch(&item));
-                                }
-                            }
-                        }
-                        FieldValue::Number(_)
-                        | FieldValue::Boolean(_)
-                        | FieldValue::Date(_)
-                        | FieldValue::DateTime(_)
-                        | FieldValue::Image(_) => {
-                            let value_type = value.get_type();
-                            if !schemas.contains(&value_type) {
-                                return Err(FieldRefusal::type_mismatch(&item));
-                            }
-                        }
-                        FieldValue::CompositeField(cv) => match cv {
-                            Some(cv) => {
-                                let schema = schemas
-                                    .iter()
-                                    .find(|ft| match ft {
-                                        FieldType::CompositeField(s) => s.id == cv.id,
-                                        _ => false,
-                                    })
-                                    .and_then(|ft| match ft {
-                                        FieldType::CompositeField(s) => Some(s),
-                                        _ => None,
-                                    });
-                                match schema {
-                                    Some(s) => {
-                                        let composite_schema =
-                                            composite_schemas.get(&s.id).ok_or_else(|| {
-                                                FieldRefusal::unknown_composite(&item, &s.id)
-                                            })?;
-
-                                        cv.values.validate_at(
-                                            &format!("{item}."),
-                                            composite_schemas,
-                                            composite_schema,
-                                        )?;
+                        let composite_schema = composite_schemas
+                            .get(&s.id)
+                            .ok_or_else(|| FieldRefusal::unknown_composite(&path, &s.id))?;
+                        v.values.validate_at(
+                            &format!("{path}."),
+                            composite_schemas,
+                            composite_schema,
+                        )?;
+                        Ok(())
+                    } else {
+                        Ok(())
+                    }
+                }
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
+            FieldType::Array(schemas) => match self {
+                FieldValue::Array(values) => {
+                    if schema.required && !schema.field_type.test_required(self) {
+                        return Err(FieldRefusal::required(&path));
+                    }
+                    // An element that holds nothing is a value like any other: `required` asks the
+                    // *array* to hold something (see `test_required`, which is `!values.is_empty()`),
+                    // and a blank element is what a text element has always been allowed to be -
+                    // `[""]` passes. An element used to be refused here as `field_required`, which a
+                    // working copy swallows and publishing does not, so a draft could be saved and
+                    // never published, on a field that nobody had marked required.
+                    for (index, value) in values.iter().enumerate() {
+                        // An array item is named by the path plus its index: `tags[2]`.
+                        let item = format!("{path}[{index}]");
+                        match value {
+                            FieldValue::Text(value) => {
+                                let option = Self::extract_text_options(schemas, |ft| {
+                                    if let FieldType::Text(options) = ft {
+                                        Some(options)
+                                    } else {
+                                        None
+                                    }
+                                });
+                                match option {
+                                    Some(options) => {
+                                        schema.validate_text_length(value, &options, &item)?;
                                     }
                                     None => {
-                                        // The element names a definition this array does not
-                                        // declare, so the element itself is the wrong kind.
                                         return Err(FieldRefusal::type_mismatch(&item));
                                     }
                                 }
                             }
-                            // A composite element that is null is the same case as a blank
-                            // scalar: an empty element, not a missing required field.
-                            None => {}
-                        },
-                        FieldValue::Array(_) => {
-                            return Err(FieldRefusal::nested_array(&item));
-                        }
-                        FieldValue::TextEnum(vals) => {
-                            let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
-                                if let FieldType::TextEnum(options) = ft {
-                                    acc.extend(options.clone());
-                                }
-                                acc
-                            });
-                            for val in vals {
-                                if !option.contains(val) {
-                                    return Err(FieldRefusal::enum_value(&item, val));
+                            FieldValue::Markdown(value) => {
+                                let option = Self::extract_text_options(schemas, |ft| {
+                                    if let FieldType::Markdown(options) = ft {
+                                        Some(options)
+                                    } else {
+                                        None
+                                    }
+                                });
+                                match option {
+                                    Some(options) => {
+                                        schema.validate_text_length(value, &options, &item)?;
+                                    }
+                                    None => {
+                                        return Err(FieldRefusal::type_mismatch(&item));
+                                    }
                                 }
                             }
-                        }
-                        FieldValue::Relation(_) => {
-                            // A relation can never be an array item (see `validate_field_type`),
-                            // so an element that turned out to be one is the wrong kind.
-                            return Err(FieldRefusal::type_mismatch(&item));
+                            FieldValue::Number(_)
+                            | FieldValue::Boolean(_)
+                            | FieldValue::Date(_)
+                            | FieldValue::DateTime(_)
+                            | FieldValue::Image(_) => {
+                                if !schemas
+                                    .iter()
+                                    .any(|field_type| value.matches_type(field_type))
+                                {
+                                    return Err(FieldRefusal::type_mismatch(&item));
+                                }
+                            }
+                            FieldValue::CompositeField(cv) => {
+                                // A composite element that is null is the same case as a blank
+                                // scalar: an empty element, not a missing required field, so there
+                                // is nothing to check.
+                                if let Some(cv) = cv {
+                                    let schema = schemas
+                                        .iter()
+                                        .find(|ft| match ft {
+                                            FieldType::CompositeField(s) => s.id == cv.id,
+                                            _ => false,
+                                        })
+                                        .and_then(|ft| match ft {
+                                            FieldType::CompositeField(s) => Some(s),
+                                            _ => None,
+                                        });
+                                    match schema {
+                                        Some(s) => {
+                                            let composite_schema =
+                                                composite_schemas.get(&s.id).ok_or_else(|| {
+                                                    FieldRefusal::unknown_composite(&item, &s.id)
+                                                })?;
+
+                                            cv.values.validate_at(
+                                                &format!("{item}."),
+                                                composite_schemas,
+                                                composite_schema,
+                                            )?;
+                                        }
+                                        None => {
+                                            // The element names a definition this array does not
+                                            // declare, so the element itself is the wrong kind.
+                                            return Err(FieldRefusal::type_mismatch(&item));
+                                        }
+                                    }
+                                }
+                            }
+                            FieldValue::Array(_) => {
+                                return Err(FieldRefusal::nested_array(&item));
+                            }
+                            FieldValue::TextEnum(vals) => {
+                                let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
+                                    if let FieldType::TextEnum(options) = ft {
+                                        acc.extend(options.clone());
+                                    }
+                                    acc
+                                });
+                                for val in vals {
+                                    if !option.contains(val) {
+                                        return Err(FieldRefusal::enum_value(&item, val));
+                                    }
+                                }
+                            }
+                            FieldValue::Relation(_) => {
+                                // A relation can never be an array item (see `validate_field_type`),
+                                // so an element that turned out to be one is the wrong kind.
+                                return Err(FieldRefusal::type_mismatch(&item));
+                            }
                         }
                     }
+                    Ok(())
                 }
-                Ok(())
-            }
-            (FieldType::TextEnum(options), FieldValue::TextEnum(vals)) => {
-                for val in vals {
-                    if !options.contains(val) {
-                        return Err(FieldRefusal::enum_value(&path, val));
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
+            FieldType::TextEnum(options) => match self {
+                FieldValue::TextEnum(vals) => {
+                    for val in vals {
+                        if !options.contains(val) {
+                            return Err(FieldRefusal::enum_value(&path, val));
+                        }
                     }
+                    if vals.is_empty() && schema.required {
+                        return Err(FieldRefusal::required(&path));
+                    }
+                    Ok(())
                 }
-                if vals.is_empty() && schema.required {
-                    return Err(FieldRefusal::required(&path));
-                }
-                Ok(())
-            }
-            _ => Err(FieldRefusal::type_mismatch(&path)),
+                _ => Err(FieldRefusal::type_mismatch(&path)),
+            },
         }
     }
     pub fn format_field_value(
@@ -1655,117 +1715,136 @@ impl FieldValue {
         schema: &FieldSchema,
         composite_schemas: &HashMap<CompositeFieldId, CompositeFieldSchema>,
     ) -> FieldValue {
-        match (&schema.field_type, self) {
-            (FieldType::Text(_), FieldValue::Text(_))
-            | (FieldType::Slug(_), FieldValue::Text(_))
-            | (FieldType::Markdown(_), FieldValue::Markdown(_))
-            | (FieldType::Number, FieldValue::Number(_))
-            | (FieldType::Boolean, FieldValue::Boolean(_))
-            | (FieldType::Date, FieldValue::Date(_))
-            | (FieldType::DateTime, FieldValue::DateTime(_))
-            | (FieldType::Image, FieldValue::Image(_))
-            | (FieldType::Relation(_), FieldValue::Relation(_)) => self.clone(),
-            (FieldType::CompositeField(s), FieldValue::CompositeField(Some(v))) => {
-                // A composite of another definition is not this field's value: the schema's own
-                // default stands in for it, as for a value that is missing entirely.
-                match composite_schemas.get(&s.id).filter(|_| s.id == v.id) {
-                    None => schema.get_default_value(),
-                    Some(cs) => {
-                        let formatted_values = v.values.format_to_schema(composite_schemas, cs);
-                        FieldValue::CompositeField(Some(CompositeFieldValue {
-                            id: s.id.clone(),
-                            values: formatted_values,
-                        }))
+        // The same shape as `validate_field_at`: every field type is named, so a new one cannot be
+        // added without deciding how it formats. A value of the wrong kind formats to the field's
+        // own default, which is what the pair match used to say.
+        match &schema.field_type {
+            FieldType::Text(_)
+            | FieldType::Slug(_)
+            | FieldType::Markdown(_)
+            | FieldType::Number
+            | FieldType::Boolean
+            | FieldType::Date
+            | FieldType::DateTime
+            | FieldType::Image
+            | FieldType::Relation(_) => {
+                if self.matches_type(&schema.field_type) {
+                    self.clone()
+                } else {
+                    schema.get_default_value()
+                }
+            }
+            FieldType::CompositeField(s) => match self {
+                FieldValue::CompositeField(Some(v)) => {
+                    // A composite of another definition is not this field's value: the schema's own
+                    // default stands in for it, as for a value that is missing entirely.
+                    match composite_schemas.get(&s.id).filter(|_| s.id == v.id) {
+                        None => schema.get_default_value(),
+                        Some(cs) => {
+                            let formatted_values = v.values.format_to_schema(composite_schemas, cs);
+                            FieldValue::CompositeField(Some(CompositeFieldValue {
+                                id: s.id.clone(),
+                                values: formatted_values,
+                            }))
+                        }
                     }
                 }
-            }
-            (FieldType::CompositeField(_), FieldValue::CompositeField(None)) => {
-                schema.get_default_value()
-            }
-            (FieldType::Array(schemas), FieldValue::Array(values)) => {
-                let mut formatted_values = Vec::new();
-                for value in values {
-                    match value {
-                        FieldValue::Text(_)
-                        | FieldValue::Markdown(_)
-                        | FieldValue::Number(_)
-                        | FieldValue::Boolean(_)
-                        | FieldValue::Date(_)
-                        | FieldValue::DateTime(_)
-                        | FieldValue::Image(_) => {
-                            let item_type = value.get_type();
-                            if schemas.contains(&item_type) {
-                                formatted_values.push(value.clone());
-                            }
-                        }
-                        // A relation is never an array item (see `validate_field_type`), so there
-                        // is no declared type for it to belong to.
-                        FieldValue::Relation(_) => continue,
-                        FieldValue::CompositeField(cv) => match cv {
-                            Some(cv) => {
-                                let s = schemas
+                _ => schema.get_default_value(),
+            },
+            FieldType::Array(schemas) => match self {
+                FieldValue::Array(values) => {
+                    let mut formatted_values = Vec::new();
+                    for value in values {
+                        match value {
+                            FieldValue::Text(_)
+                            | FieldValue::Markdown(_)
+                            | FieldValue::Number(_)
+                            | FieldValue::Boolean(_)
+                            | FieldValue::Date(_)
+                            | FieldValue::DateTime(_)
+                            | FieldValue::Image(_) => {
+                                if schemas
                                     .iter()
-                                    .find(|ft| match ft {
-                                        FieldType::CompositeField(s) => s.id == cv.id,
-                                        _ => false,
-                                    })
-                                    .and_then(|ft| match ft {
-                                        FieldType::CompositeField(s) => Some(s),
-                                        _ => None,
-                                    });
-                                match s {
-                                    Some(schema) => {
-                                        let composite_schema = composite_schemas.get(&schema.id);
-                                        match composite_schema {
-                                            None => continue,
-                                            Some(cs) => {
-                                                let formatted_values_map = cv
-                                                    .values
-                                                    .format_to_schema(composite_schemas, cs);
-                                                formatted_values.push(FieldValue::CompositeField(
-                                                    Some(CompositeFieldValue {
-                                                        id: schema.id.clone(),
-                                                        values: formatted_values_map,
-                                                    }),
-                                                ));
-                                            }
-                                        };
-                                    }
-                                    None => continue,
-                                };
-                            }
-                            None => continue,
-                        },
-                        FieldValue::Array(_) => {
-                            continue;
-                        }
-                        FieldValue::TextEnum(vals) => {
-                            let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
-                                if let FieldType::TextEnum(options) = ft {
-                                    acc.extend(options.clone());
+                                    .any(|field_type| value.matches_type(field_type))
+                                {
+                                    formatted_values.push(value.clone());
                                 }
-                                acc
-                            });
-                            let filtered_vals: Vec<String> = vals
-                                .iter()
-                                .filter(|v| option.contains(v))
-                                .cloned()
-                                .collect();
-                            formatted_values.push(FieldValue::TextEnum(filtered_vals));
-                        }
-                    };
+                            }
+                            // A relation is never an array item (see `validate_field_type`), so there
+                            // is no declared type for it to belong to.
+                            FieldValue::Relation(_) => continue,
+                            FieldValue::CompositeField(cv) => match cv {
+                                Some(cv) => {
+                                    let s = schemas
+                                        .iter()
+                                        .find(|ft| match ft {
+                                            FieldType::CompositeField(s) => s.id == cv.id,
+                                            _ => false,
+                                        })
+                                        .and_then(|ft| match ft {
+                                            FieldType::CompositeField(s) => Some(s),
+                                            _ => None,
+                                        });
+                                    match s {
+                                        Some(schema) => {
+                                            let composite_schema =
+                                                composite_schemas.get(&schema.id);
+                                            match composite_schema {
+                                                None => continue,
+                                                Some(cs) => {
+                                                    let formatted_values_map = cv
+                                                        .values
+                                                        .format_to_schema(composite_schemas, cs);
+                                                    formatted_values.push(
+                                                        FieldValue::CompositeField(Some(
+                                                            CompositeFieldValue {
+                                                                id: schema.id.clone(),
+                                                                values: formatted_values_map,
+                                                            },
+                                                        )),
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        None => continue,
+                                    };
+                                }
+                                None => continue,
+                            },
+                            FieldValue::Array(_) => {
+                                continue;
+                            }
+                            FieldValue::TextEnum(vals) => {
+                                let option = schemas.iter().fold(Vec::new(), |mut acc, ft| {
+                                    if let FieldType::TextEnum(options) = ft {
+                                        acc.extend(options.clone());
+                                    }
+                                    acc
+                                });
+                                let filtered_vals: Vec<String> = vals
+                                    .iter()
+                                    .filter(|v| option.contains(v))
+                                    .cloned()
+                                    .collect();
+                                formatted_values.push(FieldValue::TextEnum(filtered_vals));
+                            }
+                        };
+                    }
+                    FieldValue::Array(formatted_values)
                 }
-                FieldValue::Array(formatted_values)
-            }
-            (FieldType::TextEnum(options), FieldValue::TextEnum(vals)) => {
-                let filtered_vals: Vec<String> = vals
-                    .iter()
-                    .filter(|v| options.contains(v))
-                    .cloned()
-                    .collect();
-                FieldValue::TextEnum(filtered_vals)
-            }
-            _ => schema.get_default_value(),
+                _ => schema.get_default_value(),
+            },
+            FieldType::TextEnum(options) => match self {
+                FieldValue::TextEnum(vals) => {
+                    let filtered_vals: Vec<String> = vals
+                        .iter()
+                        .filter(|v| options.contains(v))
+                        .cloned()
+                        .collect();
+                    FieldValue::TextEnum(filtered_vals)
+                }
+                _ => schema.get_default_value(),
+            },
         }
     }
 }
@@ -3992,6 +4071,43 @@ mod tests {
             }
         }
     }
+
+    /// The pairs `matches_type` accepts, named here independently so that a change to the mapping is
+    /// a change to this table too.
+    ///
+    /// The function itself is the guard: it matches on the *field type* with every variant named, so
+    /// a new one is a compile error until it is answered here as well. A value of the wrong kind is
+    /// `false`.
+    #[test]
+    fn matches_type_accepts_exactly_these_pairs() {
+        fn expected(value: &FieldValue, field_type: &FieldType) -> bool {
+            matches!(
+                (value, field_type),
+                (FieldValue::Text(_), FieldType::Text(_) | FieldType::Slug(_))
+                    | (FieldValue::Markdown(_), FieldType::Markdown(_))
+                    | (FieldValue::Number(_), FieldType::Number)
+                    | (FieldValue::Boolean(_), FieldType::Boolean)
+                    | (FieldValue::Date(_), FieldType::Date)
+                    | (FieldValue::DateTime(_), FieldType::DateTime)
+                    | (FieldValue::Image(_), FieldType::Image)
+                    | (FieldValue::CompositeField(_), FieldType::CompositeField(_))
+                    | (FieldValue::Relation(_), FieldType::Relation(_))
+                    | (FieldValue::Array(_), FieldType::Array(_))
+                    | (FieldValue::TextEnum(_), FieldType::TextEnum(_))
+            )
+        }
+
+        for field_type in FieldType::iter() {
+            for value in FieldValue::iter() {
+                assert_eq!(
+                    value.matches_type(&field_type),
+                    expected(&value, &field_type),
+                    "{value:?} against {field_type:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn format_to_schema() {
         let schema = vec![
