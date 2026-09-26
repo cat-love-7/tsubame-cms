@@ -259,6 +259,10 @@ An Item can reference **an Item of another Collection** (or a **Single page**). 
   or more entries in a single reference; a value that is not an array.
 - `Relation` **cannot be an array element type**. Holding many is `has_many`'s job, and an array
   would be a second way of saying "a set of sets" (Schema save rejects it).
+- `Slug` **cannot be an array element type either**. A slug is unique by construction and the unique
+  index is built from a *field's own* value, so a slug inside an array could never be kept unique -
+  which is the whole of what a slug is (Schema save rejects it with 400 `bad_request`). The element
+  types the screen offers do not include it.
 - `Relation` **can also be written inside a Composite field definition**. The target is a site
   Collection / Single page, and because definitions are stored independently, **the target's
   existence is checked when the definition is saved** and checked again **when the Schema that embeds

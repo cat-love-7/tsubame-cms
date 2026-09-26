@@ -617,6 +617,18 @@ fn validate_field_type(name: &str, field_type: &FieldType) -> Result<(), String>
                  several references when it asks for them"
             ));
         }
+        // A slug is unique by construction (`FieldSchema::is_unique`), and the unique index is
+        // built from a *field's own* value (`unique_values`), which never looks inside an array -
+        // so a slug as an array item could not be kept unique, which is the whole of what a slug
+        // is. The array paths read a text element against `FieldType::Text` as well, so before
+        // this check the schema saved and every value was then refused: a field that could never
+        // be written. The interface does not offer it either (`ArrayItemTypeOptions`).
+        if matches!(item, FieldType::Slug(_)) {
+            return Err(format!(
+                "field '{name}': a slug cannot be an array item; a slug is unique, and only a \
+                 field's own value is indexed for uniqueness"
+            ));
+        }
     }
 
     // Array items are untyped, and an image id is a JSON number, so a bare number would
@@ -1131,6 +1143,22 @@ mod tests {
             SchemaScope::Collection,
         )
         .expect("an array of composites is a usable schema");
+    }
+
+    /// A slug can only be a field's own value: the unique index never looks inside an array, so an
+    /// array of slugs could not be unique, and the array paths would refuse every value written to
+    /// it. Both are reasons to refuse the schema rather than store a field nobody can fill in.
+    #[test]
+    fn rejects_a_slug_as_an_array_item() {
+        let error = validate_schema(
+            &[field(
+                "slugs",
+                FieldType::Array(vec![FieldType::Slug(SlugOptions::default())]),
+            )],
+            SchemaScope::Collection,
+        )
+        .unwrap_err();
+        assert!(error.contains("a slug cannot be an array item"), "{error}");
     }
 
     fn composite_ref(id: &str) -> FieldType {
