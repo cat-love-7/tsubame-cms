@@ -64,6 +64,14 @@ export class MarkdownField {
   @Input() value: FieldValue = null;
   /** Renders the box read-only, for the schema editor's preview. */
   @Input() disabled = false;
+  /**
+   * Show the value rather than the box that would edit it.
+   *
+   * For the comparison of what is live against what the form holds: there the box would keep the
+   * number of rows the Schema's height asks for - a minimum meant for *editing* - and the text is
+   * what the reader came for. See `ValueField.compact`.
+   */
+  @Input() compact = false;
   @Input() labelId = '';
   @Output() valueChange = new EventEmitter<FieldValue>();
   @Output() errorChange = new EventEmitter<Message | null>();
@@ -103,8 +111,8 @@ export class MarkdownField {
     { label: 'content.mdQuote', icon: 'format_quote', prefix: '> ' },
   ];
 
-  /** The text in the box, as the buttons see it. */
-  private text(): string {
+  /** The text in the box, as the buttons and the comparison see it. */
+  public text(): string {
     return typeof this.value === 'string' ? this.value : '';
   }
 

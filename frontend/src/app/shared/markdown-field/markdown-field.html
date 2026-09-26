@@ -1,45 +1,51 @@
 <div class="markdown-field">
-  @if (!disabled) {
-    <!-- Buttons for the syntax, instead of a syntax reference beside the box. Each one acts on
+  @if (compact) {
+    <!-- The comparison reads the value, and does not need the box: the rows the Schema's height
+         asks for are a minimum for editing, and one paragraph in a twelve-row box is blank space. -->
+    <div class="value-text">{{ text() }}</div>
+  } @else {
+    @if (!disabled) {
+      <!-- Buttons for the syntax, instead of a syntax reference beside the box. Each one acts on
          the selection, and the parser is the site's, not ours. -->
-    <div
-      class="markdown-toolbar"
-      role="toolbar"
-      [attr.aria-label]="'content.mdToolbar' | transloco"
-    >
-      @for (action of actions; track action.label) {
-        <button
-          matIconButton
-          type="button"
-          (click)="press(action, markdownInput)"
-          [attr.aria-label]="action.label | transloco"
-          [matTooltip]="action.label | transloco"
-        >
-          <mat-icon>{{ action.icon }}</mat-icon>
-        </button>
-      }
-    </div>
-  }
-  <mat-form-field appearance="fill" class="full-width">
-    <!-- The number of lines comes from the height the schema asked for (see `rows`), so the handle
+      <div
+        class="markdown-toolbar"
+        role="toolbar"
+        [attr.aria-label]="'content.mdToolbar' | transloco"
+      >
+        @for (action of actions; track action.label) {
+          <button
+            matIconButton
+            type="button"
+            (click)="press(action, markdownInput)"
+            [attr.aria-label]="action.label | transloco"
+            [matTooltip]="action.label | transloco"
+          >
+            <mat-icon>{{ action.icon }}</mat-icon>
+          </button>
+        }
+      </div>
+    }
+    <mat-form-field appearance="fill" class="full-width">
+      <!-- The number of lines comes from the height the schema asked for (see `rows`), so the handle
          in the schema editor changes the box the content editor draws. -->
-    <textarea
-      #markdownInput
-      matInput
-      [attr.rows]="rows()"
-      [name]="field.name"
-      [disabled]="disabled"
-      [attr.maxlength]="maxLength()"
-      [attr.minlength]="minLength()"
-      [ngModel]="value"
-      (ngModelChange)="update($event)"
-      [attr.aria-labelledby]="labelId"
-    ></textarea>
-    @if (lengthHintKey(); as key) {
-      <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
-    }
-    @if (maxLength() !== null) {
-      <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
-    }
-  </mat-form-field>
+      <textarea
+        #markdownInput
+        matInput
+        [attr.rows]="rows()"
+        [name]="field.name"
+        [disabled]="disabled"
+        [attr.maxlength]="maxLength()"
+        [attr.minlength]="minLength()"
+        [ngModel]="value"
+        (ngModelChange)="update($event)"
+        [attr.aria-labelledby]="labelId"
+      ></textarea>
+      @if (lengthHintKey(); as key) {
+        <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+      }
+      @if (maxLength() !== null) {
+        <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
+      }
+    </mat-form-field>
+  }
 </div>

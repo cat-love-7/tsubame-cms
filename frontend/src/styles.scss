@@ -196,6 +196,19 @@ button:focus-visible {
   border-radius: 4px;
 }
 
+/// A value shown rather than edited: the comparison of a draft against what is published.
+///
+/// The widgets show a box the height their Schema asked for - a minimum meant for editing - and one
+/// sentence in a twelve-row box is blank space. Here the text is the whole point, so the box is the
+/// size of the text, up to a limit that keeps a long body from becoming a screen of its own.
+.value-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
 /// Rows of buttons, so they are spaced the same everywhere.
 .actions,
 .array-actions,

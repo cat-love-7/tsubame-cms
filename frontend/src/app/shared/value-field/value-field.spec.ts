@@ -46,10 +46,11 @@ describe('ValueField', () => {
     TestBed.inject(MatDialog).closeAll();
   });
 
-  function create(fieldSchema: FieldSchema, value: FieldValue = null): ValueField {
+  function create(fieldSchema: FieldSchema, value: FieldValue = null, compact = false): ValueField {
     fixture = TestBed.createComponent(ValueField);
     fixture.componentRef.setInput('field', fieldSchema);
     fixture.componentRef.setInput('value', value);
+    fixture.componentRef.setInput('compact', compact);
     fixture.detectChanges();
     return fixture.componentInstance;
   }
@@ -550,6 +551,59 @@ describe('ValueField', () => {
 
     image?.valueChange.emit({ id: 4, url: '/images/photo.png' });
     expect(component.value).toEqual({ id: 4, url: '/images/photo.png' });
+  });
+
+  // The comparison of a draft against what is published reads the value; it is not a second form.
+  // A box holding the height the Schema asked for is blank space over one sentence.
+  it('shows a multi-line value as text when it is only being read', () => {
+    create(field('body', { Text: { multiline: true } }, { height: 6 }), 'one line', true);
+
+    expect(query('textarea')).toBeNull();
+    expect(query('.value-text')?.textContent?.trim()).toBe('one line');
+  });
+
+  it('keeps the box while the value can be edited', () => {
+    create(field('body', { Text: { multiline: true } }, { height: 6 }), 'one line');
+
+    expect(query('textarea')).not.toBeNull();
+    expect(query('.value-text')).toBeNull();
+  });
+
+  // The comparison reads the two versions; it is not a second form. A field whose Schema asks for a
+  // tall box used to be drawn at that height on both sides, which is blank space over a sentence.
+  it('reads the tall fields of a composite as text too', () => {
+    create(
+      field('block', { CompositeField: { id: 'article' } }),
+      { lede: 'one line', body: '# heading' },
+      true,
+    );
+
+    expect(fixture.nativeElement.querySelectorAll('fieldset.composite textarea').length).toBe(0);
+    const texts = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite .value-text'),
+      (element) => element.textContent?.trim(),
+    );
+    expect(texts).toEqual(['one line', '# heading']);
+  });
+
+  it('drops the layout minimum from a composite it is only reading', () => {
+    create(field('block', { CompositeField: { id: 'layout' } }), { headline: 'x' }, true);
+
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite .field-cell'),
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    // The definition asks for heights, so without this the cells would hold them.
+    expect(cells.every((cell) => cell.style.minHeight === '')).toBe(true);
+  });
+
+  it('keeps the layout minimum in a composite that is being edited', () => {
+    create(field('block', { CompositeField: { id: 'layout' } }), { headline: 'x' });
+
+    const cells = Array.from(
+      fixture.nativeElement.querySelectorAll<HTMLElement>('fieldset.composite .field-cell'),
+    );
+    expect(cells.some((cell) => cell.style.minHeight !== '')).toBe(true);
   });
 
   it('edits an image array that lives inside a composite', async () => {

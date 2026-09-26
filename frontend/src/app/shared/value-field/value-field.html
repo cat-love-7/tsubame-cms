@@ -14,40 +14,45 @@
 
 @switch (kind()) {
   @case ('Text') {
-    <mat-form-field appearance="fill" class="full-width">
-      @if (multiline()) {
-        <!-- A box, because the schema asked for one: the height it asks for is a minimum the box
+    @if (multiline() && compact) {
+      <!-- The comparison reads the value; it does not need the box the value is typed into. -->
+      <div class="value-text">{{ value }}</div>
+    } @else {
+      <mat-form-field appearance="fill" class="full-width">
+        @if (multiline()) {
+          <!-- A box, because the schema asked for one: the height it asks for is a minimum the box
              grows into (see `field-layout`), and `rows` is the floor it never goes under. -->
-        <textarea
-          matInput
-          [attr.rows]="rows()"
-          [name]="field.name"
-          [disabled]="disabled"
-          [attr.maxlength]="maxLength()"
-          [attr.minlength]="minLength()"
-          [ngModel]="value"
-          (ngModelChange)="update($event)"
-          [attr.aria-labelledby]="labelId"
-        ></textarea>
-      } @else {
-        <input
-          matInput
-          [name]="field.name"
-          [disabled]="disabled"
-          [attr.maxlength]="maxLength()"
-          [attr.minlength]="minLength()"
-          [ngModel]="value"
-          (ngModelChange)="update($event)"
-          [attr.aria-labelledby]="labelId"
-        />
-      }
-      @if (lengthHintKey(); as key) {
-        <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
-      }
-      @if (maxLength() !== null) {
-        <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
-      }
-    </mat-form-field>
+          <textarea
+            matInput
+            [attr.rows]="rows()"
+            [name]="field.name"
+            [disabled]="disabled"
+            [attr.maxlength]="maxLength()"
+            [attr.minlength]="minLength()"
+            [ngModel]="value"
+            (ngModelChange)="update($event)"
+            [attr.aria-labelledby]="labelId"
+          ></textarea>
+        } @else {
+          <input
+            matInput
+            [name]="field.name"
+            [disabled]="disabled"
+            [attr.maxlength]="maxLength()"
+            [attr.minlength]="minLength()"
+            [ngModel]="value"
+            (ngModelChange)="update($event)"
+            [attr.aria-labelledby]="labelId"
+          />
+        }
+        @if (lengthHintKey(); as key) {
+          <mat-hint>{{ key | transloco: { min: minLength(), max: maxLength() } }}</mat-hint>
+        }
+        @if (maxLength() !== null) {
+          <mat-hint align="end">{{ textLength() }} / {{ maxLength() }}</mat-hint>
+        }
+      </mat-form-field>
+    }
   }
   @case ('Slug') {
     <div class="slug-field">
@@ -84,6 +89,7 @@
       [field]="field"
       [value]="value"
       [disabled]="disabled"
+      [compact]="compact"
       [labelId]="labelId"
       (valueChange)="update($event)"
       (errorChange)="errorChange.emit($event)"
@@ -190,6 +196,7 @@
       [field]="field"
       [value]="value"
       [disabled]="disabled"
+      [compact]="compact"
       [subFieldTemplate]="subFieldEditor"
       (valueChange)="update($event)"
       (errorChange)="errorChange.emit($event)"
@@ -214,6 +221,7 @@
     [field]="schema"
     [value]="value"
     [disabled]="disabled"
+    [compact]="compact"
     (valueChange)="changed($event)"
     (errorChange)="problem($event)"
   />
@@ -233,6 +241,7 @@
     [field]="schema"
     [value]="value"
     [disabled]="disabled"
+    [compact]="compact"
     (valueChange)="changed($event)"
     (errorChange)="problem($event)"
   />

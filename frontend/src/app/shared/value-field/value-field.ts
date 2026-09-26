@@ -92,6 +92,15 @@ export class ValueField implements OnInit, OnChanges {
   /** Renders the widget read-only, for the schema editor's preview. */
   @Input() disabled = false;
   /**
+   * Show the value rather than the control that would edit it.
+   *
+   * For the comparison of what is live against what the form holds. A multi-line box there would
+   * hold the height the Schema asked for - which is a minimum for *editing* - and one sentence in a
+   * twelve-row box is mostly blank space. In this mode the text is rendered as text, sized to what
+   * it holds, and the layout minimum the cells inside a Composite would keep is dropped too.
+   */
+  @Input() compact = false;
+  /**
    * The other fields of the item, by name.
    *
    * A slug may be generated from one of them (its schema says which), and a widget only ever sees

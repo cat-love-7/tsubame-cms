@@ -36,6 +36,12 @@ export const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } =
       Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
     }),
   ],
+  // A definition holding the kinds whose box is as tall as the Schema asks, for the comparison:
+  // what it has to shrink when it only reads them.
+  article: [
+    field('lede', { Text: { multiline: true } }, { height: 4 }),
+    field('body', { Markdown: {} }, { height: 8 }),
+  ],
   // A block that holds blocks: the definition reaches itself through an array.
   tree: [
     field('line', { Text: {} }),

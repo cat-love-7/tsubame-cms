@@ -66,6 +66,14 @@ export class CompositeField implements OnChanges {
   @Input() value: FieldValue = null;
   /** Renders the sub-fields read-only, for the schema editor's preview. */
   @Input() disabled = false;
+  /**
+   * Drop the layout minimum from the sub-field cells.
+   *
+   * For the comparison of what is live against what the form holds: the minimum is what makes the
+   * editing grid line up, and a one-line value in a two-row cell is blank space. See
+   * `ValueField.compact`.
+   */
+  @Input() compact = false;
   /** How one sub-field is edited and laid out; see [`CompositeSubFieldContext`]. */
   @Input({ required: true }) subFieldTemplate!: TemplateRef<CompositeSubFieldContext>;
   @Output() valueChange = new EventEmitter<FieldValue>();
@@ -95,10 +103,19 @@ export class CompositeField implements OnChanges {
     return {
       schema,
       value: this.compositeValues[schema.name],
-      style: fieldCellStyle(schema),
+      style: this.cellStyle(schema),
       changed: (value: FieldValue) => this.setCompositeValue(schema, value),
       problem: (problem: Message | null) => this.forwardCompositeError(schema, problem),
     };
+  }
+
+  /** The inline style for one sub-field's cell, with the layout minimum only while editing. */
+  private cellStyle(schema: FieldSchema): Record<string, string> {
+    const style = fieldCellStyle(schema);
+    if (this.compact) {
+      delete style['min-height'];
+    }
+    return style;
   }
 
   setCompositeValue(subField: FieldSchema, value: FieldValue) {

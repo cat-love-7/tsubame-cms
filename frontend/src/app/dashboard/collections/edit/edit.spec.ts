@@ -759,6 +759,31 @@ describe('CollectionItemEdit', () => {
     expect(panel?.textContent).toContain('Saved changes');
   });
 
+  // The comparison reads the two versions; it is not a second form. A field whose Schema asks for a
+  // tall box used to be drawn at that height on both sides - blank space over one sentence.
+  it('shows a tall field in the comparison as text, not at the height the schema asks for', async () => {
+    stub.metadata = metadataWith({ status: 'published', has_draft: true });
+    stub.schema = [
+      { name: 'body', field_type: { Markdown: {} }, required: false, width: 12, height: 12 },
+    ];
+    stub.item = { body: 'Changed body' };
+    stub.publishedItem = { body: 'Old body' };
+    const fresh: TypedFixture<CollectionItemEdit> = TestBed.createComponent(CollectionItemEdit);
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    compareButton(fresh.nativeElement).click();
+    fresh.detectChanges();
+    await fresh.whenStable();
+
+    const panel = fresh.nativeElement.querySelector('.comparison');
+    expect(panel?.querySelector('textarea')).toBeNull();
+    const sides = Array.from(panel?.querySelectorAll('.value-text') ?? [], (side) =>
+      side.textContent?.trim(),
+    );
+    expect(sides).toEqual(['Old body', 'Changed body']);
+  });
+
   it('says so when the saved changes match what is published', async () => {
     stub.metadata = metadataWith({ status: 'published', has_draft: true });
     stub.item = { title: 'Hello' };

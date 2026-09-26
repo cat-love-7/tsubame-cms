@@ -33,6 +33,7 @@ slightly different greys and reds per screen - and that is what was actually hap
 | Table | `table.items` / `table.accounts`, `.mat-mdc-table`, `.empty` | A plain table and a `mat-table` look the same |
 | Link | `.preview-link` | The URL to hand out (long, so it wraps) |
 | Field | `.field-grid` / `.field-cell` / `.field-cell.problem` | The same grid in schema editing and content editing. `problem` is a field the server rejected |
+| Read-only value | `.value-text` | A value shown rather than edited (the comparison), sized to the text instead of to the control |
 
 The grid is also nested inside a Composite field (a Composite definition also has `width` / `height`).
 The nested 12 columns count the width occupied by that Composite field as 12.
@@ -259,7 +260,11 @@ Two things were added to the editing screen. Both are operations on **saved chan
   **only the Fields that differ**. The comparison is `fingerprint` (a rendering that does not depend on key order), and the published side is
   compared after passing through `withDefaults` (so that a difference the form merely filled in with defaults is not called a "change").
   The display uses `ValueField` with `[disabled]="true"` - the same usage as the schema editing preview, so
-  the comparison does not drift from the form.
+  the comparison does not drift from the form - plus `[compact]="true"`, which is the one place the two
+  differ: a form box holds the height the Schema asked for, which is a minimum for **editing**, and a
+  paragraph in a twelve-row box is blank space on both sides of a comparison a reader only reads. Compact
+  renders a multi-line Text or a Markdown value as **text, sized to the text** (`.value-text`), and drops
+  the layout minimum from the cells inside a Composite. Long values are capped at 24rem and scroll.
 - **"Discard changes"**: `DELETE .../draft` behind a confirmation. **It does not touch the site**, so it is
   different from unpublish (that one makes the page disappear and leaves the working copy). It reloads after execution, so the form shows the published
   content. The notification is shown **after the reload** (because `load` clears notifications at the start).
