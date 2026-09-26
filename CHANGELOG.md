@@ -31,6 +31,10 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   Composite no longer keep their layout minimum there.
 - The way out of an item editor now reads **"Back to the list without saving"** (it was "Cancel",
   which said neither what it does nor where it goes).
+- An item editor's toolbar reads **state first, then the actions**: "save" sits after the status and
+  the publisher and before the publish controls, rather than ahead of both.
+- The publisher's name in the toolbar is **labelled** ("Published by:"). Bare, it read as the author
+  of the content; it is the Account that published it.
 
 ### Fixed
 

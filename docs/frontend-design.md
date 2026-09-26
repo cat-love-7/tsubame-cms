@@ -113,6 +113,14 @@ the same file.
   ignored on the content editing screen, and the contents were all stacked vertically at the same width (which also disagreed with
   the preview on the schema editing screen). Inside a composite is now drawn with the same 12-column grid. The column count counts **the composite
   field's own width** as 12 (`.field-grid` is nested inside `.composite`).
+- **The item toolbar reads state first, then the actions** (added 2026-09). The only "save" was at the end of
+  a long form and a screen away from "save and publish", so one was added to the toolbar - but ahead of the
+  status, which put it before the thing it acts on. It sits after the status and the publisher now, and
+  before the publish controls; the template looks at `metadata()` twice for exactly that split.
+- **The publisher's name is labelled** (added 2026-09). The toolbar showed `published_by.username` bare
+  after the status badge, which reads as the author of the content. It is not: `published_by` is the
+  **Account that last published** (`docs/content-api.md`), so it reads "Published by: <name>", keeping
+  the tooltip that spells the same thing out.
 - **The image picker is a dialog, and it uploads** (added 2026-09). The wall of tiles used to be a panel
   *under* the control that opened it: taller than the form around it, so it pushed everything below it down
   and then scrolled inside a 200px box - and the Markdown box has no upload of its own, so an empty library
