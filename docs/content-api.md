@@ -515,6 +515,11 @@ machine-readable shape.
   impossible to save at all** when a required field is added to a Schema later, and (b) so duplication
   can create a draft with unique fields emptied (as in `§5.12`). Rules other than required (type,
   length, options, Slug) are checked on save too.
+- **A blank array element is not a required-field refusal.** `required` asks the *array* to hold
+  something at all, so `[]` is refused while an element that holds nothing - `null`, or `""` in a
+  text array - is stored as it is. It used to come back as `field_required`, which a working copy
+  accepts and publishing does not, so a draft could be saved and never published on a field that was
+  never marked required.
 - Situational codes other than value validation (auth, conflicts, publish races, etc.) are listed
   under `situational` in `assets/error-codes.json`. For example, **`draft_changed`** is the 409 when a
   publish raced with a save (below).

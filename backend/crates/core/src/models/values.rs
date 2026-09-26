@@ -1521,6 +1521,12 @@ impl FieldValue {
                 if schema.required && !schema.field_type.test_required(self) {
                     return Err(FieldRefusal::required(&path));
                 }
+                // An element that holds nothing is a value like any other: `required` asks the
+                // *array* to hold something (see `test_required`, which is `!values.is_empty()`),
+                // and a blank element is what a text element has always been allowed to be -
+                // `[""]` passes. An element used to be refused here as `field_required`, which a
+                // working copy swallows and publishing does not, so a draft could be saved and
+                // never published, on a field that nobody had marked required.
                 for (index, value) in values.iter().enumerate() {
                     // An array item is named by the path plus its index: `tags[2]`.
                     let item = format!("{path}[{index}]");
@@ -1568,9 +1574,6 @@ impl FieldValue {
                             if !schemas.contains(&value_type) {
                                 return Err(FieldRefusal::type_mismatch(&item));
                             }
-                            if !value_type.test_required(value) {
-                                return Err(FieldRefusal::required(&item));
-                            }
                         }
                         FieldValue::CompositeField(cv) => match cv {
                             Some(cv) => {
@@ -1604,9 +1607,9 @@ impl FieldValue {
                                     }
                                 }
                             }
-                            None => {
-                                return Err(FieldRefusal::required(&item));
-                            }
+                            // A composite element that is null is the same case as a blank
+                            // scalar: an empty element, not a missing required field.
+                            None => {}
                         },
                         FieldValue::Array(_) => {
                             return Err(FieldRefusal::nested_array(&item));
@@ -1622,9 +1625,6 @@ impl FieldValue {
                                 if !option.contains(val) {
                                     return Err(FieldRefusal::enum_value(&item, val));
                                 }
-                            }
-                            if vals.is_empty() && schema.required {
-                                return Err(FieldRefusal::required(&item));
                             }
                         }
                         FieldValue::Relation(_) => {
@@ -1807,6 +1807,19 @@ mod tests {
         ])
     }
 
+    fn array_field(name: &str, items: Vec<FieldType>, required: bool) -> FieldSchema {
+        FieldSchema {
+            is_title: false,
+            show_in_list: false,
+            name: name.to_string(),
+            field_type: FieldType::Array(items),
+            required,
+            width: 12,
+            height: 1,
+            unique: false,
+        }
+    }
+
     #[test]
     fn field_schema_array_validation() {
         let composite_schemas = HashMap::new();
@@ -1893,6 +1906,61 @@ mod tests {
                 .validate_field_value(&composite_field_schema, &composite_schemas)
                 .is_err()
         );
+    }
+
+    /// A blank element is a value like any other: `required` asks the array to hold *something*,
+    /// and `[""]` in a text array has always passed. `[null]` used to come back as
+    /// `field_required`, which a working copy swallows and publishing does not - so a draft saved
+    /// and could never be published, on a field nobody had marked required.
+    #[test]
+    fn a_blank_array_element_is_not_a_missing_required_field() {
+        let composite_schemas = create_composite_schemas_map();
+
+        for (name, items, value) in [
+            ("scores", vec![FieldType::Number], json!({"scores": [null]})),
+            ("cover", vec![FieldType::Image], json!({"cover": [null]})),
+            (
+                "blocks",
+                vec![FieldType::CompositeField(CompositeFieldReference {
+                    id: "comp_1".into(),
+                })],
+                json!({"blocks": [null]}),
+            ),
+        ] {
+            let field_schema = array_field(name, items, false);
+            let schema = vec![field_schema];
+            let values = FieldValueMap::<Vec<FieldSchema>>::from_untyped(
+                &value,
+                &composite_schemas,
+                &schema,
+            )
+            .unwrap_or_else(|e| panic!("{name}: a blank element has to parse: {e}"));
+
+            assert!(
+                values
+                    .validate_to_schema(&composite_schemas, &schema)
+                    .is_ok(),
+                "{name}: publishing accepts a blank element"
+            );
+            assert!(
+                values.validate_draft(&composite_schemas, &schema).is_ok(),
+                "{name}: and so does a working copy"
+            );
+        }
+
+        // What `required` still asks for is that the array holds something at all.
+        let schema = vec![array_field("scores", vec![FieldType::Number], true)];
+        let values = FieldValueMap::<Vec<FieldSchema>>::from_untyped(
+            &json!({"scores": []}),
+            &composite_schemas,
+            &schema,
+        )
+        .expect("an empty array parses");
+        let refusal = values
+            .validate_to_schema(&composite_schemas, &schema)
+            .expect_err("a required array has to hold something");
+        assert_eq!(refusal.code, "field_required");
+        assert_eq!(refusal.field, "scores");
     }
 
     /// Reading is the other half of the round trip: an array of composites has to come back
@@ -3654,9 +3722,12 @@ mod tests {
                     "Option2".to_string(),
                 ])]),
                 HashMap::new(),
+                // An element that holds nothing is *empty*, not missing: the array holds an
+                // element, which is all `required` asks of it (see
+                // `a_blank_array_element_is_not_a_missing_required_field`).
                 FieldValue::Array(vec![FieldValue::TextEnum(vec![])]),
                 true,
-                false,
+                true,
             ),
             (
                 FieldType::TextEnum(vec!["Option1".to_string(), "Option2".to_string()]),
