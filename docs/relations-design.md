@@ -88,6 +88,16 @@ FieldValueResponse::Relation(Vec<RelationResponse>)   // the shape of §5
 - For a Collection target, `{ "target": "authors", "item": 7 }`; for a Single page,
   `{ "target": "home", "item": null }` (a page has no id). A value whose shape disagrees with the
   schema's kind is rejected by `from_untyped`.
+- **A single reference is a set of one, not a bare object.** `has_many` is what the schema *allows*,
+  not what the value *is*, so the shape is the same either way: `[{ ... }]` for both, and `null` or
+  `[]` for "none". The cardinality is therefore one rule in one place - `is_single() && refs.len() > 1`
+  is refused as "this field holds one reference, but N were given" - while every other reader (the
+  `refs#` / `rel#` index lines, the reverse lookup, the deletion check and `?detach=true`, the publish
+  rules, `?populate=`, the chips) walks one shape without asking the schema first. Changing `has_many`
+  also stays a schema edit: a single already is a list of at most one, so no stored value moves. The
+  cost is that `[{ ... }]` for one reference reads oddly, and a client that ignores the schema cannot
+  tell single from many - which is the same trade the design makes everywhere else (values are untyped
+  on the wire, and the schema is what reads them).
 - **The order is the value**: the order written is stored as it is, and the delivery API returns it
   in that order too. The same reference written twice is one entry and stays at **the position where
   it first appeared** (`from_untyped`). The index is a set of (owner, target), so **reordering does
