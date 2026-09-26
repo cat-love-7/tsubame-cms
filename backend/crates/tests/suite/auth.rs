@@ -113,6 +113,11 @@ async fn a_reset_answers_the_shape_this_deployment_promised() {
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     let id = created["id"].as_str().expect("the new account's id");
+    // Neither backend is asked for an existing account here - the account is new to both, and
+    // neither deployment has an identity provider to adopt one from - so the administrator has to
+    // hand over a way in. An account the provider already had answers `false` (see
+    // `an_account_the_provider_already_had_keeps_its_credential` in `tsubame-core`).
+    assert_eq!(created["needs_credential"], json!(true), "{created}");
 
     let (status, reset) = send(
         &app.router,

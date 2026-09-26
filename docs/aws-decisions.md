@@ -47,8 +47,14 @@ permissions) are needed locally**, so a means of creating the first person local
   **create a local administrator record on the spot** and let them through. If they are not in the list,
   **403 "not provisioned"** (no implicit granting of permissions).
 - Once created, they are tied together by `external_id = sub`, so **the list only has effect the first
-  time**. Later additions have the administrator create a local record, and `external_id` is bound on the
-  person's first sign-in (bind-on-first-use).
+  time**. Later additions are the administrator's job from the account screen: creating a record there
+  asks Cognito first (`AdminCreateUser`, and the person's `sub` is stored on the spot), so a token from
+  the pool resolves to the record without a second binding step.
+- **An account the pool already had is adopted, not reset.** An operator who made the person in the
+  Cognito console first (or the same person coming back after the CMS's own records were replaced) keeps
+  the credential they have: the create answer says `needs_credential: false` and the screen adds the
+  record without handing over a temporary password, which a reset would have replaced. Only an account
+  this CMS had to create answers `true` and gets the temporary password described above.
 - If the user table is empty and the list is also unset, **warn at startup** (the same experience as
   on-prem's "set `ADMIN_USERNAME`").
 - Assumption: the Cognito pool uses **username as the identifier**. The character set of `username` has

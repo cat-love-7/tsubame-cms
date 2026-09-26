@@ -36,6 +36,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   that target when the field has others (an array that loses one target of two becomes a plain list).
   A site that queries such a field fails with "Cannot query field", with the warning above saying
   why; the raw value stays readable under `values`.
+- **Adding an account that the identity provider already had no longer resets its password.** The
+  create answer carries `needs_credential`, which is `true` only for an account the provider had to
+  create: an account that was already there (made in the provider's console, or coming back after the
+  CMS's own records were replaced) has its owner's own way in, and the screen adds the record without
+  issuing a reset. A deployment that holds the passwords itself has nothing to adopt from, so it always
+  answers `true`.
 - **`inverse_name` is one name per target**, and a schema can no longer give one target two names -
   neither through two Fields nor through two item types of one array.
 - **The Strapi import carries the media library's thumbnails.** This CMS's small tile copy is made

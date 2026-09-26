@@ -32,7 +32,9 @@ use aws_sdk_cognitoidentityprovider::operation::admin_create_user::AdminCreateUs
 use aws_sdk_cognitoidentityprovider::operation::admin_delete_user::AdminDeleteUserError;
 use aws_sdk_cognitoidentityprovider::operation::admin_disable_user::AdminDisableUserError;
 use aws_sdk_cognitoidentityprovider::types::{AttributeType, MessageActionType};
-use tsubame_core::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionFuture};
+use tsubame_core::auth::provisioner::{
+    AccountProvisioner, NewAccount, ProvisionFuture, ProvisionedAccount,
+};
 
 /// The four Cognito calls account management needs, as one seam.
 ///
@@ -41,12 +43,17 @@ use tsubame_core::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionF
 /// same string and nothing has to be mapped.
 pub trait CognitoAdmin: Send + Sync + 'static {
     /// Create the user, or find it if it is already there, and answer with its `sub` - the value
-    /// a token from this pool carries and the CMS resolves an account by.
+    /// a token from this pool carries and the CMS resolves an account by - and whether this call
+    /// had to create it.
+    ///
+    /// The pool is the only side that knows: `AdminCreateUser` either makes the user or answers
+    /// `UsernameExistsException`, and that difference decides whether the CMS offers the account a
+    /// new way in (see `docs/content-api.md`).
     fn create_user<'a>(
         &'a self,
         username: &'a str,
         email: Option<&'a str>,
-    ) -> AdminFuture<'a, Option<String>>;
+    ) -> AdminFuture<'a, ProvisionedAccount>;
     /// Remove the user. Already gone is success too.
     fn delete_user<'a>(&'a self, username: &'a str) -> AdminFuture<'a, ()>;
     /// Give the user a password they have to change before the sign-in completes.
@@ -86,7 +93,7 @@ impl CognitoAccountProvisioner {
 }
 
 impl AccountProvisioner for CognitoAccountProvisioner {
-    fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, Option<String>> {
+    fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, ProvisionedAccount> {
         Box::pin(async move {
             self.admin
                 .create_user(&account.username, account.email.as_deref())
@@ -194,7 +201,7 @@ impl CognitoAdmin for CognitoApi {
         &'a self,
         username: &'a str,
         email: Option<&'a str>,
-    ) -> AdminFuture<'a, Option<String>> {
+    ) -> AdminFuture<'a, ProvisionedAccount> {
         Box::pin(async move {
             let mut request = self
                 .client
@@ -212,13 +219,20 @@ impl CognitoAdmin for CognitoApi {
                 request = request.user_attributes(attribute);
             }
             match request.send().await {
-                Ok(response) => Ok(response
-                    .user()
-                    .and_then(|user| subject_of(user.attributes()))),
+                Ok(response) => Ok(ProvisionedAccount {
+                    external_id: response
+                        .user()
+                        .and_then(|user| subject_of(user.attributes())),
+                    created: true,
+                }),
                 // Already there: still not a failure, but its identifier has to be found rather
-                // than skipped, or the record the CMS is about to write could never sign in.
+                // than skipped, or the record the CMS is about to write could never sign in - and
+                // the caller has to know the credential it already has is not to be replaced.
                 Err(error) => match error.as_service_error() {
-                    Some(service) if already_exists(service) => self.user_id(username).await,
+                    Some(service) if already_exists(service) => Ok(ProvisionedAccount {
+                        external_id: self.user_id(username).await?,
+                        created: false,
+                    }),
                     _ => Err(describe(error)),
                 },
             }
@@ -316,6 +330,9 @@ mod tests {
     struct FakeCognito {
         calls: Mutex<Vec<String>>,
         refuse: bool,
+        /// Whether the pool already had the account, which is what `AdminCreateUser` answers
+        /// `UsernameExistsException` for.
+        account_exists: bool,
     }
 
     impl FakeCognito {
@@ -338,11 +355,14 @@ mod tests {
             &'a self,
             username: &'a str,
             email: Option<&'a str>,
-        ) -> AdminFuture<'a, Option<String>> {
+        ) -> AdminFuture<'a, ProvisionedAccount> {
             Box::pin(async move {
                 self.record(format!("create {username} email={}", email.unwrap_or("-")))?;
                 // What the pool answers with: its own name for the account, which the CMS keeps.
-                Ok(Some(format!("sub-of-{username}")))
+                Ok(ProvisionedAccount {
+                    external_id: Some(format!("sub-of-{username}")),
+                    created: !self.account_exists,
+                })
             })
         }
 
@@ -413,7 +433,7 @@ mod tests {
         let fake = Arc::new(FakeCognito::default());
         let accounts = provisioner(fake.clone());
 
-        let external_id = accounts
+        let provisioned = accounts
             .create(&NewAccount {
                 username: "cat".to_string(),
                 email: None,
@@ -422,7 +442,32 @@ mod tests {
             .expect("the fake agrees");
 
         // The value the CMS keeps, and the only one a token from this pool can be resolved by.
-        assert_eq!(external_id.as_deref(), Some("sub-of-cat"));
+        assert_eq!(provisioned.external_id.as_deref(), Some("sub-of-cat"));
+        assert!(provisioned.created, "the pool had no such user");
+    }
+
+    /// A pool that already had the account says so, so the CMS leaves its credential alone.
+    #[tokio::test]
+    async fn an_account_the_pool_already_had_is_reported_as_existing() {
+        let fake = Arc::new(FakeCognito {
+            account_exists: true,
+            ..Default::default()
+        });
+        let accounts = provisioner(fake.clone());
+
+        let provisioned = accounts
+            .create(&NewAccount {
+                username: "cat".to_string(),
+                email: None,
+            })
+            .await
+            .expect("an account that is already there is not a failure");
+
+        assert_eq!(provisioned.external_id.as_deref(), Some("sub-of-cat"));
+        assert!(
+            !provisioned.created,
+            "the pool already had it, so nothing has to be handed over"
+        );
     }
 
     #[tokio::test]

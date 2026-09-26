@@ -10,11 +10,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::auth::identity::{Identity, TokenVerifier};
-use crate::auth::provisioner::{AccountProvisioner, NewAccount};
+use crate::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionedAccount};
 use crate::models::error::HttpError;
 use crate::models::user::{
-    LoginResponse, NewAccountRequest, PasswordChangedResponse, Permission, UpdateUserRequest, User,
-    UserId, UserResponse, is_plausible_email, is_plausible_username, normalize_username,
+    CreatedUserResponse, LoginResponse, NewAccountRequest, PasswordChangedResponse, Permission,
+    UpdateUserRequest, User, UserId, UserResponse, is_plausible_email, is_plausible_username,
+    normalize_username,
 };
 use crate::password_reset::{PasswordReset, PasswordResetError, PasswordResetIssuer};
 use crate::repositories::local_credentials::LocalCredentials;
@@ -101,7 +102,16 @@ impl<R: UserRepository> AuthService<R> {
     /// password **its owner set** by following a reset link - never with one an administrator
     /// typed. The single exception is [`AuthService::bootstrap_admin`], which exists because a
     /// deployment needs a way in before anyone can hand out links.
-    pub async fn create_user(&self, request: NewAccountRequest) -> Result<UserResponse, HttpError> {
+    ///
+    /// The answer says whether the account still needs that way in. An account the provider had to
+    /// create has no credential of its own, so the caller hands one over; one that was **already**
+    /// at the provider (an operator may have made it in the provider's console, or it may be
+    /// somebody coming back after a wipe) has its owner's own, and offering a new one would take
+    /// it away.
+    pub async fn create_user(
+        &self,
+        request: NewAccountRequest,
+    ) -> Result<CreatedUserResponse, HttpError> {
         let username = normalize_username(&request.username);
         if !is_plausible_username(&username) {
             return Err(HttpError::BadRequest(
@@ -138,7 +148,7 @@ impl<R: UserRepository> AuthService<R> {
             );
         }
 
-        let external_id = if let Some(provisioner) = &self.provisioner {
+        let provisioned = if let Some(provisioner) = &self.provisioner {
             let account = NewAccount {
                 username: username.clone(),
                 email: email.clone(),
@@ -149,7 +159,12 @@ impl<R: UserRepository> AuthService<R> {
                 HttpError::InternalServerError("the identity provider refused the account")
             })?
         } else {
-            None
+            // No provider: this CMS holds the credential, and a new account has none until its
+            // owner follows a reset link.
+            ProvisionedAccount {
+                external_id: None,
+                created: true,
+            }
         };
 
         let permission = if request.is_admin {
@@ -160,10 +175,13 @@ impl<R: UserRepository> AuthService<R> {
         let mut user = User::new(&username, request.is_admin, permission);
         // What the provider calls this account, where one owns it: a token it issues resolves to
         // this record by that value and by nothing else.
-        user.external_id = external_id;
+        user.external_id = provisioned.external_id;
         user.email = email;
         self.repository.add_user(&user).await.map_err(internal)?;
-        Ok(user.to_response())
+        Ok(CreatedUserResponse {
+            user: user.to_response(),
+            needs_credential: provisioned.created,
+        })
     }
     pub async fn user_from_token(&self, token: &str) -> Result<User, HttpError> {
         match self.verifier.verify(token).await? {
@@ -629,17 +647,17 @@ impl<R: UserRepository + LocalCredentials> AuthService<R> {
             is_admin: true,
             permission: Permission::admin(),
         };
-        let created = self.create_user(request).await?;
         // The one account whose password is chosen by someone other than its owner: nobody can sign
         // in yet, so nobody could follow a reset link. If the credential cannot be stored, the
         // record goes with it - otherwise the next start would find a user, skip the bootstrap, and
         // leave a deployment that nobody can enter.
-        let id = UserId::from(created.id.as_str());
+        let created = self.create_user(request).await?;
+        let id = UserId::from(created.user.id.as_str());
         if let Err(failure) = self.set_password(&id, password).await {
             let _ = self.repository.delete_user(&id).await;
             return Err(failure);
         }
-        Ok(Some(created))
+        Ok(Some(created.user))
     }
 }
 
@@ -666,7 +684,9 @@ mod tests {
 
     use super::*;
     use crate::auth::identity::VerifyFuture;
-    use crate::auth::provisioner::{AccountProvisioner, NewAccount, ProvisionFuture};
+    use crate::auth::provisioner::{
+        AccountProvisioner, NewAccount, ProvisionFuture, ProvisionedAccount,
+    };
     use crate::models::user::NewAccountRequest;
     use crate::repositories::user_repository::BoxError;
 
@@ -827,10 +847,10 @@ mod tests {
             },
         };
         let created = auth.create_user(request).await.unwrap();
-        auth.set_password(&UserId::from(created.id.as_str()), password)
+        auth.set_password(&UserId::from(created.user.id.as_str()), password)
             .await
             .unwrap();
-        created
+        created.user
     }
 
     /// A sign-in records when it happened, and nothing else about the account.
@@ -1141,7 +1161,7 @@ mod tests {
         // account exists first, and its owner (or the bootstrap) sets the credential.
         let created = auth.create_user(account("ops")).await.unwrap();
         assert_eq!(
-            auth.set_password(&UserId::from(created.id.as_str()), "short")
+            auth.set_password(&UserId::from(created.user.id.as_str()), "short")
                 .await
                 .unwrap_err()
                 .status_code,
@@ -1389,6 +1409,10 @@ mod tests {
         reset: std::sync::Mutex<Vec<String>>,
         active: std::sync::Mutex<Vec<(String, bool)>>,
         refuse: bool,
+        /// Whether the provider already had the account, which is what an operator who made it in
+        /// the provider's console first sees: the CMS records what it may do and leaves the
+        /// credential it already has alone.
+        account_exists: bool,
         /// What a reset hands back, so a test can see it travel through the service.
         temporary_password: String,
     }
@@ -1401,13 +1425,17 @@ mod tests {
                 reset: Default::default(),
                 active: Default::default(),
                 refuse: false,
+                account_exists: false,
                 temporary_password: "Temp-pass-1!".to_string(),
             }
         }
     }
 
     impl AccountProvisioner for RecordingProvisioner {
-        fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, Option<String>> {
+        fn create<'a>(
+            &'a self,
+            account: &'a NewAccount,
+        ) -> ProvisionFuture<'a, ProvisionedAccount> {
             Box::pin(async move {
                 if self.refuse {
                     return Err("no".to_string());
@@ -1415,7 +1443,10 @@ mod tests {
                 self.created.lock().unwrap().push(account.username.clone());
                 // What a provider that knows its own accounts answers with; the CMS stores it so a
                 // token from that provider resolves to the record.
-                Ok(Some(format!("external-{}", account.username)))
+                Ok(ProvisionedAccount {
+                    external_id: Some(format!("external-{}", account.username)),
+                    created: !self.account_exists,
+                })
             })
         }
         fn delete<'a>(&'a self, username: &'a str) -> ProvisionFuture<'a, ()> {
@@ -1468,7 +1499,10 @@ mod tests {
         let auth = auth.with_account_provisioner(provisioner.clone());
 
         let created = auth.create_user(account("ops@example.com")).await.unwrap();
-        assert_eq!(created.username, "ops@example.com");
+        assert_eq!(created.user.username, "ops@example.com");
+        // The provider made the account, so it has no credential of its own yet: the administrator
+        // has to hand one over.
+        assert!(created.needs_credential);
         assert_eq!(
             provisioner.created.lock().unwrap().as_slice(),
             ["ops@example.com".to_string()]
@@ -1709,6 +1743,38 @@ mod tests {
                 .await
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    /// An account the provider **already** had is recorded without touching its credential.
+    ///
+    /// That is the operator's own console user, or somebody coming back after a wipe: the CMS is
+    /// only learning what they may do here, and issuing a reset would take away the way in they
+    /// already have (which is what the account screen does with the answer, see
+    /// `docs/content-api.md`).
+    #[tokio::test]
+    async fn an_account_the_provider_already_had_keeps_its_credential() {
+        let (auth, repository) = service();
+        let auth = auth.with_account_provisioner(Arc::new(RecordingProvisioner {
+            account_exists: true,
+            ..Default::default()
+        }));
+
+        let created = auth.create_user(account("cat@example.com")).await.unwrap();
+        assert_eq!(created.user.username, "cat@example.com");
+        assert!(
+            !created.needs_credential,
+            "the account already had a way in, so none has to be handed over"
+        );
+        // It is still the provider's account: the identifier is what a token resolves by.
+        let stored = repository
+            .get_user_from_username("cat@example.com")
+            .await
+            .unwrap()
+            .expect("the account");
+        assert_eq!(
+            stored.external_id.as_deref(),
+            Some("external-cat@example.com")
         );
     }
 

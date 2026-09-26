@@ -23,6 +23,20 @@ pub struct NewAccount {
     pub email: Option<String>,
 }
 
+/// What the provider did when it was asked for an account.
+///
+/// The difference matters to the caller: an account the provider **created** has no credential of
+/// its own yet (the CMS asks for one without a password), so an administrator has to hand over a
+/// way in - while an account that was already there has its owner's own credential, and handing
+/// over a new one would take that away.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvisionedAccount {
+    /// The provider's own identifier for the account, where the provider has one.
+    pub external_id: Option<String>,
+    /// Whether this call created the account, rather than finding one that already existed.
+    pub created: bool,
+}
+
 /// Boxed for the same reason [`TokenVerifier`](crate::auth::identity::TokenVerifier) is: the
 /// deployment picks its provisioner at composition time.
 pub type ProvisionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
@@ -30,7 +44,7 @@ pub type ProvisionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>>
 /// Creating, removing and re-credentialing accounts at the identity provider.
 pub trait AccountProvisioner: Send + Sync + 'static {
     /// Create the account, or make sure it is already there, and answer with the provider's own
-    /// identifier for it.
+    /// identifier for it and whether it had to be created.
     ///
     /// That identifier is what the CMS has to keep: a token from the provider resolves to a local
     /// record *by it* (see `AuthService::user_from_external_identity`), so an account created here
@@ -39,8 +53,9 @@ pub trait AccountProvisioner: Send + Sync + 'static {
     ///
     /// An account that already exists is not a failure: an operator may have created it in the
     /// provider's console first, and the CMS's job is then only to record what it may do - but its
-    /// identifier is just as necessary, so it is looked up rather than skipped.
-    fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, Option<String>>;
+    /// identifier is just as necessary, so it is looked up rather than skipped, and `created` says
+    /// which of the two happened.
+    fn create<'a>(&'a self, account: &'a NewAccount) -> ProvisionFuture<'a, ProvisionedAccount>;
 
     /// Remove the account.
     ///

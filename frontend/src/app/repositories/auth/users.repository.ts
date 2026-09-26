@@ -6,6 +6,19 @@ import { Observable } from 'rxjs';
 import { CurrentUser, Permission } from 'app/core/auth/auth.service';
 import { PasswordReset } from 'app/models/links';
 
+/**
+ * A created account, plus whether an administrator still has to hand over a way in.
+ *
+ * The whole account is in the answer as everywhere else; the one extra field is what the screen
+ * acts on (`docs/content-api.md`). An account the identity provider had to create has no
+ * credential of its own yet, while one that was already there - made in the provider's console, or
+ * coming back after the CMS's own records were wiped - has its owner's, and replacing it would
+ * take that away.
+ */
+export interface CreatedUser extends CurrentUser {
+  needs_credential: boolean;
+}
+
 export interface NewUser {
   /** The sign-in identifier; the CMS does not require an email address. */
   username: string;
@@ -48,8 +61,8 @@ export class UsersRepository {
     return this.http.get<CurrentUser[]>(apiUrl('/auth/users'));
   }
 
-  create(user: NewUser): Observable<CurrentUser> {
-    return this.http.post<CurrentUser>(apiUrl('/auth/users'), user);
+  create(user: NewUser): Observable<CreatedUser> {
+    return this.http.post<CreatedUser>(apiUrl('/auth/users'), user);
   }
 
   update(id: string, change: UserChange): Observable<CurrentUser> {

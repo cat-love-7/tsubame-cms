@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 
 import { AuthService, CurrentUser } from 'app/core/auth/auth.service';
 import { t } from 'app/core/i18n/message';
+import { NewUser } from 'app/repositories/auth/users.repository';
 import { PasswordReset } from 'app/models/links';
 import { UsersService } from 'app/services/auth/users.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
@@ -48,11 +49,23 @@ class StubUsersService {
     expires_at: '2026-09-13T12:00:00Z',
   };
   public resetIssued: string[] = [];
+  /**
+   * Whether the account this stub hands back has no way in of its own yet.
+   *
+   * `true` is the case the server reports for an account the identity provider had to create;
+   * `false` is one that was already there, whose own credential must not be replaced.
+   */
+  public createdNeedsCredential = true;
 
   list = () => of(this.accounts);
   create = (user: unknown) => {
     this.created.push(user);
-    return of(account());
+    // The server answers with the account it made, so the stub does too: the name it reports is
+    // the one that was asked for.
+    return of({
+      ...account({ username: (user as NewUser).username }),
+      needs_credential: this.createdNeedsCredential,
+    });
   };
   update = (id: string, change: unknown) => {
     this.updated.push({ id, change });
@@ -193,6 +206,18 @@ describe('Accounts', () => {
     ]);
     expect(stub.resetIssued).toEqual(['user-1']);
     expect(fixture.componentInstance.resetValue()).toContain('/reset-password?token=');
+  });
+
+  // An account the identity provider already had keeps its own way in. Resetting it here would
+  // take that away, which is exactly what an administrator adding a colleague must not do.
+  it('adds an account that already had a way in without resetting it', () => {
+    stub.createdNeedsCredential = false;
+    fixture.componentInstance.newUsername = 'cat';
+    fixture.componentInstance.create();
+
+    expect(stub.created.length).toBe(1);
+    expect(stub.resetIssued).toEqual([]);
+    expect(fixture.componentInstance.status()).toEqual(t('accounts.adopted', { user: 'cat' }));
   });
 
   /** An address, when the operator records one, is passed on as contact data. */

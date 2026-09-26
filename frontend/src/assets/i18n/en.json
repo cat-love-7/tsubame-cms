@@ -54,6 +54,7 @@
     "resourceCollection": "collection: {{name}}",
     "resourceSinglePage": "single page: {{name}}",
     "created": "The account was created.",
+    "adopted": "The account was added. It keeps the way in it already had at the identity provider.",
     "roleChanged": "Changed the role of {{user}}.",
     "adminChanged": "Changed the administrator flag of {{user}}.",
     "activated": "Enabled {{user}}.",

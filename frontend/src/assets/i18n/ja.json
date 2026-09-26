@@ -54,6 +54,7 @@
     "resourceCollection": "コレクション: {{name}}",
     "resourceSinglePage": "単一ページ: {{name}}",
     "created": "アカウントを作成しました",
+    "adopted": "アカウントを追加しました。ID プロバイダ側で既に使っていたサインイン方法がそのまま使えます",
     "roleChanged": "{{user}} のロールを変更しました",
     "adminChanged": "{{user}} の管理者権限を変更しました",
     "activated": "{{user}} を有効にしました",

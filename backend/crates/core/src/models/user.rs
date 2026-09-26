@@ -260,6 +260,19 @@ pub struct UserResponse {
     pub single_page_permissions: HashMap<String, Permission>,
 }
 
+/// A newly created account, and whether it still needs a way in.
+///
+/// The account itself is flattened into this answer, so a client reads it exactly as it reads any
+/// other account; the one extra field says whether an administrator has to hand over a credential
+/// (`docs/content-api.md`). An account the identity provider had to create has none of its own,
+/// while one that was already there has its owner's, which handing over a new one would take away.
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct CreatedUserResponse {
+    #[serde(flatten)]
+    pub user: UserResponse,
+    pub needs_credential: bool,
+}
+
 #[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
     pub username: String,

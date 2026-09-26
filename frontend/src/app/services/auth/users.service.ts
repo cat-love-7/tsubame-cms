@@ -5,6 +5,7 @@ import { CurrentUser } from 'app/core/auth/auth.service';
 import { PasswordReset } from 'app/models/links';
 
 import {
+  CreatedUser,
   NewUser,
   PasswordChanged,
   UserChange,
@@ -21,7 +22,11 @@ export class UsersService {
     return this.users.list();
   }
 
-  create(user: NewUser): Observable<CurrentUser> {
+  /**
+   * Create an account. The answer carries whether it still needs a way in: an account the identity
+   * provider had to create has none, while one that was already there keeps its owner's.
+   */
+  create(user: NewUser): Observable<CreatedUser> {
     return this.users.create(user);
   }
 

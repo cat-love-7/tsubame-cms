@@ -5,7 +5,7 @@
 //! callers already use keep working.
 
 use super::*;
-use tsubame_core::auth::provisioner::AccountProvisioner;
+use tsubame_core::auth::provisioner::{AccountProvisioner, ProvisionedAccount};
 
 /// The endpoints the adapter tests talk to: `CMS_TEST_DYNAMODB_ENDPOINT` and
 /// `CMS_TEST_S3_ENDPOINT`, or the emulators from `docker-compose.yml`.
@@ -54,12 +54,16 @@ impl CognitoAdmin for InMemoryCognito {
         &'a self,
         username: &'a str,
         email: Option<&'a str>,
-    ) -> AdminFuture<'a, Option<String>> {
+    ) -> AdminFuture<'a, ProvisionedAccount> {
         Box::pin(async move {
             self.record(format!("create {username} email={}", email.unwrap_or("-")));
             // What a pool answers with, so a record written from this has something a token could
-            // resolve to.
-            Ok(Some(format!("sub-of-{username}")))
+            // resolve to. This double always makes the account, which is the case the tests that
+            // use it are about.
+            Ok(ProvisionedAccount {
+                external_id: Some(format!("sub-of-{username}")),
+                created: true,
+            })
         })
     }
 

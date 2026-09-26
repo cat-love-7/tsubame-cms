@@ -280,11 +280,15 @@ export class UsersList {
           this.newRole = 'viewer';
           this.newIsAdmin = false;
           this.load();
-          if (this.passwordReset()) {
+          if (this.passwordReset() && created.needs_credential) {
             // The only way in, so it is offered rather than left to be found in the row.
             this.issuePasswordReset(created);
-          } else {
+          } else if (created.needs_credential) {
             this.status.set(t('accounts.created'));
+          } else {
+            // The account already had a way in at the identity provider; issuing a reset would
+            // take it away, which is what an administrator adding a colleague must not do.
+            this.status.set(t('accounts.adopted', { user: created.username }));
           }
         },
         error: (e) => this.error.set(failure('accounts.createFailed', e)),

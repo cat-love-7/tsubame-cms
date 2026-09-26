@@ -832,7 +832,7 @@ what the publish operation read"** (the content comparison does not depend on ke
 | Method | Path | Contents |
 |---|---|---|
 | GET | `/api/auth/users` | List |
-| POST | `/api/auth/users` | Create (`username` / optional `email` / `is_admin` / `permission`. **No password is taken**) |
+| POST | `/api/auth/users` | Create (`username` / optional `email` / `is_admin` / `permission`. **No password is taken**). The answer is the Account plus `needs_credential` |
 | PATCH | `/api/auth/users/{id}` | Partial update of `is_admin` / `is_active` / `permission` |
 | DELETE | `/api/auth/users/{id}` | Delete |
 | POST | `/api/auth/me/password` | Change your own password (the current password is required) |
@@ -841,6 +841,15 @@ what the publish operation read"** (the content comparison does not depend on ke
 sign in until the person sets one with a reset link (putting `password` in the body is **ignored** -
 neither the API nor the screen has a route for deciding someone else's password on creation). All an
 admin can hand over is the reset link.
+
+**`needs_credential` in the create answer says whether that is so for this Account.** Where an identity
+provider owns the credentials (`password_login: false`), creating an Account also asks the provider for
+one, and the provider may answer **"it is already there"** - an operator who made the person in the
+provider's console, or an Account coming back after the CMS's own records were replaced. Such an
+Account has **its own way in**, so it answers `needs_credential: false` and the screen adds it without
+issuing a reset (resetting would take that way in away). An Account the provider had to create has
+none, so it answers `true` and the screen offers the reset straight away. Where this CMS holds the
+credentials itself there is nothing to adopt from, so a created Account always answers `true`.
 
 The only exception is the **initial admin** the deployment creates itself (`ADMIN_PASSWORD`). When
 nobody can sign in there is no one to issue a link, so only here is the password chosen on the
