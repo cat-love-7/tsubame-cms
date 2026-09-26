@@ -31,6 +31,7 @@ import {
   orderForPublish,
   sanitizeName,
   shouldPublish,
+  thumbnailFor,
   withoutUnavailableReferences,
 } from '../lib/plan.mjs';
 import { MigrationState } from '../lib/state.mjs';
@@ -448,6 +449,33 @@ describe('small decisions', () => {
     assert.equal(fileExtension({ mime: 'image/gif' }), 'gif');
     assert.equal(displayFilename({ name: 'hero' }, 'png'), 'hero.png');
     assert.equal(displayFilename({ name: 'hero.png' }, 'png'), 'hero.png');
+  });
+
+  it('reads the small copy Strapi made, with the extension it was stored under', () => {
+    // The shape the v3 upload endpoint answers, which is what the fixture holds.
+    assert.deepEqual(
+      thumbnailFor({ url: '/uploads/hero_9f2c1a.png', formats: { thumbnail: { url: '/uploads/thumbnail_hero_9f2c1a.png' } } }),
+      { url: '/uploads/thumbnail_hero_9f2c1a.png', ext: 'png' },
+    );
+    // A remote provider hands back an absolute URL, sometimes with a cache-busting query.
+    assert.deepEqual(
+      thumbnailFor({ mime: 'image/jpeg', formats: { thumbnail: { url: 'https://cdn.example.com/t.jpg?updated=1' } } }),
+      { url: 'https://cdn.example.com/t.jpg?updated=1', ext: 'jpg' },
+    );
+    // A copy URL with no extension falls back to the original's, which Strapi encodes it as.
+    assert.deepEqual(thumbnailFor({ ext: '.jpeg', formats: { thumbnail: { url: '/uploads/thumbnail_x' } } }), {
+      url: '/uploads/thumbnail_x',
+      ext: 'jpeg',
+    });
+  });
+
+  it('answers nothing for a file Strapi made no small copy of', () => {
+    assert.equal(thumbnailFor({ formats: {} }), null);
+    assert.equal(thumbnailFor({ url: '/uploads/x.png' }), null);
+    assert.equal(thumbnailFor({ formats: { thumbnail: { url: '  ' } } }), null);
+    assert.equal(thumbnailFor({ formats: { thumbnail: { url: 7 } } }), null);
+    // No extension anywhere means a copy the CMS could not say the type of, so it is left out.
+    assert.equal(thumbnailFor({ formats: { thumbnail: { url: '/uploads/thumbnail_x' } } }), null);
   });
 });
 

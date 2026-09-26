@@ -289,6 +289,23 @@ export class CmsClient {
   }
 
   /**
+   * Store the small copy of an image, the one the library and the pickers show (`docs/content-api.md`
+   * §5.9).
+   *
+   * The CMS's own thumbnails are made by the browser that uploads a picture; a migration sends the
+   * one Strapi made instead. The bytes are opaque to the CMS, and `ext` becomes the extension of the
+   * stored copy, which is what says what its bytes are when they are served.
+   */
+  async setImageThumbnail(id, ext, bytes) {
+    await requestVoid(this.url(`/models/images/${id}/thumbnail?ext=${encodeURIComponent(ext)}`), {
+      method: 'PUT',
+      token: this.token,
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bytes,
+    });
+  }
+
+  /**
    * Upload one file, following the two-step contract: ask where, then put the bytes there.
    *
    * The id exists as soon as the first step answers, which is what lets content reference the

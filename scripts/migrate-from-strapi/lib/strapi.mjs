@@ -138,7 +138,17 @@ export class StrapiV3Client {
   async downloadUploadFile(file) {
     const source = file.url ?? file.formats?.large?.url ?? null;
     if (!source) throw new Error(`media ${file.id} has no url`);
-    const target = new URL(source, `${this.baseUrl}/`);
+    return this.downloadMedia(source);
+  }
+
+  /**
+   * The bytes behind one media URL: the original, or a format Strapi generated for it.
+   *
+   * `url` is relative on the local provider and absolute on a remote one, so it is resolved
+   * against the Strapi base either way.
+   */
+  async downloadMedia(url) {
+    const target = new URL(url, `${this.baseUrl}/`);
     const { buffer, headers } = await fetchWithRetry(target.href, { timeoutMs: 120_000 });
     return { buffer, contentType: headers.get('content-type') ?? null };
   }

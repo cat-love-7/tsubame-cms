@@ -37,6 +37,7 @@ import {
   orderForPublish,
   sanitizeName,
   shouldPublish,
+  thumbnailFor,
   withoutUnavailableReferences,
 } from './lib/plan.mjs';
 import { MigrationState } from './lib/state.mjs';
@@ -755,6 +756,21 @@ async function main() {
         bytes: buffer,
       });
       state.markImage(file.id, id);
+
+      // The library and the pickers show a small copy; this CMS makes one in the browser that
+      // uploads a picture, so a migrated library has to bring Strapi's own. Without it every tile
+      // downloads the original, which is what an image uploaded through the API looks like too -
+      // so a copy that cannot be carried is a warning, not a failed image.
+      const thumbnail = thumbnailFor(file);
+      if (thumbnail !== null) {
+        try {
+          const { buffer: thumbnailBytes } = await strapi.downloadMedia(thumbnail.url);
+          await cms.setImageThumbnail(id, thumbnail.ext, thumbnailBytes);
+        } catch (error) {
+          log.warn(`media ${file.id}: uploaded, but its thumbnail was not: ${error.message}`);
+        }
+      }
+
       if (!options.noDates) {
         const uploadedAt = toDateTime(file.created_at ?? file.createdAt);
         if (uploadedAt) {

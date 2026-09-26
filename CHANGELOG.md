@@ -38,6 +38,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   why; the raw value stays readable under `values`.
 - **`inverse_name` is one name per target**, and a schema can no longer give one target two names -
   neither through two Fields nor through two item types of one array.
+- **The Strapi import carries the media library's thumbnails.** This CMS's small tile copy is made
+  by the browser that uploads a picture (`docs/content-api.md` §5.9), so a migrated library had none
+  and every tile in the library and the pickers downloaded the original. The tool now sends the
+  `formats.thumbnail` Strapi generated, and a file Strapi made no copy of falls back to its original
+  the way an image uploaded through the API does. An image a re-run reuses is left alone, so
+  `--force` is what re-uploads a library imported before this.
 
 - No crate is publishable. Every manifest under `backend/crates/` says `publish = false`, so
   `cargo publish` refuses all four by name, and `scripts/check-version.sh` fails the build if a new

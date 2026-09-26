@@ -230,6 +230,12 @@ $ node scripts/migrate-from-strapi/migrate.mjs … --relations relation \
   CMS の `is_title` を、`title` → `name` → `label` → … → 最初の1行で読めるフィールド、
   の順で推定して立てます(そのフィールドは一覧の列にも出します)。推定させたくないときは
   `--no-title-field`。
+- **画像のサムネイル**(ライブラリとピッカーがタイルに使う小さいコピー)。この CMS の
+  サムネイルは通常**アップロードしたブラウザが作ります**が(`docs/content-api.md` §5.9)、
+  移行では**Strapi が作った `formats.thumbnail` のバイト列**を取得して
+  `PUT /models/images/{id}/thumbnail?ext=…` に送ります。Strapi がサムネイルを作っていない
+  ファイル(PDF、SVG、小さい画像など)は送りません。その場合タイルは原本を表示します
+  (API から直接上げた画像と同じ扱いで、壊れはしませんが重くなります)。
 
 **引き継げません。**
 
@@ -257,6 +263,8 @@ $ node scripts/migrate-from-strapi/migrate.mjs … --relations relation \
   エントリは対応表にあるものを飛ばします。参照と日時は毎回書き直すので、途中で落ちた実行も
   そのままもう一度流せば収束します(公開済みのものを含めて publish し直すため
   `last_published_at` は動きますが、`published_at` は元の日時で上書きされます)。
+  対応表から再利用した画像(`already`)には触らないので、**サムネイル対応より前に上げた画像に
+  サムネイルを付けたいときは `--force`** で上げ直してください。
 - 最初からやり直すときは `--force`(または state ファイルを消す)。
 - 終了時に `.strapi-migration/report.json` に計画・型対応・失敗・警告を書きます。1 件でも
   失敗があると終了コードは 1 です。
@@ -304,6 +312,8 @@ $ curl -s http://127.0.0.1:8080/api/content/collections/category
 - `article.featuredOn` → 単一ページ、`category.parent` → 自己参照
 - `article.tree` → `blog.tree` ↔ `blog.branch` が**配列経由で相互再帰**しており、
   ブートストラップと、値の再帰変換の両方を検証する
+- メディア 2 件のうち 1 件だけが `formats.thumbnail` を持ち、**それだけがサムネイル付きで
+  入る**(移行後に `GET /api/models/images` の `thumbnail_url` で確かめられる)
 - 直接循環するコンポーネントは単体テストで扱い、実行が止まらずフィールドだけ落ちることも
   `--no-items` の一時プロジェクトで確認している
 
@@ -342,5 +352,8 @@ $ curl -s http://127.0.0.1:8080/api/content/collections/category
 - Strapi 側は**読み取り専用**で触りません。
 - 画像はバイト列を取得して CMS に上げ直すため、`MAX_IMAGE_BYTES`(既定 10MB)を超える
   ファイルは拒否され、失敗として報告されます。
+- サムネイルも同じく取得して送るため、CMS の上限(`MAX_THUMBNAIL_BYTES`、512KiB)を超えると
+  413 で拒否されます。そのときは**警告して原本だけを残します**(Strapi の既定サイズなら
+  通常起きません)。
 - 管理者権限の資格情報を使います(`publish` とスキーマ作成に必要)。使い捨ての環境で
   実行し、終わったらパスワードを変えるのが無難です。

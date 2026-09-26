@@ -1,6 +1,7 @@
 // The decisions that do not need a network or a running server: how a name is made safe, what
 // order components have to be created in, whether an entry is published, and how a media file's
-// extension is worked out. Kept apart from the orchestration so they can be tested directly.
+// extension and its Strapi-made thumbnail are worked out. Kept apart from the orchestration so they
+// can be tested directly.
 
 import path from 'node:path';
 
@@ -197,6 +198,27 @@ export function fileExtension(file) {
 export function displayFilename(file, ext) {
   const name = String(file.name ?? file.hash ?? `file-${file.id}`);
   return ext && !name.toLowerCase().endsWith(`.${ext}`) ? `${name}.${ext}` : name;
+}
+
+/**
+ * The small copy Strapi generated for a media file, as `{ url, ext }`, or null when it has none.
+ *
+ * Strapi makes a `thumbnail` format for every image it can decode. This CMS's own thumbnails are
+ * made by the browser that uploads a picture (`docs/content-api.md` §5.9), so a migrated library
+ * has none unless the migration carries Strapi's - and without one every tile in the library and
+ * the pickers downloads the original.
+ *
+ * The extension decides what the stored copy's bytes are said to be. Strapi names the copy itself
+ * (`thumbnail_<hash>.<ext>`), so it is read from the URL and falls back to the original's
+ * extension for a URL that has none.
+ */
+export function thumbnailFor(file) {
+  const url = file?.formats?.thumbnail?.url;
+  if (typeof url !== 'string' || url.trim() === '') return null;
+  const fromUrl = path.extname(url.split('?')[0]).replace(/^\./, '');
+  const ext = (fromUrl || fileExtension(file)).toLowerCase();
+  // A copy without an extension cannot be typed when it is served, which is worse than no copy.
+  return ext === '' ? null : { url: url.trim(), ext };
 }
 
 /**
