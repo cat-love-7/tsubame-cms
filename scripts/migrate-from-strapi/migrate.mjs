@@ -217,10 +217,21 @@ function parseArgs(argv) {
   return options;
 }
 
+/** Whether a planned field type, or an array's item type, is a relation. */
+function isRelationType(type) {
+  if (typeof type !== 'object' || type === null) return false;
+  if ('Relation' in type) return true;
+  // Several references are an `Array` whose item types are relations, so the wrapper has to be
+  // looked through as well.
+  return (
+    Array.isArray(type.Array) &&
+    type.Array.some((item) => item !== null && typeof item === 'object' && 'Relation' in item)
+  );
+}
+
 /** Whether a planned field is a relation, whose target has to exist before the schema is saved. */
 function isRelationField(field) {
-  const type = field.field_type;
-  return typeof type === 'object' && type !== null && 'Relation' in type;
+  return isRelationType(field.field_type);
 }
 
 /**
@@ -233,7 +244,7 @@ function isRelationField(field) {
 function fieldReachesRelation(field, componentPlans, seen = new Set()) {
   const type = field.field_type;
   if (typeof type !== 'object' || type === null) return false;
-  if ('Relation' in type) return true;
+  if (isRelationType(type)) return true;
 
   const embedded = [];
   if (type.CompositeField) embedded.push(type.CompositeField.id);
@@ -588,8 +599,9 @@ async function main() {
 
   if (options.dryRun) {
     log.step('dry run: reading samples from Strapi (nothing is written)');
-    // A reference is written as `{ target, item }`, and in a dry run the Strapi id stands in for
-    // the CMS id, so the sample shows the shape the value will really take.
+    // A reference is one `{ target, item }` object, or an array of them when the field holds
+    // several. In a dry run the Strapi id stands in for the CMS id, so the sample shows the shape
+    // the value will really take.
     ctx.relationsReady = options.relations === 'relation';
     if (!options.noImages) {
       // The upload list is what turns a body's `/uploads/…` link into the CMS's by-id address, so
@@ -961,7 +973,11 @@ function collectRequiredDeps(plan, values, componentPlans, into, seen) {
   for (const field of plan.fields) {
     if (field.kind === FieldKind.Relation) {
       if (field.text || !field.schemaField.required) continue;
-      for (const reference of values[field.name] ?? []) into.push(recordKeyOf(reference));
+      // One relation is a single reference object; several are an array of them. The value's own
+      // shape says which, so both orders are handled without consulting the field type.
+      const raw = values[field.name];
+      const references = Array.isArray(raw) ? raw : raw ? [raw] : [];
+      for (const reference of references) into.push(recordKeyOf(reference));
       continue;
     }
     if (field.kind !== FieldKind.Component && field.kind !== FieldKind.DynamicZone) continue;

@@ -67,7 +67,7 @@ $ node scripts/migrate-from-strapi/migrate.mjs … \
 ### まず何が起きるか見る
 
 `--dry-run` は **CMS に一切触らず**、Strapi を読んで計画と変換後の値を表示します。
-リレーションの値も `{ target, item }` の形で表示されます。
+リレーションの値も、参照 1 つなら `{ target, item }`、複数ならその配列として表示されます。
 
 ```console
 $ node scripts/migrate-from-strapi/migrate.mjs \
@@ -95,7 +95,8 @@ $ node scripts/migrate-from-strapi/migrate.mjs \
 | dynamiczone | `Array([CompositeField, …])` | 要素ごとに `{"id": "<定義>", "values": {…}}` を書く |
 | media(単数) | `Image` | 実体をアップロードし、CMS の画像 id を参照 |
 | media(複数) | `Array([Image])` | |
-| relation | `Relation` | `--relations=relation` のとき。後述 |
+| relation(単数) | `Relation` | `--relations=relation` のとき。後述 |
+| relation(複数) | `Array([Relation])` | 同上。要素が参照 1 つ分 |
 | `password` | (移さない) | 資格情報はコンテンツではない |
 | `localizations` などのプラグイン項目 | (移さない) | 警告に出る |
 
@@ -130,14 +131,14 @@ $ node scripts/migrate-from-strapi/migrate.mjs … --relations relation
   - many-to-many のように**両側が集合**のときは、**API 名の順で決まる片側**を採用します
     (毎回同じ選択になるので、再実行しても安定します)。
   - **どちらを所有者にするかは指定できます**: `--relation-owner <apiId>.<field>`(後述)。
-- **カーディナリティは `has_many` の 2 種類**に畳まれます(`{ model: … }` は単一、
-  `{ collection: … }` は複数)。
+- **カーディナリティは参照 1 つか、その `Array` かの 2 種類**に畳まれます(`{ model: … }` は
+  `Relation`、`{ collection: … }` は `Array([Relation])`。`has_many` はありません)。
 - **単一ページも参照先になれます**(`{ model: 'home' }` → `{ kind: "single_page", name: "home" }`)。
-  ページは id を持たないので値は `[{ "target": "home" }]`、`has_many` は常に `false` です。
+  ページは id を持たないので、値は参照 1 つの `{ "target": "home" }` になります。
 - **`inverse_name` に `via`(= 相手側での呼び名)を入れます。** 相手の画面の見出しと、
   いずれ来る `?populate=` に使われます。データは持ちません。
-- **順序は移しません。** CMS の参照は集合なので、Strapi 側で並び順に意味がある場合は
-  その旨を警告します(必要なら別フィールドで表現してください)。
+- **順序は移しません。** Strapi 側で並び順に意味がある場合はその旨を警告します
+  (必要なら別フィールドで表現してください)。
 - **移行できない参照先**(users-permissions の `user` など、移行対象でない
   コンテンツタイプ)は警告して落とします。
 
@@ -245,7 +246,8 @@ $ node scripts/migrate-from-strapi/migrate.mjs … --relations relation \
   [#22293](https://github.com/strapi/strapi/issues/22293))。移行ツールは、手で編集されたモデルに
   これを見つけた場合、**警告してそのフィールドだけ落とし、実行は続けます**。
 - `json` の中身は文字列になります。`time` は文字列になります。
-- **参照の並び順**。集合として保存されます。
+- **参照の並び順**。Strapi 側のリレーションに順序は無いため、移行後の並びは移行ツールが読んだ順になります
+  (CMS 側の値は順序を持つ配列で、その順序はそのまま保存・配信されます)。
 
 ## 6. 再実行・中断・レポート
 

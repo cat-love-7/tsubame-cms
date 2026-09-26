@@ -41,8 +41,11 @@ export function emptyValue(fieldType) {
     }
   }
   const [variant] = Object.keys(fieldType);
-  if (variant === 'Array' || variant === 'TextEnum' || variant === 'Relation') return [];
-  if (variant === 'CompositeField') return null;
+  // One relation is a single reference, so "nothing referenced" is `null`; several are an
+  // `Array` of them, where "nothing" is `[]`. The CMS rejects a value whose shape disagrees with
+  // the field type, so the empty value has to follow the wrapper too.
+  if (variant === 'Array' || variant === 'TextEnum') return [];
+  if (variant === 'Relation') return null;
   return null;
 }
 
@@ -363,7 +366,7 @@ export function relationOwnerProblems(contentTypes, chosen, ctx) {
  * Map one v3 attribute to a CMS field.
  *
  * Returns either `{ skip: true, reason }` or a description the value converter can follow:
- * `{ kind, fieldType, componentId?, target?, hasMany?, multiple?, options? }`.
+ * `{ kind, fieldType, componentId?, target?, multiple?, options? }`.
  *
  * @param {object} attribute  One entry of `settings.json`'s `attributes`.
  * @param {object} ctx
@@ -462,7 +465,7 @@ export function mapAttribute(attribute, ctx, owner, fieldName = '') {
 /** A relation, as a real reference, a text stand-in, or a reported omission. */
 function mapRelation(attribute, ctx, owner, fieldName) {
   const targetUid = relationTargetUid(attribute);
-  const multiple = isManyRelation(attribute);
+  const declaredMany = isManyRelation(attribute);
 
   if (ctx.relationsMode !== 'relation') {
     if (ctx.relationsMode !== 'text') {
@@ -476,8 +479,8 @@ function mapRelation(attribute, ctx, owner, fieldName) {
     return {
       kind: FieldKind.Relation,
       text: true,
-      multiple,
-      fieldType: multiple ? { Array: [plainText()] } : plainText(),
+      multiple: declaredMany,
+      fieldType: declaredMany ? { Array: [plainText()] } : plainText(),
     };
   }
 
@@ -494,11 +497,12 @@ function mapRelation(attribute, ctx, owner, fieldName) {
 
   const kind = target.kind === 'singleType' ? 'single_page' : 'collection';
   // A single page is one item whose identity is its name, so it can only ever hold one reference;
-  // the CMS refuses `has_many` against a page, so a stray `collection:` is folded rather than
-  // sent to be rejected.
-  const hasMany = kind === 'single_page' ? false : multiple;
+  // several are an `Array` of relations, and an array may not declare the same target twice, so a
+  // stray `collection:` against a page is folded into a single `Relation` rather than sent to be
+  // rejected.
+  const multiple = kind === 'single_page' ? false : declaredMany;
   const targetRef = { kind, name: target.cmsName };
-  const options = { target: targetRef, has_many: hasMany };
+  const options = { target: targetRef };
   // The other side's name for this relation is exactly what `inverse_name` is for: a heading on
   // the target's screen, and the name a future `?populate=` uses.
   const inverse = inverseNameOf(attribute);
@@ -507,8 +511,11 @@ function mapRelation(attribute, ctx, owner, fieldName) {
   return {
     kind: FieldKind.Relation,
     target: targetRef,
-    hasMany,
-    fieldType: { Relation: options },
+    multiple,
+    // A relation holds one reference; several are an `Array` of them. Cardinality is the array
+    // wrapper, the same composition Text, Number and Image use, rather than a flag of the
+    // relation's own (`has_many` is gone from the schema).
+    fieldType: multiple ? { Array: [{ Relation: options }] } : { Relation: options },
   };
 }
 
@@ -683,14 +690,14 @@ function convertRelationAsText(field, raw) {
 }
 
 /**
- * A relation, as the CMS stores it: a set of `{ target, item }` references.
+ * A relation, as the CMS stores it: one `{ target, item }` reference, or a list of them.
  *
  * The ids are the CMS's own, which only exist once the referenced items have been created - the
  * whole reason a relation migration runs in two passes. Before that pass `relationsReady` is
  * false and the field is written empty, rather than reporting every target as missing.
  */
 function convertRelation(field, raw, ctx, problems, path) {
-  if (!ctx.relationsReady) return [];
+  if (!ctx.relationsReady) return field.multiple ? [] : null;
   const target = field.target;
   const references = [];
   for (const entry of asArray(raw)) {
@@ -713,13 +720,15 @@ function convertRelation(field, raw, ctx, problems, path) {
     }
     references.push({ target: target.name, item: cmsId });
   }
+  // Several references are an `Array` of `{ target, item }` objects; one relation is the object
+  // itself, and `null` when it points at nothing.
+  if (field.multiple) return references;
   // The CMS refuses more than one reference in a single-valued field, so the first is kept and
   // the rest reported rather than losing the whole item to a refusal.
-  if (!field.hasMany && references.length > 1) {
+  if (references.length > 1) {
     problems.push(`${path}: holds one reference but ${references.length} were given; kept the first`);
-    return references.slice(0, 1);
   }
-  return references;
+  return references[0] ?? null;
 }
 
 function convertScalar(field, raw, ctx, problems, path) {
@@ -888,7 +897,10 @@ function isEmpty(fieldType, value) {
     return value === '';
   }
   const variant = Object.keys(fieldType)[0];
-  if (variant === 'Array' || variant === 'TextEnum' || variant === 'Relation') return value.length === 0;
+  // A relation is one object (or `null`, already handled above); several are an array of them,
+  // which is empty when it holds nothing.
+  if (variant === 'Relation') return false;
+  if (variant === 'Array' || variant === 'TextEnum') return value.length === 0;
   if (variant === 'CompositeField') return value === null;
   return isEmpty(variant, value);
 }

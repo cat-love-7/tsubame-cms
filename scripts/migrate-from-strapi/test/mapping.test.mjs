@@ -15,6 +15,7 @@ import { loadDefinitionsFromProject, sanitizeComponentId } from '../lib/definiti
 import {
   chooseTitleField,
   convertEntry,
+  emptyValue,
   entryDates,
   mapAttribute,
   mutualRelationPair,
@@ -574,31 +575,34 @@ describe('relations', () => {
     assert.equal(shouldAdoptRelation({ collection: 'category', via: 'articles' }, 'tags', owner('article'), ctx).adopt, true);
   });
 
-  it('builds a Relation field for a collection target, with its inverse name', () => {
+  it('builds an Array of Relations for a collection target held many ways, with its inverse name', () => {
     const ctx = makeContext({}, { relationsMode: 'relation', contentTypes: { tag: tagType } });
     const mapped = mapAttribute({ collection: 'tag', via: 'articles' }, ctx, owner('article'), 'tags');
     assert.deepEqual(mapped.fieldType, {
-      Relation: {
-        target: { kind: 'collection', name: 'tags' },
-        has_many: true,
-        inverse_name: 'articles',
-      },
+      Array: [
+        {
+          Relation: {
+            target: { kind: 'collection', name: 'tags' },
+            inverse_name: 'articles',
+          },
+        },
+      ],
     });
   });
 
-  it('builds a single-valued Relation for a one-to-one target', () => {
+  it('builds a single Relation for a one-to-one target', () => {
     const ctx = makeContext({}, { relationsMode: 'relation', contentTypes: { category: categoryType } });
     const mapped = mapAttribute({ model: 'category' }, ctx, owner('article'), 'category');
     assert.deepEqual(mapped.fieldType, {
-      Relation: { target: { kind: 'collection', name: 'categories' }, has_many: false },
+      Relation: { target: { kind: 'collection', name: 'categories' } },
     });
   });
 
-  it('folds has_many for a single-page target, which has no ids to hold several of', () => {
+  it('folds a `collection:` against a single-page target into one Relation', () => {
     const ctx = makeContext({}, { relationsMode: 'relation', contentTypes: { home: homeType } });
     const mapped = mapAttribute({ collection: 'home' }, ctx, owner('article'), 'featuredOn');
     assert.deepEqual(mapped.fieldType, {
-      Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false },
+      Relation: { target: { kind: 'single_page', name: 'home' } },
     });
   });
 
@@ -617,8 +621,7 @@ describe('relations', () => {
       owner('article'),
       'tags',
     );
-    assert.equal(mapped.fieldType.Relation.inverse_name, 'articles');
-    assert.equal(mapped.fieldType.Relation.has_many, true);
+    assert.equal(mapped.fieldType.Array[0].Relation.inverse_name, 'articles');
   });
 
   it('writes references only in the second pass', () => {
@@ -633,16 +636,17 @@ describe('relations', () => {
     const plan = planContentType({ category: { model: 'category' } }, ctx, owner('article'));
 
     // The field is not in the schema yet when the item is created (a required relation cannot be
-    // saved empty), so the first pass leaves the key out rather than writing an empty set.
+    // saved empty), so the first pass leaves the key out rather than writing an empty value.
     ctx.relationsReady = false;
     const first = convertEntry({ category: { id: 7 } }, plan, ctx);
     assert.equal('category' in first.values, false);
     assert.deepEqual(first.missingRequired, []);
 
     ctx.relationsReady = true;
-    assert.deepEqual(convertEntry({ category: { id: 7 } }, plan, ctx).values.category, [
-      { target: 'categories', item: 3 },
-    ]);
+    assert.deepEqual(convertEntry({ category: { id: 7 } }, plan, ctx).values.category, {
+      target: 'categories',
+      item: 3,
+    });
   });
 
   it('reports a reference whose target was not migrated, and keeps the rest', () => {
@@ -671,16 +675,16 @@ describe('relations', () => {
     );
     const plan = planContentType({ category: { model: 'category' } }, ctx, owner('article'));
     const { values, problems } = convertEntry({ category: [{ id: 1 }, { id: 2 }] }, plan, ctx);
-    assert.deepEqual(values.category, [{ target: 'categories', item: 1 }]);
+    assert.deepEqual(values.category, { target: 'categories', item: 1 });
     assert.match(problems[0], /holds one reference but 2/);
   });
 
   it('names a single page instead of numbering it', () => {
     const ctx = makeContext({}, { contentTypes: { home: homeType }, relationsMode: 'relation' });
     const plan = planContentType({ featuredOn: { model: 'home' } }, ctx, owner('article'));
-    assert.deepEqual(convertEntry({ featuredOn: { id: 1, headline: 'x' } }, plan, ctx).values.featuredOn, [
-      { target: 'home' },
-    ]);
+    assert.deepEqual(convertEntry({ featuredOn: { id: 1, headline: 'x' } }, plan, ctx).values.featuredOn, {
+      target: 'home',
+    });
 
     // A page that is not one of the migrated content types is reported as an unmapped field.
     const missing = makeContext({}, { contentTypes: { article: articleType }, relationsMode: 'relation' });
@@ -690,6 +694,26 @@ describe('relations', () => {
       ['featuredOn'],
     );
   });
+
+  it('writes null for one relation that references nothing, and [] for a list of them', () => {
+    const ctx = makeContext({}, {
+      relationsMode: 'relation',
+      contentTypes: { article: articleType, category: categoryType, tag: tagType },
+    });
+    const single = planContentType({ category: { model: 'category' } }, ctx, owner('article'));
+    assert.equal(convertEntry({ category: null }, single, ctx).values.category, null);
+
+    const many = planContentType({ tags: { collection: 'tag', via: 'articles' } }, ctx, owner('article'));
+    assert.deepEqual(convertEntry({ tags: [] }, many, ctx).values.tags, []);
+  });
+
+  it('gives an empty value the shape of the field type', () => {
+    const target = { kind: 'collection', name: 'authors' };
+    // One relation is `null`; several are an `Array` of them, which is `[]`.
+    assert.equal(emptyValue({ Relation: { target } }), null);
+    assert.deepEqual(emptyValue({ Array: [{ Relation: { target } }] }), []);
+  });
+
   it('names both fields of a mutual relation, so a choice can be made about it', () => {
     const ctx = makeContext({}, { relationsMode: 'relation', contentTypes: { article: articleType, category: categoryType } });
     const pair = mutualRelationPair({ model: 'category' }, 'category', owner('article'), ctx);
@@ -755,7 +779,9 @@ describe('relations', () => {
     });
     const plan = planContentType({ articles: { collection: 'article', via: 'category' } }, ctx, owner('category'));
     assert.deepEqual(plan.schema[0].field_type, {
-      Relation: { target: { kind: 'collection', name: 'articles' }, has_many: true, inverse_name: 'category' },
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'articles' }, inverse_name: 'category' } },
+      ],
     });
   });
 
