@@ -34,7 +34,8 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 - An item editor's toolbar reads **state first, then the actions**: "save" sits after the status and
   the publisher and before the publish controls, rather than ahead of both.
 - The publisher's name in the toolbar is **labelled** ("Published by:"). Bare, it read as the author
-  of the content; it is the Account that published it.
+  of the content; it is the Account that published it. In the content lists the column heading says it
+  once for the whole column - **"Status (publisher)"** - instead of a label on every row.
 
 ### Fixed
 

@@ -120,7 +120,8 @@ the same file.
 - **The publisher's name is labelled** (added 2026-09). The toolbar showed `published_by.username` bare
   after the status badge, which reads as the author of the content. It is not: `published_by` is the
   **Account that last published** (`docs/content-api.md`), so it reads "Published by: <name>", keeping
-  the tooltip that spells the same thing out.
+  the tooltip that spells the same thing out. The lists say it once instead of on every row: the status
+  column they carry the name in is headed **"Status (publisher)"**.
 - **The image picker is a dialog, and it uploads** (added 2026-09). The wall of tiles used to be a panel
   *under* the control that opened it: taller than the form around it, so it pushed everything below it down
   and then scrolled inside a 200px box - and the Markdown box has no upload of its own, so an empty library
