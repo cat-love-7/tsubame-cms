@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 
 import { AuthService } from 'app/core/auth/auth.service';
@@ -146,6 +146,22 @@ describe('Single page list', () => {
     fresh.detectChanges();
 
     expect(fresh.nativeElement.querySelectorAll('.draft-note').length).toBe(1);
+  });
+
+  // A click anywhere on the row opens the page - the name link was the only place that worked, and
+  // the collection list answers a click on the row, so the two screens read the same way.
+  it('opens the page when the row is clicked', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    const state = rowFor('contact').querySelector('td:nth-child(2)') as HTMLElement;
+    state.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(navigate).toHaveBeenCalledWith(['/single-pages', 'contact']);
+
+    // The row's buttons mean what they say, so a click on one of them is not a navigation.
+    navigate.mockClear();
+    const actions = rowFor('about').querySelector('td.actions') as HTMLElement;
+    actions.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('publishes and unpublishes from the list, without opening the page', () => {

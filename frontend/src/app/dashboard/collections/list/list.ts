@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BehaviorSubject, catchError, forkJoin, of, switchMap } from 'rxjs';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
@@ -25,6 +26,7 @@ import {
 import { RelationLabelsService } from 'app/services/relations/relation-labels.service';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
+import { clickedAControl } from 'app/shared/row-click';
 
 /** Rows per page. Small enough to read, large enough to scan. */
 const DEFAULT_PAGE_SIZE = 25;
@@ -36,6 +38,7 @@ const DEFAULT_PAGE_SIZE = 25;
     ItemStatusBadge,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatPaginatorModule,
     MessagePipe,
     RouterLink,
@@ -319,6 +322,21 @@ export class CollectionItemList {
     if (moved) {
       this.reload.next();
     }
+  }
+
+  /**
+   * Open the row's editor.
+   *
+   * The whole row is the target, the way a page's name is in the single-page list: an editor who
+   * has found their row should not have to aim at a small icon. What the click landed on decides -
+   * see `clickedAControl` - because the cells that hold a button or a checkbox were asked for that
+   * control, not for the editor.
+   */
+  open(id: number, event: MouseEvent) {
+    if (clickedAControl(event.target)) {
+      return;
+    }
+    void this.router.navigate(['/collections', this.collectionName(), 'edit', id]);
   }
 
   statusOf(id: number): ItemStatus {

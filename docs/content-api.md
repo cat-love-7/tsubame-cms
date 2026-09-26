@@ -433,6 +433,8 @@ so it is held on the Field side:
 - Single pages and Composite field definitions have no list, so this setting is not used (it does not
   appear on screen either).
 - `width` / `height` concern the **content edit screen**, whereas this concerns the **list screen**.
+- Marking many fields for the list costs **width**, never the row's own controls: the actions column is pinned to the
+  right edge, and copying and deleting sit behind one menu button (see `docs/frontend-design.md`).
   The values themselves still round-trip completely as before (fields not shown as columns are still
   saved, published and delivered).
 - When `false` it **does not appear on the wire** (same as `unique`). A key that is absent is read as

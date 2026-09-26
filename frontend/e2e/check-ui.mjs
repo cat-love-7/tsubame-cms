@@ -11,6 +11,7 @@
  *   - the status badge and the Updated column
  *   - the next page and a different page size reaching the server
  *   - publishing an item from the list
+ *   - opening an item by its row, with the actions column pinned to the right edge
  *   - deleting the only row of the last page, which has to fall back a page
  *   - the image library: uploading, serving and deleting an image
  *   - picking that image from the library while editing content, and saving it
@@ -683,6 +684,40 @@ async function publishADraftFromTheList() {
   check('誰が公開したかが一覧に出る', publisherNote === USERNAME, `${publisherNote}`);
 }
 
+/** Opening an item from the list, and the row's controls staying within reach. */
+async function openingAnItemFromTheList() {
+  await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await dataRows().first().waitFor({ timeout: 15000 });
+
+  // The row-actions column is pinned to the right edge of the list, so the buttons no longer travel
+  // off the screen when the schema shows enough columns to make the table wider than the window.
+  const actionsPosition = await page.evaluate(() => {
+    const cell = document.querySelector('table.items tbody td.actions');
+    return cell === null ? 'no cell' : getComputedStyle(cell).position;
+  });
+  check('操作の列は右端に固定される', actionsPosition === 'sticky', actionsPosition);
+
+  // The row opens the item, the way a page's name does in the single-page list.
+  await firstRow().locator('td').nth(1).click();
+  const opened = await page
+    .waitForURL(`**/collections/${COLLECTION}/edit/**`, { timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  check('行を押すと編集画面が開く', opened, page.url());
+
+  // The checkbox is the row's own control: a click there selects, and does not navigate away from
+  // the list the reader is working in.
+  await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await dataRows().first().waitFor({ timeout: 15000 });
+  await firstRow().locator('td.select input[type=checkbox]').check();
+  await page.waitForTimeout(200);
+  check(
+    'チェックボックスを押しても遷移しない',
+    !page.url().includes('/edit/') && (await page.locator('.toolbar .selection').count()) === 1,
+    page.url(),
+  );
+}
+
 /** Delete the last page's only row. */
 async function deleteTheLastPagesOnlyRow() {
   await page.goto(`${BASE}/collections/${LAST_PAGE_COLLECTION}`, { waitUntil: 'networkidle' });
@@ -693,7 +728,9 @@ async function deleteTheLastPagesOnlyRow() {
   check('最終ページは 1 行', lastPageRows === 1, `${lastPageRows} 行`);
 
   const doomedId = (await firstRow().locator('td').nth(1).textContent())?.trim();
-  await firstRow().locator('button[aria-label^="delete item"]').click();
+  // Deleting lives in the row's menu, behind the button that keeps the row's controls narrow.
+  await firstRow().locator('button[aria-label^="more actions"]').click();
+  await page.getByRole('menuitem', { name: 'Delete item' }).click();
   await waitForRows(25);
   const rowsAfterDelete = await dataRows().count();
   check(
@@ -1418,10 +1455,22 @@ async function rolesDecideWhatIsOffered() {
     '編集ロール: 新規作成はできる',
     (await editor.page.locator('button:has-text("New item")').count()) === 1,
   );
+  // Deleting lives in the row's menu, and a closed menu holds nothing: it is opened to read what
+  // this role is offered, or "no delete button on screen" would be true for everybody.
+  await editor.page
+    .locator('table.items tbody tr:has(app-item-status)')
+    .first()
+    .locator('button[aria-label^="more actions"]')
+    .click();
+  await editor.page.locator('.mat-mdc-menu-panel').waitFor({ timeout: 10000 });
+  const editorMenu = await editor.page.getByRole('menuitem').allTextContents();
+  await editor.page.keyboard.press('Escape');
   check(
     '編集ロール: 公開も削除も出ない',
     (await editor.page.locator('button[aria-label^="publish item"]').count()) === 0 &&
-      (await editor.page.locator('button[aria-label^="delete item"]').count()) === 0,
+      editorMenu.some((text) => text.includes('Copy item')) &&
+      !editorMenu.some((text) => text.includes('Delete item')),
+    editorMenu.join(' | '),
   );
   await expandSettings(editor.page);
   // The image library lives with the documents, so that branch has to be open to see its link.
@@ -2368,7 +2417,8 @@ async function theSchemaEditorDrivenFromTheScreen() {
     undefined,
     token,
   );
-  await page.locator('button[aria-label^="copy item"]').first().click();
+  await page.locator('button[aria-label^="more actions"]').first().click();
+  await page.getByRole('menuitem', { name: 'Copy item' }).click();
   await page
     .waitForURL(`**/collections/${SCHEMA_COLLECTION}/edit/**`, { timeout: 15000 })
     .catch(() => {});
@@ -2854,6 +2904,7 @@ const SCENARIOS = [
   ['page size', pageSize],
   ['ordering from the headers', orderingFromTheHeaders],
   ['publish a draft from the list', publishADraftFromTheList],
+  ['opening an item from the list', openingAnItemFromTheList],
   ["delete the last page's only row", deleteTheLastPagesOnlyRow],
   ['the image library', theImageLibrary],
   ['pick images while editing', pickImagesWhileEditing],

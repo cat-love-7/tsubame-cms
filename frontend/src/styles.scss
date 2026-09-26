@@ -253,13 +253,27 @@ table.accounts {
     background: var(--mat-sys-surface-container);
   }
 
-  /// A row of row-actions takes the width it needs and no more. It stays a table cell: a flex
-  /// cell leaves the table's layout behind, and the buttons would stack down the side.
-  td.actions {
+  /// The row-actions column takes the width it needs and no more, and stays where it can be
+  /// reached. A schema that shows many columns makes the table wider than the screen, and the
+  /// buttons used to travel off the right edge with the last column; pinned, they stay put while
+  /// the values scroll under them. It stays a table cell: a flex cell leaves the table's layout
+  /// behind, and the buttons would stack down the side. The opaque background is what hides the
+  /// columns going past; the row's own colour comes with the hover rule below.
+  td.actions,
+  th.actions {
     display: table-cell;
+    position: sticky;
+    right: 0;
     width: 1px;
     white-space: nowrap;
     text-align: right;
+    background: var(--mat-sys-surface);
+    /// A line on the left edge, so the column reads as pinned rather than as the end of the table.
+    box-shadow: inset 1px 0 0 var(--mat-sys-outline-variant);
+  }
+
+  tbody tr:hover td.actions {
+    background: var(--mat-sys-surface-container);
   }
 }
 

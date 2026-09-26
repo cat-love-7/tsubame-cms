@@ -24,6 +24,17 @@ td.select {
   white-space: nowrap;
 }
 
+/// The row opens the item, so the pointer says so - except over the two cells whose clicks mean
+/// something of their own: the checkbox, and the buttons at the end of the row.
+tbody tr.row {
+  cursor: pointer;
+}
+
+tbody td.select,
+tbody td.actions {
+  cursor: default;
+}
+
 /// A value cell is one line: a Markdown body or a long title would otherwise make the row as tall
 /// as the text, and a table nobody can scan is what choosing columns is for. The whole value is on
 /// the cell's title.

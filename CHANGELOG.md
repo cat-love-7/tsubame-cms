@@ -72,6 +72,15 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   second edit used to mean finding the item again.
 - **Copying an item asks first**, like every other button on that row (delete, publish, unpublish,
   discard): the copy is created and opened only once the question is answered.
+- **A list row opens its item.** Clicking anywhere on a row of a Collection list opens that item's
+  editor, which is what clicking a page's name already did in the Single page list - the two screens
+  now answer the same click the same way. The cells holding a control of their own (the selection
+  checkbox, the row's buttons) keep their clicks, and the edit icon stays for the keyboard and for a
+  name to read.
+- **A row's buttons stay in reach however many columns the Schema shows.** Copy and delete moved
+  behind the row's **⋮** menu, and the actions column is pinned to the right edge of the list: a Schema
+  marking many fields for the list made the table wider than the window, and the buttons travelled off
+  it with the last columns. What the account may do is still the only thing the menu holds.
 - **The comparison of a draft against what is published is sized to its content.** It used to draw
   each side with the box the Schema asks for, so a paragraph sat under the height of a twelve-row
   editor; a multi-line Text or Markdown value is now rendered as text, and the cells inside a

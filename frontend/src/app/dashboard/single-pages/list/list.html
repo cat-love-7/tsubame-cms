@@ -19,12 +19,15 @@
       <!-- Status and, under it, who published (see the collection list). -->
       <th>{{ 'content.statusWithPublisher' | transloco }}</th>
       <th>{{ 'common.updated' | transloco }}</th>
-      <th></th>
+      <th class="actions"></th>
     </tr>
   </thead>
   <tbody>
     @for (name of names(); track name) {
-      <tr>
+      <!-- The row opens the page, as the name always has: a list where one screen answers a click
+           on the name and the other only answers a click on an icon is a list an editor has to
+           remember rather than read. The buttons at the end of the row keep their own clicks. -->
+      <tr class="row" (click)="open(name, $event)">
         <td>
           <a [routerLink]="['/single-pages', name]">{{ name }}</a>
         </td>

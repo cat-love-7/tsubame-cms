@@ -10,3 +10,12 @@
   text-align: right;
   white-space: nowrap;
 }
+
+/// The row opens the page, so the pointer says so - the buttons at the end of the row keep theirs.
+tbody tr.row {
+  cursor: pointer;
+}
+
+tbody td.actions {
+  cursor: default;
+}

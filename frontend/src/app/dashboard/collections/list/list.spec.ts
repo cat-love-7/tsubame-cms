@@ -1,6 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MatMenuTrigger } from '@angular/material/menu';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { stubActivatedRoute } from 'app/core/testing/activated-route';
 import { Observable, Subject, of, throwError } from 'rxjs';
@@ -518,6 +520,49 @@ describe('CollectionItemList', () => {
     expect(component).toBeTruthy();
   });
 
+  // The whole row opens the item, which is what the single-page list does with a page's name: an
+  // editor who has found their row should not have to aim at a small icon.
+  it('opens the editor when the row is clicked', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    const value = fixture.nativeElement.querySelector('tbody tr td:nth-child(2)') as HTMLElement;
+    value.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(navigate).toHaveBeenCalledWith(['/collections', 'blog', 'edit', 1]);
+  });
+
+  // The cells that carry a control of their own: a click on the checkbox or on the buttons means
+  // that control, and opening the editor on the way to it would cost the reader their place.
+  it('leaves the clicks on the checkbox and the row buttons to them', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    const select = fixture.nativeElement.querySelector('tbody td.select') as HTMLElement;
+    select.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const actions = fixture.nativeElement.querySelector('tbody td.actions') as HTMLElement;
+    actions.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  // Copying and deleting are not what a reader passes through the list to do, and a schema that
+  // shows many columns makes the end of the row the first thing to leave the screen. They sit
+  // behind one button, which is what keeps the row's own controls narrow.
+  it('keeps copying and deleting behind one button on the row', () => {
+    expect(fixture.nativeElement.querySelector('button[aria-label^="copy item"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('button[aria-label^="delete item"]')).toBeNull();
+
+    const trigger = fixture.debugElement.query(By.directive(MatMenuTrigger));
+    expect(trigger).toBeTruthy();
+    trigger.injector.get(MatMenuTrigger).openMenu();
+    fixture.detectChanges();
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.mat-mdc-menu-item')).map(
+      (item) => item.textContent ?? '',
+    );
+    expect(items.some((text) => text.includes('Copy item'))).toBe(true);
+    expect(items.some((text) => text.includes('Delete item'))).toBe(true);
+  });
+
   /** The server omits never-published items, so the screen has to default to Draft. */
   it('shows an item with no stored status as a draft', () => {
     fixture.detectChanges();
@@ -828,6 +873,8 @@ describe('CollectionItemList (read-only account)', () => {
     expect(fresh.nativeElement.querySelector('button[aria-label^="publish item"]')).toBeNull();
     expect(fresh.nativeElement.querySelector('.note')).toBeNull();
     expect(fresh.nativeElement.querySelector('button[aria-label^="delete item"]')).toBeNull();
+    // Nothing to copy and nothing to delete leaves no menu to open.
+    expect(fresh.nativeElement.querySelector('button[aria-label^="more actions"]')).toBeNull();
     expect(fresh.nativeElement.textContent).not.toContain('New item');
     // The rows themselves are still readable.
     expect(fresh.nativeElement.querySelectorAll('tbody tr').length).toBe(1);

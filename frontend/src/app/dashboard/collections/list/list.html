@@ -107,12 +107,16 @@
            the same label on every row. -->
       <th>{{ 'content.statusWithPublisher' | transloco }}</th>
       <th>{{ 'common.updated' | transloco }}</th>
-      <th></th>
+      <th class="actions"></th>
     </tr>
   </thead>
   <tbody>
     @for (row of rows(); track row.id) {
-      <tr>
+      <!-- The row itself opens the item: an editor who has found their row should not have to aim at
+           a small icon, and it is what the single-page list already does with the page's name. The
+           cells that carry a control of their own - the checkbox, and the buttons on the right - ask
+           for that control instead, so a click there is not a navigation. -->
+      <tr class="row" (click)="open(row.id, $event)">
         <td class="select">
           @if (canPublish()) {
             <input
@@ -204,27 +208,35 @@
           >
             <mat-icon>edit</mat-icon>
           </button>
-          @if (canEdit()) {
-            <!-- The copy opens straight away, after a confirmation: duplicating is only useful
-                 if the next act is editing it, and the button is easy to hit on the way to "edit". -->
+          @if (canEdit() || canPublish()) {
+            <!-- Copying and deleting are the two acts on a row nobody reaches for twice in a minute,
+                 and a schema that shows many columns is wide enough that the last buttons were
+                 pushed off the screen. They are behind one button instead, which keeps the row's
+                 own controls narrow whatever the schema asks to show. -->
             <button
               matIconButton
-              (click)="duplicate(row.id)"
-              [attr.aria-label]="'labels.duplicateItem' | transloco: { id: row.id }"
-              [matTooltip]="'labels.duplicateItem' | transloco: { id: row.id }"
+              [matMenuTriggerFor]="rowMenu"
+              [attr.aria-label]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
+              [matTooltip]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
             >
-              <mat-icon>content_copy</mat-icon>
+              <mat-icon>more_vert</mat-icon>
             </button>
-          }
-          @if (canPublish()) {
-            <button
-              matIconButton
-              (click)="delete(row.id)"
-              [attr.aria-label]="'labels.deleteItem' | transloco: { id: row.id }"
-              [matTooltip]="'labels.deleteItem' | transloco: { id: row.id }"
-            >
-              <mat-icon>delete</mat-icon>
-            </button>
+            <mat-menu #rowMenu="matMenu">
+              @if (canEdit()) {
+                <!-- The copy opens straight away, after a confirmation: duplicating is only useful
+                     if the next act is editing it. -->
+                <button mat-menu-item (click)="duplicate(row.id)">
+                  <mat-icon>content_copy</mat-icon>
+                  {{ 'content.copyItem' | transloco }}
+                </button>
+              }
+              @if (canPublish()) {
+                <button mat-menu-item (click)="delete(row.id)">
+                  <mat-icon>delete</mat-icon>
+                  {{ 'content.deleteItem' | transloco }}
+                </button>
+              }
+            </mat-menu>
           }
         </td>
       </tr>

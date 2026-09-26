@@ -1,5 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -11,6 +11,7 @@ import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadata, ItemStatus } from 'app/models/item-status';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
 import { ItemStatusBadge } from 'app/shared/item-status/item-status';
+import { clickedAControl } from 'app/shared/row-click';
 
 /**
  * Every single page, with the state of each.
@@ -35,6 +36,7 @@ import { ItemStatusBadge } from 'app/shared/item-status/item-status';
 })
 export class SinglePageList {
   private pages = inject(SinglePagesService);
+  private router = inject(Router);
   private dates = inject(DateTimeFormat);
   /** What the signed-in account may do; the server enforces the same rules. */
   public auth = inject(AuthService);
@@ -59,6 +61,20 @@ export class SinglePageList {
       next: (metadata) => this.metadata.set(metadata),
       error: (e) => this.error.set(failure('content.failedToLoadPublishedState', e)),
     });
+  }
+
+  /**
+   * Open the page's editor.
+   *
+   * The whole row is the target, which is what the name link has always done. A click that landed
+   * on the name link itself or on a button of the row is left to that control: the link navigates
+   * on its own, and a button means publishing, not editing.
+   */
+  open(name: string, event: MouseEvent) {
+    if (clickedAControl(event.target)) {
+      return;
+    }
+    void this.router.navigate(['/single-pages', name]);
   }
 
   statusOf(name: string): ItemStatus {

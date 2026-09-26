@@ -88,6 +88,18 @@ the same file.
   delivery API's `?populate=`, not the job of a list cell.
 - Cell values are assembled only once per row (`rows` in `list.ts`). The image column reads one value in two ways,
   "how many" and "how many there were", so calling it repeatedly from template bindings is wasteful.
+- **A row opens its item**: clicking anywhere on a row of the Collection list (or of the Single page list) opens that
+  item's edit screen, which is what clicking a page's name has always done in the Single page list - the two screens now
+  answer the same click the same way. The cells that carry a control of their own are left out
+  (`clickedAControl` in `shared/row-click.ts`): a click on the selection checkbox or on a row's
+  buttons is that control's, and navigating on the way there would cost the reader their place in
+  the list. The edit icon stays, so the keyboard and the reading keep a named way in.
+- **The row-actions column is pinned**: copying and deleting are behind the row's **⋮** (`more_vert`) menu, and the
+  column itself is `position: sticky; right: 0` with an opaque background (the row's hover colour is repeated on the
+  cell, or the pinned cell would keep the plain one). A Schema that marks many fields for the list makes the table wider
+  than the window, and before this the buttons travelled off the right edge with the last columns; a Schema now costs
+  width when its list columns grow, never the buttons. Only what the account may do is in the menu, and an account with
+  neither copy nor delete gets no ⋮ button at all.
 - **Accounts were inside the Schema**: the fourth item under "Settings → Schema" in the sidebar was
   "Accounts". What a Schema describes is **content**, and an Account is not content.
   It was made a sibling of "Schema" directly under Settings, and the name also stays `accounts.title`, the same as on the screen
