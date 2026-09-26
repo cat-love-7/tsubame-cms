@@ -228,7 +228,7 @@ describe('CollectionItemList', () => {
       fixture.nativeElement.querySelectorAll<HTMLElement>('thead th'),
       (cell: HTMLElement) => cell.textContent?.trim(),
     );
-    expect(headers).toEqual(['', 'ID', 'title', 'count', 'Status', 'Updated', '']);
+    expect(headers).toEqual(['', 'ID', 'title', 'count', 'Status (publisher)', 'Updated', '']);
 
     // The values of the columns it does show, and not the one it does not.
     const cells = Array.from(
@@ -256,7 +256,7 @@ describe('CollectionItemList', () => {
       fixture.nativeElement.querySelectorAll<HTMLElement>('thead th'),
       (cell: HTMLElement) => cell.textContent?.trim(),
     );
-    expect(headers).toEqual(['', 'ID', 'Status', 'Updated', '']);
+    expect(headers).toEqual(['', 'ID', 'Status (publisher)', 'Updated', '']);
 
     const cells = Array.from(
       fixture.nativeElement.querySelectorAll<HTMLElement>('tbody tr td'),

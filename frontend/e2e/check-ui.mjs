@@ -537,7 +537,7 @@ async function firstPage() {
   );
   check(
     '一覧に表示を選んでいないコレクションは id・状態・更新日時だけ',
-    unconfiguredHeaders.join(',') === ',ID,Status,Updated,',
+    unconfiguredHeaders.join(',') === ',ID,Status (publisher),Updated,',
     unconfiguredHeaders.join(','),
   );
 
@@ -1809,7 +1809,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   );
   check(
     '一覧には「一覧に表示」の項目だけが並ぶ',
-    listedHeaders.join(',') === ',ID,summary,related,Status,Updated,' ||
+    listedHeaders.join(',') === ',ID,summary,related,Status (publisher),Updated,' ||
       (listedHeaders.includes('summary') &&
         listedHeaders.includes('related') &&
         !listedHeaders.includes('title') &&

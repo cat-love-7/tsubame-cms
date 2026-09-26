@@ -103,7 +103,9 @@
           </button>
         </th>
       }
-      <th>{{ 'common.status' | transloco }}</th>
+      <!-- Status and, under it, who published: the heading is where that is said, rather than
+           the same label on every row. -->
+      <th>{{ 'content.statusWithPublisher' | transloco }}</th>
       <th>{{ 'common.updated' | transloco }}</th>
       <th></th>
     </tr>
