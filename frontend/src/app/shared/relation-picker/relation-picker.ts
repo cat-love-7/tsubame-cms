@@ -5,6 +5,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
 import { TranslocoPipe } from '@jsverse/transloco';
 import { forkJoin } from 'rxjs';
 
@@ -32,8 +33,11 @@ const CANDIDATES = 100;
 /**
  * Choosing what a relation points at, by name.
  *
- * Candidates are loaded when the panel is opened, not when the field is drawn: a content form can
- * hold several relation fields, and only the one an editor opens is worth a request.
+ * A field declares one target for a `Relation` and one per item type for an array of them, so the
+ * picker offers whichever target is chosen and switches between them (with one target there is
+ * nothing to switch). Candidates are loaded when the panel is opened, not when the field is drawn:
+ * a content form can hold several relation fields, and only the one an editor opens is worth a
+ * request.
  */
 @Component({
   selector: 'app-relation-picker',
@@ -44,6 +48,7 @@ const CANDIDATES = 100;
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
+    MatSelectModule,
     MessagePipe,
     TranslocoPipe,
   ],
@@ -54,11 +59,11 @@ export class RelationPicker implements OnInit {
   private collections = inject(CollectionsService);
   private pages = inject(SinglePagesService);
 
-  /** What the relation points at: a collection's items, or a single page. */
-  @Input({ required: true }) target!: RelationTarget;
+  /** What the relation may point at: a collection's items, a single page, or one of each. */
+  @Input({ required: true }) targets: RelationTarget[] = [];
   /** What is already referenced, so the list can show it as picked. */
   @Input() selected: RelationRef[] = [];
-  /** Whether several may be referenced, which is the field's own `has_many`. */
+  /** Whether several may be referenced, which is an array of relations. */
   @Input() multiple = false;
   @Output() toggled = new EventEmitter<RelationRef>();
   @Output() closed = new EventEmitter<void>();
@@ -67,9 +72,36 @@ export class RelationPicker implements OnInit {
   public filter = signal('');
   public loading = signal(true);
   public error = signal<Message | null>(null);
+  /** Which target's candidates are listed; the first usable one until the editor picks another. */
+  public chosenTarget = signal<RelationTarget | null>(null);
 
   ngOnInit() {
-    this.load();
+    const first = this.usableTargets()[0] ?? null;
+    this.chosenTarget.set(first);
+    this.load(first);
+  }
+
+  /** The declared targets, minus the ones whose name has not been chosen yet. */
+  usableTargets(): RelationTarget[] {
+    return this.targets.filter((target) => target.name.trim() !== '');
+  }
+
+  /** The key a target is identified by, exposed for the template. */
+  targetKey(target: RelationTarget): string {
+    return `${target.kind}:${target.name}`;
+  }
+
+  /** The chosen target as a key, for the selector. */
+  chosenTargetKey(): string {
+    const target = this.chosenTarget();
+    return target === null ? '' : this.targetKey(target);
+  }
+
+  /** Switch which target's candidates are listed. */
+  chooseTarget(key: string) {
+    const target = this.usableTargets().find((candidate) => this.targetKey(candidate) === key);
+    this.chosenTarget.set(target ?? null);
+    this.load(target ?? null);
   }
 
   /** The candidates the filter leaves, in the order the target lists them. */
@@ -90,50 +122,53 @@ export class RelationPicker implements OnInit {
     this.toggled.emit(candidate.reference);
   }
 
-  private load() {
-    if (this.target.name.trim() === '') {
+  private load(target: RelationTarget | null) {
+    this.candidates.set([]);
+    this.error.set(null);
+    if (target === null || target.name.trim() === '') {
       // A relation whose target has not been chosen yet: nothing to offer, and no request to make.
       this.loading.set(false);
       return;
     }
-    if (this.target.kind === 'single_page') {
+    this.loading.set(true);
+    if (target.kind === 'single_page') {
       this.loadPages();
       return;
     }
-    this.loadItems();
+    this.loadItems(target);
   }
 
   /** A collection's items, with the name each one's schema gives it. */
-  private loadItems() {
+  private loadItems(target: RelationTarget) {
     this.collections
-      .listCollectionItemsPage(this.target.name, { limit: CANDIDATES, offset: 0 })
+      .listCollectionItemsPage(target.name, { limit: CANDIDATES, offset: 0 })
       .subscribe({
         next: (page) => {
           const ids = page.items.map(([id]) => id);
-          this.collections.getItemTitles(this.target.name, ids).subscribe({
+          this.collections.getItemTitles(target.name, ids).subscribe({
             next: (titles) => {
               this.candidates.set(
                 page.items.map(([id]) => ({
-                  reference: { target: this.target.name, item: id },
-                  label: labelOf(titles[String(id)], `${this.target.name} #${id}`),
+                  reference: { target: target.name, item: id },
+                  label: labelOf(titles[String(id)], `${target.name} #${id}`),
                 })),
               );
               this.loading.set(false);
             },
             // The items are here and their names are not: the reference is what is left, and it is
             // still something to pick.
-            error: () => this.showItemsWithoutTitles(ids),
+            error: () => this.showItemsWithoutTitles(target.name, ids),
           });
         },
         error: (e) => this.failed(e),
       });
   }
 
-  private showItemsWithoutTitles(ids: number[]) {
+  private showItemsWithoutTitles(name: string, ids: number[]) {
     this.candidates.set(
       ids.map((id) => ({
-        reference: { target: this.target.name, item: id },
-        label: `${this.target.name} #${id}`,
+        reference: { target: name, item: id },
+        label: `${name} #${id}`,
       })),
     );
     this.loading.set(false);

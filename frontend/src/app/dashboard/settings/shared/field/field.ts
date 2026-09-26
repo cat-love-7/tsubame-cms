@@ -28,6 +28,8 @@ import {
   IsEnumFieldSchemaPipe,
   IsMarkdownFieldSchema,
   IsTextFieldSchema,
+  RelationArrayItemType,
+  RelationOptions,
   isArrayFieldSchema,
   isCompositeFieldSchema,
   isMarkdownFieldSchema,
@@ -122,14 +124,18 @@ export class Field implements OnInit, OnChanges {
   public compositeIds: string[] = [];
 
   /**
-   * The two halves of an array's item types.
+   * The three halves of an array's item types.
    *
    * Cached rather than computed in the template: a method that returned a fresh array would
    * hand the multi-select a new value on every change detection pass, and the binding would
-   * never settle.
+   * never settle. Relations are cached too, because each one carries a target and an inverse
+   * name that are edited in a control of their own.
    */
   public scalarTypes: FieldType[] = [];
   public compositeTypeIds: string[] = [];
+  public relationItems: RelationOptions[] = [];
+  /** What the item-type multi-select shows as selected: the scalars, plus one marker for relations. */
+  public selectedItemTypes: FieldType[] = [];
 
   /**
    * The names a relation may point at, by target kind.
@@ -217,27 +223,6 @@ export class Field implements OnInit, OnChanges {
     return this.relationTargetKind() === 'single_page' ? this.pageNames : this.collectionNames;
   }
 
-  /**
-   * Whether several may be referenced, as the checkbox binds it.
-   *
-   * A getter/setter pair because the value lives inside the relation's options rather than on the
-   * field itself, which is what lets the control be an ordinary two-way binding like the other
-   * checkboxes on this screen.
-   */
-  get relationHasMany(): boolean {
-    return this.relation()?.has_many ?? false;
-  }
-
-  set relationHasMany(hasMany: boolean) {
-    const options = this.relation();
-    // A page is one item, so "several" is not a choice there; the server refuses it too.
-    if (!options || options.target.kind === 'single_page') {
-      return;
-    }
-    options.has_many = hasMany;
-    this.fieldChange.emit(this.field);
-  }
-
   relationInverseName(): string {
     return this.relation()?.inverse_name ?? '';
   }
@@ -252,10 +237,6 @@ export class Field implements OnInit, OnChanges {
       return;
     }
     options.target = { kind, name: '' };
-    if (kind === 'single_page') {
-      // A page is one item, so it can only be a single reference; the server refuses otherwise.
-      options.has_many = false;
-    }
     this.fieldChange.emit(this.field);
   }
 
@@ -323,7 +304,12 @@ export class Field implements OnInit, OnChanges {
    * keeps it.
    */
   private loadRelationTargets() {
-    if (this.relationTargetsRequested || !isRelationFieldSchema(this.field.field_type)) {
+    // An array may hold relation item types too, so its editor needs the lists even though the
+    // field itself is not a relation.
+    if (
+      this.relationTargetsRequested ||
+      !(isRelationFieldSchema(this.field.field_type) || isArrayFieldSchema(this.field.field_type))
+    ) {
       return;
     }
     this.relationTargetsRequested = true;
@@ -343,6 +329,13 @@ export class Field implements OnInit, OnChanges {
     this.compositeTypeIds = items
       .filter(isCompositeFieldSchema)
       .map((item) => item.CompositeField.id);
+    this.relationItems = items.filter(isRelationFieldSchema).map((item) => item.Relation);
+    // One marker stands for every relation item type: the multi-select is a set, and what each
+    // relation item type is configured with is chosen underneath it.
+    this.selectedItemTypes =
+      this.relationItems.length > 0
+        ? [...this.scalarTypes, RelationArrayItemType]
+        : [...this.scalarTypes];
   }
 
   private arrayItemTypes(): FieldType[] {
@@ -351,10 +344,23 @@ export class Field implements OnInit, OnChanges {
   }
 
   /**
+   * Whether two item types are the same choice in the multi-select.
+   *
+   * A relation item type is a configured object rather than a name, and any of them is the one
+   * `Relation` choice, so they all compare equal to the marker.
+   */
+  public compareItemTypes(first: FieldType, second: FieldType): boolean {
+    if (isRelationFieldSchema(first) && isRelationFieldSchema(second)) {
+      return true;
+    }
+    return first === second;
+  }
+
+  /**
    * Array item types are untyped on the wire, so `Number` and `Image` cannot be combined
    * (an image id is a number). The binding is one-way, so `field.field_type.Array` is
-   * still the previous selection here. The composite references are carried over: they are
-   * chosen in their own control, and dropping them here would lose them silently.
+   * still the previous selection here. The composite and relation item types are carried over:
+   * they are chosen in their own controls, and dropping them here would lose them silently.
    */
   public onScalarItemTypesChange(selected: FieldType[]) {
     const fieldType = this.field.field_type;
@@ -364,8 +370,23 @@ export class Field implements OnInit, OnChanges {
     // Read the previous selection from the field, not from the cached binding: the cache is
     // for the control, and this decision is about what the field holds right now.
     const previous = fieldType.Array.filter((item) => typeof item === 'string');
+    const selectedScalars = selected.filter((item) => typeof item === 'string');
     const composites = fieldType.Array.filter(isCompositeFieldSchema);
-    fieldType.Array = [...reconcileArrayItemTypes(previous, selected), ...composites];
+    const choseRelations = selected.some(isRelationFieldSchema);
+    const relations = fieldType.Array.filter(isRelationFieldSchema).map((item) => item.Relation);
+    // Choosing Relation starts one item type; more targets are added in the relation control, and
+    // unchoosing it drops them all.
+    const kept =
+      choseRelations && relations.length > 0
+        ? relations
+        : choseRelations
+          ? [{ target: { kind: 'collection', name: '' } } as RelationOptions]
+          : [];
+    fieldType.Array = [
+      ...reconcileArrayItemTypes(previous, selectedScalars),
+      ...composites,
+      ...kept.map((options) => ({ Relation: options })),
+    ];
     this.refreshItemTypes();
     this.fieldChange.emit(this.field);
   }
@@ -377,7 +398,89 @@ export class Field implements OnInit, OnChanges {
       return;
     }
     const scalars = fieldType.Array.filter((item) => typeof item === 'string');
-    fieldType.Array = [...scalars, ...ids.map((id) => ({ CompositeField: { id } }))];
+    const relations = fieldType.Array.filter(isRelationFieldSchema);
+    fieldType.Array = [...scalars, ...ids.map((id) => ({ CompositeField: { id } })), ...relations];
+    this.refreshItemTypes();
+    this.fieldChange.emit(this.field);
+  }
+
+  /** Add a relation item type, for an array that already holds at least one. */
+  public addRelationItemType() {
+    const options: RelationOptions = { target: { kind: 'collection', name: '' } };
+    this.relationItems = [...this.relationItems, options];
+    this.writeRelationItems();
+  }
+
+  /** Take one relation item type away. */
+  public removeRelationItemType(index: number) {
+    this.relationItems = this.relationItems.filter((_, other) => other !== index);
+    this.writeRelationItems();
+  }
+
+  /** The kind of a relation item type's target. */
+  public arrayRelationTargetKind(index: number): 'collection' | 'single_page' {
+    return this.relationItems[index]?.target.kind ?? 'collection';
+  }
+
+  /**
+   * The names one relation item type could point at.
+   *
+   * A target already claimed by another item type is left out: an array may name each target once,
+   * and the server refuses a schema that names one twice.
+   */
+  public arrayRelationTargetNames(index: number): string[] {
+    const item = this.relationItems[index];
+    if (item === undefined) {
+      return [];
+    }
+    const names = item.target.kind === 'single_page' ? this.pageNames : this.collectionNames;
+    const taken = this.relationItems
+      .filter((_, other) => other !== index)
+      .filter((other) => other.target.kind === item.target.kind)
+      .map((other) => other.target.name);
+    return names.filter((name) => !taken.includes(name) || name === item.target.name);
+  }
+
+  /** Switching the kind of a relation item type clears its name, which is a different target. */
+  public setArrayRelationTargetKind(index: number, kind: 'collection' | 'single_page') {
+    const item = this.relationItems[index];
+    if (item === undefined || item.target.kind === kind) {
+      return;
+    }
+    item.target = { kind, name: '' };
+    this.writeRelationItems();
+  }
+
+  public setArrayRelationTargetName(index: number, name: string) {
+    const item = this.relationItems[index];
+    if (item === undefined) {
+      return;
+    }
+    item.target = { kind: item.target.kind, name };
+    this.writeRelationItems();
+  }
+
+  public arrayRelationInverseName(index: number): string {
+    return this.relationItems[index]?.inverse_name ?? '';
+  }
+
+  public setArrayRelationInverseName(index: number, name: string) {
+    const item = this.relationItems[index];
+    if (item === undefined) {
+      return;
+    }
+    item.inverse_name = name;
+    this.writeRelationItems();
+  }
+
+  /** Put the relation item types back into the array, after their own control changed one. */
+  private writeRelationItems() {
+    const fieldType = this.field.field_type;
+    if (!isArrayFieldSchema(fieldType)) {
+      return;
+    }
+    const others = fieldType.Array.filter((item) => !isRelationFieldSchema(item));
+    fieldType.Array = [...others, ...this.relationItems.map((options) => ({ Relation: options }))];
     this.refreshItemTypes();
     this.fieldChange.emit(this.field);
   }

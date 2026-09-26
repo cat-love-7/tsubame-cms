@@ -193,7 +193,7 @@ async function seed() {
       {
         name: 'author',
         field_type: {
-          Relation: { target: { kind: 'collection', name: COLLECTION }, has_many: false },
+          Relation: { target: { kind: 'collection', name: COLLECTION } },
         },
         required: false,
         width: 12,
@@ -1742,30 +1742,35 @@ async function theSchemaEditorDrivenFromTheScreen() {
     ),
   );
 
-  // A relation points at another collection's items - or at a single page - and how many it may
-  // hold is the field's own choice. The target list is what the server says exists.
+  // A relation points at another collection's items - or at a single page. Several references are
+  // an array of relations now, so "how many it may hold" is the array wrapper and each item type
+  // names one target. The target list is what the server says exists.
   await page.click('button:has-text("Add field")');
   const relationField = page.locator('.schema-field').nth(5);
   await relationField.locator('input[name=fieldName]').fill('related');
   // A relation is a column too: which author an article points at is exactly what identifies it.
   await relationField.locator('input[name=fieldInList]').check();
   await relationField.locator('mat-select[name=fieldType]').click();
+  await page.locator('mat-option', { hasText: 'Array' }).click();
+  // An array whose item types are relations is what several references are.
+  await relationField.locator('mat-select[name=arrayItemTypes]').click();
   await page.locator('mat-option', { hasText: 'Relation' }).click();
-  await relationField.locator('mat-select[name=relationTarget]').click();
-  await page.locator('mat-option', { hasText: COLLECTION }).click();
-  // The panel lingers over the form for a moment, and the checkbox is underneath it. The plain
-  // `check()` (not `force`) is what lets Playwright wait for the box to be clickable: a forced
-  // click at a stale point lands on the panel instead, and the box never changes state.
   await page.keyboard.press('Escape');
-  await relationField.locator('input[name=relationHasMany]').check();
-  await relationField.locator('input[name=relationInverseName]').fill('posts');
+  const relationItemType = relationField.locator('.array-relation-item').first();
+  await relationItemType.locator('mat-select[name=arrayRelationTarget]').click();
+  await page.locator('mat-option', { hasText: COLLECTION }).click();
+  await page.keyboard.press('Escape');
+  await relationItemType.locator('input[name=arrayRelationInverseName]').fill('posts');
   check(
     'リレーションの対象を画面で選べる',
-    ((await relationField.locator('mat-select[name=relationTarget]').textContent()) ?? '').includes(
-      COLLECTION,
+    ((await relationField.locator('mat-select[name=arrayItemTypes]').textContent()) ?? '').includes(
+      'Relation',
     ) &&
-      (await relationField.locator('input[name=relationHasMany]').isChecked()) &&
-      (await relationField.locator('input[name=relationInverseName]').inputValue()) === 'posts',
+      (
+        (await relationItemType.locator('mat-select[name=arrayRelationTarget]').textContent()) ?? ''
+      ).includes(COLLECTION) &&
+      (await relationItemType.locator('input[name=arrayRelationInverseName]').inputValue()) ===
+        'posts',
   );
 
   // Half of the 12-column grid, from the presets rather than the number input.
@@ -1795,10 +1800,9 @@ async function theSchemaEditorDrivenFromTheScreen() {
       builtEnum?.field_type?.TextEnum?.join() === 'published' &&
       builtArray?.field_type?.Array?.[0]?.CompositeField?.id === SCHEMA_BLOCK &&
       builtSlug?.field_type?.Slug?.generate_from === 'title' &&
-      builtRelation?.field_type?.Relation?.target?.kind === 'collection' &&
-      builtRelation?.field_type?.Relation?.target?.name === COLLECTION &&
-      builtRelation?.field_type?.Relation?.has_many === true &&
-      builtRelation?.field_type?.Relation?.inverse_name === 'posts',
+      builtRelation?.field_type?.Array?.[0]?.Relation?.target?.kind === 'collection' &&
+      builtRelation?.field_type?.Array?.[0]?.Relation?.target?.name === COLLECTION &&
+      builtRelation?.field_type?.Array?.[0]?.Relation?.inverse_name === 'posts',
     JSON.stringify(builtSchema),
   );
 
@@ -2085,11 +2089,11 @@ async function theSchemaEditorDrivenFromTheScreen() {
     JSON.stringify(builtItem?.related),
   );
   // The reference inside the block was saved where it was picked, not flattened or dropped: an
-  // element carries the value that sits in it.
+  // element carries the value that sits in it, and one relation is the bare reference.
   const savedBlockRelationship = builtItem?.blocks?.[0]?.values?.author;
   check(
     '複合の中の参照が保存される',
-    JSON.stringify(savedBlockRelationship) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
+    JSON.stringify(savedBlockRelationship) === JSON.stringify({ target: COLLECTION, item: 1 }),
     JSON.stringify(savedBlockRelationship),
   );
   // And the index sees it: the item that holds it is a referrer of the item it names, which is

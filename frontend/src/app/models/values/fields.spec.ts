@@ -23,6 +23,8 @@ describe('formatFieldValue', () => {
   // A relation is what the item points at: expanding the content itself is the delivery API's job
   // (`?populate=`), and a cell has no business printing the reference as JSON.
   it('names a relation by its target and item', () => {
+    // One relation is one object; several are an array of them.
+    expect(formatFieldValue({ target: 'authors', item: 7 })).toBe('authors #7');
     expect(formatFieldValue([{ target: 'authors', item: 7 }])).toBe('authors #7');
     expect(
       formatFieldValue([
@@ -32,6 +34,7 @@ describe('formatFieldValue', () => {
     ).toBe('authors #7, authors #9');
     // A single page has no id, because its name is its identity.
     expect(formatFieldValue([{ target: 'home' }])).toBe('home');
+    expect(formatFieldValue({ target: 'home' })).toBe('home');
   });
 
   it('falls back to the JSON for a value it has no rendering for', () => {
@@ -62,11 +65,17 @@ describe('imagesOf', () => {
 
 describe('references', () => {
   it('reads the references out of a relation value', () => {
+    // One relation is one object, and several are an array of them.
+    expect(relationRefsOf({ target: 'authors', item: 1 })).toEqual([
+      { target: 'authors', item: 1 },
+    ]);
+    expect(relationRefsOf({ target: 'home' })).toEqual([{ target: 'home' }]);
     expect(relationRefsOf([{ target: 'authors', item: 1 }, { target: 'home' }])).toEqual([
       { target: 'authors', item: 1 },
       { target: 'home' },
     ]);
     expect(relationRefsOf([])).toEqual([]);
+    expect(relationRefsOf(null)).toEqual([]);
     expect(relationRefsOf('not a relation')).toEqual([]);
     expect(relationRefsOf([{ item: 1 }, 'x'])).toEqual([]);
   });

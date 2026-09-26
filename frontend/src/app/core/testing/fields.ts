@@ -29,11 +29,12 @@ export const COMPOSITE_DEFINITIONS: { [id: string]: CompositeFieldDefinition } =
     field('headline', { Text: {} }, { width: 8, height: 2 }),
     field('aside', { Text: {} }, { width: 4 }),
   ],
-  // A definition that holds a relation: the target is a collection of the site, and the field that
-  // embeds the definition is what declares it.
+  // A definition that holds several references: an array whose item type is a relation, which is
+  // what "several" is now. The target is a collection of the site, and the field that embeds the
+  // definition is what declares it.
   cta: [
     field('author', {
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+      Array: [{ Relation: { target: { kind: 'collection', name: 'authors' } } }],
     }),
   ],
   // A definition holding the kinds whose box is as tall as the Schema asks, for the comparison:

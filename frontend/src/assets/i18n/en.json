@@ -221,15 +221,14 @@
     "compositeUndefined": "Composite field '{{id}}' is not defined, so this value cannot be edited. Its existing value is kept.",
     "invalidJson": "Field '{{field}}': invalid JSON",
     "expectedJsonArray": "Field '{{field}}': expected a JSON array",
-    "relationPlaceholder": "JSON references, e.g. [{\"target\": \"authors\", \"item\": 1}]",
-    "relationJsonHintMany": "References to the collection \"{{target}}\": a list of { \"target\": \"{{target}}\", \"item\": <id> }, any number of them.",
-    "relationJsonHintOne": "A reference to the collection \"{{target}}\": a list with at most one { \"target\": \"{{target}}\", \"item\": <id> }.",
-    "relationJsonHintPage": "A reference to the single page \"{{target}}\": a list with at most one { \"target\": \"{{target}}\" } — a page has no item id.",
+    "relationPlaceholder": "JSON references, e.g. {\"target\": \"authors\", \"item\": 1} or a list of them",
+    "relationJsonHintMany": "References to one of these targets ({{targets}}): a list of { \"target\": …, \"item\": <id> } objects, or [].",
+    "relationJsonHintOne": "A reference to the collection \"{{target}}\": { \"target\": \"{{target}}\", \"item\": <id> }, or null.",
+    "relationJsonHintPage": "A reference to the single page \"{{target}}\": { \"target\": \"{{target}}\" }, or null — a page has no item id.",
     "relationShape": "'{{field}}' is not a reference: each one is an object with a target and, for a collection, an item id.",
-    "relationTargetMismatch": "'{{field}}' does not name this field's target ({{target}}).",
+    "relationTargetMismatch": "'{{field}}' does not name one of this field's targets ({{targets}}).",
     "relationItemId": "'{{field}}' needs the id of the item it points at.",
     "relationPageHasNoItem": "'{{field}}' points at a single page, which has no item id.",
-    "relationSingle": "Field '{{field}}' holds one reference, so its list can hold at most one.",
     "uploadFailed": "Upload failed: {{message}}",
     "failedToLoadImages": "Failed to load the images: {{message}}",
     "failedToLoadSchema": "Failed to load the schema: {{message}}",
@@ -290,7 +289,9 @@
     "mdBoldPlaceholder": "bold text",
     "mdItalicPlaceholder": "italic text",
     "mdLinkPlaceholder": "link text",
-    "mdLinkPrompt": "Where should the link go?"
+    "mdLinkPrompt": "Where should the link go?",
+    "relationExpectedOne": "Field '{{field}}': expected one reference object, or null",
+    "referenceTarget": "Target"
   },
   "errors": {
     "invalid_credentials": "That ID and password do not match.",
@@ -344,7 +345,6 @@
     "relationTarget": "Target",
     "relationTargetHint": "Only collections and single pages that exist can be chosen.",
     "relationNoTargets": "There is nothing of this kind yet.",
-    "relationHasMany": "Several references",
     "relationInverseName": "Name on the other side",
     "relationInverseHint": "What the other side calls this relation, for screens and for ?populate=. A label: nothing is stored on the target.",
     "arrayItemTypesHere": "Array item types are configured on the field itself.",
@@ -377,7 +377,11 @@
     "previewAllowed": "Allow preview links",
     "previewAllowedHint": "A preview link shows this schema's unpublished working copies, without an account, to whoever holds the URL. It needs a preview site to open.",
     "multiline": "Several lines",
-    "multilineHint": "The field is written in a box instead of one line. How tall the box may be is the field height above."
+    "multilineHint": "The field is written in a box instead of one line. How tall the box may be is the field height above.",
+    "arrayRelationTypes": "Relation item types",
+    "arrayRelationHint": "One item type per target: a target another item type already names is not offered again.",
+    "addRelationItemType": "Add relation item type",
+    "removeRelationItemType": "remove relation item type {{index}}"
   },
   "labels": {
     "toggleNavigation": "Toggle navigation",

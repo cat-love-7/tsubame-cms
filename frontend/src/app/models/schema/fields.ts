@@ -76,13 +76,11 @@ export type RelationTarget =
 /**
  * What a relation field is told, matching the Rust `RelationOptions`.
  *
- * A reference is a *set*: the order an editor sent does not survive, and the same reference twice
- * is one reference.
+ * A relation holds exactly one reference. Several references are an `Array` whose item types are
+ * relations, and then each item type carries its own target and inverse name.
  */
 export type RelationOptions = {
   target: RelationTarget;
-  /** Whether several may be referenced at once. Always false for a single page. */
-  has_many?: boolean;
   /** What the other side is called in screens and in `?populate=`. A label, not a second field. */
   inverse_name?: string;
 };
@@ -118,7 +116,7 @@ export const FieldDefaults: FieldTypeMap = {
   CompositeField: { CompositeField: { id: '' } },
   // A new relation starts as "points at a collection", with the name still to be chosen - the
   // server refuses a target that does not exist, so the choice has to be made before a save.
-  Relation: { Relation: { target: { kind: 'collection', name: '' }, has_many: false } },
+  Relation: { Relation: { target: { kind: 'collection', name: '' } } },
   Array: { Array: [] },
   TextEnum: { TextEnum: [] },
 };
@@ -240,24 +238,39 @@ export function schemaForSaving(fields: FieldSchema[]): FieldSchema[] {
       };
     }
     if (isRelationFieldSchema(type)) {
-      const { target, has_many, inverse_name } = type.Relation;
-      const inverse = inverse_name?.trim();
+      return {
+        ...field,
+        field_type: { Relation: relationOptionsForSaving(type.Relation) },
+      };
+    }
+    if (isArrayFieldSchema(type)) {
+      // An array item type may be a relation too, and each one carries its own inverse name; a
+      // blank one is left off the wire there exactly as it is on a field of its own.
       return {
         ...field,
         field_type: {
-          Relation: {
-            target,
-            // A single page is one item, so it can only ever be a single reference; the server
-            // refuses anything else, and the editor's checkbox is disabled there.
-            has_many: target.kind === 'single_page' ? false : Boolean(has_many),
-            // A blank name is not a label: the server refuses it, so it is left off the wire.
-            ...(inverse ? { inverse_name: inverse } : {}),
-          },
+          Array: type.Array.map((item) =>
+            isRelationFieldSchema(item)
+              ? { Relation: relationOptionsForSaving(item.Relation) }
+              : item,
+          ),
         },
       };
     }
     return field;
   });
+}
+
+/**
+ * A relation's options as they go on the wire: a blank inverse name is not a label, and the server
+ * refuses one, so it is left off.
+ */
+function relationOptionsForSaving(options: RelationOptions): RelationOptions {
+  const inverse = options.inverse_name?.trim();
+  return {
+    target: options.target,
+    ...(inverse ? { inverse_name: inverse } : {}),
+  };
 }
 
 export function isTextFieldSchema(field: FieldType): field is TextFieldSchema {
@@ -286,10 +299,24 @@ export function isEnumFieldSchema(field: FieldType): field is EnumFieldSchema {
 }
 
 /**
+ * The array item type that stands for "relations".
+ *
+ * One entry in the item-type list, because the editor's multi-select is a set; the item types a
+ * field actually declares are configured one by one underneath it (a target and an inverse name
+ * each), which is also what lets one array hold several of them.
+ */
+export const RelationArrayItemType: FieldType = {
+  Relation: { target: { kind: 'collection', name: '' } },
+};
+
+/**
  * Field types that can appear as array items.
  *
- * Text/Markdown/Array/TextEnum/CompositeField are omitted because they carry
- * configuration of their own that this editor does not collect yet.
+ * Text/Markdown/Array/TextEnum are omitted because they carry configuration of their own that this
+ * editor does not collect yet.
+ *
+ * `Relation` is allowed, and that is what several references are: each relation item type names one
+ * target, and an array may declare several.
  *
  * `Image` is allowed, but not together with `Number`: array items carry no type tag and
  * an image id is a JSON number, so a bare number would be ambiguous. Either on its own
@@ -302,7 +329,39 @@ export const ArrayItemTypeOptions: { label: string; value: FieldType }[] = [
   { label: 'Date', value: 'Date' },
   { label: 'DateTime', value: 'DateTime' },
   { label: 'Image', value: 'Image' },
+  { label: 'Relation', value: RelationArrayItemType },
 ];
+
+/**
+ * The relation item types a field declares, in the order they appear.
+ *
+ * A `Relation` is one, and `Array([Relation(…)])` is one per declared item type (which is also why
+ * an array may point at several targets). Any other type declares none, so this is what a widget
+ * reads to know the targets a value may name.
+ */
+export function relationOptionsOf(fieldType: FieldType): RelationOptions[] {
+  if (isRelationFieldSchema(fieldType)) {
+    return [fieldType.Relation];
+  }
+  if (isArrayFieldSchema(fieldType)) {
+    return fieldType.Array.filter(isRelationFieldSchema).map((item) => item.Relation);
+  }
+  return [];
+}
+
+/**
+ * An array whose every item type is a relation: the shape several references are written with.
+ *
+ * Only then is the chips widget drawn; a mixed array has no type tag on its elements, so it stays
+ * with the JSON editor (the same rule composite arrays follow).
+ */
+export function isRelationArraySchema(fieldType: FieldType): fieldType is ArrayFieldSchema {
+  return (
+    isArrayFieldSchema(fieldType) &&
+    fieldType.Array.length > 0 &&
+    fieldType.Array.every(isRelationFieldSchema)
+  );
+}
 
 /**
  * Apply the Number/Image exclusivity rule when the user changes an array's item types.

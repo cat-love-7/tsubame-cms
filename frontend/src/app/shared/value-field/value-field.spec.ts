@@ -463,10 +463,10 @@ describe('ValueField', () => {
     expect(query('.unique-mark')).toBeFalsy();
   });
 
-  // A relation may live inside a composite definition. The sub-field is edited by a widget of its
-  // own, which the nested editor brings with it, so choosing there is choosing for the composite
-  // that holds it.
-  it('edits a relation that lives inside a composite', async () => {
+  // Several references inside a composite are an array of relations, so the sub-field is edited by
+  // the relation widget in its many mode: choosing there is choosing for the composite that holds
+  // it.
+  it('edits an array of relations that lives inside a composite', async () => {
     const http = TestBed.inject(HttpTestingController);
     const component = create(field('cta', { CompositeField: { id: 'cta' } }), {
       id: 'cta',
@@ -485,10 +485,11 @@ describe('ValueField', () => {
 
     const nested = fixture.debugElement.queryAll(By.directive(ValueField)).at(-1)
       ?.componentInstance as ValueField;
-    expect(nested.kind()).toBe('Relation');
+    expect(nested.kind()).toBe('RelationArray');
     const relation = fixture.debugElement.queryAll(By.directive(RelationField)).at(-1)
       ?.componentInstance as RelationField;
     expect(relation.value).toEqual([{ target: 'authors', item: 1 }]);
+    expect(relation.multiple).toBe(true);
     expect(query('fieldset.composite button.relation-add')).toBeTruthy();
     const chips = Array.from(
       fixture.nativeElement.querySelectorAll<HTMLElement>(
@@ -498,7 +499,7 @@ describe('ValueField', () => {
     );
     expect(chips).toEqual(['Ada']);
 
-    // A set, so it grows; the emitted value is the whole composite, not the nested field alone.
+    // A list, so it grows; the emitted value is the whole composite, not the nested field alone.
     relation.toggleReference({ target: 'authors', item: 2 });
     expect(emitted.at(-1)).toEqual({
       author: [
@@ -512,16 +513,45 @@ describe('ValueField', () => {
   // and passes the value on, the way it does for every other kind.
   it('hands a relation value to the relation field', () => {
     const component = create(
-      field('authors', { Relation: { target: { kind: 'collection', name: 'authors' } } }),
-      [{ target: 'authors', item: 1 }],
+      field('author', { Relation: { target: { kind: 'collection', name: 'authors' } } }),
+      { target: 'authors', item: 1 },
     );
     const relation = fixture.debugElement.query(By.directive(RelationField))
       ?.componentInstance as RelationField;
 
-    expect(relation?.value).toEqual([{ target: 'authors', item: 1 }]);
+    expect(relation?.value).toEqual({ target: 'authors', item: 1 });
+    expect(relation?.multiple).toBe(false);
+    expect(relation?.targets).toEqual([{ kind: 'collection', name: 'authors' }]);
 
-    relation?.valueChange.emit([{ target: 'authors', item: 2 }]);
-    expect(component.value).toEqual([{ target: 'authors', item: 2 }]);
+    relation?.valueChange.emit({ target: 'authors', item: 2 });
+    expect(component.value).toEqual({ target: 'authors', item: 2 });
+  });
+
+  // Several references are an array whose item types are all relations, and they are edited with
+  // the same widget in its many mode rather than as JSON.
+  it('renders an array of relations as the relation field in its many mode', () => {
+    const component = create(
+      field('related', {
+        Array: [
+          { Relation: { target: { kind: 'collection', name: 'authors' } } },
+          { Relation: { target: { kind: 'single_page', name: 'home' } } },
+        ],
+      }),
+      [{ target: 'authors', item: 1 }, { target: 'home' }],
+    );
+    const relation = fixture.debugElement.query(By.directive(RelationField))
+      ?.componentInstance as RelationField;
+
+    expect(component.kind()).toBe('RelationArray');
+    expect(relation?.multiple).toBe(true);
+    expect(relation?.targets).toEqual([
+      { kind: 'collection', name: 'authors' },
+      { kind: 'single_page', name: 'home' },
+    ]);
+    expect(relation?.value).toEqual([{ target: 'authors', item: 1 }, { target: 'home' }]);
+
+    relation?.valueChange.emit([{ target: 'home' }]);
+    expect(component.value).toEqual([{ target: 'home' }]);
   });
 
   it('converts date-times between local input and RFC 3339', () => {

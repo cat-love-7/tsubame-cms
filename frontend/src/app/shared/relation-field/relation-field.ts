@@ -21,7 +21,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { Message, t } from 'app/core/i18n/message';
-import { FieldSchema, RelationTarget, isRelationFieldSchema } from 'app/models/schema/fields';
+import { FieldSchema, RelationTarget } from 'app/models/schema/fields';
 import {
   FieldValue,
   RelationRef,
@@ -35,10 +35,13 @@ import { RelationPicker } from 'app/shared/relation-picker/relation-picker';
 /**
  * A relation: what this field points at, by name.
  *
+ * One widget draws both shapes. A `Relation` holds one reference - `{target, item}` for an item,
+ * `{target}` for a page, or `null` - and an `Array([Relation(…)])` holds a list of the same
+ * objects, which is what several references are. `targets` is what the field's own schema declares:
+ * one for a relation, one per item type for an array.
+ *
  * The chips are the value, and the JSON box (which is what the API takes) stays behind a toggle for
- * a value the picker cannot express. The value is a set of references - `{target, item}` for an
- * item, `{target}` for a page - so every control here edits the same list, and the names come from
- * the target's own schema rather than from this client.
+ * a value the picker cannot express.
  */
 @Component({
   selector: 'app-relation-field',
@@ -61,6 +64,10 @@ export class RelationField implements OnInit, OnChanges {
   private destroyRef = inject(DestroyRef);
 
   @Input({ required: true }) field!: FieldSchema;
+  /** What the value may name: the field's target, or an array's one target per item type. */
+  @Input() targets: RelationTarget[] = [];
+  /** Whether the value is a list of references (an `Array` of relations) or one reference. */
+  @Input() multiple = false;
   @Input() value: FieldValue = null;
   /** Renders the chips read-only, for the schema editor's preview. */
   @Input() disabled = false;
@@ -88,7 +95,7 @@ export class RelationField implements OnInit, OnChanges {
 
   /** The last value this component emitted, so its own output is not mistaken for new input
    * (which would reset the JSON box mid-typing). */
-  private lastEmitted: FieldValue = null;
+  private lastEmitted: FieldValue | undefined = undefined;
 
   ngOnInit() {
     this.loadReferenceNames(this.value);
@@ -96,23 +103,18 @@ export class RelationField implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['value'] || changes['field']) {
+    if (changes['value'] || changes['field'] || changes['targets'] || changes['multiple']) {
       this.loadReferenceNames(this.value);
       this.syncJsonBox();
     }
   }
 
-  /** What this relation points at, as the picker wants it. */
-  relationTarget(): RelationTarget | null {
-    const type = this.field.field_type;
-    return isRelationFieldSchema(type) ? type.Relation.target : null;
-  }
-
   /**
-   * The references this field holds, as a set.
+   * The references this field holds, as a list.
    *
    * Read from the value rather than kept beside it: the chips, the picker and the JSON box all edit
-   * the one value, and a second copy is how the two drift apart.
+   * the one value, and a second copy is how the two drift apart. A single reference is a list of
+   * one here, which is what lets both shapes share the chips.
    */
   relationRefs(): RelationRef[] {
     return relationRefsOf(this.value);
@@ -120,19 +122,14 @@ export class RelationField implements OnInit, OnChanges {
 
   /** Whether this field holds one reference, which is what a pick replaces rather than adds to. */
   relationIsSingle(): boolean {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
-      return true;
-    }
-    return type.Relation.target.kind === 'single_page' || !type.Relation.has_many;
+    return !this.multiple;
   }
 
   /**
    * Add the reference the picker chose, or take it away when it was already there.
    *
-   * A set: the order does not matter, and clicking what is picked is how it is unpicked. A single
-   * reference replaces what it held rather than refusing the pick - the picker has already said
-   * which one it wants.
+   * A set: clicking what is picked is how it is unpicked. A single reference replaces what it held
+   * rather than refusing the pick - the picker has already said which one it wants.
    */
   toggleReference(reference: RelationRef) {
     const refs = this.relationRefs();
@@ -145,7 +142,7 @@ export class RelationField implements OnInit, OnChanges {
         ? [reference]
         : [...without, reference];
     this.errorChange.emit(null);
-    this.update(next);
+    this.emitRefs(next);
   }
 
   /**
@@ -163,7 +160,7 @@ export class RelationField implements OnInit, OnChanges {
     }
     [references[index], references[target]] = [references[target], references[index]];
     this.errorChange.emit(null);
-    this.update(references);
+    this.emitRefs(references);
   }
 
   /** The key a reference is tracked by, exposed for the template. */
@@ -178,14 +175,15 @@ export class RelationField implements OnInit, OnChanges {
    * Take the references the JSON box holds.
    *
    * The box is the fallback for what the picker cannot express, so what it holds is checked here
-   * against the same rules the server applies, and the value only moves when they pass.
+   * against the same rules the server applies, and the value only moves when they pass. A `Relation`
+   * takes one object or `null`; an array of them takes an array.
    */
   onJsonChange(text: string) {
     this.arrayText = text;
     const trimmed = text.trim();
     if (trimmed === '') {
       this.errorChange.emit(null);
-      this.update([]);
+      this.emitRefs([]);
       return;
     }
     let parsed: unknown;
@@ -195,71 +193,88 @@ export class RelationField implements OnInit, OnChanges {
       this.errorChange.emit(t('content.invalidJson', { field: this.field.name }));
       return;
     }
-    if (!Array.isArray(parsed)) {
-      this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
+    if (this.multiple) {
+      if (!Array.isArray(parsed)) {
+        this.errorChange.emit(t('content.expectedJsonArray', { field: this.field.name }));
+        return;
+      }
+    } else if (parsed === null) {
+      this.errorChange.emit(null);
+      this.emitRefs([]);
+      return;
+    } else if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.errorChange.emit(t('content.relationExpectedOne', { field: this.field.name }));
       return;
     }
-    const problem = this.relationProblem(parsed);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    const problem = this.relationProblem(entries);
     this.errorChange.emit(problem);
     if (problem === null) {
-      this.update(parsed as FieldValue);
+      this.emitRefs(relationRefsOf(parsed as FieldValue));
     }
   }
 
   /**
    * The wording the JSON box carries: which key, and what to fill in.
    *
-   * Three wordings rather than one with flags: whether it holds one or several, and whether the
-   * target is a page (which has no id), are each a different sentence.
+   * One sentence for one reference and one for a list: the shape is what the box has to be filled
+   * with, and a page (which has no id) is a different sentence again.
    */
   relationHint(): { key: string; params: Record<string, unknown> } | null {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
+    if (this.multiple) {
+      return { key: 'content.relationJsonHintMany', params: { targets: this.targetNames() } };
+    }
+    const target = this.targets[0];
+    if (target === undefined) {
       return null;
     }
-    const { target, has_many } = type.Relation;
-    const key =
-      target.kind === 'single_page'
-        ? 'content.relationJsonHintPage'
-        : has_many
-          ? 'content.relationJsonHintMany'
-          : 'content.relationJsonHintOne';
-    return { key, params: { target: target.name } };
+    return {
+      key:
+        target.kind === 'single_page'
+          ? 'content.relationJsonHintPage'
+          : 'content.relationJsonHintOne',
+      params: { target: target.name },
+    };
+  }
+
+  /** The targets this field may name, as one line for a message. */
+  private targetNames(): string {
+    return this.targets.map((target) => target.name).join(', ');
   }
 
   /**
    * What is wrong with a relation's references, or null when the server would take them.
    *
    * The same rules the server applies (`FieldValue::from_untyped` and the schema save): every
-   * reference names this field's target, a collection reference carries the id of an item, a page
-   * reference carries no id, and a single reference holds at most one. Saying so here means the
-   * reader is told in their own language while still looking at the box, rather than by a 400
-   * after the whole form has been sent.
+   * reference names one of this field's targets, a collection reference carries the id of an item,
+   * and a page reference carries no id. Saying so here means the reader is told in their own
+   * language while still looking at the box, rather than by a 400 after the whole form has been
+   * sent.
    */
-  private relationProblem(refs: unknown[]): Message | null {
-    const type = this.field.field_type;
-    if (!isRelationFieldSchema(type)) {
-      return null;
-    }
-    const { target, has_many } = type.Relation;
-    // A page is one item, and a single reference holds one: the server calls either "one".
-    if ((target.kind === 'single_page' || !has_many) && refs.length > 1) {
-      return t('content.relationSingle', { field: this.field.name });
-    }
-    for (const [index, ref] of refs.entries()) {
+  private relationProblem(entries: unknown[]): Message | null {
+    for (const [index, entry] of entries.entries()) {
       const field = `${this.field.name}[${index}]`;
-      if (ref === null || typeof ref !== 'object' || Array.isArray(ref)) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
         return t('content.relationShape', { field });
       }
-      const record = ref as { target?: unknown; item?: unknown };
-      if (record.target !== target.name) {
-        return t('content.relationTargetMismatch', { field, target: target.name });
+      const record = entry as { target?: unknown; item?: unknown };
+      if (typeof record.target !== 'string') {
+        return t('content.relationShape', { field });
       }
-      if (target.kind === 'single_page') {
-        if (record.item !== undefined && record.item !== null) {
-          return t('content.relationPageHasNoItem', { field });
+      // A name may be a collection and a page at once, and the value says which by holding an item
+      // (or not), so the shape is what decides which declaration the reference belongs to.
+      const named = this.targets.filter((target) => target.name === record.target);
+      if (named.length === 0) {
+        return t('content.relationTargetMismatch', { field, targets: this.targetNames() });
+      }
+      if (record.item === undefined || record.item === null) {
+        if (!named.some((target) => target.kind === 'single_page')) {
+          return t('content.relationItemId', { field });
         }
         continue;
+      }
+      if (!named.some((target) => target.kind === 'collection')) {
+        return t('content.relationPageHasNoItem', { field });
       }
       const item = record.item;
       if (typeof item !== 'number' || !Number.isInteger(item) || item < 1) {
@@ -302,7 +317,10 @@ export class RelationField implements OnInit, OnChanges {
       });
   }
 
-  private update(value: FieldValue) {
+  /** Emit the references in the shape the field holds: a list, or one object or `null`. */
+  private emitRefs(refs: RelationRef[]) {
+    const value: FieldValue = this.multiple ? refs : (refs[0] ?? null);
+    this.value = value;
     this.lastEmitted = value;
     this.valueChange.emit(value);
     this.loadReferenceNames(value);
@@ -314,6 +332,7 @@ export class RelationField implements OnInit, OnChanges {
     if (this.value === this.lastEmitted) {
       return;
     }
-    this.arrayText = JSON.stringify(this.value ?? []);
+    const held = this.value === undefined ? null : this.value;
+    this.arrayText = JSON.stringify(held ?? (this.multiple ? [] : null));
   }
 }

@@ -14,7 +14,7 @@ import { Message, MessagePipe, failure } from 'app/core/i18n/message';
 import { ItemMetadataMap, ItemStatus } from 'app/models/item-status';
 import { apiUrl } from 'app/core/api-url';
 import { CollectionSchema } from 'app/models/schema/collection';
-import { FieldSchema, isArrayFieldSchema, isRelationFieldSchema } from 'app/models/schema/fields';
+import { FieldSchema, isArrayFieldSchema, relationOptionsOf } from 'app/models/schema/fields';
 import { CollectionItemEntry } from 'app/models/values/collection';
 import {
   formatFieldValue,
@@ -245,7 +245,9 @@ export class CollectionItemList {
    * shows, not about a collection.
    */
   private loadLabels(items: CollectionItemEntry[]) {
-    const relations = this.listColumns().filter((field) => isRelationFieldSchema(field.field_type));
+    const relations = this.listColumns().filter(
+      (field) => relationOptionsOf(field.field_type).length > 0,
+    );
     if (relations.length === 0) {
       this.labels.set(new Map());
       return;
@@ -522,7 +524,7 @@ function isImageColumn(field: FieldSchema): boolean {
  * else is its one-line rendering.
  */
 function cellText(field: FieldSchema, value: unknown, labels: ReadonlyMap<string, string>): string {
-  if (!isRelationFieldSchema(field.field_type)) {
+  if (relationOptionsOf(field.field_type).length === 0) {
     return formatFieldValue(value as never);
   }
   const references = relationRefsOf(value as never);

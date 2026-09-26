@@ -30,6 +30,7 @@ import {
   isCompositeFieldSchema,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
+  isRelationFieldSchema,
   isTextFieldSchema,
 } from 'app/models/schema/fields';
 import { FieldValue, withDefaults } from 'app/models/values/fields';
@@ -170,6 +171,9 @@ export class ArrayField implements OnInit, OnChanges {
       if (isCompositeFieldSchema(item)) {
         return String(item.CompositeField.id);
       }
+      if (isRelationFieldSchema(item)) {
+        return 'Relation';
+      }
       return 'Unknown';
     });
   }
@@ -250,6 +254,11 @@ export class ArrayField implements OnInit, OnChanges {
         }
       }
       if (isCompositeFieldSchema(candidate)) {
+        return typeof item === 'object' && item !== null;
+      }
+      if (isRelationFieldSchema(candidate)) {
+        // A reference object; a mixed array's relations are edited as JSON, chips and all only
+        // when every item type is a relation (see `ValueField`).
         return typeof item === 'object' && item !== null;
       }
       // Text, Markdown and enums are all strings on the wire.

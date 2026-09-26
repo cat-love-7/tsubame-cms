@@ -175,6 +175,21 @@
   @case ('Relation') {
     <app-relation-field
       [field]="field"
+      [targets]="relationTargets()"
+      [value]="value"
+      [disabled]="disabled"
+      [labelId]="labelId"
+      (valueChange)="update($event)"
+      (errorChange)="errorChange.emit($event)"
+    />
+  }
+  @case ('RelationArray') {
+    <!-- Several references: an array whose item types are all relations, so the editor sees the
+         same chips and picker as one relation, with the order controls the array gives. -->
+    <app-relation-field
+      [field]="field"
+      [targets]="relationTargets()"
+      [multiple]="true"
       [value]="value"
       [disabled]="disabled"
       [labelId]="labelId"

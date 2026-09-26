@@ -106,7 +106,8 @@
     <mat-select
       multiple
       name="arrayItemTypes"
-      [ngModel]="scalarTypes"
+      [ngModel]="selectedItemTypes"
+      [compareWith]="compareItemTypes"
       (ngModelChange)="onScalarItemTypesChange($event)"
     >
       @for (itemType of arrayItemTypeOptions; track itemType.label) {
@@ -134,6 +135,63 @@
       }}
     </mat-hint>
   </mat-form-field>
+  @if (relationItems.length > 0) {
+    <!-- Several references: one relation item type per target, each with the name the other side
+         calls it. A target another item type already claims is not offered again. -->
+    <div class="array-relation-types">
+      <span class="array-relation-label">{{ 'schema.arrayRelationTypes' | transloco }}</span>
+      @for (item of relationItems; track $index) {
+        <div class="array-relation-item">
+          <mat-form-field appearance="fill" class="relation-kind">
+            <mat-label>{{ 'schema.relationTargetKind' | transloco }}</mat-label>
+            <mat-select
+              name="arrayRelationTargetKind"
+              [ngModel]="item.target.kind"
+              (ngModelChange)="setArrayRelationTargetKind($index, $event)"
+            >
+              @for (kind of relationTargetKinds; track kind.value) {
+                <mat-option [value]="kind.value">{{ kind.label | transloco }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="fill" class="relation-target">
+            <mat-label>{{ 'schema.relationTarget' | transloco }}</mat-label>
+            <mat-select
+              name="arrayRelationTarget"
+              [ngModel]="item.target.name"
+              (ngModelChange)="setArrayRelationTargetName($index, $event)"
+            >
+              @for (name of arrayRelationTargetNames($index); track name) {
+                <mat-option [value]="name">{{ name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="fill" class="relation-inverse">
+            <mat-label>{{ 'schema.relationInverseName' | transloco }}</mat-label>
+            <input
+              matInput
+              name="arrayRelationInverseName"
+              [ngModel]="item.inverse_name ?? ''"
+              (ngModelChange)="setArrayRelationInverseName($index, $event)"
+            />
+          </mat-form-field>
+          <button
+            matIconButton
+            type="button"
+            (click)="removeRelationItemType($index)"
+            [attr.aria-label]="'schema.removeRelationItemType' | transloco: { index: $index }"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      }
+      <button matButton type="button" class="array-relation-add" (click)="addRelationItemType()">
+        <mat-icon>add</mat-icon>
+        {{ 'schema.addRelationItemType' | transloco }}
+      </button>
+      <span class="array-relation-hint">{{ 'schema.arrayRelationHint' | transloco }}</span>
+    </div>
+  }
 }
 @if (field.field_type | isEnumFieldSchema) {
   <app-enum-field [(field)]="field.field_type.TextEnum"></app-enum-field>
@@ -172,13 +230,6 @@
         }}
       </mat-hint>
     </mat-form-field>
-    <mat-checkbox
-      name="relationHasMany"
-      [(ngModel)]="relationHasMany"
-      [disabled]="relationTargetKind() === 'single_page'"
-    >
-      {{ 'schema.relationHasMany' | transloco }}
-    </mat-checkbox>
     <mat-form-field appearance="fill" class="full-width">
       <mat-label>{{ 'schema.relationInverseName' | transloco }}</mat-label>
       <input

@@ -5,7 +5,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 
 import { RelationReference } from 'app/models/relations';
-import { isRelationFieldSchema } from 'app/models/schema/fields';
+import { RelationTarget, relationOptionsOf } from 'app/models/schema/fields';
 import { FieldValue, formatFieldValue } from 'app/models/values/fields';
 import { CollectionsService } from 'app/services/schema/collections.service';
 import { SinglePagesService } from 'app/services/schema/single-pages.service';
@@ -107,32 +107,28 @@ export class RelationReferences {
   }
 
   /**
-   * What the referrer calls this relation: its schema's `inverse_name` for a field pointing here,
-   * and its own name when it names nothing.
+   * What the referrer calls this relation: its schema's `inverse_name` for the field (or array
+   * item type) pointing here, and its own name when it names nothing.
    */
   private heading(kind: 'collection_item' | 'single_page', name: string) {
     const schema =
       kind === 'single_page'
         ? this.pages.getPageSchema(name)
         : this.collections.getCollectionSchema(name);
+    const target: RelationTarget =
+      this.kind === 'single_page'
+        ? { kind: 'single_page', name: this.name }
+        : { kind: 'collection', name: this.name };
     return schema.pipe(
       map((fields) => {
-        const pointsHere = fields.find(
-          (field) =>
-            isRelationFieldSchema(field.field_type) &&
-            (
-              field.field_type as {
-                Relation: { target: { kind: string; name: string }; inverse_name?: string };
-              }
-            ).Relation.target.kind ===
-              (this.kind === 'single_page' ? 'single_page' : 'collection') &&
-            (field.field_type as { Relation: { target: { name: string } } }).Relation.target
-              .name === this.name,
-        );
-        const inverse = pointsHere
-          ? (pointsHere.field_type as { Relation: { inverse_name?: string | null } }).Relation
-              .inverse_name
-          : null;
+        // Several references are an array's item types, so the name may sit there rather than on a
+        // field of its own; `relationOptionsOf` reads both.
+        const pointsHere = fields
+          .flatMap((field) => relationOptionsOf(field.field_type))
+          .find(
+            (options) => options.target.kind === target.kind && options.target.name === target.name,
+          );
+        const inverse = pointsHere?.inverse_name;
         return inverse?.trim() ? inverse : name;
       }),
       // A schema that cannot be read still leaves the referrers worth showing.

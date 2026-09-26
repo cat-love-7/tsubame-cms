@@ -67,9 +67,9 @@
     <!-- Opened only when asked for: a form with several relation fields should not fetch
          candidates nobody looked at. -->
     <app-relation-picker
-      [target]="relationTarget()!"
+      [targets]="targets"
       [selected]="relationRefs()"
-      [multiple]="!relationIsSingle()"
+      [multiple]="multiple"
       (toggled)="toggleReference($event)"
       (closed)="relationPickerOpen.set(false)"
     />

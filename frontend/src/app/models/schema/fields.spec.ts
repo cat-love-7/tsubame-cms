@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ArrayItemTypeOptions,
   DefaultFieldLayout,
   FieldDefaults,
+  FieldType,
   FieldTypeStringPipe,
+  RelationArrayItemType,
+  isRelationArraySchema,
   isRelationFieldSchema,
   newFieldType,
   numberOrUndefined,
   reconcileArrayItemTypes,
+  relationOptionsOf,
   schemaForSaving,
 } from './fields';
 
@@ -144,13 +149,12 @@ describe('relation fields', () => {
     const saved = schemaForSaving([
       relation({
         target: { kind: 'collection', name: 'authors' },
-        has_many: true,
         inverse_name: '  ',
       }),
     ] as never);
 
     expect(saved[0].field_type).toEqual({
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+      Relation: { target: { kind: 'collection', name: 'authors' } },
     });
   });
 
@@ -158,7 +162,6 @@ describe('relation fields', () => {
     const saved = schemaForSaving([
       relation({
         target: { kind: 'collection', name: 'authors' },
-        has_many: false,
         inverse_name: ' articles ',
       }),
     ] as never);
@@ -166,20 +169,81 @@ describe('relation fields', () => {
     expect(saved[0].field_type).toEqual({
       Relation: {
         target: { kind: 'collection', name: 'authors' },
-        has_many: false,
         inverse_name: 'articles',
       },
     });
   });
 
-  // A page is one item, so "several" is not a choice there and the server refuses it.
-  it('never asks for several references to a single page', () => {
+  // Several references are an array of relations, and each item type carries its own inverse name,
+  // so it is normalised there exactly as it is on a field of its own.
+  it('drops and trims an inverse name inside an array item type', () => {
     const saved = schemaForSaving([
-      relation({ target: { kind: 'single_page', name: 'home' }, has_many: true }),
+      {
+        name: 'related',
+        field_type: {
+          Array: [
+            { Relation: { target: { kind: 'collection', name: 'authors' }, inverse_name: '  ' } },
+            {
+              Relation: {
+                target: { kind: 'collection', name: 'categories' },
+                inverse_name: ' related ',
+              },
+            },
+            'Number',
+          ],
+        },
+        required: false,
+        width: 12,
+        height: 1,
+      },
     ] as never);
 
     expect(saved[0].field_type).toEqual({
-      Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false },
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        {
+          Relation: {
+            target: { kind: 'collection', name: 'categories' },
+            inverse_name: 'related',
+          },
+        },
+        'Number',
+      ],
     });
+  });
+
+  // The widget and the reverse panel read the same list, whichever shape declares the relations.
+  it('reads the relation item types of both shapes', () => {
+    expect(
+      relationOptionsOf({ Relation: { target: { kind: 'collection', name: 'authors' } } }),
+    ).toEqual([{ target: { kind: 'collection', name: 'authors' } }]);
+    const array: FieldType = {
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        { Relation: { target: { kind: 'single_page', name: 'home' } } },
+      ],
+    };
+    expect(relationOptionsOf(array)).toEqual([
+      { target: { kind: 'collection', name: 'authors' } },
+      { target: { kind: 'single_page', name: 'home' } },
+    ]);
+    expect(relationOptionsOf('Number')).toEqual([]);
+
+    expect(isRelationArraySchema(array)).toBe(true);
+    // A mixed array has no type tag on its elements, so it is not edited as relations.
+    expect(
+      isRelationArraySchema({
+        Array: [{ Relation: { target: { kind: 'collection', name: 'authors' } } }, 'Number'],
+      }),
+    ).toBe(false);
+    expect(isRelationArraySchema({ Array: [] })).toBe(false);
+    expect(
+      isRelationArraySchema({ Relation: { target: { kind: 'collection', name: 'authors' } } }),
+    ).toBe(false);
+  });
+
+  it('offers Relation among the array item types', () => {
+    expect(ArrayItemTypeOptions.map((option) => option.label)).toContain('Relation');
+    expect(isRelationFieldSchema(RelationArrayItemType)).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import {
   DefaultFieldLayout,
   FieldDefaults,
   FieldSchema,
+  RelationArrayItemType,
   newFieldType,
 } from 'app/models/schema/fields';
 
@@ -301,11 +302,8 @@ describe('Field', () => {
 
     component.setRelationTargetName('authors');
     expect(component.field.field_type).toEqual({
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false },
+      Relation: { target: { kind: 'collection', name: 'authors' } },
     });
-
-    component.relationHasMany = true;
-    expect(component.relationHasMany).toBe(true);
 
     component.setRelationInverseName('articles');
     expect(component.relationInverseName()).toBe('articles');
@@ -317,42 +315,72 @@ describe('Field', () => {
     expect(component.field.field_type).toEqual({
       Relation: {
         target: { kind: 'single_page', name: '' },
-        has_many: false,
         inverse_name: 'articles',
       },
     });
     expect(component.relationTargetNames()).toEqual(['home']);
-
-    // A page is one item, so "several" is not on offer there.
-    component.relationHasMany = true;
-    expect(component.relationHasMany).toBe(false);
   });
 
-  // The controls have to work by clicking them, not only by calling the method behind them.
-  it('takes several references from the checkbox', async () => {
+  // Several references are an array of relations, so the item-type list offers Relation and each
+  // relation item type is configured with a target and an inverse name.
+  it('builds several references from the array item types', async () => {
     const http = TestBed.inject(HttpTestingController);
-    fixture.componentRef.setInput('field', field({ field_type: newFieldType('Relation') }));
+    fixture.componentRef.setInput('field', field({ field_type: newFieldType('Array') }));
     await fixture.whenStable();
-    http.expectOne('/api/models/collections').flush(['authors']);
-    http.expectOne('/api/models/single_pages').flush([]);
+    fixture.detectChanges();
+    http.expectOne('/api/models/collections').flush(['authors', 'categories']);
+    http.expectOne('/api/models/single_pages').flush(['home']);
     fixture.detectChanges();
 
-    component.setRelationTargetName('authors');
-    fixture.detectChanges();
-
-    const checkbox = fixture.nativeElement.querySelector(
-      'input[name="relationHasMany"]',
-    ) as HTMLInputElement;
-    expect(checkbox).toBeTruthy();
-    checkbox.click();
-    fixture.detectChanges();
-
+    component.onScalarItemTypesChange([RelationArrayItemType]);
+    // Choosing Relation starts one item type, with its target still to be chosen.
     expect(component.field.field_type).toEqual({
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+      Array: [{ Relation: { target: { kind: 'collection', name: '' } } }],
     });
+    // The control the template draws from this state is the one the e2e drives; here the state
+    // is what the methods behind it produce.
+    expect(component.relationItems).toHaveLength(1);
+    expect(component.selectedItemTypes).toContain(RelationArrayItemType);
+    // Handing the form the field again is what the schema editor's own binding does, and it is
+    // what redraws the view.
+    fixture.componentRef.setInput('field', { ...component.field });
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('input[name="arrayRelationInverseName"]'),
+    ).toBeTruthy();
+
+    component.setArrayRelationTargetName(0, 'authors');
+    component.setArrayRelationInverseName(0, 'articles');
+    expect(component.field.field_type).toEqual({
+      Array: [
+        {
+          Relation: {
+            target: { kind: 'collection', name: 'authors' },
+            inverse_name: 'articles',
+          },
+        },
+      ],
+    });
+
+    // A target another item type already names is not offered again: an element carries its target,
+    // not which declaration wrote it, so the server refuses two item types for one target.
+    component.addRelationItemType();
+    expect(component.arrayRelationTargetNames(1)).not.toContain('authors');
+    expect(component.arrayRelationTargetNames(1)).toContain('categories');
+    component.setArrayRelationTargetName(1, 'categories');
+    expect(component.field.field_type).toEqual({
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' }, inverse_name: 'articles' } },
+        { Relation: { target: { kind: 'collection', name: 'categories' } } },
+      ],
+    });
+
+    // Unchoosing Relation drops every relation item type with it.
+    component.onScalarItemTypesChange([]);
+    expect(component.field.field_type).toEqual({ Array: [] });
   });
 
-  it('does not ask for relation targets unless the field is a relation', async () => {
+  it('does not ask for relation targets for a field that cannot hold one', async () => {
     const http = TestBed.inject(HttpTestingController);
     fixture.componentRef.setInput('field', field({ field_type: { Text: {} } }));
     await fixture.whenStable();

@@ -374,7 +374,8 @@ describe('CollectionItemList', () => {
         show_in_list: true,
       },
     ];
-    stub.all = [[1, { category: [{ target: 'categories', item: 3 }] }]];
+    // One relation is one reference, not a list of them.
+    stub.all = [[1, { category: { target: 'categories', item: 3 } }]];
     stub.titles = { 3: '技術' };
     route.navigate({ name: 'posts' });
     await fixture.whenStable();
@@ -382,8 +383,20 @@ describe('CollectionItemList', () => {
 
     expect(fixture.nativeElement.querySelector('tbody td.value')?.textContent?.trim()).toBe('技術');
 
-    // An item the target cannot name is the reference itself, and a reference to several items
-    // reads as the names it has.
+    // Several references are an array of relations: an item the target cannot name is the
+    // reference itself, and the column reads as the names it has.
+    stub.schema = [
+      {
+        name: 'category',
+        field_type: {
+          Array: [{ Relation: { target: { kind: 'collection', name: 'categories' } } }],
+        },
+        required: false,
+        width: 12,
+        height: 1,
+        show_in_list: true,
+      },
+    ];
     stub.all = [
       [
         2,
@@ -424,7 +437,7 @@ describe('CollectionItemList', () => {
         show_in_list: true,
       },
     ];
-    stub.all = [[1, { author: [{ target: 'authors', item: 7 }], landing: [{ target: 'home' }] }]];
+    stub.all = [[1, { author: { target: 'authors', item: 7 }, landing: { target: 'home' } }]];
     route.navigate({ name: 'posts' });
     await fixture.whenStable();
     fixture.detectChanges();

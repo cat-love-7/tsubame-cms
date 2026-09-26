@@ -27,8 +27,10 @@ describe('RelationPicker', () => {
 
   afterEach(() => http.verify());
 
-  async function open(target: { kind: 'collection' | 'single_page'; name: string }): Promise<void> {
-    fixture.componentRef.setInput('target', target);
+  async function open(
+    ...targets: { kind: 'collection' | 'single_page'; name: string }[]
+  ): Promise<void> {
+    fixture.componentRef.setInput('targets', targets);
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -77,6 +79,33 @@ describe('RelationPicker', () => {
     fixture.detectChanges();
 
     expect(labels()).toEqual(['ホーム', 'about']);
+  });
+
+  it('offers one declared target at a time, and switches between them', async () => {
+    await open({ kind: 'collection', name: 'categories' }, { kind: 'single_page', name: 'home' });
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items')
+      .flush([[3, {}]]);
+    http
+      .expectOne((request) => request.url === '/api/models/collections/categories/items/titles')
+      .flush({ 3: '技術' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(labels()).toEqual(['技術']);
+    expect(fixture.nativeElement.querySelector('mat-select[name="referenceTarget"]')).toBeTruthy();
+
+    fixture.componentInstance.chooseTarget('single_page:home');
+    http.expectOne((request) => request.url === '/api/models/single_pages').flush(['home']);
+    http
+      .expectOne((request) => request.url === '/api/models/single_pages/titles')
+      .flush({
+        home: 'ホーム',
+      });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(labels()).toEqual(['ホーム']);
   });
 
   it('filters what it lists, and says which are already referenced', async () => {

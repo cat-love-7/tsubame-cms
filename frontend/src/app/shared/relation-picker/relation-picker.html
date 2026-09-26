@@ -1,4 +1,21 @@
 <div class="picker">
+  @if (usableTargets().length > 1) {
+    <!-- An array may reference several collections or pages at once, so the editor says which
+         target this pick is for before the candidates are listed. -->
+    <mat-form-field appearance="fill" class="target">
+      <mat-label>{{ 'content.referenceTarget' | transloco }}</mat-label>
+      <mat-select
+        name="referenceTarget"
+        [ngModel]="chosenTargetKey()"
+        (ngModelChange)="chooseTarget($event)"
+      >
+        @for (target of usableTargets(); track targetKey(target)) {
+          <mat-option [value]="targetKey(target)">{{ target.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  }
+
   <mat-form-field appearance="fill" class="filter">
     <mat-label>{{ 'content.filterReferences' | transloco }}</mat-label>
     <input

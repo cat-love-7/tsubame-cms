@@ -221,15 +221,14 @@
     "compositeUndefined": "複合フィールド '{{id}}' が未定義のため、この値は編集できません。既存の値はそのまま保持されます。",
     "invalidJson": "フィールド '{{field}}': JSON として読めません",
     "expectedJsonArray": "フィールド '{{field}}': JSON 配列を入力してください",
-    "relationPlaceholder": "JSON の参照(例: [{\"target\": \"authors\", \"item\": 1}])",
-    "relationJsonHintMany": "コレクション「{{target}}」への参照: { \"target\": \"{{target}}\", \"item\": <id> } を何件でも並べた配列です。",
-    "relationJsonHintOne": "コレクション「{{target}}」への参照: { \"target\": \"{{target}}\", \"item\": <id> } を最大 1 件並べた配列です。",
-    "relationJsonHintPage": "単一ページ「{{target}}」への参照: { \"target\": \"{{target}}\" } を最大 1 件並べた配列です(ページは id を持ちません)。",
+    "relationPlaceholder": "JSON の参照(例: {\"target\": \"authors\", \"item\": 1 }、またはその配列)",
+    "relationJsonHintMany": "対象({{targets}})への参照: { \"target\": …, \"item\": <id> } を並べた配列、または [] です。",
+    "relationJsonHintOne": "コレクション「{{target}}」への参照: { \"target\": \"{{target}}\", \"item\": <id> }、または null です。",
+    "relationJsonHintPage": "単一ページ「{{target}}」への参照: { \"target\": \"{{target}}\" }、または null です(ページは id を持ちません)。",
     "relationShape": "「{{field}}」は参照ではありません。各要素は target と(コレクションなら)item を持つオブジェクトです。",
-    "relationTargetMismatch": "「{{field}}」が指す名前が、このフィールドの対象({{target}})と一致しません。",
+    "relationTargetMismatch": "「{{field}}」が指す名前が、このフィールドの対象({{targets}})と一致しません。",
     "relationItemId": "「{{field}}」には参照先アイテムの id が必要です。",
     "relationPageHasNoItem": "「{{field}}」は単一ページへの参照なので、item は持ちません。",
-    "relationSingle": "フィールド「{{field}}」は 1 件だけ持つ参照なので、配列に入れられるのは最大 1 件です。",
     "uploadFailed": "アップロードに失敗しました: {{message}}",
     "failedToLoadImages": "画像を読み込めませんでした: {{message}}",
     "failedToLoadSchema": "スキーマを読み込めませんでした: {{message}}",
@@ -290,7 +289,9 @@
     "mdBoldPlaceholder": "太字のテキスト",
     "mdItalicPlaceholder": "斜体のテキスト",
     "mdLinkPlaceholder": "リンクのテキスト",
-    "mdLinkPrompt": "リンク先の URL"
+    "mdLinkPrompt": "リンク先の URL",
+    "relationExpectedOne": "フィールド '{{field}}': 参照オブジェクト 1 件、または null を入力してください",
+    "referenceTarget": "対象"
   },
   "errors": {
     "invalid_credentials": "ID またはパスワードが違います。",
@@ -344,7 +345,6 @@
     "relationTarget": "対象",
     "relationTargetHint": "存在するコレクションと単一ページだけを選べます。",
     "relationNoTargets": "この種類の対象がまだありません。",
-    "relationHasMany": "複数の参照を許す",
     "relationInverseName": "逆側での呼び名",
     "relationInverseHint": "画面と ?populate= で逆側が使う名前です。呼び名だけで、相手側にデータは持ちません。",
     "arrayItemTypesHere": "配列の要素型はフィールド本体で設定します。",
@@ -377,7 +377,11 @@
     "previewAllowed": "プレビューリンクを許可する",
     "previewAllowedHint": "プレビューリンクは、このスキーマの未公開の作業コピーを、アカウントを持たない相手に URL だけで見せます。開くにはプレビューサイトが必要です。",
     "multiline": "複数行",
-    "multilineHint": "1行の入力欄ではなく、複数行の入力欄にします。高さは上の「最小の高さ」で決まります。"
+    "multilineHint": "1行の入力欄ではなく、複数行の入力欄にします。高さは上の「最小の高さ」で決まります。",
+    "arrayRelationTypes": "リレーションの要素型",
+    "arrayRelationHint": "対象ごとに 1 つの要素型です。他の要素型が既に使っている対象は選べません。",
+    "addRelationItemType": "リレーションの要素型を追加",
+    "removeRelationItemType": "リレーションの要素型 {{index}} を削除"
   },
   "labels": {
     "toggleNavigation": "ナビゲーションを開閉",

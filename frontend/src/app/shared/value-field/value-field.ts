@@ -22,11 +22,14 @@ import { MarkdownField } from 'app/shared/markdown-field/markdown-field';
 import { Message, t } from 'app/core/i18n/message';
 import {
   FieldSchema,
+  RelationTarget,
   TextFieldOptions,
   isEnumFieldSchema,
   isMarkdownFieldSchema,
+  isRelationArraySchema,
   isSlugFieldSchema,
   isTextFieldSchema,
+  relationOptionsOf,
 } from 'app/models/schema/fields';
 import { SLUG_MAX_LENGTH, isUsableSlug, normaliseSlug } from 'app/models/schema/slug';
 import { FieldValue } from 'app/models/values/fields';
@@ -48,6 +51,7 @@ type FieldKind =
   | 'Array'
   | 'CompositeField'
   | 'Relation'
+  | 'RelationArray'
   | 'Unknown';
 
 /**
@@ -148,10 +152,17 @@ export class ValueField implements OnInit, OnChanges {
     if ('Slug' in type) return 'Slug';
     if ('Markdown' in type) return 'Markdown';
     if ('TextEnum' in type) return 'TextEnum';
-    if ('Array' in type) return 'Array';
+    // Several references are an array of relations, and they are edited with the chips of one
+    // relation rather than as JSON: the schema says the widgets, and the shape says the value.
+    if ('Array' in type) return isRelationArraySchema(type) ? 'RelationArray' : 'Array';
     if ('CompositeField' in type) return 'CompositeField';
     if ('Relation' in type) return 'Relation';
     return 'Unknown';
+  }
+
+  /** What a relation value may name: one target, or one per item type of an array of relations. */
+  relationTargets(): RelationTarget[] {
+    return relationOptionsOf(this.field.field_type).map((options) => options.target);
   }
 
   enumOptions(): string[] {

@@ -55,3 +55,43 @@
     font: var(--mat-sys-body-small);
   }
 }
+
+/// One relation item type of an array: its target kind, its target, and the name the other side
+/// calls it, on one row.
+.array-relation-types {
+  margin: 8px 0;
+}
+
+.array-relation-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-medium);
+}
+
+.array-relation-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  .relation-kind {
+    width: 9rem;
+  }
+
+  .relation-target {
+    width: 12rem;
+  }
+
+  .relation-inverse {
+    flex: 1;
+    min-width: 10rem;
+  }
+}
+
+.array-relation-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}

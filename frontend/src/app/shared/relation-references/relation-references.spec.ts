@@ -14,9 +14,30 @@ function schemaWith(inverse_name: string | null) {
       field_type: {
         Relation: {
           target: { kind: 'collection', name: 'categories' },
-          has_many: false,
           ...(inverse_name === null ? {} : { inverse_name }),
         },
+      },
+      required: false,
+      width: 12,
+      height: 1,
+    },
+  ];
+}
+
+/** A schema whose several references declare the inverse name inside the array item type. */
+function schemaWithRelationArray(inverse_name: string) {
+  return [
+    {
+      name: 'related',
+      field_type: {
+        Array: [
+          {
+            Relation: {
+              target: { kind: 'collection', name: 'categories' },
+              inverse_name,
+            },
+          },
+        ],
       },
       required: false,
       width: 12,
@@ -73,6 +94,27 @@ describe('RelationReferences', () => {
     expect(link.getAttribute('href')).toBe('/collections/articles/edit/7');
   });
 
+  // Several references are an array whose item types are relations, and the inverse name is
+  // declared there, so the heading has to look inside the item types too.
+  it('finds the inverse name an array item type declares', async () => {
+    create('collection_item', 'categories', 1);
+
+    http
+      .expectOne('/api/models/collections/categories/items/1/references')
+      .flush([{ kind: 'collection_item', name: 'articles', item: 7 }]);
+    http
+      .expectOne('/api/models/collections/articles/schema')
+      .flush(schemaWithRelationArray('articles'));
+    http
+      .expectOne((request) => request.url === '/api/models/collections/articles/items/titles')
+      .flush({ 7: 'Hello' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const heading = fixture.nativeElement.querySelector('.reference-group h4') as HTMLElement;
+    expect(heading.textContent?.trim()).toBe('articles');
+  });
+
   it('falls back to the collection name when the other schema names nothing', async () => {
     create('collection_item', 'categories', 1);
 
@@ -102,7 +144,6 @@ describe('RelationReferences', () => {
         field_type: {
           Relation: {
             target: { kind: 'collection', name: 'categories' },
-            has_many: false,
             inverse_name: 'pages',
           },
         },

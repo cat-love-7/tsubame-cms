@@ -136,6 +136,31 @@ describe('ArrayField', () => {
     expect(fixture.nativeElement.textContent).toContain('Item types: seo');
   });
 
+  // An array that mixes references with something else is not all relations, so it stays on the
+  // JSON view - and that view has to accept a reference object and name the item type.
+  it('names and accepts a relation item type in an array that is not all relations', async () => {
+    const component = create(
+      field('related', {
+        Array: [{ Relation: { target: { kind: 'collection', name: 'authors' } } }, 'Number'],
+      }),
+      [],
+    );
+    component.jsonMode.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Item types: Relation, Number');
+
+    const problems: (Message | null)[] = [];
+    component.errorChange.subscribe((problem) => problems.push(problem));
+    const values: FieldValue[] = [];
+    component.valueChange.subscribe((value) => values.push(value));
+
+    component.onJsonChange('[{"target":"authors","item":1}, 2]');
+    expect(problems[0]).toBeNull();
+    expect(values.at(-1)).toEqual([{ target: 'authors', item: 1 }, 2]);
+  });
+
   // The server tries each declared type in turn; this only rules out what none of them could
   // read, and it says so while the reader is looking at the box rather than after a save.
   it('refuses an item no declared item type could read', () => {

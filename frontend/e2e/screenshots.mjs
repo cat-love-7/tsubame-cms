@@ -245,7 +245,7 @@ const COLLECTION_SCHEMA = [
   {
     name: 'category',
     field_type: {
-      Relation: { target: { kind: 'collection', name: 'categories' }, has_many: false },
+      Relation: { target: { kind: 'collection', name: 'categories' } },
     },
     required: false,
     width: 4,
@@ -337,7 +337,7 @@ async function seedContent(request, token, covers) {
         summary: article.summary,
         cover: covers[index % covers.length],
         published_at: `2026-0${(index % 9) + 1}-1${index % 9}`,
-        category: [{ target: 'categories', item: categoryId(article.category) }],
+        category: { target: 'categories', item: categoryId(article.category) },
         body: article.body,
       },
       token,

@@ -26,7 +26,8 @@ import {
  * | TextEnum           | `string[]`                                                          |
  * | Array              | array of the declared item types                                    |
  * | CompositeField     | object keyed by the composite's own field names                     |
- * | Relation           | `[{ target, item }]` — a page reference has no `item`                |
+ * | Relation           | `{ target, item }` (a page reference has no `item`), or `null`      |
+ * | Array([Relation])  | `[{ target, item }, …]`, or `[]`                                     |
  */
 /**
  * A whole form's values, by field name.
@@ -91,12 +92,10 @@ export function imagesOf(
  */
 export type RelationRef = { target: string; item?: number | null };
 
-/** The references inside a value, when the field holds relation references at all. */
+/** The references a value holds, whether the field is one relation or an array of them. */
 export function relationRefsOf(value: FieldValue | undefined): RelationRef[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter(
+  const entries = Array.isArray(value) ? value : [value];
+  return entries.filter(
     (entry): entry is RelationRef =>
       entry !== null &&
       typeof entry === 'object' &&
@@ -171,8 +170,12 @@ export function defaultValueForField(field: FieldSchema): FieldValue {
   if (type === 'Number' || type === 'Date' || type === 'DateTime' || type === 'Image') {
     return null;
   }
-  if (isEnumFieldSchema(type) || isArrayFieldSchema(type) || isRelationFieldSchema(type)) {
+  if (isEnumFieldSchema(type) || isArrayFieldSchema(type)) {
     return [];
+  }
+  // One relation is an object or null, so an empty list would be the wrong shape.
+  if (isRelationFieldSchema(type)) {
+    return null;
   }
   if (isCompositeFieldSchema(type)) {
     return null;
