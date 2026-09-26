@@ -1,6 +1,6 @@
 'use strict';
 
-const { describeFieldType, imageKey, normalizeImageValue, toImageValue, toCompositeValue, toRelationValue } = require('./fields');
+const { describeFieldType, imageKey, isRelationArray, normalizeImageValue, toImageValue, toCompositeValue, toRelationValue } = require('./fields');
 const { ownerNodeKey, relationTargetTypeName } = require('./model');
 
 /**
@@ -30,6 +30,11 @@ function resolveFieldValue(fieldTypeDescriptor, value, context) {
     case 'Array': {
       if (!Array.isArray(value)) {
         return [];
+      }
+      // Several references are an `Array` whose item types are all relations. Their elements may
+      // name different targets, so they are resolved as references and not through one item type.
+      if (isRelationArray(fieldTypeDescriptor)) {
+        return resolveRelationArray(options, value, context);
       }
       // A mixed list stays the JSON the API sent; the model declared it `JSON` for the same reason.
       if (!Array.isArray(options) || options.length !== 1) {
@@ -97,7 +102,7 @@ function resolveComposite(value, context) {
 }
 
 /**
- * A relation value: the ids of the nodes it points at, so `@link` can resolve them.
+ * One relation: the id of the node it points at, so `@link` can resolve it.
  *
  * A target that was not published is simply not a node, and `@link` answers null for it rather than
  * failing the build - which is the honest answer to "show me the author of this article" when the
@@ -107,24 +112,39 @@ function resolveComposite(value, context) {
 function resolveRelation(fieldTypeDescriptor, value, context) {
   const { options } = describeFieldType(fieldTypeDescriptor);
   const relation = options === null || typeof options !== 'object' ? {} : options;
-  const target = relation.target;
 
-  if (relationTargetTypeName(context.model, target) === null) {
+  if (relationTargetTypeName(context.model, relation.target) === null) {
     return toRelationValue(value);
   }
-  if (!Array.isArray(value)) {
-    return relation.has_many && !(target && target.kind === 'single_page') ? [] : null;
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof value.target !== 'string'
+  ) {
+    return null;
   }
+  return relationNodeId(value, context.createNodeId);
+}
 
-  const ids = value
+/**
+ * An `Array` of relations: one node id per element.
+ *
+ * One item type means one target, which is the one type a GraphQL list can hold. An array that
+ * declares several targets has no single node type, so it keeps the reference shape - each element
+ * carries its own target, and a consumer reads it rather than following `@link`.
+ */
+function resolveRelationArray(options, value, context) {
+  if (options.length !== 1) {
+    return toRelationValue(value);
+  }
+  const relation = describeFieldType(options[0]).options ?? {};
+  if (relationTargetTypeName(context.model, relation.target) === null) {
+    return toRelationValue(value);
+  }
+  return value
     .filter((reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string')
     .map((reference) => relationNodeId(reference, context.createNodeId));
-
-  const many = Boolean(relation.has_many) && !(target && target.kind === 'single_page');
-  if (many) {
-    return ids;
-  }
-  return ids.length > 0 ? ids[0] : null;
 }
 
 /**
@@ -179,7 +199,16 @@ function walkValues(schema, values, composites, onValue) {
       return;
     }
     if (kind === 'Array') {
-      if (!Array.isArray(value) || !Array.isArray(options) || options.length !== 1) {
+      if (!Array.isArray(value) || !Array.isArray(options)) {
+        return;
+      }
+      // An array of relations *is* the relation value: its elements carry their own targets, so the
+      // whole array goes to `onValue` rather than being read as one item type per entry.
+      if (isRelationArray(fieldType)) {
+        onValue('Relation', value);
+        return;
+      }
+      if (options.length !== 1) {
         return;
       }
       for (const entry of value) {
@@ -211,7 +240,8 @@ function collectReferenceKeys(schema, values, composites) {
     if (kind !== 'Relation') {
       return;
     }
-    for (const reference of Array.isArray(value) ? value : []) {
+    // One relation is one object; an array of relations is an array of them.
+    for (const reference of Array.isArray(value) ? value : [value]) {
       if (reference !== null && typeof reference === 'object' && typeof reference.target === 'string') {
         const descriptor = referenceDescriptor(reference);
         found.set(ownerNodeKey(descriptor), descriptor);

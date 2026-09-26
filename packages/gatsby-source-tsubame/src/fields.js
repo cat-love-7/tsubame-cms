@@ -4,9 +4,11 @@
  * Reading the CMS's field types, and the value shapes they imply.
  *
  * A value on the wire carries no type tag: the CMS sends `"..."` for both `Text` and `Markdown`,
- * `{"id":3,"url":"..."}` for an `Image`, and `[{"target":"authors","item":7}]` for a `Relation`.
- * The schema returned next to the values is the only thing that says which is which, so every
- * decision in this file takes the field's `field_type` and never the value's own shape.
+ * `{"id":3,"url":"..."}` for an `Image`, and `{"target":"authors","item":7}` for a `Relation`. A
+ * relation holds one reference; several are an `Array` whose item types are all relations
+ * (`Array([Relation(…)])`), and one array may name several targets. The schema returned next to the
+ * values is the only thing that says which is which, so every decision in this file takes the
+ * field's `field_type` and never the value's own shape.
  *
  * The wire shapes are the contract in `docs/content-api.md` (sections 3 and 3.1) and the Rust
  * `FieldValueResponse` in `backend/crates/core/src/models/values.rs`.
@@ -32,6 +34,41 @@ function describeFieldType(fieldType) {
     }
   }
   return { kind: 'Unknown', options: undefined };
+}
+
+/**
+ * Whether a field type is several references: an `Array` whose item types are all `Relation`.
+ *
+ * That is how the schema says "this field holds many" since `has_many` was replaced by the array
+ * (`docs/relations-design.md` §3), and the item types may name different targets. A mixed array is
+ * not one: there is no per-element type tag, so its elements cannot all be read as references.
+ */
+function isRelationArray(fieldType) {
+  const { kind, options } = describeFieldType(fieldType);
+  return (
+    kind === 'Array' &&
+    Array.isArray(options) &&
+    options.length > 0 &&
+    options.every((item) => describeFieldType(item).kind === 'Relation')
+  );
+}
+
+/**
+ * The relation options a schema field declares: its own for a `Relation`, one per item type for an
+ * `Array` of relations. Anything else declares nothing.
+ *
+ * A field may declare several targets this way, each with its own `inverse_name`, so the caller
+ * reads one declaration per entry.
+ */
+function relationOptionsOf(fieldType) {
+  const { kind, options } = describeFieldType(fieldType);
+  if (kind === 'Relation') {
+    return [options === null || typeof options !== 'object' ? {} : options];
+  }
+  if (isRelationArray(fieldType)) {
+    return options.map((item) => describeFieldType(item).options ?? {});
+  }
+  return [];
 }
 
 /**
@@ -125,27 +162,38 @@ function toCompositeValue(value) {
 }
 
 /**
- * A relation value, with the kind of target made explicit.
+ * One reference of a relation, with the kind of target made explicit.
  *
  * The schema says whether the field points at a collection or a single page; the value only shows
  * it by whether `item` is there. `kind` spells it out so a reader does not have to test for a
  * missing field to know which collection to look the item up in.
+ */
+function toRelationReference(reference) {
+  if (
+    reference === null ||
+    typeof reference !== 'object' ||
+    Array.isArray(reference) ||
+    typeof reference.target !== 'string'
+  ) {
+    return null;
+  }
+  const item = typeof reference.item === 'number' ? reference.item : null;
+  return { target: reference.target, item, kind: item === null ? 'single_page' : 'collection' };
+}
+
+/**
+ * A relation value, with the kind of each reference's target made explicit.
  *
- * This is the *fallback* shape, used when the target's type is not part of the build (see
- * `collectRelationTargets`): the normal case is a link to the target node, and a consumer who wants
- * the reference itself reads it from `values`.
+ * One relation is one object (or `null`); several are the array an `Array` of relations holds. This
+ * is the *fallback* shape: the normal case is a link to the target node (see `resolveRelation`),
+ * and it is what a consumer reads when the target's type is not part of the build, or when a list
+ * names several targets and no single GraphQL node type can stand for it.
  */
 function toRelationValue(value) {
-  if (!Array.isArray(value)) {
-    return [];
+  if (Array.isArray(value)) {
+    return value.map(toRelationReference).filter((reference) => reference !== null);
   }
-  return value
-    .filter((reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string')
-    .map((reference) => ({
-      target: reference.target,
-      item: typeof reference.item === 'number' ? reference.item : null,
-      kind: typeof reference.item === 'number' ? 'collection' : 'single_page',
-    }));
+  return toRelationReference(value);
 }
 
 /**
@@ -207,10 +255,13 @@ function collectRelationTargets(schemas, compositeSchemas) {
 
 module.exports = {
   describeFieldType,
+  isRelationArray,
+  relationOptionsOf,
   toImageValue,
   imageKey,
   normalizeImageValue,
   toCompositeValue,
+  toRelationReference,
   toRelationValue,
   collectRelationTargets,
 };

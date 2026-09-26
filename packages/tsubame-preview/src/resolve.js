@@ -1,23 +1,24 @@
 'use strict';
 
-const { createUrlResolver, describeFieldType, toImageValue } = require('./field-types');
+const { createUrlResolver, describeFieldType, isRelationArray, toImageValue } = require('./field-types');
 
 /**
  * A working copy, shaped for a page rather than for a build.
  *
  * The preview link answers `{schema, values}`, and the values carry no type tags: the schema is what
- * says that a string is Markdown, that an object is an image, and that a list of `{target, item}` is
- * a relation. Resolving means walking the schema and the value together - through composites and
- * arrays, which can nest without limit - and answering a plain object a template can read.
+ * says that a string is Markdown, that an object is an image, and that a `{target, item}` object (or
+ * an array of them) is a relation. Resolving means walking the schema and the value together -
+ * through composites and arrays, which can nest without limit - and answering a plain object a
+ * template can read.
  *
  * Two things are different from a build, and both are deliberate:
  *
  * - **A relation is resolved by fetching the published target**, not by pointing at a node. Preview
  *   has no node store, so the content itself is put in the field. A target that is not published is
- *   `null` in a single field and `null` in its place in a list - the same thing a build shows, where
- *   the relation points at a node that does not exist. Following relations costs a request each, so
- *   `relationDepth` bounds it: the default is one hop, which is what "show the author" needs and
- *   what keeps a mutual reference from becoming an infinite walk.
+ *   `null` for one reference and `null` in its place in an array - the same thing a build shows,
+ *   where the relation points at a node that does not exist. Following relations costs a request
+ *   each, so `relationDepth` bounds it: the default is one hop, which is what "show the author"
+ *   needs and what keeps a mutual reference from becoming an infinite walk.
  * - **Markdown is rendered where it is read**, because there is no build to make `gatsby-
  *   transformer-remark`'s node. The renderer is injected (`renderMarkdown`) so a site can use the
  *   same pipeline its build uses rather than a second one that only nearly agrees; without one the
@@ -85,6 +86,11 @@ async function resolveFieldValue(fieldTypeDescriptor, value, context, relationDe
       if (!Array.isArray(value)) {
         return [];
       }
+      // Several references are an `Array` whose item types are all relations. Every element carries
+      // its own target, so each is resolved on its own; an unpublished one keeps its place as null.
+      if (isRelationArray(fieldTypeDescriptor)) {
+        return resolveRelationArray(value, context, relationDepth);
+      }
       // A list whose element type is mixed or unknown stays the JSON the API sent: without a single
       // element schema there is no way to tell one entry's type from another's.
       if (!Array.isArray(options) || options.length !== 1) {
@@ -101,7 +107,7 @@ async function resolveFieldValue(fieldTypeDescriptor, value, context, relationDe
     case 'CompositeField':
       return resolveComposite(value, context, relationDepth);
     case 'Relation':
-      return resolveRelation(options, value, context, relationDepth);
+      return resolveRelation(value, context, relationDepth);
     case 'Image':
       return toImageValue(value, context.url);
     case 'Text':
@@ -184,28 +190,37 @@ async function loadDefinition(id, context) {
   return definition;
 }
 
-async function resolveRelation(options, value, context, relationDepth) {
-  const relation = options !== null && typeof options === 'object' ? options : {};
-  const target = relation.target;
-  const many = Boolean(relation.has_many) && !(target !== null && typeof target === 'object' && target.kind === 'single_page');
-
-  if (!Array.isArray(value)) {
-    return many ? [] : null;
+/**
+ * A relation value: one `{target, item}` reference, or `null` when nothing is referenced.
+ *
+ * A reference with an `item` is a collection item; one without is a single page, whose identity is
+ * its name (`docs/content-api.md` §3.1). The schema's declared target is not consulted: the element
+ * itself says what it points at, and one array may name several targets.
+ */
+async function resolveRelation(value, context, relationDepth) {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof value.target !== 'string'
+  ) {
+    return null;
   }
-  const references = value.filter(
-    (reference) =>
-      reference !== null && typeof reference === 'object' && typeof reference.target === 'string',
-  );
+  return resolveReference(value, context, relationDepth);
+}
 
-  if (!many) {
-    return references.length > 0
-      ? resolveReference(references[0], context, relationDepth)
-      : null;
-  }
-
+/**
+ * An `Array` of relations, each resolved in place.
+ *
+ * The elements may name different targets (the schema declares one item type per target), so each is
+ * read on its own. A reference that cannot be resolved stays `null` rather than being dropped: the
+ * order is the value, and a page that skips a missing entry would show the wrong one.
+ */
+async function resolveRelationArray(value, context, relationDepth) {
   const resolved = [];
-  for (const reference of references) {
-    resolved.push(await resolveReference(reference, context, relationDepth));
+  for (const reference of value) {
+    resolved.push(await resolveRelation(reference, context, relationDepth));
   }
   return resolved;
 }

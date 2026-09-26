@@ -11,6 +11,7 @@ import { BLOG_SCHEMA, COMPOSITE_FIELDS, EDITORS_SCHEMA, HOME_SCHEMA } from './fi
 const {
   collectRelationTargets,
   describeFieldType,
+  isRelationArray,
   toCompositeValue,
   toImageValue,
   toRelationValue,
@@ -85,16 +86,47 @@ describe('toCompositeValue', () => {
   });
 });
 
+describe('isRelationArray', () => {
+  const relation = { Relation: { target: { kind: 'collection', name: 'authors' } } };
+
+  it('reads an Array whose item types are all relations as several references', () => {
+    assert.equal(isRelationArray({ Array: [relation] }), true);
+    assert.equal(isRelationArray({ Array: [relation, { Relation: { target: { kind: 'collection', name: 'editors' } } }] }), true);
+  });
+
+  it('does not read one relation, or a mixed array, as several references', () => {
+    assert.equal(isRelationArray(relation), false);
+    // A mixed list has no per-element type tag, so it cannot be a list of references.
+    assert.equal(isRelationArray({ Array: [relation, { Text: {} }] }), false);
+    assert.equal(isRelationArray({ Array: [] }), false);
+    assert.equal(isRelationArray({ Array: ['Image'] }), false);
+  });
+});
+
 describe('toRelationValue', () => {
-  it('spells out whether the target is a collection item or a single page', () => {
+  it('spells out one reference, and whether it is a collection item or a single page', () => {
+    assert.deepEqual(toRelationValue({ target: 'authors', item: 7 }), {
+      target: 'authors',
+      item: 7,
+      kind: 'collection',
+    });
+    assert.deepEqual(toRelationValue({ target: 'home' }), {
+      target: 'home',
+      item: null,
+      kind: 'single_page',
+    });
+  });
+
+  it('maps the array of an Array of relations', () => {
     assert.deepEqual(toRelationValue([{ target: 'authors', item: 7 }, { target: 'home' }]), [
       { target: 'authors', item: 7, kind: 'collection' },
       { target: 'home', item: null, kind: 'single_page' },
     ]);
   });
 
-  it('treats no references as an empty set', () => {
-    assert.deepEqual(toRelationValue(null), []);
+  it('treats one missing reference as empty and no references as an empty list', () => {
+    assert.equal(toRelationValue(null), null);
+    assert.equal(toRelationValue(undefined), null);
     assert.deepEqual(toRelationValue([]), []);
   });
 });
@@ -132,6 +164,25 @@ describe('collectRelationTargets', () => {
 
   it('finds a single-page target', () => {
     const targets = collectRelationTargets([HOME_SCHEMA], composites);
+    assert.deepEqual(
+      targets.map((target) => `${target.kind}:${target.name}`).sort(),
+      ['collection:authors', 'single_page:home'],
+    );
+  });
+
+  it('finds every target of one array that declares several', () => {
+    const schema = [
+      {
+        name: 'related',
+        field_type: {
+          Array: [
+            { Relation: { target: { kind: 'collection', name: 'authors' } } },
+            { Relation: { target: { kind: 'single_page', name: 'home' } } },
+          ],
+        },
+      },
+    ];
+    const targets = collectRelationTargets([schema], new Map());
     assert.deepEqual(
       targets.map((target) => `${target.kind}:${target.name}`).sort(),
       ['collection:authors', 'single_page:home'],

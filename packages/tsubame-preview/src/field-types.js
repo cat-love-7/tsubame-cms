@@ -4,9 +4,10 @@
  * Reading the CMS's field types, and the value shapes they imply.
  *
  * A value on the wire carries no type tag: the CMS sends `"..."` for both `Text` and `Markdown`,
- * `{"id":3,"url":"..."}` for an `Image`, and `[{"target":"authors","item":7}]` for a `Relation`.
- * The schema returned next to the values is the only thing that says which is which, so every
- * decision here takes the field's `field_type` and never the value's own shape.
+ * `{"id":3,"url":"..."}` for an `Image`, and `{"target":"authors","item":7}` for a `Relation`. A
+ * relation holds one reference; several are an `Array` whose item types are all relations
+ * (`[{"target":"authors","item":7}]`), so the schema and not the value's shape says which is which
+ * and every decision here takes the field's `field_type`.
  *
  * The wire shapes are the contract in `docs/content-api.md` (sections 3 and 3.1) and the Rust
  * `FieldValueResponse` in `backend/crates/core/src/models/values.rs`.
@@ -37,6 +38,24 @@ function describeFieldType(fieldType) {
     }
   }
   return { kind: 'Unknown', options: undefined };
+}
+
+/**
+ * Whether a field type is several references: an `Array` whose item types are all `Relation`.
+ *
+ * That is how the schema says "this field holds many" since `has_many` was replaced by the array
+ * (`docs/relations-design.md` §3), and the item types may name different targets. A mixed array is
+ * not one: its elements are not all references, and there is no per-element type tag to tell them
+ * apart.
+ */
+function isRelationArray(fieldType) {
+  const { kind, options } = describeFieldType(fieldType);
+  return (
+    kind === 'Array' &&
+    Array.isArray(options) &&
+    options.length > 0 &&
+    options.every((item) => describeFieldType(item).kind === 'Relation')
+  );
 }
 
 /** A prefix the way every path is built with it: one leading slash, no trailing one. */
@@ -113,6 +132,7 @@ function toImageValue(value, resolve) {
 
 module.exports = {
   describeFieldType,
+  isRelationArray,
   normalizePrefix,
   createUrlResolver,
   toImageValue,

@@ -117,54 +117,77 @@ describe('markdown', () => {
 });
 
 describe('relations', () => {
-  it('answers the id of the target node', () => {
+  const AUTHOR = { Relation: { target: { kind: 'collection', name: 'authors' } } };
+
+  it('answers the id of the target node for one reference', () => {
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } };
-    assert.equal(resolveFieldValue(fieldType, [{ target: 'authors', item: 7 }], context), 'node:tsubame-item:authors:7');
+    assert.equal(
+      resolveFieldValue(AUTHOR, { target: 'authors', item: 7 }, context),
+      'node:tsubame-item:authors:7',
+    );
   });
 
-  it('answers a list when the relation holds several', () => {
+  it('answers a list of ids for an Array of relations', () => {
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
-    assert.deepEqual(resolveFieldValue(fieldType, [{ target: 'authors', item: 7 }], context), [
+    assert.deepEqual(resolveFieldValue({ Array: [AUTHOR] }, [{ target: 'authors', item: 7 }], context), [
       'node:tsubame-item:authors:7',
     ]);
   });
 
-  it('keeps the order a list relation was written in', () => {
-    // A relation is an ordered list since 2026-09: the CMS stores the editor's order and serves it,
-    // so the ids have to come out in that order - sorting by id here would silently turn "featured
+  it('keeps the order an array of references was written in', () => {
+    // The order is the value since 2026-09: the CMS stores the editor's order and serves it, so the
+    // ids have to come out in that order - sorting by id here would silently turn "featured
     // articles, in this order" into "articles, by id".
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
     assert.deepEqual(
-      resolveFieldValue(fieldType, [{ target: 'authors', item: 9 }, { target: 'authors', item: 7 }], context),
+      resolveFieldValue({ Array: [AUTHOR] }, [{ target: 'authors', item: 9 }, { target: 'authors', item: 7 }], context),
       ['node:tsubame-item:authors:9', 'node:tsubame-item:authors:7'],
     );
   });
 
   it('answers a page node id for a page reference, which has no item id', () => {
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false } };
-    assert.equal(resolveFieldValue(fieldType, [{ target: 'home' }], context), 'node:tsubame-page:home');
+    const fieldType = { Relation: { target: { kind: 'single_page', name: 'home' } } };
+    assert.equal(resolveFieldValue(fieldType, { target: 'home' }, context), 'node:tsubame-page:home');
   });
 
-  it('answers null for a single relation with no reference', () => {
+  it('answers null for one relation with no reference, and an empty list for an array of them', () => {
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } };
-    assert.equal(resolveFieldValue(fieldType, [], context), null);
-    assert.deepEqual(
-      resolveFieldValue({ Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } }, [], context),
-      [],
-    );
+    assert.equal(resolveFieldValue(AUTHOR, null, context), null);
+    assert.deepEqual(resolveFieldValue({ Array: [AUTHOR] }, [], context), []);
   });
 
   it('keeps the reference when the target is not part of the build', () => {
     const { context } = makeContext();
-    const fieldType = { Relation: { target: { kind: 'collection', name: 'nowhere' }, has_many: true } };
-    assert.deepEqual(resolveFieldValue(fieldType, [{ target: 'nowhere', item: 2 }], context), [
+    const single = { Relation: { target: { kind: 'collection', name: 'nowhere' } } };
+    assert.deepEqual(resolveFieldValue(single, { target: 'nowhere', item: 2 }, context), {
+      target: 'nowhere',
+      item: 2,
+      kind: 'collection',
+    });
+    assert.deepEqual(resolveFieldValue({ Array: [single] }, [{ target: 'nowhere', item: 2 }], context), [
       { target: 'nowhere', item: 2, kind: 'collection' },
     ]);
+  });
+
+  it('keeps the references of an array that declares several targets', () => {
+    // No single GraphQL list can hold two node types, so the references stay as they are; each
+    // element's own target says which node it names.
+    const { context } = makeContext();
+    const fieldType = {
+      Array: [AUTHOR, { Relation: { target: { kind: 'collection', name: 'editors' } } }],
+    };
+    assert.deepEqual(
+      resolveFieldValue(
+        fieldType,
+        [{ target: 'authors', item: 7 }, { target: 'editors', item: 2 }],
+        context,
+      ),
+      [
+        { target: 'authors', item: 7, kind: 'collection' },
+        { target: 'editors', item: 2, kind: 'collection' },
+      ],
+    );
   });
 });
 
@@ -234,7 +257,7 @@ describe('composites', () => {
       values: {
         text: 'First **block**',
         caption: 'cap',
-        link: [{ target: 'authors', item: 7 }],
+        link: { target: 'authors', item: 7 },
         children: [{ id: 'block', values: { text: 'child text', caption: 'child cap' } }],
       },
     };

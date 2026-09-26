@@ -133,8 +133,10 @@ query {
 }
 ```
 
-- **Single or multiple** is decided by `has_many` in the schema (a reference to a single page is always single by definition).
-- **Multiple references keep the order they were written in**. A relation is not a set but an
+- **One reference or several is the field's shape**: a `Relation` holds one (an object, or `null`),
+  and **several references are an `Array` of relations** (an array of objects, or `[]`) - possibly
+  naming several different targets.
+- **Several references keep the order they were written in**. They are not a set but an
   **ordered list**, and the CMS stores the order and delivers it as is (only duplicate references
   are removed, and the first position stays). The plugin links the nodes in that order, so
   "featured articles in this order" shows up on the site as is. Reordering is the CMS's business,
@@ -159,9 +161,13 @@ its articles in one query too.
 ```json
 { "name": "author", "field_type": { "Relation": {
   "target": { "kind": "collection", "name": "authors" },
-  "has_many": false,
   "inverse_name": "articles"
 }}}
+
+{ "name": "authors", "field_type": { "Array": [
+  { "Relation": { "target": { "kind": "collection", "name": "authors" },
+                  "inverse_name": "articles" } }
+]}}
 ```
 
 ```graphql

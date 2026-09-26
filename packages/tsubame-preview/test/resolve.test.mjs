@@ -12,6 +12,9 @@ const API = 'https://cms.example.test';
 
 const REFERENCE = { target: 'authors', item: 9 };
 
+/** A relation holds one reference; several are an `Array` whose item types are all relations. */
+const RELATION = { Relation: { target: { kind: 'collection', name: 'authors' } } };
+
 function schema() {
   return [
     // The wire spellings, as the CMS serialises them: a unit variant is a bare string, a variant
@@ -24,10 +27,7 @@ function schema() {
     { name: 'body', field_type: { Markdown: {} } },
     { name: 'cover', field_type: 'Image' },
     { name: 'tags', field_type: { TextEnum: ['a', 'b'] } },
-    {
-      name: 'author',
-      field_type: { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } },
-    },
+    { name: 'author', field_type: RELATION },
     { name: 'seo', field_type: { CompositeField: { id: 'seo' } } },
     { name: 'gallery', field_type: { Array: ['Image'] } },
     {
@@ -48,7 +48,7 @@ function values() {
     body: '# Hi',
     cover: { id: 3, url: '/api/images/one.png' },
     tags: ['a', 'b'],
-    author: [REFERENCE],
+    author: REFERENCE,
     seo: { id: 'seo', values: { description: 'd' } },
     gallery: [{ id: 1, url: '/api/images/g.png' }],
     mixed: ['a', 1],
@@ -59,23 +59,21 @@ function values() {
 function content({ nested = false } = {}) {
   const authorSchema = [{ name: 'name', field_type: { Text: {} } }];
   if (nested) {
-    authorSchema.push({
-      name: 'mentor',
-      field_type: { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } },
-    });
+    authorSchema.push({ name: 'mentor', field_type: RELATION });
   }
   return {
     loadPublished: async (reference) => {
       if (reference.kind === 'collection' && reference.name === 'authors' && reference.item === 9) {
         return {
           schema: authorSchema,
-          values: nested
-            ? { name: 'Ada', mentor: [{ target: 'authors', item: 11 }] }
-            : { name: 'Ada' },
+          values: nested ? { name: 'Ada', mentor: { target: 'authors', item: 11 } } : { name: 'Ada' },
         };
       }
       if (reference.kind === 'collection' && reference.name === 'authors' && reference.item === 11) {
         return { schema: [{ name: 'name', field_type: { Text: {} } }], values: { name: 'Grace' } };
+      }
+      if (reference.kind === 'collection' && reference.name === 'categories' && reference.item === 3) {
+        return { schema: [{ name: 'name', field_type: { Text: {} } }], values: { name: 'News' } };
       }
       return null;
     },
@@ -185,16 +183,21 @@ describe('resolvePreview relations', () => {
     assert.deepEqual(result.author, { name: 'Ada' });
   });
 
+  it('answers null for a relation with no reference', async () => {
+    const result = await resolve({ values: { ...values(), author: null } });
+    assert.equal(result.author, null);
+  });
+
   it('answers null for a target that is not published', async () => {
     const result = await resolve({
-      values: { ...values(), author: [{ target: 'authors', item: 10 }] },
+      values: { ...values(), author: { target: 'authors', item: 10 } },
     });
     assert.equal(result.author, null);
   });
 
   it('follows one hop by default, and no further', async () => {
     const result = await resolve({
-      values: { ...values(), author: [REFERENCE] },
+      values: { ...values(), author: REFERENCE },
       ...content({ nested: true }),
     });
     assert.deepEqual(result.author, { name: 'Ada', mentor: null });
@@ -202,7 +205,7 @@ describe('resolvePreview relations', () => {
 
   it('follows as far as the budget allows', async () => {
     const result = await resolve({
-      values: { ...values(), author: [REFERENCE] },
+      values: { ...values(), author: REFERENCE },
       relationDepth: 2,
       ...content({ nested: true }),
     });
@@ -214,16 +217,9 @@ describe('resolvePreview relations', () => {
     assert.equal(result.author, null);
   });
 
-  it('keeps a list in order and null in the place of an unpublished entry', async () => {
+  it('keeps an array of references in order and null in the place of an unpublished entry', async () => {
     const result = await resolve({
-      schema: [
-        {
-          name: 'editors',
-          field_type: {
-            Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
-          },
-        },
-      ],
+      schema: [{ name: 'editors', field_type: { Array: [RELATION] } }],
       values: {
         editors: [
           { target: 'authors', item: 9 },
@@ -235,19 +231,43 @@ describe('resolvePreview relations', () => {
     assert.deepEqual(result.editors, [{ name: 'Ada' }, null, { name: 'Ada' }]);
   });
 
-  it('answers an empty list for a list relation with no value', async () => {
+  it('resolves the elements of one array whose targets differ', async () => {
     const result = await resolve({
       schema: [
         {
-          name: 'editors',
+          name: 'related',
           field_type: {
-            Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true },
+            Array: [RELATION, { Relation: { target: { kind: 'collection', name: 'categories' } } }],
           },
         },
       ],
+      values: {
+        related: [
+          { target: 'authors', item: 9 },
+          { target: 'categories', item: 3 },
+        ],
+      },
+    });
+    assert.deepEqual(result.related, [{ name: 'Ada' }, { name: 'News' }]);
+  });
+
+  it('answers an empty array for an array of relations with no value', async () => {
+    const result = await resolve({
+      schema: [{ name: 'editors', field_type: { Array: [RELATION] } }],
       values: {},
     });
     assert.deepEqual(result.editors, []);
+  });
+
+  it('leaves an array that mixes a relation with another type as raw JSON', async () => {
+    // The whole array is only several references when every item type is a relation; a mixed list
+    // has no per-element type tag, so it stays as the API sent it.
+    const value = [{ target: 'authors', item: 9 }, 'x'];
+    const result = await resolve({
+      schema: [{ name: 'mixed_related', field_type: { Array: [RELATION, { Text: {} }] } }],
+      values: { mixed_related: value },
+    });
+    assert.deepEqual(result.mixed_related, value);
   });
 
   it('reads a single-page reference as a page, not an item', async () => {
@@ -256,12 +276,10 @@ describe('resolvePreview relations', () => {
       schema: [
         {
           name: 'home',
-          field_type: {
-            Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false },
-          },
+          field_type: { Relation: { target: { kind: 'single_page', name: 'home' } } },
         },
       ],
-      values: { home: [{ target: 'home' }] },
+      values: { home: { target: 'home' } },
       loadPublished: async (reference) => {
         asked.push(reference);
         return { schema: [{ name: 'title', field_type: { Text: {} } }], values: { title: 'Home' } };

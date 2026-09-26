@@ -205,8 +205,9 @@ type ${names.composite} {
   values: JSON!
 }
 
-# One reference of a relation, used when the target is not part of the build. A relation field is
-# normally a link to the target node instead; the reference itself is always under \`values\`.
+# One reference of a relation, used when the target is not part of the build or when a list names
+# several targets. A relation field is normally a link to the target node instead; the reference
+# itself is always under \`values\`.
 type ${names.relation} {
   target: String!
   item: Int

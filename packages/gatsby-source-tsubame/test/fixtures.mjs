@@ -26,7 +26,6 @@ export const COMPOSITE_FIELDS = {
       field_type: {
         Relation: {
           target: { kind: 'collection', name: 'authors' },
-          has_many: false,
           // An inverse declared inside a composite definition is *not* a declaration: a composite
           // can be embedded by several collections, so "who refers" would have more than one
           // answer. The delivery API reads `inverse_name` from the schema's own fields only, and
@@ -51,7 +50,7 @@ export const COMPOSITE_FIELDS = {
     { name: 'body', field_type: { Markdown: {} }, required: false, width: 12, height: 1 },
     {
       name: 'target',
-      field_type: { Relation: { target: { kind: 'single_page', name: 'home' }, has_many: false } },
+      field_type: { Relation: { target: { kind: 'single_page', name: 'home' } } },
       required: false,
       width: 12,
       height: 1,
@@ -70,16 +69,32 @@ export const BLOG_SCHEMA = [
   {
     name: 'author',
     field_type: {
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false, inverse_name: 'articles' },
+      Relation: { target: { kind: 'collection', name: 'authors' }, inverse_name: 'articles' },
     },
     required: false,
     width: 12,
     height: 1,
   },
-  // Points at a collection that has no published items, and so is not in `/content/collections`.
+  // Several references are an `Array` whose item types are all relations; one item type per target.
+  // A single item type is the old `has_many: true`, read from the array wrapper instead of a flag.
   {
     name: 'editors',
-    field_type: { Relation: { target: { kind: 'collection', name: 'editors' }, has_many: true } },
+    field_type: {
+      Array: [{ Relation: { target: { kind: 'collection', name: 'editors' }, inverse_name: 'editor_of' } }],
+    },
+    required: false,
+    width: 12,
+    height: 1,
+  },
+  // One array may declare several targets: its element's own `target` says which one it is.
+  {
+    name: 'related',
+    field_type: {
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        { Relation: { target: { kind: 'collection', name: 'editors' } } },
+      ],
+    },
     required: false,
     width: 12,
     height: 1,
@@ -113,7 +128,7 @@ export const EDITORS_SCHEMA = [
   {
     name: 'homepage',
     field_type: {
-      Relation: { target: { kind: 'single_page', name: 'contact' }, has_many: false, inverse_name: 'editors' },
+      Relation: { target: { kind: 'single_page', name: 'contact' }, inverse_name: 'editors' },
     },
     required: false,
     width: 12,
@@ -129,7 +144,7 @@ export const HOME_SCHEMA = [
   {
     name: 'featured_author',
     field_type: {
-      Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false, inverse_name: 'features' },
+      Relation: { target: { kind: 'collection', name: 'authors' }, inverse_name: 'features' },
     },
     required: false,
     width: 12,
@@ -150,8 +165,12 @@ export const BLOG_ITEMS = [
       cover: { id: 3, url: '/api/images/logo.png' },
       gallery: [{ id: 4, url: '/api/images/a.png' }],
       tags: ['news'],
-      author: [{ target: 'authors', item: 7 }],
+      author: { target: 'authors', item: 7 },
       editors: [{ target: 'editors', item: 2 }],
+      related: [
+        { target: 'authors', item: 7 },
+        { target: 'editors', item: 2 },
+      ],
       seo: { id: 'seo', values: { description: 'about hello', og_image: { id: 9, url: '/api/images/og.png' } } },
       blocks: [
         {
@@ -159,7 +178,7 @@ export const BLOG_ITEMS = [
           values: {
             text: 'First **block**',
             caption: 'cap',
-            link: [{ target: 'authors', item: 7 }],
+            link: { target: 'authors', item: 7 },
             children: [{ id: 'block', values: { text: 'child text', caption: 'child cap' } }],
           },
         },
@@ -175,7 +194,7 @@ export const BLOG_ITEMS = [
     id: 2,
     published_at: '2026-01-04T00:00:00Z',
     last_published_at: null,
-    values: { title: 'Second', body: '', 'body-parts': [], tags: [], author: [] },
+    values: { title: 'Second', body: '', 'body-parts': [], tags: [], author: null },
   },
   {
     id: 3,
@@ -196,8 +215,8 @@ export const HOME_PAGE = {
   values: {
     title: 'Home',
     intro: '## Welcome',
-    cta: { id: 'cta', values: { label: 'Read more', body: 'The **cta** body', target: [{ target: 'home' }] } },
-    featured_author: [{ target: 'authors', item: 7 }],
+    cta: { id: 'cta', values: { label: 'Read more', body: 'The **cta** body', target: { target: 'home' } } },
+    featured_author: { target: 'authors', item: 7 },
   },
 };
 

@@ -106,19 +106,37 @@ describe('graphqlFieldType', () => {
   });
 
   it('types a relation after its target, and links it', () => {
-    const single = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: false } };
-    const many = { Relation: { target: { kind: 'collection', name: 'authors' }, has_many: true } };
+    const single = { Relation: { target: { kind: 'collection', name: 'authors' } } };
+    const many = { Array: [{ Relation: { target: { kind: 'collection', name: 'authors' } } }] };
     assert.deepEqual(graphqlFieldType(model, single), { type: 'TsubameAuthorsItem', link: true });
     assert.deepEqual(graphqlFieldType(model, many), { type: '[TsubameAuthorsItem]', link: true });
   });
 
-  it('never reads a single-page relation as a list', () => {
-    const relation = { Relation: { target: { kind: 'single_page', name: 'home' }, has_many: true } };
-    assert.deepEqual(graphqlFieldType(model, relation), { type: 'TsubameHomePage', link: true });
+  it('types a page relation, one or several, after the page', () => {
+    const single = { Relation: { target: { kind: 'single_page', name: 'home' } } };
+    const many = { Array: [{ Relation: { target: { kind: 'single_page', name: 'home' } } }] };
+    assert.deepEqual(graphqlFieldType(model, single), { type: 'TsubameHomePage', link: true });
+    assert.deepEqual(graphqlFieldType(model, many), { type: '[TsubameHomePage]', link: true });
   });
 
   it('falls back to the reference type when the target is not part of the build', () => {
-    const relation = { Relation: { target: { kind: 'collection', name: 'nowhere' }, has_many: true } };
+    const single = { Relation: { target: { kind: 'collection', name: 'nowhere' } } };
+    assert.deepEqual(graphqlFieldType(model, single), { type: 'TsubameRelationRef', link: false });
+    assert.deepEqual(graphqlFieldType(model, { Array: [single] }), {
+      type: '[TsubameRelationRef]',
+      link: false,
+    });
+  });
+
+  it('keeps the reference type for an array that declares several targets', () => {
+    // One GraphQL list cannot hold nodes of two types, so it carries the references instead; each
+    // element's own target says which node it names.
+    const relation = {
+      Array: [
+        { Relation: { target: { kind: 'collection', name: 'authors' } } },
+        { Relation: { target: { kind: 'collection', name: 'editors' } } },
+      ],
+    };
     assert.deepEqual(graphqlFieldType(model, relation), { type: '[TsubameRelationRef]', link: false });
   });
 
@@ -170,6 +188,15 @@ describe('inverse declarations', () => {
     assert.deepEqual(model.inverseDeclarationsByTarget.get('page:contact'), [
       { inverseName: 'editors', declaringTypeName: 'TsubameEditorsItem' },
     ]);
+  });
+
+  it('reads a declaration made by an Array of relations, one per declared target', () => {
+    // `blog.editors` is an `Array([Relation(editors)])`: each item type declares against its own
+    // target, so the array is read the same way one relation is.
+    assert.deepEqual(model.inverseDeclarationsByTarget.get('collection:editors'), [
+      { inverseName: 'editor_of', declaringTypeName: 'TsubameBlogItem' },
+    ]);
+    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'editors')).get('editor_of'), 'editor_of');
   });
 
   it('ignores a name declared inside a composite definition', () => {

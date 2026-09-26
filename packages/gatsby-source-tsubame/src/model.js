@@ -1,7 +1,7 @@
 'use strict';
 
 const { sanitizeTypeName, sanitizeFieldName, createNameAllocator } = require('./naming');
-const { describeFieldType } = require('./fields');
+const { describeFieldType, isRelationArray, relationOptionsOf } = require('./fields');
 
 /**
  * The model one build is read against: which GraphQL type each collection, page and composite
@@ -180,9 +180,10 @@ function relationTargetTypeName(model, target) {
  *   like `1.5` a query error rather than a value.
  * - `Date` and `DateTime` are the `Date` scalar Gatsby already has, so `formatString` works and the
  *   consumer does not have to parse strings by hand.
- * - A `Relation` field is a link to the target's type (`[Type]` when the relation holds several),
- *   which is what makes `author { name }` a query instead of a second lookup. A target that is not
- *   part of the build falls back to `[TsubameRelationRef]`, so the schema still compiles.
+ * - A `Relation` field is a link to the target's type, and an `Array` of relations to a list of it
+ *   when the item types name one target. A target that is not part of the build falls back to
+ *   `TsubameRelationRef`, and an array naming several targets to `[TsubameRelationRef]` because no
+ *   single node type can stand for it - so the schema still compiles.
  * - A `CompositeField` is typed after its definition once `/api/content/composite-fields` answers
  *   it, and by the opaque `TsubameComposite` otherwise.
  *
@@ -216,19 +217,30 @@ function graphqlFieldType(model, fieldType) {
     case 'Relation': {
       const relation = options === null || typeof options !== 'object' ? {} : options;
       const targetType = relationTargetTypeName(model, relation.target);
-      if (targetType === null) {
-        return { type: `[${model.names.relation}]`, link: false };
-      }
-      // A single page is one item, so a relation that points at one is never a list, whatever the
-      // schema says; the server refuses the combination, and reading it as "several" would only
-      // hide a broken schema.
-      const many = Boolean(relation.has_many) && !(relation.target && relation.target.kind === 'single_page');
-      return { type: many ? `[${targetType}]` : targetType, link: true };
+      return targetType === null
+        ? { type: model.names.relation, link: false }
+        : { type: targetType, link: true };
     }
     case 'Array': {
+      if (!Array.isArray(options) || options.length === 0) {
+        return { type: 'JSON', link: false };
+      }
+      // Several references are an `Array` whose item types are all relations. One item type means
+      // one target, which a list of that node type can hold; several targets cannot be one GraphQL
+      // list, so each element keeps the reference shape that carries its own target.
+      if (isRelationArray(fieldType)) {
+        if (options.length === 1) {
+          const relation = describeFieldType(options[0]).options ?? {};
+          const targetType = relationTargetTypeName(model, relation.target);
+          return targetType === null
+            ? { type: `[${model.names.relation}]`, link: false }
+            : { type: `[${targetType}]`, link: true };
+        }
+        return { type: `[${model.names.relation}]`, link: false };
+      }
       // An array with more than one declared item type is left untyped: the server reads each
       // element with the first type that fits, so the elements need not be the same type.
-      if (!Array.isArray(options) || options.length !== 1) {
+      if (options.length !== 1) {
         return { type: 'JSON', link: false };
       }
       const item = graphqlFieldType(model, options[0]);
@@ -251,9 +263,10 @@ function graphqlFieldType(model, fieldType) {
  *
  * Only a **top-level** relation field declares an inverse, which is the rule the delivery API's
  * `?populate=<inverse_name>` follows too (`ContentReader::declared_inverses` reads the schema's own
- * fields, and `inverse_references` matches them). A relation inside a composite definition is not a
- * declaration: a composite can be embedded by several collections, so "who is referring" would have
- * more than one answer.
+ * fields, and `inverse_references` matches them). An `Array` of relations is one of them: each item
+ * type declares its own target, so it contributes one declaration. A relation inside a composite
+ * definition is not a declaration: a composite can be embedded by several collections, so "who is
+ * referring" would have more than one answer.
  *
  * - `bySchema`: what a content type declares, for the walk that builds the reverse index.
  * - `byTarget`: what a target answers to, for the declared fields and their types.
@@ -268,23 +281,18 @@ function collectInverseDeclarations(snapshot, plan) {
     }
     const declarations = [];
     for (const field of Array.isArray(schema) ? schema : []) {
-      const { kind, options } = describeFieldType(field.field_type);
-      if (kind !== 'Relation') {
-        continue;
+      for (const options of relationOptionsOf(field.field_type)) {
+        const inverseName = typeof options.inverse_name === 'string' ? options.inverse_name.trim() : '';
+        const target = normalizeTarget(options.target);
+        if (inverseName === '' || target === null) {
+          continue;
+        }
+        declarations.push({ inverseName, target });
+        const key = targetKey(target);
+        const declared = byTarget.get(key) ?? [];
+        declared.push({ inverseName, declaringTypeName });
+        byTarget.set(key, declared);
       }
-      const inverseName =
-        options !== null && typeof options === 'object' && typeof options.inverse_name === 'string'
-          ? options.inverse_name.trim()
-          : '';
-      const target = options !== null && typeof options === 'object' ? normalizeTarget(options.target) : null;
-      if (inverseName === '' || target === null) {
-        continue;
-      }
-      declarations.push({ inverseName, target });
-      const key = targetKey(target);
-      const declared = byTarget.get(key) ?? [];
-      declared.push({ inverseName, declaringTypeName });
-      byTarget.set(key, declared);
     }
     if (declarations.length > 0) {
       bySchema.set(declaringSchemaKey, declarations);

@@ -52,6 +52,11 @@ describe('relation fields', () => {
     assert.match(sdl, /^\s+editors: \[TsubameEditorsItem\] @link$/m);
   });
 
+  it('keeps an array that declares several targets as a list of references', () => {
+    // No single node type can stand for both, so the list carries the references themselves.
+    assert.match(sdl, /^\s+related: \[TsubameRelationRef\]$/m);
+  });
+
   it('links a page reference to the page type', () => {
     // `home.cta.target` points at `home`; the type is the page's, not a reference struct.
     assert.match(sdl, /^\s+target: TsubameHomePage @link$/m);
@@ -69,6 +74,11 @@ describe('reverse references', () => {
 
   it('lists a collection declaring an inverse on a page target', () => {
     assert.match(sdl, /^\s+editors: \[TsubameEditorsItem\] @link$/m);
+  });
+
+  it('reads an inverse declared by an Array of relations', () => {
+    // `blog.editors` is `Array([Relation(editors)])` with `inverse_name: "editor_of"`.
+    assert.match(sdl, /^\s+editor_of: \[TsubameBlogItem\] @link$/m);
   });
 
   it('does not turn a name declared inside a composite into a field', () => {

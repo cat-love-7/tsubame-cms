@@ -130,14 +130,24 @@ describe('references', () => {
   it('still keeps the reference itself under values', async () => {
     const { nodes } = await run();
     const item = nodes.get('node:tsubame-item:blog:1');
-    assert.deepEqual(item.values.author, [{ target: 'authors', item: 7 }]);
+    assert.deepEqual(item.values.author, { target: 'authors', item: 7 });
+  });
+
+  it('keeps an array that declares several targets as references', async () => {
+    const { nodes } = await run();
+    const item = nodes.get('node:tsubame-item:blog:1');
+    // Two targets, so no single node type: the elements keep their own target.
+    assert.deepEqual(item.related, [
+      { target: 'authors', item: 7, kind: 'collection' },
+      { target: 'editors', item: 2, kind: 'collection' },
+    ]);
   });
 
   it('links a relation declared inside a composite definition', async () => {
     const { nodes } = await run();
     const block = nodes.get('node:tsubame-item:blog:1').blocks[0];
     assert.equal(block.link, 'node:tsubame-item:authors:7');
-    assert.equal(block.values.link[0].item, 7);
+    assert.equal(block.values.link.item, 7);
   });
 });
 
