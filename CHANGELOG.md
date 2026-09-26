@@ -25,6 +25,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   second edit used to mean finding the item again.
 - **Copying an item asks first**, like every other button on that row (delete, publish, unpublish,
   discard): the copy is created and opened only once the question is answered.
+- **The comparison of a draft against what is published is sized to its content.** It used to draw
+  each side with the box the Schema asks for, so a paragraph sat under the height of a twelve-row
+  editor; a multi-line Text or Markdown value is now rendered as text, and the cells inside a
+  Composite no longer keep their layout minimum there.
+- The way out of an item editor now reads **"Back to the list without saving"** (it was "Cancel",
+  which said neither what it does nor where it goes).
 
 ### Fixed
 
