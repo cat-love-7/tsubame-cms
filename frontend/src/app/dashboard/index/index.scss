@@ -15,3 +15,9 @@
   margin: 8px 0 0;
   color: var(--mat-sys-on-surface-variant);
 }
+
+/// The product's name under the deployment's, as in the app bar: smaller than the heading, so the
+/// name being read first does not make the product disappear.
+.welcome .product {
+  font: var(--mat-sys-label-small);
+}

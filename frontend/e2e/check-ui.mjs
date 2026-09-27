@@ -518,6 +518,17 @@ async function theDeploymentNamesItselfInTheShell() {
     site === SITE_NAME && product === 'Tsubame',
     `${site} / ${product}`,
   );
+
+  // The landing screen is the first thing a session sees, so its heading says the same two lines -
+  // and it is the largest text anywhere for "which site is this?".
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  const heading = (await page.locator('.welcome h3').textContent())?.trim();
+  const under = (await page.locator('.welcome .product').textContent())?.trim();
+  check(
+    'トップページの見出しに配備の名前が出る',
+    heading === SITE_NAME && under === 'Tsubame',
+    `${heading} / ${under}`,
+  );
 }
 
 /** The language switch. */

@@ -1,4 +1,12 @@
 <div class="panel welcome">
-  <h3>{{ 'app.name' | transloco }}</h3>
+  <!-- What is being administered, then the product: the two lines the app bar carries, so somebody
+       who has two of these open reads the same answer wherever they look. A deployment that never
+       named itself is the product's name, which is what this screen has always shown. -->
+  @if (siteName(); as site) {
+    <h3>{{ site }}</h3>
+    <p class="product">{{ 'app.name' | transloco }}</p>
+  } @else {
+    <h3>{{ 'app.name' | transloco }}</h3>
+  }
   <p class="landing">{{ 'app.landing' | transloco }}</p>
 </div>
