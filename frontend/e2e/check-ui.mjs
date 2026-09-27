@@ -2147,9 +2147,15 @@ async function theSchemaEditorDrivenFromTheScreen() {
     .filter({ hasText: wholeLabel(referencedTitle) })
     .first()
     .click();
-  const pickedChip = (
-    (await relationCell.locator('mat-chip-row .reference-label').first().textContent()) ?? 'none'
-  ).trim();
+  // The chip's own name is looked up after the pick, the way the row's is looked up after the row
+  // is drawn: read once and this catches the fallback the chip starts with - which is how this
+  // check failed with `e2e_blog #1` on a run whose earlier picker checks were green.
+  const pickedLabel = relationCell.locator('mat-chip-row .reference-label').first();
+  await pickedLabel
+    .filter({ hasText: wholeLabel(referencedTitle) })
+    .waitFor({ timeout: 15000 })
+    .catch(() => {});
+  const pickedChip = ((await pickedLabel.textContent()) ?? 'none').trim();
   check(
     'ピッカーで参照先を選べる',
     (await relationCell.locator('mat-chip-row').count()) === 1 && pickedChip === referencedTitle,
