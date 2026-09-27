@@ -25,7 +25,12 @@
 .content {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 24px;
+  /// The screen's gutter, named because a pinned table column has to know where the area ends: a
+  /// table wider than the screen overflows *into* this padding, so the edge the scroll stops at and
+  /// the edge the pin sticks to are two different ones unless the pin is told about the gutter too
+  /// (`table.items td.actions` in `styles.scss`).
+  --screen-gutter: 24px;
+  padding: var(--screen-gutter);
   overflow: auto;
 
   // A screen is easier to read when it does not stretch across a very wide display, and the

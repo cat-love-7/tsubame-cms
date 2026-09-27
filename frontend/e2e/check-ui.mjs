@@ -804,6 +804,26 @@ async function openingAnItemFromTheList() {
   });
   check('操作の列は右端に固定される', actionsPosition === 'sticky', actionsPosition);
 
+  // And the pin has to come to rest where the table ends. A table wider than the screen overflows
+  // into the container's own gutter, so a column pinned to the *content* edge stops that gutter's
+  // width short of the last column and hides the end of it - which is how the last timestamp lost
+  // its last 24px on a narrow window. Measured with the window narrowed, because the table has to
+  // outgrow the screen for the two edges to differ at all.
+  const windowSize = page.viewportSize();
+  await page.setViewportSize({ width: 800, height: 800 });
+  const hidden = await page.evaluate(() => {
+    const box = document.querySelector('.content');
+    box.scrollLeft = box.scrollWidth;
+    const last = document.querySelector('table.items tbody tr td.updated');
+    const pinned = document.querySelector('table.items tbody td.actions');
+    if (last === null || pinned === null) {
+      return Number.NaN;
+    }
+    return Math.round(last.getBoundingClientRect().right - pinned.getBoundingClientRect().left);
+  });
+  await page.setViewportSize(windowSize);
+  check('右端までスクロールすると最後の列まで見える', hidden <= 0, `${hidden}px 隠れている`);
+
   // The row opens the item, the way a page's name does in the single-page list.
   await firstRow().locator('td').nth(1).click();
   const opened = await page

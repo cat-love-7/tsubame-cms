@@ -106,6 +106,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ### Fixed
 
+- **The pinned actions column no longer covers the end of the last column.** A table wider than the
+  screen overflows into the scroll area's own gutter, so the column pinned to its right edge came to
+  rest one gutter's width short of where the table ends: scrolled all the way right, the last 24px of
+  the last data column - the end of a timestamp - sat under the buttons. The pin is measured from the
+  gutter now, which is the same edge the overflow reaches; a table that fits is unaffected, because a
+  pin only moves when there is something to scroll.
 - **The tab icon no longer disappears on a dark tab strip.** The favicon was a bare mark with a
   `prefers-color-scheme` rule in its SVG, which is not an answer every browser gives inside an icon
   (WebKit ignores it), so a dark strip got the near-black bird drawn on near-black. The mark now

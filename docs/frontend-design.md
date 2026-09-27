@@ -95,11 +95,16 @@ the same file.
   buttons is that control's, and navigating on the way there would cost the reader their place in
   the list. The edit icon stays, so the keyboard and the reading keep a named way in.
 - **The row-actions column is pinned**: copying and deleting are behind the row's **⋮** (`more_vert`) menu, and the
-  column itself is `position: sticky; right: 0` with an opaque background (the row's hover colour is repeated on the
+  column itself is `position: sticky` with an opaque background (the row's hover colour is repeated on the
   cell, or the pinned cell would keep the plain one). A Schema that marks many fields for the list makes the table wider
   than the window, and before this the buttons travelled off the right edge with the last columns; a Schema now costs
   width when its list columns grow, never the buttons. Only what the account may do is in the menu, and an account with
   neither copy nor delete gets no ⋮ button at all.
+  **It pins to the scroll area's gutter, not to its content edge** (`right: calc(-1 * var(--screen-gutter))`, the
+  variable `.content` sets in `main-layout.scss`): a table wider than the screen overflows *into* that gutter, so a
+  column pinned at `0` came to rest one gutter's width short of where the table ends and covered the last 24px of the
+  last data column - the end of a timestamp - at the end of the scroll. A table that fits is unaffected either way,
+  because a pin only moves when there is something to scroll.
 - **A deployment can name what it administers, and the screens say it**: `SITE_NAME` reaches the browser
   through `/auth/capabilities` as `site_name`, and is drawn in three places - the app bar (the name, with
   `Tsubame` under it as the product), the sign-in card ("Sign in to <name>", where the card is the only part

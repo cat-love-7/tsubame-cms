@@ -259,11 +259,16 @@ table.accounts {
   /// the values scroll under them. It stays a table cell: a flex cell leaves the table's layout
   /// behind, and the buttons would stack down the side. The opaque background is what hides the
   /// columns going past; the row's own colour comes with the hover rule below.
+  ///
+  /// The pin is measured from the area's gutter rather than from its content edge: a table wider
+  /// than the screen overflows into the container's right padding, so a column pinned at `0` comes
+  /// to rest that padding's width short of where the table actually ends - which hid the last 24px
+  /// of the last data column (the timestamp) once the scroll reached the end.
   td.actions,
   th.actions {
     display: table-cell;
     position: sticky;
-    right: 0;
+    right: calc(-1 * var(--screen-gutter, 0px));
     width: 1px;
     white-space: nowrap;
     text-align: right;
