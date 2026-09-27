@@ -230,6 +230,18 @@ button:focus-visible {
 }
 
 /// Tables, whether Material's or a plain one for schema-driven columns.
+///
+/// A table that can be wider than the screen scrolls in its own box: the screen around it - the
+/// toolbar that holds "new item", the pager under it - belongs to the screen rather than to the
+/// table, and scrolling the table used to carry both off to the side with it. The box has no
+/// gutter of its own, so the pinned row-actions column measures from the table's own end
+/// (`--screen-gutter` is what a scroll box's padding would otherwise put between the two).
+.table-scroll {
+  --screen-gutter: 0px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 table.items,
 table.accounts {
   width: 100%;

@@ -804,25 +804,41 @@ async function openingAnItemFromTheList() {
   });
   check('操作の列は右端に固定される', actionsPosition === 'sticky', actionsPosition);
 
-  // And the pin has to come to rest where the table ends. A table wider than the screen overflows
-  // into the container's own gutter, so a column pinned to the *content* edge stops that gutter's
-  // width short of the last column and hides the end of it - which is how the last timestamp lost
-  // its last 24px on a narrow window. Measured with the window narrowed, because the table has to
-  // outgrow the screen for the two edges to differ at all.
+  // The screen around the table belongs to the screen. The toolbar and the pager used to sit in the
+  // same scroll box as the table, so scrolling sideways carried "new item" off with it; the table
+  // has a box of its own now. Both halves are read here: the toolbar button has to stay where it is,
+  // the table has to really scroll, and the pin has to come to rest where the table ends rather than
+  // hiding the last column's tail (which is what the gutter between them used to do).
   const windowSize = page.viewportSize();
   await page.setViewportSize({ width: 800, height: 800 });
-  const hidden = await page.evaluate(() => {
-    const box = document.querySelector('.content');
-    box.scrollLeft = box.scrollWidth;
+  const geometry = await page.evaluate(() => {
+    const content = document.querySelector('.content');
+    const box = document.querySelector('.table-scroll');
     const last = document.querySelector('table.items tbody tr td.updated');
     const pinned = document.querySelector('table.items tbody td.actions');
-    if (last === null || pinned === null) {
-      return Number.NaN;
-    }
-    return Math.round(last.getBoundingClientRect().right - pinned.getBoundingClientRect().left);
+    const newItem = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent.includes('New item'),
+    );
+    const before = newItem.getBoundingClientRect().left;
+    box.scrollLeft = box.scrollWidth;
+    return {
+      screenScrollsSideways: content.scrollWidth > content.clientWidth,
+      newItemMoved: Math.round(newItem.getBoundingClientRect().left - before),
+      tableScrollRange: Math.round(box.scrollWidth - box.clientWidth),
+      hidden: Math.round(last.getBoundingClientRect().right - pinned.getBoundingClientRect().left),
+    };
   });
   await page.setViewportSize(windowSize);
-  check('右端までスクロールすると最後の列まで見える', hidden <= 0, `${hidden}px 隠れている`);
+  check(
+    '横にスクロールするのは表だけで、新しいアイテムは動かない',
+    !geometry.screenScrollsSideways && geometry.newItemMoved === 0 && geometry.tableScrollRange > 0,
+    `画面=${geometry.screenScrollsSideways} / ボタンの移動=${geometry.newItemMoved}px / 表の可動範囲=${geometry.tableScrollRange}px`,
+  );
+  check(
+    '右端までスクロールすると最後の列まで見える',
+    geometry.hidden <= 0,
+    `${geometry.hidden}px 隠れている`,
+  );
 
   // The row opens the item, the way a page's name does in the single-page list.
   await firstRow().locator('td').nth(1).click();

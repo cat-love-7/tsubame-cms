@@ -106,6 +106,11 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ### Fixed
 
+- **Scrolling a list sideways no longer carries the toolbar and the pager with it.** The table, the
+  toolbar that holds "new item" and the pager shared one scroll box, so a table wider than the window
+  (a Schema with many list columns) moved the button that adds an item out of the way whenever anybody
+  looked at the right-hand columns. The table scrolls in a box of its own now: the screen around it
+  stays put, and the pinned actions column still comes to rest exactly where the table ends.
 - **The pinned actions column no longer covers the end of the last column.** A table wider than the
   screen overflows into the scroll area's own gutter, so the column pinned to its right edge came to
   rest one gutter's width short of where the table ends: scrolled all the way right, the last 24px of

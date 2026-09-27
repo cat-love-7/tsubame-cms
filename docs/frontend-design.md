@@ -100,11 +100,14 @@ the same file.
   than the window, and before this the buttons travelled off the right edge with the last columns; a Schema now costs
   width when its list columns grow, never the buttons. Only what the account may do is in the menu, and an account with
   neither copy nor delete gets no ⋮ button at all.
-  **It pins to the scroll area's gutter, not to its content edge** (`right: calc(-1 * var(--screen-gutter))`, the
-  variable `.content` sets in `main-layout.scss`): a table wider than the screen overflows *into* that gutter, so a
-  column pinned at `0` came to rest one gutter's width short of where the table ends and covered the last 24px of the
-  last data column - the end of a timestamp - at the end of the scroll. A table that fits is unaffected either way,
-  because a pin only moves when there is something to scroll.
+  **Only the table scrolls sideways**: it sits in a box of its own (`.table-scroll`), because with the
+  whole screen as the scroll box the toolbar - and with it "new item" - and the pager travelled off the
+  side with the table. **And the pin measures that box's gutter**, not its content edge
+  (`right: calc(-1 * var(--screen-gutter))`, which the scroll box sets - `.content` sets the screen's own
+  24px, `.table-scroll` sets 0): a table wider than its box overflows *into* the box's padding, so a
+  column pinned at `0` came to rest that padding's width short of where the table ends and covered the
+  last 24px of the last data column - the end of a timestamp - at the end of the scroll. A table that
+  fits is unaffected either way, because a pin only moves when there is something to scroll.
 - **A deployment can name what it administers, and the screens say it**: `SITE_NAME` reaches the browser
   through `/auth/capabilities` as `site_name`, and is drawn in three places - the app bar (the name, with
   `Tsubame` under it as the product), the sign-in card ("Sign in to <name>", where the card is the only part

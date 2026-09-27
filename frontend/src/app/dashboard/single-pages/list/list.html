@@ -11,87 +11,90 @@
 }
 
 <!-- A plain table rather than `mat-table`: the columns are fixed, and this is the shape the
-     collection list uses, so the two read the same. -->
-<table class="items">
-  <thead>
-    <tr>
-      <th>{{ 'common.page' | transloco }}</th>
-      <!-- Status and, under it, who published (see the collection list). -->
-      <th>{{ 'content.statusWithPublisher' | transloco }}</th>
-      <th>{{ 'common.updated' | transloco }}</th>
-      <th class="actions"></th>
-    </tr>
-  </thead>
-  <tbody>
-    @for (name of names(); track name) {
-      <!-- The row opens the page, as the name always has: a list where one screen answers a click
+     collection list uses, so the two read the same. It scrolls sideways in its own box, so the
+     toolbar above it stays where it is (see the collection list). -->
+<div class="table-scroll">
+  <table class="items">
+    <thead>
+      <tr>
+        <th>{{ 'common.page' | transloco }}</th>
+        <!-- Status and, under it, who published (see the collection list). -->
+        <th>{{ 'content.statusWithPublisher' | transloco }}</th>
+        <th>{{ 'common.updated' | transloco }}</th>
+        <th class="actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (name of names(); track name) {
+        <!-- The row opens the page, as the name always has: a list where one screen answers a click
            on the name and the other only answers a click on an icon is a list an editor has to
            remember rather than read. The buttons at the end of the row keep their own clicks. -->
-      <tr class="row" (click)="open(name, $event)">
-        <td>
-          <a [routerLink]="['/single-pages', name]">{{ name }}</a>
-        </td>
-        <td>
-          <app-item-status [status]="statusOf(name)" />
-          @if (statusOf(name) === 'published' && hasDraft(name)) {
-            <span class="draft-note" [title]="'content.unsavedHint' | transloco">
-              {{ 'content.unsaved' | transloco }}
-            </span>
-          }
-          @if (publishedBy(name); as publisher) {
-            <span class="publisher" [title]="'content.publishedBy' | transloco">{{
-              publisher
-            }}</span>
-          }
-        </td>
-        <td class="updated">{{ updatedAt(name) }}</td>
-        <td class="actions">
-          @if (canPublish(name)) {
-            <!-- A published page with pending changes offers to release them; the toggle beside it
-                 stays available for taking the page off the site. -->
+        <tr class="row" (click)="open(name, $event)">
+          <td>
+            <a [routerLink]="['/single-pages', name]">{{ name }}</a>
+          </td>
+          <td>
+            <app-item-status [status]="statusOf(name)" />
             @if (statusOf(name) === 'published' && hasDraft(name)) {
+              <span class="draft-note" [title]="'content.unsavedHint' | transloco">
+                {{ 'content.unsaved' | transloco }}
+              </span>
+            }
+            @if (publishedBy(name); as publisher) {
+              <span class="publisher" [title]="'content.publishedBy' | transloco">{{
+                publisher
+              }}</span>
+            }
+          </td>
+          <td class="updated">{{ updatedAt(name) }}</td>
+          <td class="actions">
+            @if (canPublish(name)) {
+              <!-- A published page with pending changes offers to release them; the toggle beside it
+                 stays available for taking the page off the site. -->
+              @if (statusOf(name) === 'published' && hasDraft(name)) {
+                <button
+                  matIconButton
+                  (click)="publish(name)"
+                  [attr.aria-label]="'labels.publishChangesOfPage' | transloco: { id: name }"
+                  [matTooltip]="'labels.publishChangesOfPage' | transloco: { id: name }"
+                >
+                  <mat-icon>publish</mat-icon>
+                </button>
+              }
               <button
                 matIconButton
-                (click)="publish(name)"
-                [attr.aria-label]="'labels.publishChangesOfPage' | transloco: { id: name }"
-                [matTooltip]="'labels.publishChangesOfPage' | transloco: { id: name }"
+                (click)="statusOf(name) === 'published' ? unpublish(name) : publish(name)"
+                [attr.aria-label]="
+                  (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
+                    | transloco: { id: name }
+                "
+                [matTooltip]="
+                  (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
+                    | transloco: { id: name }
+                "
               >
-                <mat-icon>publish</mat-icon>
+                <mat-icon>{{
+                  statusOf(name) === 'published' ? 'visibility_off' : 'publish'
+                }}</mat-icon>
               </button>
             }
-            <button
-              matIconButton
-              (click)="statusOf(name) === 'published' ? unpublish(name) : publish(name)"
-              [attr.aria-label]="
-                (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
-                  | transloco: { id: name }
-              "
-              [matTooltip]="
-                (statusOf(name) === 'published' ? 'labels.unpublishPage' : 'labels.publishPage')
-                  | transloco: { id: name }
-              "
-            >
-              <mat-icon>{{
-                statusOf(name) === 'published' ? 'visibility_off' : 'publish'
-              }}</mat-icon>
-            </button>
-          }
-          @if (canEdit(name)) {
-            <button
-              matIconButton
-              [routerLink]="['/single-pages', name]"
-              [attr.aria-label]="'labels.editContentOf' | transloco: { name }"
-              [matTooltip]="'labels.editContentOf' | transloco: { name }"
-            >
-              <mat-icon>edit_note</mat-icon>
-            </button>
-          }
-        </td>
-      </tr>
-    } @empty {
-      <tr>
-        <td colspan="4" class="empty">{{ 'content.noPages' | transloco }}</td>
-      </tr>
-    }
-  </tbody>
-</table>
+            @if (canEdit(name)) {
+              <button
+                matIconButton
+                [routerLink]="['/single-pages', name]"
+                [attr.aria-label]="'labels.editContentOf' | transloco: { name }"
+                [matTooltip]="'labels.editContentOf' | transloco: { name }"
+              >
+                <mat-icon>edit_note</mat-icon>
+              </button>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="4" class="empty">{{ 'content.noPages' | transloco }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

@@ -63,192 +63,195 @@
 }
 
 <!-- A plain table (rather than mat-table) because the columns are defined by the
-     collection schema, which is only known once it has loaded. -->
-<table class="items">
-  <thead>
-    <tr>
-      <th class="select">
-        @if (canPublish()) {
-          <input
-            type="checkbox"
-            [checked]="allSelected()"
-            (change)="toggleAll()"
-            [attr.aria-label]="'labels.selectAllItems' | transloco"
-          />
-        }
-      </th>
-      <th [attr.aria-sort]="ariaSort('id')">
-        <button
-          type="button"
-          class="sort-header"
-          [class.asc]="sortDirection('id') === 'asc'"
-          [class.desc]="sortDirection('id') === 'desc'"
-          (click)="setSort('id')"
-          [attr.aria-label]="'content.sortBy' | transloco: { column: ('common.id' | transloco) }"
-        >
-          {{ 'common.id' | transloco }}
-        </button>
-      </th>
-      @for (field of listColumns(); track field.name) {
-        <th [attr.aria-sort]="ariaSort(field.name)">
-          <button
-            type="button"
-            class="sort-header"
-            [class.asc]="sortDirection(field.name) === 'asc'"
-            [class.desc]="sortDirection(field.name) === 'desc'"
-            (click)="setSort(field.name)"
-            [attr.aria-label]="'content.sortBy' | transloco: { column: field.name }"
-          >
-            {{ field.name }}
-          </button>
-        </th>
-      }
-      <!-- Status and, under it, who published: the heading is where that is said, rather than
-           the same label on every row. -->
-      <th>{{ 'content.statusWithPublisher' | transloco }}</th>
-      <th>{{ 'common.updated' | transloco }}</th>
-      <th class="actions"></th>
-    </tr>
-  </thead>
-  <tbody>
-    @for (row of rows(); track row.id) {
-      <!-- The row itself opens the item: an editor who has found their row should not have to aim at
-           a small icon, and it is what the single-page list already does with the page's name. The
-           cells that carry a control of their own - the checkbox, and the buttons on the right - ask
-           for that control instead, so a click there is not a navigation. -->
-      <tr class="row" (click)="open(row.id, $event)">
-        <td class="select">
+     collection schema, which is only known once it has loaded. It scrolls sideways in its own box,
+     so the toolbar above it - "new item" - and the pager below stay where they are. -->
+<div class="table-scroll">
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="select">
           @if (canPublish()) {
             <input
               type="checkbox"
-              [checked]="selected().has(row.id)"
-              (change)="toggleSelected(row.id)"
-              [attr.aria-label]="'labels.selectItem' | transloco: { id: row.id }"
+              [checked]="allSelected()"
+              (change)="toggleAll()"
+              [attr.aria-label]="'labels.selectAllItems' | transloco"
             />
           }
-        </td>
-        <td>{{ row.id }}</td>
-        @for (cell of row.cells; track cell.name) {
-          <!-- The cell is one line, so a long value is cut rather than wrapped; the whole of it is
-               on the title, which is where a reader goes when the column is not enough. An image
-               column is the exception: a thumbnail says which item this is better than any url. -->
-          <td class="value" [title]="cell.text">
-            @if (cell.images.length > 0) {
-              <span class="cell-images">
-                @for (image of cell.images.slice(0, maxThumbnails); track $index) {
-                  @if (image.url) {
-                    <img
-                      [src]="imageUrl(image.url)"
-                      [alt]="'labels.imageAlt' | transloco: { id: image.id ?? '?' }"
-                      loading="lazy"
-                    />
-                  } @else {
-                    <span class="image-id">id {{ image.id ?? '?' }}</span>
-                  }
-                }
-                @if (cell.images.length > maxThumbnails) {
-                  <span class="more">+{{ cell.images.length - maxThumbnails }}</span>
-                }
-              </span>
-            } @else {
-              {{ cell.text }}
+        </th>
+        <th [attr.aria-sort]="ariaSort('id')">
+          <button
+            type="button"
+            class="sort-header"
+            [class.asc]="sortDirection('id') === 'asc'"
+            [class.desc]="sortDirection('id') === 'desc'"
+            (click)="setSort('id')"
+            [attr.aria-label]="'content.sortBy' | transloco: { column: ('common.id' | transloco) }"
+          >
+            {{ 'common.id' | transloco }}
+          </button>
+        </th>
+        @for (field of listColumns(); track field.name) {
+          <th [attr.aria-sort]="ariaSort(field.name)">
+            <button
+              type="button"
+              class="sort-header"
+              [class.asc]="sortDirection(field.name) === 'asc'"
+              [class.desc]="sortDirection(field.name) === 'desc'"
+              (click)="setSort(field.name)"
+              [attr.aria-label]="'content.sortBy' | transloco: { column: field.name }"
+            >
+              {{ field.name }}
+            </button>
+          </th>
+        }
+        <!-- Status and, under it, who published: the heading is where that is said, rather than
+           the same label on every row. -->
+        <th>{{ 'content.statusWithPublisher' | transloco }}</th>
+        <th>{{ 'common.updated' | transloco }}</th>
+        <th class="actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (row of rows(); track row.id) {
+        <!-- The row itself opens the item: an editor who has found their row should not have to aim at
+           a small icon, and it is what the single-page list already does with the page's name. The
+           cells that carry a control of their own - the checkbox, and the buttons on the right - ask
+           for that control instead, so a click there is not a navigation. -->
+        <tr class="row" (click)="open(row.id, $event)">
+          <td class="select">
+            @if (canPublish()) {
+              <input
+                type="checkbox"
+                [checked]="selected().has(row.id)"
+                (change)="toggleSelected(row.id)"
+                [attr.aria-label]="'labels.selectItem' | transloco: { id: row.id }"
+              />
             }
           </td>
-        }
-        <td>
-          <app-item-status [status]="statusOf(row.id)" />
-          @if (statusOf(row.id) === 'published' && hasDraft(row.id)) {
-            <span class="draft-note" [title]="'content.unsavedHint' | transloco">
-              {{ 'content.unsaved' | transloco }}
-            </span>
+          <td>{{ row.id }}</td>
+          @for (cell of row.cells; track cell.name) {
+            <!-- The cell is one line, so a long value is cut rather than wrapped; the whole of it is
+               on the title, which is where a reader goes when the column is not enough. An image
+               column is the exception: a thumbnail says which item this is better than any url. -->
+            <td class="value" [title]="cell.text">
+              @if (cell.images.length > 0) {
+                <span class="cell-images">
+                  @for (image of cell.images.slice(0, maxThumbnails); track $index) {
+                    @if (image.url) {
+                      <img
+                        [src]="imageUrl(image.url)"
+                        [alt]="'labels.imageAlt' | transloco: { id: image.id ?? '?' }"
+                        loading="lazy"
+                      />
+                    } @else {
+                      <span class="image-id">id {{ image.id ?? '?' }}</span>
+                    }
+                  }
+                  @if (cell.images.length > maxThumbnails) {
+                    <span class="more">+{{ cell.images.length - maxThumbnails }}</span>
+                  }
+                </span>
+              } @else {
+                {{ cell.text }}
+              }
+            </td>
           }
-          @if (publishedBy(row.id); as publisher) {
-            <span class="publisher" [title]="'content.publishedBy' | transloco">{{
-              publisher
-            }}</span>
-          }
-        </td>
-        <td class="updated">{{ updatedAt(row.id) }}</td>
-        <td class="actions">
-          @if (canPublish()) {
-            <!-- A published row with pending changes offers to release them; the toggle beside it
-                 stays available for taking the row off the site. -->
+          <td>
+            <app-item-status [status]="statusOf(row.id)" />
             @if (statusOf(row.id) === 'published' && hasDraft(row.id)) {
+              <span class="draft-note" [title]="'content.unsavedHint' | transloco">
+                {{ 'content.unsaved' | transloco }}
+              </span>
+            }
+            @if (publishedBy(row.id); as publisher) {
+              <span class="publisher" [title]="'content.publishedBy' | transloco">{{
+                publisher
+              }}</span>
+            }
+          </td>
+          <td class="updated">{{ updatedAt(row.id) }}</td>
+          <td class="actions">
+            @if (canPublish()) {
+              <!-- A published row with pending changes offers to release them; the toggle beside it
+                 stays available for taking the row off the site. -->
+              @if (statusOf(row.id) === 'published' && hasDraft(row.id)) {
+                <button
+                  matIconButton
+                  (click)="publish(row.id)"
+                  [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: row.id }"
+                  [matTooltip]="'labels.publishChangesOf' | transloco: { id: row.id }"
+                >
+                  <mat-icon>publish</mat-icon>
+                </button>
+              }
               <button
                 matIconButton
-                (click)="publish(row.id)"
-                [attr.aria-label]="'labels.publishChangesOf' | transloco: { id: row.id }"
-                [matTooltip]="'labels.publishChangesOf' | transloco: { id: row.id }"
+                (click)="statusOf(row.id) === 'published' ? unpublish(row.id) : publish(row.id)"
+                [attr.aria-label]="
+                  (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                    | transloco: { id: row.id }
+                "
+                [matTooltip]="
+                  (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
+                    | transloco: { id: row.id }
+                "
               >
-                <mat-icon>publish</mat-icon>
+                <mat-icon>{{
+                  statusOf(row.id) === 'published' ? 'visibility_off' : 'publish'
+                }}</mat-icon>
               </button>
             }
             <button
               matIconButton
-              (click)="statusOf(row.id) === 'published' ? unpublish(row.id) : publish(row.id)"
-              [attr.aria-label]="
-                (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
-                  | transloco: { id: row.id }
-              "
-              [matTooltip]="
-                (statusOf(row.id) === 'published' ? 'labels.unpublishItem' : 'labels.publishItem')
-                  | transloco: { id: row.id }
-              "
+              [routerLink]="['/collections', collectionName(), 'edit', row.id]"
+              [attr.aria-label]="'labels.editItem' | transloco: { id: row.id }"
+              [matTooltip]="'labels.editItem' | transloco: { id: row.id }"
             >
-              <mat-icon>{{
-                statusOf(row.id) === 'published' ? 'visibility_off' : 'publish'
-              }}</mat-icon>
+              <mat-icon>edit</mat-icon>
             </button>
-          }
-          <button
-            matIconButton
-            [routerLink]="['/collections', collectionName(), 'edit', row.id]"
-            [attr.aria-label]="'labels.editItem' | transloco: { id: row.id }"
-            [matTooltip]="'labels.editItem' | transloco: { id: row.id }"
-          >
-            <mat-icon>edit</mat-icon>
-          </button>
-          @if (canEdit() || canPublish()) {
-            <!-- Copying and deleting are the two acts on a row nobody reaches for twice in a minute,
+            @if (canEdit() || canPublish()) {
+              <!-- Copying and deleting are the two acts on a row nobody reaches for twice in a minute,
                  and a schema that shows many columns is wide enough that the last buttons were
                  pushed off the screen. They are behind one button instead, which keeps the row's
                  own controls narrow whatever the schema asks to show. -->
-            <button
-              matIconButton
-              [matMenuTriggerFor]="rowMenu"
-              [attr.aria-label]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
-              [matTooltip]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
-            >
-              <mat-icon>more_vert</mat-icon>
-            </button>
-            <mat-menu #rowMenu="matMenu">
-              @if (canEdit()) {
-                <!-- The copy opens straight away, after a confirmation: duplicating is only useful
+              <button
+                matIconButton
+                [matMenuTriggerFor]="rowMenu"
+                [attr.aria-label]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
+                [matTooltip]="'labels.moreActionsOfItem' | transloco: { id: row.id }"
+              >
+                <mat-icon>more_vert</mat-icon>
+              </button>
+              <mat-menu #rowMenu="matMenu">
+                @if (canEdit()) {
+                  <!-- The copy opens straight away, after a confirmation: duplicating is only useful
                      if the next act is editing it. -->
-                <button mat-menu-item (click)="duplicate(row.id)">
-                  <mat-icon>content_copy</mat-icon>
-                  {{ 'content.copyItem' | transloco }}
-                </button>
-              }
-              @if (canPublish()) {
-                <button mat-menu-item (click)="delete(row.id)">
-                  <mat-icon>delete</mat-icon>
-                  {{ 'content.deleteItem' | transloco }}
-                </button>
-              }
-            </mat-menu>
-          }
-        </td>
-      </tr>
-    } @empty {
-      <tr>
-        <td [attr.colspan]="listColumns().length + 5" class="empty">
-          {{ 'content.noItems' | transloco }}
-        </td>
-      </tr>
-    }
-  </tbody>
-</table>
+                  <button mat-menu-item (click)="duplicate(row.id)">
+                    <mat-icon>content_copy</mat-icon>
+                    {{ 'content.copyItem' | transloco }}
+                  </button>
+                }
+                @if (canPublish()) {
+                  <button mat-menu-item (click)="delete(row.id)">
+                    <mat-icon>delete</mat-icon>
+                    {{ 'content.deleteItem' | transloco }}
+                  </button>
+                }
+              </mat-menu>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td [attr.colspan]="listColumns().length + 5" class="empty">
+            {{ 'content.noItems' | transloco }}
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
 
 <!-- Server-side paging: the component asks for one window at a time, so a collection with
      thousands of items never arrives in a single response. -->
