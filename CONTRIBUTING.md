@@ -125,4 +125,5 @@ not wait for - that is the moment to give it its own number and drop it from the
 
 Please do not open a public issue for a vulnerability. Use
 [https://github.com/cat-love-7/tsubame-cms/security/advisories/new](https://github.com/cat-love-7/tsubame-cms/security/advisories/new) - GitHub's private advisory form -
-with steps to reproduce, and give us a chance to fix it before it is published.
+with steps to reproduce, and give us a chance to fix it before it is published. [`SECURITY.md`](SECURITY.md)
+says what is in scope and what to expect.
