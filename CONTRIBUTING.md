@@ -99,6 +99,11 @@ One version covers the whole repository: the CMS, both npm packages, the admin i
 tag carry the same number, and `scripts/check-version.sh` fails the build if they drift. The Rust
 crates inherit `version.workspace = true` rather than repeating it.
 
+Before `1.0.0` there is no major number to move, so the convention here is that **a breaking change
+is a minor bump** and a fix is a patch: `0.1.x` is compatible with `0.1.0`, and `0.2.0` is where the
+relation model changed. A release that only adds something is a minor bump too; there is no
+"compatible feature" rung below it while the number starts with zero.
+
 1. Bump the number in all four places: `backend/Cargo.toml` (`[workspace.package]`), both
    `packages/*/package.json`, and `frontend/package.json` - private, but it carries the number so
    that `grep 0.2.0` finds every place at once. `frontend/package-lock.json` repeats it, because

@@ -11,6 +11,8 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
 - **A deployment can say what it is the admin screen for.** `SITE_NAME` (a Terraform variable, or an
@@ -178,5 +180,6 @@ not. The npm packages are published from short of a build: `tsubame-preview` ren
 - **The design documents** in `docs/`: the content API, relations, the frontend's vocabulary,
   localisation, the preview-site contract, and the AWS decision record.
 
-[Unreleased]: https://github.com/cat-love-7/tsubame-cms/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/cat-love-7/tsubame-cms/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cat-love-7/tsubame-cms/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cat-love-7/tsubame-cms/releases/tag/v0.1.0
