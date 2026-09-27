@@ -7,7 +7,7 @@ variable "region" {
 variable "project" {
   description = "Name prefix for every resource, so two deployments in one account can differ."
   type        = string
-  default     = "sl-cms"
+  default     = "tsubame"
 }
 
 variable "environment" {
@@ -26,7 +26,7 @@ variable "jwt_secret_arn" {
     configuration would sit in the state file, and in whatever carries it there. Create it once
     with
 
-      aws secretsmanager create-secret --name sl-cms/jwt-secret \
+      aws secretsmanager create-secret --name tsubame/jwt-secret \
         --secret-string "$(openssl rand -base64 48)"
 
     and put the ARN it prints here. The function reads it at startup; `JWT_SECRET` (used by a

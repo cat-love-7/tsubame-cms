@@ -283,7 +283,7 @@ import React from 'react'
 import { graphql } from 'gatsby'
 
 export default function BlogPost({ data }) {
-  const item = data.slCmsBlogItem
+  const item = data.tsubameBlogItem
   return (
     <article>
       <h1>{item.title}</h1>
@@ -294,7 +294,7 @@ export default function BlogPost({ data }) {
 
 export const query = graphql`
   query BlogPost($slug: String!) {
-    slCmsBlogItem(slug: { eq: $slug }) {
+    tsubameBlogItem(slug: { eq: $slug }) {
       title
       body {
         childMarkdownRemark {
@@ -343,7 +343,7 @@ module.exports = {
 
 ```graphql
 query {
-  slCmsBlogItem(slug: { eq: "hello" }) {
+  tsubameBlogItem(slug: { eq: "hello" }) {
     cover {
       absoluteUrl
       localFile { childImageSharp { gatsbyImageData(width: 800) } }

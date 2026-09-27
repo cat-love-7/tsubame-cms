@@ -1,6 +1,6 @@
 # Copy to terraform.tfvars and fill in. Never commit the real file.
 region     = "eu-west-1"
-project    = "sl-cms"
+project    = "tsubame"
 environment = "staging"
 
 # Signs preview and reset links. The value lives in Secrets Manager, not here: create the secret
@@ -8,9 +8,9 @@ environment = "staging"
 # environment, named for both halves: a deployment that shares one with another environment can
 # mint a token the other accepts.
 #
-#   aws secretsmanager create-secret --name sl-cms/staging/jwt-secret \
+#   aws secretsmanager create-secret --name tsubame/staging/jwt-secret \
 #     --secret-string "$(openssl rand -base64 48)"
-jwt_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:sl-cms/staging/jwt-secret-AbCdEf"
+jwt_secret_arn = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:tsubame/staging/jwt-secret-AbCdEf"
 
 # Who may become the first administrator by signing in.
 bootstrap_admin_usernames = ["ops@example.com"]
@@ -37,7 +37,7 @@ preview_url = "https://preview.cms.example.com"
 image_delivery = "public"
 
 # Cognito's hosted page has to be unique across the whole region.
-cognito_domain_prefix = "sl-cms-staging-example"
+cognito_domain_prefix = "tsubame-staging-example"
 
 # Only when the default name is taken somewhere in the world: S3 bucket names are unique across
 # every account, so `<project>-<environment>-app` and `-images` are the two a second deployment

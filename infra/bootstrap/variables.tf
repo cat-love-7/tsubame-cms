@@ -7,7 +7,7 @@ variable "region" {
 variable "project" {
   description = "Name prefix, as in `infra/`."
   type        = string
-  default     = "sl-cms"
+  default     = "tsubame"
 }
 
 variable "environment" {

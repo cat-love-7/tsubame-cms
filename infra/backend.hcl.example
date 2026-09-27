@@ -8,8 +8,8 @@
 # `terraform init`, which writes it into `.terraform/` and into plan files, so credentials do not
 # belong in this file - the backend reads those from the environment, as the provider does.
 
-bucket = "CHANGE-ME-sl-cms-tfstate"
+bucket = "CHANGE-ME-tsubame-tfstate"
 # One key per deployment, so several can share the bucket.
-key    = "sl-cms/staging/terraform.tfstate"
+key    = "tsubame/staging/terraform.tfstate"
 # Keep this the same as `var.region` in `terraform.tfvars`: a backend cannot read a variable.
 region = "eu-west-1"
