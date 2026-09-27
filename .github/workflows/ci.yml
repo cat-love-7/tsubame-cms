@@ -13,6 +13,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# What the token every job gets may do. The jobs check the repository out, install toolchains and
+# run the suites: none of them writes to it, so the token is read-only rather than whatever the
+# repository's default happens to be. The failure logs the browser suite uploads do not go through
+# it - `actions/upload-artifact` uses the run's own token.
+permissions:
+  contents: read
+
 jobs:
   manifests:
     name: Manifests agree
