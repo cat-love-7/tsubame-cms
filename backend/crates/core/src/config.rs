@@ -445,8 +445,8 @@ mod tests {
         assert_eq!(parse_site_name("  Catnest  ").unwrap(), "Catnest");
         // Not translated, not rewritten: the operator's wording is what the screens show.
         assert_eq!(
-            parse_site_name("公式サイト管理画面(dev)").unwrap(),
-            "公式サイト管理画面(dev)"
+            parse_site_name("サンプル管理画面(dev)").unwrap(),
+            "サンプル管理画面(dev)"
         );
         // Counted in characters, so a long Japanese name is not refused for its byte length.
         let longest = "名".repeat(MAX_SITE_NAME_CHARS);

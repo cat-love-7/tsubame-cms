@@ -34,11 +34,11 @@ describe('CapabilitiesService', () => {
       password_login: true,
       password_reset: 'link',
       image_upload: 'proxied',
-      site_name: '公式サイト管理画面(dev)',
+      site_name: 'サンプル管理画面(dev)',
     });
 
     // The operator's own wording, passed through exactly as it arrived.
-    expect(service.siteName()).toBe('公式サイト管理画面(dev)');
+    expect(service.siteName()).toBe('サンプル管理画面(dev)');
   });
 
   it('takes the preview site from the deployment', () => {

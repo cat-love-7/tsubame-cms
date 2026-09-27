@@ -58,13 +58,13 @@ describe('Login', () => {
       password_login: true,
       password_reset: 'link',
       image_upload: 'proxied',
-      site_name: '公式サイト管理画面(dev)',
+      site_name: 'サンプル管理画面(dev)',
     });
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('mat-card-title')?.textContent?.trim()).toBe(
-      'Sign in to 公式サイト管理画面(dev)',
+      'Sign in to サンプル管理画面(dev)',
     );
   });
 

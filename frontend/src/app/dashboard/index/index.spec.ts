@@ -45,10 +45,10 @@ describe('Index', () => {
   // the same two lines as the app bar, because "which site is this?" is the question a reader with
   // two deployments open has, and the biggest text on the screen is a good place to answer it.
   it('heads the screen with the deployment, and the product under it', async () => {
-    await answer('公式サイト管理画面(dev)');
+    await answer('サンプル管理画面(dev)');
 
     const welcome = fixture.nativeElement.querySelector('.welcome') as HTMLElement;
-    expect(welcome.querySelector('h3')?.textContent?.trim()).toBe('公式サイト管理画面(dev)');
+    expect(welcome.querySelector('h3')?.textContent?.trim()).toBe('サンプル管理画面(dev)');
     expect(welcome.querySelector('.product')?.textContent?.trim()).toBe('Tsubame');
     // The instruction it has always given is still there, under both names.
     expect(welcome.querySelector('.landing')?.textContent?.trim()).toContain(

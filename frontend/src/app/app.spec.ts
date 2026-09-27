@@ -51,10 +51,10 @@ describe('App', () => {
   // from a bookmark goes to the shell only after it has already been looked at.
   it('puts the deployment in the tab title', async () => {
     const fixture: TypedFixture<App> = TestBed.createComponent(App);
-    answerCapabilities('公式サイト管理画面(dev)');
+    answerCapabilities('サンプル管理画面(dev)');
     await fixture.whenStable();
 
-    expect(TestBed.inject(Title).getTitle()).toBe('公式サイト管理画面(dev) — Tsubame');
+    expect(TestBed.inject(Title).getTitle()).toBe('サンプル管理画面(dev) — Tsubame');
   });
 
   // A deployment that never named itself keeps the title `index.html` shipped, rather than an

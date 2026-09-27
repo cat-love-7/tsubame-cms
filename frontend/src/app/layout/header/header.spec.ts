@@ -50,10 +50,10 @@ describe('Header', () => {
   // A reader who has two of these open needs to know which one they are looking at, and the
   // deployment's name is the only thing that says so: the product's name is the same on both.
   it('names the deployment, with the product under it', async () => {
-    await answer('公式サイト管理画面(dev)');
+    await answer('サンプル管理画面(dev)');
 
     const brand = fixture.nativeElement.querySelector('.brand') as HTMLElement;
-    expect(brand.querySelector('.site-name')?.textContent?.trim()).toBe('公式サイト管理画面(dev)');
+    expect(brand.querySelector('.site-name')?.textContent?.trim()).toBe('サンプル管理画面(dev)');
     // The product does not disappear when the name is set: the two lines are the whole heading.
     expect(brand.querySelector('.product')?.textContent?.trim()).toBe('Tsubame');
   });
