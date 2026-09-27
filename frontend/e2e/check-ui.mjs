@@ -7,6 +7,7 @@
  * the screen really works against the API:
  *
  *   - signing in through the form
+ *   - the tab icon reading on a light tab strip and on a dark one
  *   - one page of 25 rows, ordered by id, with the total in the pager
  *   - the status badge and the Updated column
  *   - the next page and a different page size reaching the server
@@ -423,6 +424,60 @@ let titleField;
 let publishWording;
 let editor;
 let viewer;
+
+/**
+ * The tab icon, on a tab strip of either colour.
+ *
+ * A tab strip belongs to the browser rather than to the page, so this is the one picture the suite
+ * can judge only by drawing it: the icon is painted over each strip's own background in a canvas and
+ * read back as pixels. An icon that reads on a light strip only is what a dark-mode reader reported
+ * (`prefers-color-scheme` inside an SVG icon is not an answer every browser gives), and nothing else
+ * in these suites would have seen it.
+ */
+async function theTabIconReadsOnAnyTabStrip() {
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+
+  for (const [href, label] of [
+    ['/favicon.svg', 'SVG'],
+    ['/favicon.ico', 'ICO'],
+  ]) {
+    const measured = await page.evaluate(async (source) => {
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const context = canvas.getContext('2d');
+      /** The icon over one tab-strip colour, as its brightest and darkest pixel. */
+      const over = (background) => {
+        context.clearRect(0, 0, 64, 64);
+        context.fillStyle = background;
+        context.fillRect(0, 0, 64, 64);
+        context.drawImage(image, 0, 0, 64, 64);
+        const pixels = context.getImageData(0, 0, 64, 64).data;
+        let brightest = 0;
+        let darkest = 255;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const luminance = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+          brightest = Math.max(brightest, luminance);
+          darkest = Math.min(darkest, luminance);
+        }
+        return { brightest: Math.round(brightest), darkest: Math.round(darkest) };
+      };
+
+      // A light strip and a dark one, as a browser paints them.
+      return { light: over('#f1f3f4'), dark: over('#202124') };
+    }, href);
+
+    // Something dark has to be in the icon for a light strip, and something light for a dark one.
+    check(
+      `タブアイコン(${label})は明暗どちらのタブでも見える`,
+      measured.light.darkest <= 60 && measured.dark.brightest >= 180,
+      `明るいタブ: 最暗 ${measured.light.darkest} / 暗いタブ: 最明 ${measured.dark.brightest}`,
+    );
+  }
+}
 
 /** The language switch. */
 async function theLanguageSwitch() {
@@ -2895,6 +2950,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
 
 /** The scenarios, in the order they run. */
 const SCENARIOS = [
+  ['the tab icon, on either tab strip', theTabIconReadsOnAnyTabStrip],
   ['the language switch', theLanguageSwitch],
   ['sign in through the form', signInThroughTheForm],
   ['a plain array, edited as JSON', aPlainArrayEditedAsJSON],

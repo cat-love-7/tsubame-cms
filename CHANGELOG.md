@@ -95,6 +95,14 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ### Fixed
 
+- **The tab icon no longer disappears on a dark tab strip.** The favicon was a bare mark with a
+  `prefers-color-scheme` rule in its SVG, which is not an answer every browser gives inside an icon
+  (WebKit ignores it), so a dark strip got the near-black bird drawn on near-black. The mark now
+  stands on a rounded plate of the brand's ink with the mark in the paper colour, and the `.ico`
+  beside the SVG is that same file rasterised, so the two cannot differ: what the icon is drawn on is
+  part of the icon, and no browser has to be asked which scheme it is in. The browser suite paints
+  both files over a light strip and a dark one and reads the pixels back, so an icon that reads on
+  only one of them fails the run.
 - **Changing a field's type to `Slug` in the schema editor no longer leaves the type blank or is
   refused as "already unique".** The dropdown draws its value through the pipe that names the types,
   and that pipe did not know `Slug`: with no option to match, the field it was chosen in was drawn

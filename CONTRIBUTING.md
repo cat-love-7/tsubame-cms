@@ -53,10 +53,16 @@ Run it when a change moves something a reader would see, and commit what it writ
 no longer matches the screen is worse than no picture. If a screen looks wrong while you are at it,
 that is usually the cheapest way to find a layout bug - two of them were found this way.
 
-The tab icon is derived the same way: `cd frontend && node e2e/favicon.mjs` rasterises
-`brand/tsubame-16.svg` (16/32/48px) into `frontend/public/favicon.ico`, beside the `favicon.svg`
-that carries the same mark for the browsers that read one. Change the brand, run that, and the tab
-follows.
+The tab icon is `frontend/public/favicon.svg`: the mark from `brand/tsubame-16.svg`, painted on a
+plate of the brand's ink, because a tab strip belongs to the browser - an icon inherits no colour from
+the page, and asking the browser whether it is in dark mode is not answered everywhere (WebKit ignores
+`prefers-color-scheme` inside an SVG icon, which is what left near-black on near-black there).
+`frontend/public/favicon.ico` is that same file rasterised at 16/32/48px by
+`cd frontend && node e2e/favicon.mjs`, so the browsers that predate SVG icons load the same picture
+rather than a second drawing. A redrawn bird therefore means updating the copy in the SVG and running
+that. `scripts/test-e2e.sh` paints both files over a light tab strip and a dark one and reads the
+pixels back, so an icon that only reads on one of them is a failing check rather than a reader's
+report.
 
 ## The conventions that matter
 

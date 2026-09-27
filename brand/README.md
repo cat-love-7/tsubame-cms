@@ -38,6 +38,12 @@ a second treatment.
 
 - One flat colour. No gradient, no outline, no drop shadow, no rotation.
 - Clear space on every side: at least a quarter of the mark's height.
+- The one exception is the browser tab icon (`frontend/public/favicon.svg` and the `.ico` rasterised
+  from it): it stands on a rounded plate of the ink, with the mark in the paper colour. A tab strip is
+  painted by the browser and does not reliably say whether it is light or dark, so a bare mark is
+  legible on one and vanishes on the other. Its clear space is the plate's own margin rather than the
+  quarter above - at 16px there is no room for both a plate and that much air, and the mark is what
+  has to survive there.
 - Do not stretch, and do not place the mark on a busy photograph.
 - Below 24px use `tsubame-16.svg`; at 16px the tail fork closes up and the bird reads as a solid
   diagonal mass. That is expected — the silhouette is doing the work, not the fork.

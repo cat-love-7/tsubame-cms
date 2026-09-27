@@ -1,10 +1,16 @@
 /**
- * Regenerate `public/favicon.ico` from the brand mark.
+ * Regenerate `public/favicon.ico` from `public/favicon.svg`.
  *
- * The browser's own copy of the mark is `public/favicon.svg`, taken from `brand/tsubame-16.svg`;
- * this is the fallback for the browsers that predate SVG icons, and it is derived rather than
- * drawn so it cannot drift from the brand. The SVG is rasterised by the same Chromium the browser
- * suite uses, at the three sizes a tab and a bookmark use, and packed into one `.ico`.
+ * The SVG is the tab icon for the browsers that read one, and this is the fallback for the ones that
+ * predate it: the two are the same picture, so the icon is rasterised from the file a browser loads
+ * rather than drawn a second time here. What is in that file - the brand mark on a plate of the
+ * brand's ink, because a tab strip is the browser's and cannot be asked for its colour - is the SVG's
+ * business and is documented there. The mark's path in it is a copy of `brand/tsubame-16.svg`, since
+ * an icon cannot inherit `currentColor`: a redrawn bird is a change to that copy, and then this
+ * runs again.
+ *
+ * The same Chromium the browser suite uses rasterises the three sizes a tab and a bookmark use, and
+ * they are packed into one `.ico`.
  *
  * Usage: cd frontend && node e2e/favicon.mjs
  */
@@ -15,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SVG = resolve(HERE, '../../brand/tsubame-16.svg');
+const SVG = resolve(HERE, '../public/favicon.svg');
 const OUT = resolve(HERE, '../public/favicon.ico');
 const SIZES = [16, 32, 48];
 
@@ -50,11 +56,15 @@ function ico(images) {
   return Buffer.concat([header, ...entries, ...images.map((image) => image.png)]);
 }
 
-/** The mark with the colour a tab strip can read, which `currentColor` cannot supply. */
-function inline(size) {
+/**
+ * The tab icon at one size, as the element to rasterise.
+ *
+ * The file's own comment is dropped and the size stated, because an icon is rasterised at the sizes
+ * a tab and a bookmark ask for rather than at the 16px the SVG says.
+ */
+function icon(size) {
   return readFileSync(SVG, 'utf8')
     .replace(/^<!--[\s\S]*?-->\s*/, '')
-    .replace('fill="currentColor"', 'fill="#12212b"')
     .replace('width="16" height="16"', `width="${size}" height="${size}"`);
 }
 
@@ -65,11 +75,12 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 48, height: 48 } });
     for (const size of SIZES) {
       await page.setContent(
-        `<html><body style="margin:0;background:transparent">${inline(size)}</body></html>`,
+        `<html><body style="margin:0;background:transparent">${icon(size)}</body></html>`,
       );
       await page.locator('svg').waitFor();
       // `omitBackground` keeps the corners transparent: an `.ico` with a white box around the
-      // swallow is what one of these looked like the first time.
+      // swallow is what one of these looked like the first time. Around the plate's radius is the
+      // page, which is what this makes see-through.
       const png = await page.locator('svg').screenshot({ omitBackground: true });
       images.push({ size, png });
     }
