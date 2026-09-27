@@ -475,9 +475,9 @@ async function theTabIconReadsOnAnyTabStrip() {
 
     // Something dark has to be in the icon for a light strip, and something light for a dark one.
     check(
-      `タブアイコン(${label})は明暗どちらのタブでも見える`,
+      `The tab icon (${label}) is visible on both light and dark tabs`,
       measured.light.darkest <= 60 && measured.dark.brightest >= 180,
-      `明るいタブ: 最暗 ${measured.light.darkest} / 暗いタブ: 最明 ${measured.dark.brightest}`,
+      `Light tab: darkest ${measured.light.darkest} / dark tab: brightest ${measured.dark.brightest}`,
     );
   }
 }
@@ -496,9 +496,13 @@ async function theDeploymentNamesItself() {
   // The sign-in screen has no shell around it, so the card is the one place that can say it - and
   // the tab is what is left of the screen while a form is being filled in.
   const card = (await page.locator('mat-card-title').textContent())?.trim();
-  check('サインイン画面に配備の名前が出る', card === `Sign in to ${SITE_NAME}`, `${card}`);
   check(
-    'タブのタイトルに配備の名前が出る',
+    'The sign-in screen shows the deployment name',
+    card === `Sign in to ${SITE_NAME}`,
+    `${card}`,
+  );
+  check(
+    'The tab title shows the deployment name',
     (await page.title()) === `${SITE_NAME} — Tsubame`,
     await page.title(),
   );
@@ -514,7 +518,7 @@ async function theDeploymentNamesItselfInTheShell() {
   const site = (await page.locator('.brand .site-name').textContent())?.trim();
   const product = (await page.locator('.brand .product').textContent())?.trim();
   check(
-    'アプリバーに配備の名前と製品名が出る',
+    'The app bar shows the deployment name and product name',
     site === SITE_NAME && product === 'Tsubame',
     `${site} / ${product}`,
   );
@@ -525,7 +529,7 @@ async function theDeploymentNamesItselfInTheShell() {
   const heading = (await page.locator('.welcome h3').textContent())?.trim();
   const under = (await page.locator('.welcome .product').textContent())?.trim();
   check(
-    'トップページの見出しに配備の名前が出る',
+    'The landing screen heading shows the deployment name',
     heading === SITE_NAME && under === 'Tsubame',
     `${heading} / ${under}`,
   );
@@ -549,9 +553,9 @@ async function theLanguageSwitch() {
       .catch(() => false);
 
   await page.locator('app-language-switcher button', { hasText: '日本語' }).click();
-  check('日本語に切り替えられる', await titleSays('サインイン'));
+  check('Can switch to Japanese', await titleSays('サインイン'));
   await page.locator('app-language-switcher button', { hasText: 'English' }).click();
-  check('英語に戻せる', await titleSays('Sign in to'));
+  check('Can switch back to English', await titleSays('Sign in to'));
 }
 
 /** Sign in through the form. */
@@ -563,7 +567,7 @@ async function signInThroughTheForm() {
   await page
     .waitForFunction(() => !location.pathname.startsWith('/login'), null, { timeout: 15000 })
     .catch(() => {});
-  check('ログインフォームからサインインできる', !page.url().includes('/login'), page.url());
+  check('Can sign in from the login form', !page.url().includes('/login'), page.url());
 
   // The icons are ligatures, so a font that never loads draws their *names* as text - and every
   // assertion about text and aria labels still passes. `mat-icon` sets the box and leaves the
@@ -581,7 +585,7 @@ async function signInThroughTheForm() {
     };
   });
   check(
-    'アイコンがフォントで描かれる(リガチャ名が文字にならない)',
+    'Icons are drawn from the font (ligature names do not become text)',
     iconFont !== null && iconFont.family.includes('Material Icons') && iconFont.loaded,
     JSON.stringify(iconFont),
   );
@@ -595,7 +599,7 @@ async function aPlainArrayEditedAsJSON() {
   const scores = page.locator('app-value-field textarea[name=scores]');
   await scores.waitFor({ timeout: 15000 });
   check(
-    '配列の要素型が画面に出る',
+    'The array element type appears in the UI',
     ((await scores.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
       'Item types: Number',
     ),
@@ -608,7 +612,7 @@ async function aPlainArrayEditedAsJSON() {
   const scoresProblem = await page.locator('.field-cell.problem').count();
   const scoresError = ((await page.locator('.error').first().textContent()) ?? '').trim();
   check(
-    '要素型に合わない値は保存前に止まる',
+    'A value that does not match the element type is blocked before saving',
     stillEditing && scoresProblem === 1 && scoresError.includes('scores[1]'),
     `${stillEditing} / ${scoresProblem} / ${scoresError}`,
   );
@@ -623,7 +627,7 @@ async function aPlainArrayEditedAsJSON() {
     token,
   );
   check(
-    '配列の値がそのまま保存される',
+    'Array values are saved as-is',
     JSON.stringify(savedScores?.scores) === '[1,2]',
     JSON.stringify(savedScores?.scores),
   );
@@ -635,7 +639,7 @@ async function firstPage() {
   await dataRows().first().waitFor({ timeout: 15000 });
 
   const firstPageRows = await dataRows().count();
-  check('1 ページ目は既定の 25 件', firstPageRows === 25, `${firstPageRows} 行`);
+  check('The first page has the default 25 items', firstPageRows === 25, `${firstPageRows} rows`);
 
   // The first cell is the batch checkbox; the id is the one after it.
   // Nothing is marked in this collection's schema, so it has no field columns at all: id, state and
@@ -644,23 +648,23 @@ async function firstPage() {
     (cell) => cell.trim(),
   );
   check(
-    '一覧に表示を選んでいないコレクションは id・状態・更新日時だけ',
+    'A collection with no list fields shows only id, status, and updated time',
     unconfiguredHeaders.join(',') === ',ID,Status (publisher),Updated,',
     unconfiguredHeaders.join(','),
   );
 
   // Newest first: the id an item got when it was created is its age, so the largest is on top.
   const firstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
-  check(`新しい順で id ${TOTAL} から始まる`, firstId === String(TOTAL), `id=${firstId}`);
+  check(`Newest first starts at id ${TOTAL}`, firstId === String(TOTAL), `id=${firstId}`);
 
   paginator = page.locator('mat-paginator');
-  check('ページャが表示される', await paginator.isVisible());
+  check('The pager is shown', await paginator.isVisible());
 
   const rangeLabel = (
     await paginator.locator('.mat-mdc-paginator-range-label').textContent()
   )?.trim();
   check(
-    `ページャに総件数 ${TOTAL} が出る`,
+    `The pager shows the total of ${TOTAL} items`,
     new RegExp(String(TOTAL)).test(rangeLabel ?? ''),
     rangeLabel,
   );
@@ -669,10 +673,10 @@ async function firstPage() {
 /** Status and updated columns. */
 async function statusAndUpdatedColumns() {
   badge = (await badgeOf(firstRow()).textContent())?.trim();
-  check('状態バッジが出る', badge === 'Draft' || badge === 'Published', badge);
+  check('The status badge is shown', badge === 'Draft' || badge === 'Published', badge);
 
   const updated = (await firstRow().locator('td.updated').textContent())?.trim();
-  check('Updated 列に日時が出る', Boolean(updated) && updated !== '—', updated);
+  check('The Updated column shows the timestamp', Boolean(updated) && updated !== '—', updated);
 }
 
 /** Next page. */
@@ -694,7 +698,7 @@ async function nextPage() {
   await waitForRows(25);
   const secondPageFirstId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   check(
-    `次ページは id ${secondPageFirst} から始まる`,
+    `The next page starts at id ${secondPageFirst}`,
     secondPageFirstId === secondPageFirst,
     `id=${secondPageFirstId}`,
   );
@@ -706,7 +710,7 @@ async function pageSize() {
   await page.locator('mat-option', { hasText: '50' }).first().click({ force: true });
   await waitForRows(50);
   const rowsAtFifty = await dataRows().count();
-  check('ページサイズ 50 で 50 行', rowsAtFifty === 50, `${rowsAtFifty} 行`);
+  check('A page size of 50 gives 50 rows', rowsAtFifty === 50, `${rowsAtFifty} rows`);
 }
 
 /** Ordering from the headers. */
@@ -716,7 +720,7 @@ async function orderingFromTheHeaders() {
   const idHeading = page.locator('thead th').nth(1);
   const idHeaderButton = idHeading.locator('.sort-header');
   check(
-    '既定の並び順が見出しに出る',
+    'The default sort order shows in the header',
     (await idHeading.getAttribute('aria-sort')) === 'descending',
     (await idHeading.getAttribute('aria-sort')) ?? 'none',
   );
@@ -732,7 +736,7 @@ async function orderingFromTheHeaders() {
     )
     .catch(() => {});
   check(
-    '見出しを押すと昇順になる',
+    'Clicking the header sorts ascending',
     (await firstIdNow()) === '1' && (await idHeading.getAttribute('aria-sort')) === 'ascending',
     `id=${await firstIdNow()} / ${(await idHeading.getAttribute('aria-sort')) ?? 'none'}`,
   );
@@ -748,7 +752,7 @@ async function orderingFromTheHeaders() {
     )
     .catch(() => {});
   check(
-    'もう一度押すと降順に戻る',
+    'Clicking again returns to descending',
     (await firstIdNow()) === String(TOTAL) &&
       (await idHeading.getAttribute('aria-sort')) === 'descending',
     `id=${await firstIdNow()} / ${(await idHeading.getAttribute('aria-sort')) ?? 'none'}`,
@@ -781,14 +785,14 @@ async function publishADraftFromTheList() {
     .catch(() => {});
   const badgeAfterPublish = (await badgeOf(rowById(draftId)).textContent())?.trim();
   check(
-    '一覧から公開できる',
+    'Can publish from the list',
     badgeAfterPublish === 'Published',
     `id=${draftId} → ${badgeAfterPublish}`,
   );
 
   // The audit trail: the row now names the account that published it.
   const publisherNote = (await rowById(draftId).locator('.publisher').textContent())?.trim();
-  check('誰が公開したかが一覧に出る', publisherNote === USERNAME, `${publisherNote}`);
+  check('The list shows who published it', publisherNote === USERNAME, `${publisherNote}`);
 }
 
 /** Opening an item from the list, and the row's controls staying within reach. */
@@ -802,7 +806,7 @@ async function openingAnItemFromTheList() {
     const cell = document.querySelector('table.items tbody td.actions');
     return cell === null ? 'no cell' : getComputedStyle(cell).position;
   });
-  check('操作の列は右端に固定される', actionsPosition === 'sticky', actionsPosition);
+  check('The actions column is pinned to the right', actionsPosition === 'sticky', actionsPosition);
 
   // The screen around the table belongs to the screen. The toolbar and the pager used to sit in the
   // same scroll box as the table, so scrolling sideways carried "new item" off with it; the table
@@ -830,14 +834,14 @@ async function openingAnItemFromTheList() {
   });
   await page.setViewportSize(windowSize);
   check(
-    '横にスクロールするのは表だけで、新しいアイテムは動かない',
+    'Only the table scrolls sideways; the new item button stays put',
     !geometry.screenScrollsSideways && geometry.newItemMoved === 0 && geometry.tableScrollRange > 0,
-    `画面=${geometry.screenScrollsSideways} / ボタンの移動=${geometry.newItemMoved}px / 表の可動範囲=${geometry.tableScrollRange}px`,
+    `Screen=${geometry.screenScrollsSideways} / button moved=${geometry.newItemMoved}px / table scroll range=${geometry.tableScrollRange}px`,
   );
   check(
-    '右端までスクロールすると最後の列まで見える',
+    'Scrolling to the far right reveals the last column',
     geometry.hidden <= 0,
-    `${geometry.hidden}px 隠れている`,
+    `${geometry.hidden}px hidden`,
   );
 
   // The row opens the item, the way a page's name does in the single-page list.
@@ -846,7 +850,7 @@ async function openingAnItemFromTheList() {
     .waitForURL(`**/collections/${COLLECTION}/edit/**`, { timeout: 15000 })
     .then(() => true)
     .catch(() => false);
-  check('行を押すと編集画面が開く', opened, page.url());
+  check('Clicking a row opens the editor', opened, page.url());
 
   // The checkbox is the row's own control: a click there selects, and does not navigate away from
   // the list the reader is working in.
@@ -855,7 +859,7 @@ async function openingAnItemFromTheList() {
   await firstRow().locator('td.select input[type=checkbox]').check();
   await page.waitForTimeout(200);
   check(
-    'チェックボックスを押しても遷移しない',
+    'Clicking the checkbox does not navigate',
     !page.url().includes('/edit/') && (await page.locator('.toolbar .selection').count()) === 1,
     page.url(),
   );
@@ -868,7 +872,7 @@ async function deleteTheLastPagesOnlyRow() {
   await page.locator('mat-paginator .mat-mdc-paginator-navigation-last').click({ force: true });
   await waitForRows(1);
   const lastPageRows = await dataRows().count();
-  check('最終ページは 1 行', lastPageRows === 1, `${lastPageRows} 行`);
+  check('The last page has one row', lastPageRows === 1, `${lastPageRows} rows`);
 
   const doomedId = (await firstRow().locator('td').nth(1).textContent())?.trim();
   // Deleting lives in the row's menu, behind the button that keeps the row's controls narrow.
@@ -877,9 +881,9 @@ async function deleteTheLastPagesOnlyRow() {
   await waitForRows(25);
   const rowsAfterDelete = await dataRows().count();
   check(
-    '最終ページの最後の 1 件を削除すると前のページへ戻る',
+    'Deleting the last item on the last page returns to the previous page',
     rowsAfterDelete === 25,
-    `${rowsAfterDelete} 行 (削除 id=${doomedId})`,
+    `${rowsAfterDelete} rows (deleted id=${doomedId})`,
   );
 }
 
@@ -907,7 +911,7 @@ async function theImageLibrary() {
   }
   const imagesAfterUpload = await page.locator('.library .image').count();
   check(
-    '画像をアップロードできる',
+    'Can upload an image',
     imagesAfterUpload === imagesBefore + 2,
     `${imagesBefore} → ${imagesAfterUpload}`,
   );
@@ -916,20 +920,20 @@ async function theImageLibrary() {
   const uploadedCard = page.locator('.library .image').first();
   const uploadedId = (await uploadedCard.locator('.meta').textContent())?.trim();
   check(
-    'アップロードした画像が名前つきで並ぶ',
+    'Uploaded images are listed with their names',
     Boolean((await uploadedCard.locator('.name').textContent())?.includes('e2e-2.png')),
     uploadedId,
   );
 
   const imageSource = await uploadedCard.locator('img').getAttribute('src');
   const servedStatus = await page.evaluate(async (src) => (await fetch(src)).status, imageSource);
-  check('画像の実体が配信される', servedStatus === 200, `${imageSource} → ${servedStatus}`);
+  check('The image file is served', servedStatus === 200, `${imageSource} → ${servedStatus}`);
 
   // A tile shows the small copy the browser made from the file it just uploaded, not the original:
   // 180 pixels of tile for a megabyte of photograph is what made a library cost hundreds of
   // megabytes (see `docs/content-api.md`).
   check(
-    'タイルはブラウザが作った小さなコピーを出す',
+    'The tile shows a small copy made by the browser',
     /\/api\/images\/thumb-.*\.webp$/.test(imageSource ?? ''),
     String(imageSource).slice(0, 80),
   );
@@ -937,7 +941,7 @@ async function theImageLibrary() {
     async (src) => (await fetch(src)).status,
     imageSource,
   );
-  check('小さなコピーが配信される', thumbnailStatus === 200, `status=${thumbnailStatus}`);
+  check('The small copy is served', thumbnailStatus === 200, `status=${thumbnailStatus}`);
 
   // The name is a label: renaming it leaves the id, the URL and the bytes alone, so content that
   // references the image is unaffected.
@@ -955,7 +959,7 @@ async function theImageLibrary() {
   const renamedCard = page.locator('.library .image').first();
   const renamedSource = await renamedCard.locator('img').getAttribute('src');
   check(
-    '画像の名前を変更できる(URL は変わらない)',
+    'Can rename an image (the URL does not change)',
     (await renamedCard.locator('.name').textContent()) === renameLabel &&
       renamedSource === imageSource,
     `${await renamedCard.locator('.name').textContent()} / ${renamedSource}`,
@@ -965,7 +969,7 @@ async function theImageLibrary() {
   await page.reload({ waitUntil: 'networkidle' });
   await page.locator('.library .image').first().waitFor({ timeout: 15000 });
   check(
-    '変更した名前が残る',
+    'The new name persists',
     (await page.locator('.library .image').first().locator('.name').textContent()) === renameLabel,
   );
 
@@ -981,7 +985,7 @@ async function theImageLibrary() {
     return { status: response.status, body: await response.text() };
   }, durableLink);
   check(
-    'id のリンクで実体を取れる',
+    'The id link returns the image file',
     linkBefore.status === 200 && linkBefore.body.length > 0,
     `status=${linkBefore.status}`,
   );
@@ -1009,14 +1013,14 @@ async function theImageLibrary() {
   const cardAfterReplace = page.locator('.library .image').first();
   const urlAfterReplace = await cardAfterReplace.locator('img').getAttribute('src');
   check(
-    '画像を差し替えても id と名前は変わらない',
+    'Replacing an image keeps the same id and name',
     (await cardAfterReplace.locator('.meta').textContent())?.trim() === idBeforeReplace &&
       (await cardAfterReplace.locator('.name').textContent()) === renameLabel &&
       urlAfterReplace !== urlBeforeReplace,
     `${urlBeforeReplace} → ${urlAfterReplace}`,
   );
   check(
-    '差し替え後の id リンクは新しい実体を指す',
+    'After a replacement, the id link points to the new file',
     (await page.evaluate(
       async (src) => (await fetch(src, { redirect: 'follow' })).status,
       durableLink,
@@ -1029,7 +1033,7 @@ async function theImageLibrary() {
   const linkNotice = (
     (await page.locator('.notice-toast .text').first().textContent()) ?? ''
   ).trim();
-  check('リンクをコピーできる', linkNotice.includes(`/api/images/by-id/`), linkNotice);
+  check('Can copy the link', linkNotice.includes(`/api/images/by-id/`), linkNotice);
 }
 
 /** Pick images while editing. */
@@ -1039,7 +1043,7 @@ async function pickImagesWhileEditing() {
   thumbs = page.locator('.thumb');
   await thumbs.first().waitFor({ timeout: 15000 });
   const thumbCount = await thumbs.count();
-  check('編集中に既存画像を一覧できる', thumbCount >= 2, `${thumbCount} 件`);
+  check('Can browse existing images while editing', thumbCount >= 2, `${thumbCount} images`);
 
   await thumbs.first().click();
 
@@ -1055,7 +1059,11 @@ async function pickImagesWhileEditing() {
     })
     .catch(() => {});
   const arrayItems = await page.locator('.array-item').count();
-  check('画像配列に複数まとめて追加できる', arrayItems === 2, `${arrayItems} 件`);
+  check(
+    'Can add several images to an image array at once',
+    arrayItems === 2,
+    `${arrayItems} images`,
+  );
 
   // ...and takes an upload directly, without a detour through the library.
   await page.setInputFiles('.array-actions input[type=file]', {
@@ -1070,7 +1078,7 @@ async function pickImagesWhileEditing() {
     .catch(() => {});
   const arrayAfterUpload = await page.locator('.array-item').count();
   check(
-    '画像配列にその場でアップロードできる',
+    'Can upload into an image array on the spot',
     arrayAfterUpload === 3,
     `${arrayItems} → ${arrayAfterUpload}`,
   );
@@ -1086,7 +1094,7 @@ async function pickImagesWhileEditing() {
   const libraryNow = await api('GET', '/models/images', undefined, token);
   const expectedPhotoUrl = libraryNow.find((image) => image.id === replacedImageId)?.url;
   check(
-    '選んだ画像がアイテムに保存される',
+    'The selected images are saved to the item',
     typeof saved?.photo === 'object' &&
       saved.photo !== null &&
       saved.photo.url === expectedPhotoUrl,
@@ -1099,12 +1107,12 @@ async function pickImagesWhileEditing() {
   const thumbnail = page.locator('table.items tbody tr').first().locator('td.value img').first();
   const thumbnailSrc = (await thumbnail.getAttribute('src').catch(() => null)) ?? '';
   check(
-    '一覧の画像列はサムネイルで出る',
+    'The image column in the list shows thumbnails',
     (await thumbnail.count()) === 1 && thumbnailSrc.includes('/api/images/'),
     thumbnailSrc || 'no thumbnail',
   );
   check(
-    '画像配列がまとめて保存される',
+    'The image array is saved as a whole',
     Array.isArray(saved?.gallery) &&
       saved.gallery.length === 3 &&
       // The stored URL carries the API prefix: the CMS serves its images under `/api`.
@@ -1118,9 +1126,9 @@ async function savingIsNotPublishing() {
   // The delivery API only ever sees the published copy.
   const draftsOnly = await api('GET', `/content/collections/${IMAGE_COLLECTION}`, undefined, token);
   check(
-    '保存しただけでは公開されない',
+    'Saving alone does not publish',
     draftsOnly.items.length === 0,
-    `${draftsOnly.items.length} 件が公開中`,
+    `${draftsOnly.items.length} items are published`,
   );
 
   await page.goto(`${BASE}/collections/${IMAGE_COLLECTION}`, { waitUntil: 'networkidle' });
@@ -1143,9 +1151,9 @@ async function savingIsNotPublishing() {
     token,
   );
   check(
-    '公開すると配信 API に反映される',
+    'Publishing is reflected in the delivery API',
     publishedItems.items.length === 1,
-    `${publishedItems.items.length} 件`,
+    `${publishedItems.items.length} items`,
   );
 }
 
@@ -1168,7 +1176,11 @@ async function anImageArrayInsideAComposite() {
     )
     .catch(() => {});
   const compositeItems = await composite.locator('.array-item').count();
-  check('複合フィールド内の画像配列にも追加できる', compositeItems === 2, `${compositeItems} 件`);
+  check(
+    'Can add images to an image array inside a composite field',
+    compositeItems === 2,
+    `${compositeItems} images`,
+  );
 
   await saveAndWait();
   const compositeSaved = await api(
@@ -1180,7 +1192,7 @@ async function anImageArrayInsideAComposite() {
   // A composite is read back wrapped as `{id, values}`.
   const compositeImages = compositeSaved?.block?.values?.images ?? compositeSaved?.block?.images;
   check(
-    '複合フィールド内の画像配列が保存される',
+    'The image array inside a composite field is saved',
     Array.isArray(compositeImages) && compositeImages.length === 2,
     JSON.stringify(compositeImages),
   );
@@ -1207,9 +1219,9 @@ async function deleteThemAgain() {
   }
   const imagesAfterDelete = await page.locator('.library .image').count();
   check(
-    '画像をゴミ箱へ移動できる',
+    'Can move an image to the trash',
     imagesAfterDelete === imagesBefore,
-    `${imagesBefore} に戻る (現在 ${imagesAfterDelete})`,
+    `Back to ${imagesBefore} (now ${imagesAfterDelete})`,
   );
 
   // An image the content still shows is named in the question before it leaves the library.
@@ -1217,7 +1229,7 @@ async function deleteThemAgain() {
   await page.goto(`${BASE}/images`, { waitUntil: 'networkidle' });
   const referenced = await api('GET', '/models/images/2/references', undefined, token);
   check(
-    '画像を使っているコンテンツを参照索引から引ける',
+    'Content using an image can be found from the reference index',
     referenced.length === 0 || referenced.every((owner) => owner.kind && owner.name),
     JSON.stringify(referenced),
   );
@@ -1231,9 +1243,9 @@ async function deleteThemAgain() {
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   const trashedBefore = await page.locator('.library .image').count();
-  check('ゴミ箱に入れた画像が並ぶ', trashedBefore > 0, `${trashedBefore} 件`);
+  check('Trashed images are listed', trashedBefore > 0, `${trashedBefore} images`);
   check(
-    'ゴミ箱の画像はライブラリに戻せる',
+    'A trashed image can be restored to the image library',
     (await page.locator('button[aria-label$="back in the library"]').count()) === trashedBefore,
   );
 
@@ -1246,23 +1258,26 @@ async function deleteThemAgain() {
     )
     .catch(() => {});
   check(
-    'ゴミ箱から戻すとゴミ箱が 1 つ減る',
+    'Restoring from the trash removes one item from the trash',
     (await page.locator('.library .image').count()) === trashedBefore - 1,
-    `${await page.locator('.library .image').count()} 件`,
+    `${await page.locator('.library .image').count()} images`,
   );
 
   // The restored image is back in the library, and can be taken out again.
   await page.locator('button:has-text("Library")').first().click();
   await page.waitForTimeout(300);
-  check('戻した画像はライブラリにある', (await page.locator('.library .image').count()) > 0);
+  check(
+    'The restored image is in the image library',
+    (await page.locator('.library .image').count()) > 0,
+  );
   await page.locator('.library .image .remove').first().click();
   await page.waitForTimeout(300);
   await page.locator('button:has-text("Trash")').first().click();
   await page.waitForTimeout(300);
   check(
-    'もう一度ゴミ箱へ入れられる',
+    'Can move it to the trash again',
     (await page.locator('.library .image').count()) === trashedBefore,
-    `${await page.locator('.library .image').count()} 件`,
+    `${await page.locator('.library .image').count()} images`,
   );
 
   // Deleting for good, from the trash, is the half that cannot be undone.
@@ -1275,9 +1290,9 @@ async function deleteThemAgain() {
     )
     .catch(() => {});
   check(
-    '完全削除でゴミ箱から消える',
+    'Permanent deletion removes it from the trash',
     (await page.locator('.library .image').count()) === trashedBefore - 1,
-    `${await page.locator('.library .image').count()} 件`,
+    `${await page.locator('.library .image').count()} images`,
   );
 }
 
@@ -1288,7 +1303,7 @@ async function previewLinksAreASchemasChoice() {
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await page.locator('app-value-field input').first().waitFor({ timeout: 15000 });
   check(
-    'プレビュー無効のスキーマではボタンを出さない',
+    'A schema without preview links shows no button',
     (await page.locator('button:has-text("Preview link")').count()) === 0,
     `buttons=${await page.locator('button:has-text("Preview link")').count()}`,
   );
@@ -1300,7 +1315,7 @@ async function previewLinksAreASchemasChoice() {
   });
   const previewToggle = page.locator('.preview-setting input[type="checkbox"]');
   await previewToggle.waitFor({ timeout: 15000 });
-  check('既定ではプレビューは許可されていない', !(await previewToggle.isChecked()));
+  check('Preview links are not allowed by default', !(await previewToggle.isChecked()));
   await previewToggle.check();
   // Save from the bottom of the page, which is where the button is on a schema of any length: the
   // message used to be printed at the top of the page and left there, 1900 pixels above the
@@ -1312,7 +1327,7 @@ async function previewLinksAreASchemasChoice() {
   await page.waitForTimeout(200);
   await page.getByRole('button', { name: 'Save schema' }).click();
   await page.locator('.notice-toast .text').first().waitFor({ timeout: 15000 });
-  check('スキーマの保存でプレビューが許可される', await previewToggle.isChecked(), 'checked');
+  check('Saving the schema allows preview links', await previewToggle.isChecked(), 'checked');
 
   const scrolled = await page.evaluate(
     () => (document.querySelector('main.content')?.scrollTop ?? 0) > 100,
@@ -1320,7 +1335,7 @@ async function previewLinksAreASchemasChoice() {
   const toastBox = await page.locator('.notice-toast .text').first().boundingBox();
   const viewport = page.viewportSize();
   check(
-    '下端から保存してもメッセージが画面の上に出る',
+    'Saving from the bottom still shows the message at the top of the screen',
     scrolled && Boolean(toastBox) && toastBox.y >= 0 && toastBox.y < (viewport?.height ?? 0),
     `scrolled=${scrolled} y=${Math.round(toastBox?.y ?? -1)} viewport=${viewport?.height}`,
   );
@@ -1338,7 +1353,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   // Saving was not publishing: the delivery API still serves the older wording...
   const publishedCopy = await api('GET', `/content/collections/${COLLECTION}/items/1`);
   check(
-    '公開コピーは保存では変わらない',
+    'The published copy does not change on save',
     publishedCopy.values.title !== previewWording,
     `${publishedCopy.values.title}`,
   );
@@ -1352,7 +1367,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   // What is handed over is an address on the *preview site*, not the API's own JSON: the site is
   // what a reviewer can read, and the route mirrors the API's minus the `/api` prefix.
   check(
-    'プレビュー URL が発行される',
+    'A preview link is issued',
     new RegExp(`^${PREVIEW_SITE}/preview/collections/${COLLECTION}/items/1\\?token=`).test(
       previewUrl ?? '',
     ),
@@ -1365,13 +1380,13 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   const apiPreviewUrl = `${API}${copied.pathname}${copied.search}`;
   const previewResponse = await request.fetch(apiPreviewUrl);
   check(
-    'プレビュー URL はトークン無しで開ける',
+    'The preview link opens without a token',
     previewResponse.status() === 200,
     `status=${previewResponse.status()}`,
   );
   const previewBody = await previewResponse.json();
   check(
-    'プレビューは作業コピーを見せる',
+    'The preview shows the working copy',
     previewBody?.values?.title === previewWording,
     JSON.stringify(previewBody?.values?.title),
   );
@@ -1379,7 +1394,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   // The link is signed for one item: pointing it at another one is refused.
   const tamperedResponse = await request.fetch(apiPreviewUrl.replace('/items/1?', '/items/2?'));
   check(
-    'リンクの宛先は書き換えられない',
+    'The link target is not rewritten',
     tamperedResponse.status() === 401,
     `status=${tamperedResponse.status()}`,
   );
@@ -1390,7 +1405,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   const toolbar = page.locator('.toolbar');
   check(
-    '公開済みで変更があると「変更を公開」が出る',
+    'When published with changes, "Publish changes" appears',
     (await toolbar.locator('button:has-text("Publish changes")').count()) === 1 &&
       (await toolbar.locator('button:has-text("Unpublish")').count()) === 1,
   );
@@ -1410,7 +1425,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
     )
     .catch(() => {});
   const releaseInList = page.locator(`button[aria-label="publish the changes of item ${'1'}"]`);
-  check('一覧にも「変更を公開」が出る', (await releaseInList.count()) === 1);
+  check('The list also shows "Publish changes"', (await releaseInList.count()) === 1);
 
   const beforeRelease = await api('GET', `/content/collections/${COLLECTION}/items/1`);
   await releaseInList.click();
@@ -1423,23 +1438,24 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
     .catch(() => {});
   const releasedCopy = await api('GET', `/content/collections/${COLLECTION}/items/1`);
   check(
-    '一覧から変更を公開できる',
+    'Can publish the changes from the list',
     releasedCopy.values.title === previewWording,
     `${releasedCopy.values.title}`,
   );
-  // 公開日は初回のまま。公開物が変わった時刻だけが進む(差分ビルドが見るのはこちら)。
+  // The publish date stays the first one; only the time the published copy changed moves, which is
+  // what a diff build looks at.
   check(
-    '再公開しても公開日は初回のまま',
+    'Republishing keeps the original publish date',
     releasedCopy.published_at === beforeRelease.published_at,
     `${beforeRelease.published_at} → ${releasedCopy.published_at}`,
   );
   check(
-    '公開物が変わった時刻は進む',
+    'The time the published copy changed moves forward',
     Date.parse(releasedCopy.last_published_at) > Date.parse(beforeRelease.last_published_at),
     `${beforeRelease.last_published_at} → ${releasedCopy.last_published_at}`,
   );
   check(
-    '公開したまま変更が反映される（配信は止まらない）',
+    'Changes are reflected while published (delivery does not stop)',
     releasedCopy.id === 1 &&
       (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token))
         .has_draft === false,
@@ -1452,11 +1468,11 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
   publishWording = `publish wording ${Date.now()}`;
   await titleField.fill(publishWording);
   check(
-    '未保存の変更があると画面にそう出る',
+    'Unsaved changes are indicated in the UI',
     (await page.locator('.draft-note', { hasText: 'Not saved yet' }).count()) === 1,
   );
   check(
-    '未保存なら「保存して公開」になる',
+    'With unsaved changes it becomes "Save and publish"',
     (await page.locator('button:has-text("Save and publish")').count()) === 1 &&
       (await page.locator('button:has-text("Publish changes")').count()) === 0,
   );
@@ -1474,7 +1490,7 @@ async function aLinkShowsUnpublishedWorkToAGuest() {
     .catch(() => {});
   const afterSaveAndPublish = await api('GET', `/content/collections/${COLLECTION}/items/1`);
   check(
-    '「保存して公開」は保存と公開をまとめて行う',
+    '"Save and publish" saves and publishes in one step',
     afterSaveAndPublish.values.title === publishWording,
     `${afterSaveAndPublish.values.title}`,
   );
@@ -1500,7 +1516,7 @@ async function whatIsLiveAndTakingChangesBack() {
     .locator('input')
     .evaluateAll((inputs) => inputs.map((input) => input.value));
   check(
-    '公開中と保存した変更を並べて見られる',
+    'Can see the published version and saved changes side by side',
     sides.length === 2 && sides[0] !== discardWording && sides[1] === discardWording,
     sides.join(' / '),
   );
@@ -1524,17 +1540,17 @@ async function whatIsLiveAndTakingChangesBack() {
     token,
   );
   check(
-    '取り消すと公開中の内容に戻る',
+    'Discarding restores the published content',
     afterDiscard.title !== discardWording && afterDiscard.title === publishWording,
     `${afterDiscard.title}`,
   );
   check(
-    '取り消してもサイトは変わらない',
+    'Discarding does not change the site',
     (await api('GET', `/content/collections/${COLLECTION}/items/1`)).values.title ===
       publishWording,
   );
   check(
-    '取り消したので保留中の変更は無い',
+    'After discarding there are no pending changes',
     (await api('GET', `/models/collections/${COLLECTION}/items/1/metadata`, undefined, token))
       .has_draft === false,
   );
@@ -1544,16 +1560,20 @@ async function whatIsLiveAndTakingChangesBack() {
   dialogAnswer = 'dismiss';
   await page.click('button:has-text("Back to the list without saving")');
   await page.waitForTimeout(500);
-  check('未保存で離れようとすると確認が出る', page.url().includes('/edit/1'), page.url());
   check(
-    '取り消すと編集内容が残っている',
+    'Leaving with unsaved changes shows a confirmation',
+    page.url().includes('/edit/1'),
+    page.url(),
+  );
+  check(
+    'Canceling leaves the edits in place',
     (await titleField.inputValue()).startsWith('left behind'),
   );
 
   dialogAnswer = 'accept';
   await page.click('button:has-text("Back to the list without saving")');
   await page.waitForURL(`${BASE}/collections/${COLLECTION}`, { timeout: 15000 }).catch(() => {});
-  check('確認に同意すると移動する', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
+  check('Confirming navigates away', page.url().endsWith(`/collections/${COLLECTION}`), page.url());
 }
 
 /** Roles decide what is offered. */
@@ -1583,7 +1603,7 @@ async function rolesDecideWhatIsOffered() {
   // them: a link that needed "Schemas" opened first would be one the reader has to know is there.
   await expandBranch(page, 'Settings');
   check(
-    '管理者にはアカウント管理が見える',
+    'The administrator sees account management',
     (await page.locator('a[href="/settings/users"]').count()) === 1,
   );
   await expandBranch(page, 'Schemas');
@@ -1595,7 +1615,7 @@ async function rolesDecideWhatIsOffered() {
     .first()
     .waitFor({ timeout: 15000 });
   check(
-    '編集ロール: 新規作成はできる',
+    'Editor role: can create',
     (await editor.page.locator('button:has-text("New item")').count()) === 1,
   );
   // Deleting lives in the row's menu, and a closed menu holds nothing: it is opened to read what
@@ -1609,7 +1629,7 @@ async function rolesDecideWhatIsOffered() {
   const editorMenu = await editor.page.getByRole('menuitem').allTextContents();
   await editor.page.keyboard.press('Escape');
   check(
-    '編集ロール: 公開も削除も出ない',
+    'Editor role: no publish or delete',
     (await editor.page.locator('button[aria-label^="publish item"]').count()) === 0 &&
       editorMenu.some((text) => text.includes('Copy item')) &&
       !editorMenu.some((text) => text.includes('Delete item')),
@@ -1623,7 +1643,7 @@ async function rolesDecideWhatIsOffered() {
     .catch(() => {});
   await editor.page.waitForTimeout(200);
   check(
-    '編集ロール: 画像は見えるが、設定は何も出ない',
+    'Editor role: images are visible but no settings appear',
     (await editor.page.locator('a[href="/images"]').count()) === 1 &&
       (await editor.page.locator('a[href^="/settings/"]').count()) === 0,
   );
@@ -1632,7 +1652,7 @@ async function rolesDecideWhatIsOffered() {
   // directly lands back on the landing screen rather than on a screen whose save is refused.
   await editor.page.goto(`${BASE}/settings/collections`, { waitUntil: 'networkidle' });
   check(
-    '編集ロール: スキーマ画面のアドレスにも入れない',
+    'Editor role: cannot open the schema screen URL',
     new URL(editor.page.url()).pathname === '/',
     editor.page.url(),
   );
@@ -1641,7 +1661,7 @@ async function rolesDecideWhatIsOffered() {
   await editor.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
   // Two: the toolbar's and the form's. An editor is offered both acts of saving and no publishing.
   check(
-    '編集ロール: 保存はできるが公開はできない',
+    'Editor role: can save but not publish',
     (await editor.page.getByRole('button', { name: 'Save', exact: true }).count()) === 2 &&
       (await editor.page.locator('button:has-text("Publish")').count()) === 0,
   );
@@ -1653,22 +1673,22 @@ async function rolesDecideWhatIsOffered() {
     .first()
     .waitFor({ timeout: 15000 });
   check(
-    '閲覧ロール: 新規作成も出ない',
+    'Viewer role: no create button',
     (await viewer.page.locator('button:has-text("New item")').count()) === 0,
   );
   await viewer.page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
   await viewer.page.locator('app-value-field').first().waitFor({ timeout: 15000 });
   check(
-    '閲覧ロール: 保存も公開も出ない',
+    'Viewer role: no save or publish',
     (await viewer.page.getByRole('button', { name: 'Save', exact: true }).count()) === 0 &&
       (await viewer.page.locator('button:has-text("Publish")').count()) === 0,
   );
   check(
-    '閲覧ロール: 閲覧のみと案内される',
+    'Viewer role: told it is view-only',
     (await viewer.page.locator('.note', { hasText: 'may not edit' }).count()) === 1,
   );
   check(
-    '閲覧ロール: 自分のパスワードは変更できる',
+    'Viewer role: can change own password',
     (await viewer.page
       .locator('a[href="/account"], button[aria-label="Change password"]')
       .count()) === 1,
@@ -1688,7 +1708,7 @@ async function aPasswordChangeEndsTheOldSessions() {
     .waitFor({ timeout: 10000 })
     .catch(() => {});
   check(
-    'パスワード変更が完了と表示される',
+    'The password change is reported as complete',
     (await viewer.page.locator('.notice-toast .text').count()) === 1,
   );
 
@@ -1698,7 +1718,7 @@ async function aPasswordChangeEndsTheOldSessions() {
   const oldTokenStatus = (
     await request.fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${stolenToken}` } })
   ).status();
-  check('変更前のトークンは失効する', oldTokenStatus === 401, `status=${oldTokenStatus}`);
+  check('The old token is revoked', oldTokenStatus === 401, `status=${oldTokenStatus}`);
 
   // ...while the session that changed it carries on, because the server handed back a
   // token for the new generation and the screen adopted it.
@@ -1708,7 +1728,7 @@ async function aPasswordChangeEndsTheOldSessions() {
     .first()
     .waitFor({ timeout: 15000 });
   check(
-    '変更後も自分のセッションは続く',
+    'Your own session continues after the change',
     viewer.page.url().includes('/collections/'),
     viewer.page.url(),
   );
@@ -1720,7 +1740,7 @@ async function aPasswordChangeEndsTheOldSessions() {
     .locator('table.items tbody tr:has(app-item-status)')
     .first()
     .waitFor({ timeout: 15000 });
-  check('新しいパスワードでサインインできる', afterChange.page.url().includes('/collections/'));
+  check('Can sign in with the new password', afterChange.page.url().includes('/collections/'));
   await afterChange.context.close();
 
   await editor.context.close();
@@ -1757,7 +1777,10 @@ async function perResourcePermissionsGrantedFromTheScreen() {
     .locator('.resource', { hasText: `collection: ${COLLECTION}` })
     .locator('mat-select');
   await grant.waitFor({ timeout: 10000 });
-  check('アカウント画面にリソース権限の一覧が出る', (await page.locator('.resource').count()) >= 2);
+  check(
+    'The account screen lists resource permissions',
+    (await page.locator('.resource').count()) >= 2,
+  );
 
   await grant.click();
   await page.locator('mat-option', { hasText: 'Publisher' }).click();
@@ -1770,7 +1793,7 @@ async function perResourcePermissionsGrantedFromTheScreen() {
     (account) => account.username === scopedEmail,
   );
   check(
-    '保存した権限がサーバに届く',
+    'Saved permissions reach the server',
     scopedAfterSave.collection_permissions[COLLECTION].can_publish === true,
     JSON.stringify(scopedAfterSave.collection_permissions),
   );
@@ -1784,7 +1807,7 @@ async function perResourcePermissionsGrantedFromTheScreen() {
   const scopedToken = (await scopedLogin.json()).token;
   const offered = await api('GET', '/models/collections', undefined, scopedToken);
   check(
-    '許可したコレクションだけが一覧に出る',
+    'Only granted collections appear in the list',
     offered.includes(COLLECTION) && !offered.includes(LAST_PAGE_COLLECTION),
     offered.join(','),
   );
@@ -1793,7 +1816,7 @@ async function perResourcePermissionsGrantedFromTheScreen() {
   await scopedSession.page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
   await scopedSession.page.locator('table.items tbody tr').first().waitFor({ timeout: 15000 });
   check(
-    'grant したコレクションは編集できる',
+    'A granted collection can be edited',
     (await scopedSession.page.locator('button:has-text("New item")').count()) === 1,
   );
   // The denied collection is refused by the server as well. Checked over the API rather than by
@@ -1803,7 +1826,7 @@ async function perResourcePermissionsGrantedFromTheScreen() {
     headers: { Authorization: `Bearer ${scopedToken}` },
   });
   check(
-    '拒否したコレクションは API でも 403',
+    'A denied collection returns 403 from the API too',
     denied.status() === 403,
     `status=${denied.status()}`,
   );
@@ -1827,14 +1850,14 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const textField = page.locator('.schema-field').first();
   await textField.locator('input[name=fieldName]').fill('title');
   check(
-    'フィールド編集のラベルが訳される',
+    'Field edit labels are translated',
     ((await textField.locator('mat-label').first().textContent()) ?? '').includes('Field Name'),
   );
 
   // The title has to be unique: the value is compared across the collection when saved.
   await textField.locator('input[name="fieldUnique"]').check({ force: true });
   check(
-    '一意チェックが画面にある',
+    'The unique checkbox is in the UI',
     await textField.locator('input[name="fieldUnique"]').isChecked(),
   );
 
@@ -1866,7 +1889,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
       .then(() => true)
       .catch(() => false);
 
-  check('Enum の値を画面から追加できる', await enumHasChips(2));
+  check('Can add an Enum value from the UI', await enumHasChips(2));
 
   // The chip's own label carries the value; a message that lost its placeholder would read
   // "remove {{value}}".
@@ -1877,13 +1900,13 @@ async function theSchemaEditorDrivenFromTheScreen() {
       .locator('button[matChipRemove]')
       .getAttribute('aria-label')) ?? '';
   check(
-    'Enum の値を消すボタンに値が入る',
+    'The button that removes an Enum value carries the value',
     removeLabel.includes('draft') && !removeLabel.includes('{{'),
     removeLabel,
   );
 
   await enumField.locator('mat-chip-row').first().locator('button[matChipRemove]').click();
-  check('Enum の値を画面から削除できる', await enumHasChips(1));
+  check('Can remove an Enum value from the UI', await enumHasChips(1));
 
   // A third field: an array whose items are composites. The definitions are chosen in their
   // own control; the declared order is what the elements are read back against.
@@ -1896,7 +1919,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page.locator('mat-option', { hasText: SCHEMA_BLOCK }).click();
   await page.keyboard.press('Escape');
   check(
-    '複合を配列の要素型として選べる',
+    'Can choose a composite field as the array element type',
     (await arrayField.locator('mat-select[name=arrayCompositeTypes]').textContent())?.includes(
       SCHEMA_BLOCK,
     ) ?? false,
@@ -1914,7 +1937,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // item, not every field the content holds.
   await summaryField.locator('input[name=fieldInList]').check();
   check(
-    '一覧に出す項目をスキーマで選べる',
+    'Can choose which fields show in the list from the schema',
     await summaryField.locator('input[name=fieldInList]').isChecked(),
   );
 
@@ -1940,7 +1963,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   };
   const typeSelect = slugField.locator('mat-select[name=fieldType]');
   check(
-    '型に Slug と出る',
+    'The type shows as Slug',
     (await chosen(typeSelect, 'Slug')) === 'Slug',
     await chosen(typeSelect, 'Slug'),
   );
@@ -1949,7 +1972,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page.keyboard.press('Escape');
   const sourceSelect = slugField.locator('mat-select[name=slugGenerateFrom]');
   check(
-    'Slug を画面で選び、生成元を指定できる',
+    'Can choose Slug in the UI and set its source',
     (await chosen(sourceSelect, 'title')) === 'title',
     await chosen(sourceSelect, 'title'),
   );
@@ -1974,7 +1997,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page.keyboard.press('Escape');
   await relationItemType.locator('input[name=arrayRelationInverseName]').fill('posts');
   check(
-    'リレーションの対象を画面で選べる',
+    'Can choose the relation target in the UI',
     ((await relationField.locator('mat-select[name=arrayItemTypes]').textContent()) ?? '').includes(
       'Relation',
     ) &&
@@ -2005,7 +2028,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const builtSlug = builtSchema.find((field) => field.name === 'address');
   const builtRelation = builtSchema.find((field) => field.name === 'related');
   check(
-    '画面で組んだスキーマが保存される',
+    'A schema built in the UI is saved',
     builtText?.width === 6 &&
       builtText?.unique === true &&
       builtText?.field_type?.Text !== undefined &&
@@ -2024,7 +2047,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     cell.trim(),
   );
   check(
-    '一覧には「一覧に表示」の項目だけが並ぶ',
+    'Only fields marked "Show in list" appear in the list',
     listedHeaders.join(',') === ',ID,summary,related,Status (publisher),Updated,' ||
       (listedHeaders.includes('summary') &&
         listedHeaders.includes('related') &&
@@ -2035,7 +2058,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
 
   await page.goto(`${BASE}/settings/schemas/collections`, { waitUntil: 'networkidle' });
   check(
-    'スキーマ一覧に新しいコレクションが出る',
+    'The new collection appears in the schema list',
     (await page.locator('table td', { hasText: SCHEMA_COLLECTION }).count()) === 1,
   );
 
@@ -2050,7 +2073,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const addressInput = page.locator('app-value-field input[name=address]');
   await addressInput.waitFor({ timeout: 15000 });
   check(
-    'Slug に生成ボタンが出る',
+    'The Slug field shows a generate button',
     (await page.locator('button:has-text("Generate from title")').count()) === 1,
   );
   await page.click('button:has-text("Generate from title")');
@@ -2064,7 +2087,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     )
     .then(() => true)
     .catch(() => false);
-  check('タイトルから slug が生成される', generatedSlug, await addressInput.inputValue());
+  check('A slug is generated from the title', generatedSlug, await addressInput.inputValue());
   await page.locator('app-value-field mat-select').click();
   await page.locator('mat-option', { hasText: 'published' }).click();
   // A multiple select keeps its panel open; the Save button is behind it until it closes.
@@ -2085,14 +2108,14 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await elements.nth(0).locator('input').first().fill('first block');
   await elements.nth(1).locator('input').first().fill('second block');
   check(
-    '複合配列の要素が 2 つ出る',
+    'The composite array shows two elements',
     (await elements.count()) === 2,
-    `${await elements.count()} 件`,
+    `${await elements.count()} elements`,
   );
   const typedFirst = await elements.nth(0).locator('input').first().inputValue();
   const typedSecond = await elements.nth(1).locator('input').first().inputValue();
   check(
-    '複合配列の要素に入力できる',
+    'Can type into composite array elements',
     typedFirst === 'first block' && typedSecond === 'second block',
     `${typedFirst} / ${typedSecond}`,
   );
@@ -2109,7 +2132,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     )
     .then(() => true)
     .catch(() => false);
-  check('複合配列の要素を並べ替えられる', reordered);
+  check('Can reorder composite array elements', reordered);
 
   // What the target calls its item 1 is a title the checks above have been editing, so ask instead
   // of assuming it: the names offered below should be that one. A label is matched whole, because
@@ -2138,7 +2161,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await nestedCandidates.first().waitFor({ timeout: 15000 });
   const nestedNames = (await nestedCandidates.allTextContents()).map((name) => name.trim());
   check(
-    '複合の中のリレーションもピッカーで選べる',
+    'A relation inside a composite can also be chosen with the picker',
     nestedNames.includes(referencedTitle),
     nestedNames.slice(0, 3).join(' / '),
   );
@@ -2155,7 +2178,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     .catch(() => {});
   const nestedChipText = ((await nestedChip.textContent()) ?? 'none').replace('cancel', '').trim();
   check(
-    '複合の中の参照がチップで出る',
+    'References inside a composite show as chips',
     nestedChipText === referencedTitle,
     `${nestedChipText} (expected ${referencedTitle})`,
   );
@@ -2174,7 +2197,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     .catch(() => {});
   const candidates = (await candidateLabels.allTextContents()).map((name) => name.trim());
   check(
-    'ピッカーが参照先をタイトルで並べる',
+    'The picker lists reference targets by title',
     candidates.length > 0 && candidates.every((name) => !name.includes(' #')),
     candidates.slice(0, 3).join(' / '),
   );
@@ -2193,7 +2216,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     .catch(() => {});
   const pickedChip = ((await pickedLabel.textContent()) ?? 'none').trim();
   check(
-    'ピッカーで参照先を選べる',
+    'Can choose a reference target in the picker',
     (await relationCell.locator('mat-chip-row').count()) === 1 && pickedChip === referencedTitle,
     `${pickedChip} (expected ${referencedTitle})`,
   );
@@ -2230,7 +2253,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     (name) => name.trim(),
   );
   check(
-    '参照の順序を画面で入れ替えられる',
+    'Can reorder references in the UI',
     moved[0] === `${COLLECTION} item 2` && moved[1] === referencedTitle,
     moved.join(' / '),
   );
@@ -2245,7 +2268,11 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const left = (await relationCell.locator('mat-chip-row .reference-label').allTextContents()).map(
     (name) => name.trim(),
   );
-  check('外した参照は残らない', left.length === 1 && left[0] === referencedTitle, left.join(' / '));
+  check(
+    'Removed references do not remain',
+    left.length === 1 && left[0] === referencedTitle,
+    left.join(' / '),
+  );
 
   // The picker closes the way it opened, from the button beside it (the panel's own Close is the
   // other way out, and the component's spec is where that one is checked).
@@ -2265,7 +2292,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const relatedProblem = await page.locator('.field-cell.problem').count();
   const relatedError = ((await page.locator('.error').first().textContent()) ?? '').trim();
   check(
-    '参照が不正なら保存前に止まる',
+    'An invalid reference is blocked before saving',
     page.url().includes('/create') && relatedProblem === 1 && relatedError.includes('related[0]'),
     `${page.url()} / ${relatedProblem} / ${relatedError}`,
   );
@@ -2281,12 +2308,12 @@ async function theSchemaEditorDrivenFromTheScreen() {
     token,
   );
   check(
-    'Enum フィールドをコンテンツで選べる',
+    'Can choose the Enum field in content',
     JSON.stringify(builtItem?.state) === '["published"]',
     JSON.stringify(builtItem?.state),
   );
   check(
-    '生成した slug が正規形で保存される',
+    'The generated slug is saved in normalized form',
     builtItem?.address === 'first-item',
     JSON.stringify(builtItem?.address),
   );
@@ -2296,13 +2323,13 @@ async function theSchemaEditorDrivenFromTheScreen() {
     (element) => `${element.id}:${element.values?.line}`,
   );
   check(
-    '複合配列が要素ごとに保存される',
+    'The composite array is saved element by element',
     JSON.stringify(savedElements) ===
       JSON.stringify([`${SCHEMA_BLOCK}:second block`, `${SCHEMA_BLOCK}:first block`]),
     JSON.stringify(savedElements),
   );
   check(
-    'リレーションが参照として保存される',
+    'The relation is saved as a reference',
     JSON.stringify(builtItem?.related) === JSON.stringify([{ target: COLLECTION, item: 1 }]),
     JSON.stringify(builtItem?.related),
   );
@@ -2310,7 +2337,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // element carries the value that sits in it, and one relation is the bare reference.
   const savedBlockRelationship = builtItem?.blocks?.[0]?.values?.author;
   check(
-    '複合の中の参照が保存される',
+    'References inside a composite are saved',
     JSON.stringify(savedBlockRelationship) === JSON.stringify({ target: COLLECTION, item: 1 }),
     JSON.stringify(savedBlockRelationship),
   );
@@ -2323,7 +2350,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     token,
   );
   check(
-    '複合の中の参照が逆引きに出る',
+    'A reference inside a composite shows in the reference index',
     Array.isArray(referrers) &&
       referrers.some((entry) => entry.name === SCHEMA_COLLECTION && entry.item === 1),
     JSON.stringify(referrers),
@@ -2351,7 +2378,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     await page.locator('table.items tbody tr').first().locator('td.value').nth(1).textContent()
   )?.trim();
   check(
-    '一覧の参照列は参照先のタイトルで出る',
+    'The reference column in the list shows the target title',
     referenceCell === referencedTitle,
     `${referenceCell} (expected ${referencedTitle})`,
   );
@@ -2366,7 +2393,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   ).trim();
   const pointingLink = await page.locator('.reference-group a').first().getAttribute('href');
   check(
-    '参照元パネルが逆側の呼び名で出る',
+    'The referencing panel uses the inverse name',
     pointingHeading === 'posts' && pointingLink === `/collections/${SCHEMA_COLLECTION}/edit/1`,
     `${pointingHeading} / ${pointingLink}`,
   );
@@ -2378,7 +2405,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     await relationCell.locator('mat-chip-row .reference-label').first().textContent()
   )?.trim();
   check(
-    '編集画面の参照は参照先のタイトルで出る',
+    'References in the editor show the target title',
     heldReference === referencedTitle,
     `${heldReference} (expected ${referencedTitle})`,
   );
@@ -2388,7 +2415,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await offeredLabels.first().waitFor({ timeout: 15000 });
   const offeredNames = (await offeredLabels.allTextContents()).map((name) => name.trim());
   check(
-    'ピッカーは参照先の現在のタイトルで並べる',
+    'The picker sorts reference targets by their current title',
     offeredNames.includes(referencedTitle),
     offeredNames.slice(0, 3).join(' / '),
   );
@@ -2403,12 +2430,12 @@ async function theSchemaEditorDrivenFromTheScreen() {
     await relationCell.locator('mat-chip-row .reference-label').first().textContent()
   )?.trim();
   check(
-    '保存した参照が名前でフォームに出る',
+    'A saved reference appears in the form by name',
     savedReference === referencedTitle,
     `${savedReference} (expected ${referencedTitle})`,
   );
   check(
-    '保存した複合配列がフォームに出る',
+    'The saved composite array appears in the form',
     (await page.locator('.composite-element').nth(0).locator('input').first().inputValue()) ===
       'second block',
     await page.locator('.composite-element').nth(0).locator('input').first().inputValue(),
@@ -2420,9 +2447,9 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await firstBlock.locator('button:has-text("Add element")').first().click();
   const nestedBlocks = firstBlock.locator('.composite-element');
   await nestedBlocks.first().locator('input').first().fill('nested block');
-  check('複合の中に複合を追加できる', (await nestedBlocks.count()) === 1);
+  check('Can add a composite field inside a composite field', (await nestedBlocks.count()) === 1);
   check(
-    '入れ子の配列は空のところで止まる',
+    'A nested array stops where it is empty',
     await nestedBlocks
       .first()
       .locator('.note')
@@ -2440,7 +2467,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     token,
   );
   check(
-    '入れ子の複合配列が保存される',
+    'The nested composite array is saved',
     nestedItem?.blocks?.[0]?.values?.children?.[0]?.values?.line === 'nested block',
     JSON.stringify(nestedItem?.blocks?.[0]?.values?.children),
   );
@@ -2466,11 +2493,11 @@ async function theSchemaEditorDrivenFromTheScreen() {
     )
     .then(() => true)
     .catch(() => false);
-  check('綴り違いの slug は同じ住所として拒否される', slugRefusal);
+  check('A differently spelled slug is rejected as the same address', slugRefusal);
   check(
-    '拒否された slug の欄が強調される',
+    'The rejected slug field is highlighted',
     (await page.locator('.field-cell.problem').count()) === 1,
-    `${await page.locator('.field-cell.problem').count()} 件`,
+    `${await page.locator('.field-cell.problem').count()} fields marked`,
   );
 
   // The schema's limits are the content editor's business too, not just the server's: the input
@@ -2481,18 +2508,18 @@ async function theSchemaEditorDrivenFromTheScreen() {
   // The unique field says so on the form: only the server can check it, but the reader is told
   // before they find out from a refusal.
   check(
-    '一意なフィールドだと画面に出る',
+    'The UI shows the field is unique',
     // The title, which asked to be unique, and the slug, which is unique by being one.
     (await page.locator('app-value-field .unique-mark').count()) === 2,
-    `${await page.locator('app-value-field .unique-mark').count()} 件`,
+    `${await page.locator('app-value-field .unique-mark').count()} unique marks`,
   );
   check(
-    'スキーマの文字数が入力欄に効く',
+    'The schema character limit applies to the input',
     (await summary.getAttribute('maxlength')) === '8',
     'maxlength',
   );
   check(
-    'スキーマの文字数がヒントに出る',
+    'The schema character limit shows in the hint',
     ((await summary.locator('xpath=ancestor::mat-form-field').textContent()) ?? '').includes(
       '5–8 characters',
     ),
@@ -2504,7 +2531,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   const stillCreating = page.url().includes('/create');
   const summaryProblem = await page.locator('.field-cell.problem').count();
   check(
-    '短すぎる値は保存前に止まる',
+    'An overly short value is blocked before saving',
     stillCreating && summaryProblem === 1,
     `${stillCreating} / ${summaryProblem}`,
   );
@@ -2527,11 +2554,15 @@ async function theSchemaEditorDrivenFromTheScreen() {
     )
     .catch(() => {});
   const refusalText = ((await page.locator('.error').textContent()) ?? '').trim();
-  check('一意な値の重複はフォームで止まる', refusalText.includes('title'), refusalText);
   check(
-    '拒否されたフィールドが強調される',
+    'A value that duplicates a unique field is blocked in the form',
+    refusalText.includes('title'),
+    refusalText,
+  );
+  check(
+    'The rejected field is highlighted',
     (await page.locator('.field-cell.problem').count()) === 1,
-    `${await page.locator('.field-cell.problem').count()} 件`,
+    `${await page.locator('.field-cell.problem').count()} fields marked`,
   );
 
   const afterRefusal = await api(
@@ -2541,9 +2572,9 @@ async function theSchemaEditorDrivenFromTheScreen() {
     token,
   );
   check(
-    '重複したアイテムは作られない',
+    'No duplicate item is created',
     Object.keys(afterRefusal).length === 1,
-    `${Object.keys(afterRefusal).length} 件`,
+    `${Object.keys(afterRefusal).length} items`,
   );
 
   // Duplicating opens the copy, with the unique field emptied. The schema editor's collection is
@@ -2559,7 +2590,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     .waitFor({ timeout: 15000 })
     .then(() => true)
     .catch(() => false);
-  check('一覧に項目が並ぶ', rowsReady, page.url());
+  check('Items appear in the list', rowsReady, page.url());
   const beforeCopy = await api(
     'GET',
     `/models/collections/${SCHEMA_COLLECTION}/items`,
@@ -2571,7 +2602,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page
     .waitForURL(`**/collections/${SCHEMA_COLLECTION}/edit/**`, { timeout: 15000 })
     .catch(() => {});
-  check('複製すると編集画面が開く', page.url().includes('/edit/'), page.url());
+  check('Duplicating opens the editor', page.url().includes('/edit/'), page.url());
   const copyId = Number(page.url().split('/').pop());
   const copy = await api(
     'GET',
@@ -2579,9 +2610,9 @@ async function theSchemaEditorDrivenFromTheScreen() {
     undefined,
     token,
   );
-  check('複製では一意なフィールドが空になる', copy.title === '', JSON.stringify(copy.title));
+  check('Duplicating clears the unique fields', copy.title === '', JSON.stringify(copy.title));
   check(
-    '複製では他の値が引き継がれる',
+    'Duplicating carries over the other values',
     typeof copy.summary === 'string',
     JSON.stringify(copy.summary),
   );
@@ -2591,7 +2622,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await saveAndWait();
   // Saving stays on the item now; the list below is the toolbar's own button, which is also what
   // the batch checks that follow are looking at.
-  check('保存しても編集画面にとどまる', page.url().includes('/edit/'), page.url());
+  check('Saving keeps you in the editor', page.url().includes('/edit/'), page.url());
   await page.getByRole('button', { name: 'Back to the list without saving', exact: true }).click();
   await page
     .waitForURL(`${BASE}/collections/${SCHEMA_COLLECTION}`, { timeout: 15000 })
@@ -2603,7 +2634,7 @@ async function theSchemaEditorDrivenFromTheScreen() {
     token,
   );
   check(
-    '複製が 1 件増える',
+    'One more copy is created',
     afterCopy.length === beforeCopy.length + 1,
     `${beforeCopy.length} → ${afterCopy.length}`,
   );
@@ -2617,19 +2648,19 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page.locator('thead input[type=checkbox]').first().check();
   await page.waitForTimeout(200);
   check(
-    '行をまとめて選べる',
+    'Can select rows in bulk',
     (await page.locator('.toolbar .selection').count()) === 1,
-    `${await page.locator('tbody input[type=checkbox]:checked').count()} 件`,
+    `${await page.locator('tbody input[type=checkbox]:checked').count()} rows selected`,
   );
   await page.getByRole('button', { name: 'Publish selected', exact: true }).click();
   await page.waitForTimeout(800);
   check(
-    '選択した記事をまとめて公開できる',
+    'Can bulk publish the selected items',
     (await publishedCount()) === afterCopy.length,
     `${publishedBefore} → ${await publishedCount()}`,
   );
   check(
-    '一括の結果が画面に出る',
+    'The bulk result appears in the UI',
     (await page.locator('.notice').filter({ hasText: 'changed' }).count()) === 1,
   );
 
@@ -2639,9 +2670,9 @@ async function theSchemaEditorDrivenFromTheScreen() {
   await page.getByRole('button', { name: 'Unpublish selected', exact: true }).click();
   await page.waitForTimeout(800);
   check(
-    '選択した記事をまとめて非公開にできる',
+    'Can bulk unpublish the selected items',
     (await publishedCount()) === 0,
-    `${await publishedCount()} 件`,
+    `${await publishedCount()} items`,
   );
 
   // Through the API rather than the screen: this collection exists only for this scenario.
@@ -2669,7 +2700,7 @@ async function singlePagesSwitchingFollowsTheURL() {
   const pageTitle = page.locator('app-value-field input[name=title]');
   await pageTitle.waitFor({ timeout: 15000 });
   check(
-    '単一ページの内容が開く',
+    'The Single page content opens',
     (await pageTitle.inputValue()) === `content of ${pageA}`,
     await pageTitle.inputValue(),
   );
@@ -2693,7 +2724,7 @@ async function singlePagesSwitchingFollowsTheURL() {
     .then(() => true)
     .catch(() => false);
   check(
-    '単一ページを切り替えると画面も切り替わる',
+    'Switching Single pages switches the screen too',
     switched &&
       ((await page.locator('h2').first().textContent()) ?? '').includes(pageB) &&
       (await pageTitle.inputValue()) === `content of ${pageB}`,
@@ -2711,7 +2742,7 @@ async function singlePagesSwitchingFollowsTheURL() {
   ).trim();
   const badgeAppeared = await page.locator('app-item-status .badge').count();
   check(
-    '単一ページの保存後も画面に留まる',
+    'Saving a Single page keeps you on the screen',
     stayedOnPage && savedNotice.length > 0 && badgeAppeared === 1,
     `${stayedOnPage} / ${savedNotice} / ${badgeAppeared}`,
   );
@@ -2728,7 +2759,7 @@ async function singlePagesSwitchingFollowsTheURL() {
     .then(() => true)
     .catch(() => false);
   check(
-    '保存して公開が 1 クリックでできる',
+    'Save and publish works in one click',
     published,
     await page.locator('app-item-status .badge').first().textContent(),
   );
@@ -2736,7 +2767,7 @@ async function singlePagesSwitchingFollowsTheURL() {
   const servedPage = await request.fetch(`${API}/content/single-pages/${pageB}`).catch(() => null);
   const servedBody = servedPage?.ok() ? JSON.stringify(await servedPage.json()) : '';
   check(
-    '保存して公開した内容が配信 API に出る',
+    'Content saved and published appears in the delivery API',
     servedPage?.ok() === true && servedBody.includes(`edited ${pageB}`),
     servedBody.slice(0, 120),
   );
@@ -2747,10 +2778,10 @@ async function singlePagesSwitchingFollowsTheURL() {
   await pageRows.first().waitFor({ timeout: 15000 });
   const rowForPage = (name) => page.locator('table.items tbody tr', { hasText: name });
   check(
-    '単一ページの一覧に状態が出る',
+    'The Single page list shows the status',
     (await pageRows.count()) >= 2 &&
       (await rowForPage(pageB).textContent())?.includes('Published') === true,
-    `${await pageRows.count()} 行 / ${(await rowForPage(pageB).textContent())?.trim()}`,
+    `${await pageRows.count()} rows / ${(await rowForPage(pageB).textContent())?.trim()}`,
   );
 
   // A page that has never been published is a draft, and can be released from here.
@@ -2768,7 +2799,7 @@ async function singlePagesSwitchingFollowsTheURL() {
     )
     .then(() => true)
     .catch(() => false);
-  check('一覧から非公開にできる', unpublished);
+  check('Can unpublish from the list', unpublished);
 
   for (const name of [pageA, pageB]) {
     await deleteIfPresent(`/models/single_pages/${name}`, token);
@@ -2801,7 +2832,7 @@ async function anAdministratorHandsOutAPasswordResetLink() {
   await resetAnchor.waitFor({ timeout: 10000 });
   const resetUrl = await resetAnchor.getAttribute('href');
   check(
-    'リセット URL が発行される',
+    'A password reset link is issued',
     /\/reset-password\?token=/.test(resetUrl ?? ''),
     String(resetUrl).slice(0, 70),
   );
@@ -2821,7 +2852,7 @@ async function anAdministratorHandsOutAPasswordResetLink() {
     .waitForFunction(() => !location.pathname.includes('/reset-password'), null, { timeout: 15000 })
     .catch(() => {});
   check(
-    'リセット後はサインイン状態になる',
+    'After the reset you are signed in',
     resetPage.url().startsWith(`${BASE}/`),
     resetPage.url(),
   );
@@ -2832,19 +2863,23 @@ async function anAdministratorHandsOutAPasswordResetLink() {
     data: { username: resetUsername, password: 'chosen-by-the-owner' },
   });
   check(
-    '新しいパスワードでサインインできる',
+    'Can sign in with the new password',
     afterReset.status() === 200,
     `status=${afterReset.status()}`,
   );
   const stale = await request.fetch(`${API}/auth/me`, {
     headers: { Authorization: `Bearer ${sessionBeforeReset}` },
   });
-  check('リセット前のセッションは切れる', stale.status() === 401, `status=${stale.status()}`);
+  check(
+    'The session before the reset is terminated',
+    stale.status() === 401,
+    `status=${stale.status()}`,
+  );
   const reused = await request.fetch(`${API}/auth/password-reset`, {
     method: 'POST',
     data: { token: (resetUrl ?? '').split('token=')[1], new_password: 'someone-elses-choice' },
   });
-  check('同じリンクは二度使えない', reused.status() === 403, `status=${reused.status()}`);
+  check('The same link cannot be used twice', reused.status() === 403, `status=${reused.status()}`);
   await resetContext.close();
 }
 
@@ -2874,7 +2909,7 @@ async function guessingAPasswordIsNotFree() {
     statuses.push(await attempt('not-the-password'));
   }
   check(
-    '繰り返しの失敗は 429 で止まる',
+    'Repeated failures are blocked with 429',
     statuses.slice(0, 5).every((status) => status === 401) && statuses[5] === 429,
     statuses.join(','),
   );
@@ -2884,10 +2919,14 @@ async function guessingAPasswordIsNotFree() {
     method: 'POST',
     data: { username: throttleEmail, password: 'throttle-password' },
   });
-  check('ロック中は正しいパスワードでも 429', locked.status() === 429, `status=${locked.status()}`);
+  check(
+    'While locked, even the correct password gets 429',
+    locked.status() === 429,
+    `status=${locked.status()}`,
+  );
   const retryAfter = Number(locked.headers()['retry-after']);
   check(
-    'Retry-After で再試行までの秒数が分かる',
+    'Retry-After tells how many seconds until the next try',
     retryAfter > 0 && retryAfter <= 15 * 60,
     `retry-after=${retryAfter}`,
   );
@@ -2898,7 +2937,7 @@ async function guessingAPasswordIsNotFree() {
     data: { username: USERNAME, password: PASSWORD },
   });
   check(
-    '他のアカウントは影響を受けない',
+    'Other accounts are unaffected',
     otherAccount.status() === 200,
     `status=${otherAccount.status()}`,
   );
@@ -2947,7 +2986,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
     }),
   );
   check(
-    '高さが入力欄の行数になる',
+    'The height matches the number of input rows',
     sizes[1]?.kind === 'textarea' &&
       sizes[1]?.rows === '9' &&
       sizes[2]?.kind === 'textarea' &&
@@ -2958,7 +2997,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
 
   // The text field with "several lines" is a box; the one without is still a line.
   check(
-    '複数行のテキストだけが箱になる',
+    'Only multiline text becomes a box',
     sizes[0]?.kind === 'input' && sizes[1]?.kind === 'textarea',
     `${sizes[0]?.kind} / ${sizes[1]?.kind}`,
   );
@@ -2973,7 +3012,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   // The value travels through the screen's own state, so the box is read after it has been written.
   await page.waitForTimeout(300);
   const bolded = await body.inputValue();
-  check('太字ボタンが選択範囲を囲む', bolded === '**the docs**', JSON.stringify(bolded));
+  check('The bold button wraps the selection', bolded === '**the docs**', JSON.stringify(bolded));
 
   dialogText = 'https://example.test/';
   await body.evaluate((element) => element.setSelectionRange(0, element.value.length));
@@ -2982,7 +3021,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   dialogText = undefined;
   const linked = await body.inputValue();
   check(
-    'リンクボタンが URL を聞いて貼る',
+    'The link button asks for a URL and pastes it',
     linked === '[**the docs**](https://example.test/)',
     JSON.stringify(linked),
   );
@@ -3012,7 +3051,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   await page.waitForTimeout(300);
   const withImage = await body.inputValue();
   check(
-    '画像ボタンがライブラリから差し込む',
+    'The image button inserts from the image library',
     /!\[[^\]]+\]\(http[^)]*\/api\/images\/by-id\/\d+\)$/.test(withImage),
     withImage.slice(-60),
   );
@@ -3021,7 +3060,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   await page.waitForTimeout(600);
   const written = await api('GET', `/models/collections/${WRITING}/items/1`, undefined, token);
   check(
-    '書式つきの Markdown がそのまま保存される',
+    'Formatted Markdown is saved as-is',
     String(written.body).includes('https://example.test/') &&
       String(written.body).includes('/api/images/by-id/'),
     String(written.body).slice(0, 80),
@@ -3036,7 +3075,7 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
     return false;
   });
   check(
-    'ブラウザのコンソールエラーがない',
+    'There are no browser console errors',
     unexpectedErrors.length === 0,
     unexpectedErrors.slice(0, 2).join(' | '),
   );
@@ -3087,7 +3126,7 @@ try {
     await run();
   }
 } catch (error) {
-  check('検証スクリプトが最後まで走る', false, String(error).split('\n')[0]);
+  check('The verification script runs to completion', false, String(error).split('\n')[0]);
   // Where it stopped, since a locator timeout says what was not found and not what was on screen.
   // Diagnosing a wrong navigation this way took one run instead of three.
   console.log('failure context:');
@@ -3105,10 +3144,10 @@ try {
 const failed = results.filter((result) => !result.ok);
 if (failed.length > 0) {
   // Named once more at the end: a run in a log is read from the bottom.
-  console.log('\n失敗したチェック:');
+  console.log('\nFailed checks:');
   for (const result of failed) {
     console.log(`  [${result.scenario}] ${result.label}`);
   }
 }
-console.log(`\n${results.length - failed.length}/${results.length} 件のチェックに成功`);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 process.exit(failed.length === 0 ? 0 : 1);

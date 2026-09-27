@@ -71,6 +71,11 @@ looks for the "閲覧のみ" notice text fails - that is the Japanese wording fo
 checked by calling `use()` on top of this stored value. When you change wording, also fix the list
 further down in this README and the `has-text` / `aria-label` in `check-ui.mjs`.
 
+The **check names are English**, like the rest of the code and the commit messages
+(`CONTRIBUTING.md`): the one exception is the Japanese wording a check *looks for*, which is test
+data rather than a label. The lines the suite prints read `PASS  [scenario] What was checked
+(measurement)`.
+
 ## What Is Checked
 
 - Sign-in from the login form
