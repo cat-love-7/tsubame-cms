@@ -46,6 +46,28 @@ describe('Login', () => {
     expect(component).toBeTruthy();
   });
 
+  // Someone who administers more than one site lands here without a shell around them, so the
+  // card is the one place that can say which site this is.
+  it('names the deployment on the card, and the product where there is none', async () => {
+    // Nothing answered yet, so the card says what it has always said.
+    expect(fixture.nativeElement.querySelector('mat-card-title')?.textContent?.trim()).toBe(
+      'Sign in to Tsubame',
+    );
+
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: true,
+      password_reset: 'link',
+      image_upload: 'proxied',
+      site_name: '公式サイト管理画面(dev)',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('mat-card-title')?.textContent?.trim()).toBe(
+      'Sign in to 公式サイト管理画面(dev)',
+    );
+  });
+
   /** A throttled sign-in explains the wait instead of blaming the password. */
   it('turns a 429 into advice about waiting, with the seconds filled in', async () => {
     component.submit();

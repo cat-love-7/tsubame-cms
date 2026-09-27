@@ -31,9 +31,14 @@ trap cleanup EXIT
 # and a link is written out as an address *on that site* - so the harness has to be told which
 # origin the deployment would use, or there is no link to check at all.
 preview_site="${PREVIEW_SITE_URL:-http://localhost:4200}"
+# What the harness's deployment calls itself: a name of its own, so the checks that read it cannot
+# pass on the product's name by accident. One value for the server and the browser, as with the
+# preview site above.
+site_name="${SITE_NAME:-e2e content site}"
 
 echo "== starting the backend on 8080 (data in $data_root) =="
 setsid env DATA_ROOT="$data_root" JWT_SECRET="$jwt_secret" PREVIEW_SITE_URL="$preview_site" \
+  SITE_NAME="$site_name" \
   ADMIN_USERNAME=admin@example.com ADMIN_PASSWORD=admin-password \
   cargo run --manifest-path "$root/backend/Cargo.toml" >/tmp/tsubame-e2e-backend.log 2>&1 &
 backend_pid=$!
@@ -59,4 +64,4 @@ wait_for http://localhost:4200/ frontend
 
 echo "== running the harness =="
 cd "$frontend"
-BASE_URL=http://localhost:4200 PREVIEW_SITE_URL="$preview_site" npm run e2e
+BASE_URL=http://localhost:4200 PREVIEW_SITE_URL="$preview_site" SITE_NAME="$site_name" npm run e2e

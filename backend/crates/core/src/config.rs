@@ -112,6 +112,15 @@ pub struct Config {
     /// on so an admin screen can build a link a person can actually read. Without one a client
     /// has nothing useful to offer.
     pub preview_site_url: Option<String>,
+    /// What this deployment is the admin screen *for* (`SITE_NAME`), as the screens show it to
+    /// whoever opens them.
+    ///
+    /// Everything else a client learns about a deployment is about how it works - where its bytes
+    /// go, who signs people in. A reader who administers more than one site has nothing telling
+    /// the tabs apart, so a deployment can name itself here and `/auth/capabilities` passes the
+    /// name on. It is the operator's own wording and is deliberately not translated: a name is a
+    /// name in every language the interface is read in.
+    pub site_name: Option<String>,
     /// Sign-in identifier for the initial administrator (`ADMIN_USERNAME`, or `ADMIN_EMAIL`
     /// as the older name of the same setting). Only consulted when the user store is still
     /// empty, and only by the on-premises backend: an `aws` deployment authenticates with
@@ -143,6 +152,7 @@ impl Default for Config {
             preview_link_ttl_minutes: DEFAULT_PREVIEW_LINK_TTL_MINUTES,
             password_reset_ttl_minutes: DEFAULT_PASSWORD_RESET_TTL_MINUTES,
             preview_site_url: None,
+            site_name: None,
             admin_username: None,
             admin_email: None,
             admin_password: None,
@@ -241,6 +251,9 @@ impl Config {
         }
         if let Some(url) = non_empty_env("PREVIEW_SITE_URL") {
             config.preview_site_url = Some(parse_preview_site_url(&url)?);
+        }
+        if let Some(name) = non_empty_env("SITE_NAME") {
+            config.site_name = Some(parse_site_name(&name)?);
         }
         config.admin_username =
             non_empty_env("ADMIN_USERNAME").or_else(|| non_empty_env("ADMIN_EMAIL"));
@@ -362,6 +375,38 @@ pub fn parse_preview_site_url(raw: &str) -> Result<String, String> {
     Ok(parsed.as_str().trim_end_matches('/').to_string())
 }
 
+/// The longest accepted `SITE_NAME`, in characters.
+///
+/// It is a name, not a sentence: it is drawn in the app bar and in the browser's tab, where a
+/// paragraph would push the controls off the screen. Counted in characters rather than bytes, so
+/// a name written in Japanese is not cut short by its encoding.
+pub const MAX_SITE_NAME_CHARS: usize = 80;
+
+/// Parse `SITE_NAME`, refusing what could not be shown.
+///
+/// The name is the operator's own wording, so almost anything is allowed; what is not is text that
+/// would break the places it is drawn in. A control character (a newline, a tab) would take the
+/// app bar and the tab title apart, and a name long enough to be a paragraph would push the app
+/// bar's controls off the screen - both are configuration mistakes worth stopping the process for,
+/// the same as a port that cannot be parsed.
+pub fn parse_site_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("invalid SITE_NAME: it is empty".to_string());
+    }
+    if name.chars().any(char::is_control) {
+        return Err(format!(
+            "invalid SITE_NAME {raw:?}: it contains a control character"
+        ));
+    }
+    if name.chars().count() > MAX_SITE_NAME_CHARS {
+        return Err(format!(
+            "invalid SITE_NAME {raw:?}: it is longer than {MAX_SITE_NAME_CHARS} characters"
+        ));
+    }
+    Ok(name.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,6 +436,32 @@ mod tests {
         // A deployment that says nothing has no preview site, and a client then offers nothing
         // rather than handing out the API's JSON.
         assert_eq!(config.preview_site_url, None);
+        // Nor a name: a deployment that has not said what it administers shows the product's.
+        assert_eq!(config.site_name, None);
+    }
+
+    #[test]
+    fn a_site_name_is_trimmed_and_keeps_its_own_wording() {
+        assert_eq!(parse_site_name("  Catnest  ").unwrap(), "Catnest");
+        // Not translated, not rewritten: the operator's wording is what the screens show.
+        assert_eq!(
+            parse_site_name("公式サイト管理画面(dev)").unwrap(),
+            "公式サイト管理画面(dev)"
+        );
+        // Counted in characters, so a long Japanese name is not refused for its byte length.
+        let longest = "名".repeat(MAX_SITE_NAME_CHARS);
+        assert_eq!(parse_site_name(&longest).unwrap(), longest);
+    }
+
+    #[test]
+    fn rejects_site_names_that_could_not_be_drawn() {
+        // A name is one line of the app bar and of the tab: a newline or a tab takes both apart.
+        assert!(parse_site_name("two\nlines").is_err());
+        assert!(parse_site_name("tab\there").is_err());
+        assert!(parse_site_name("name\u{7}").is_err());
+        assert!(parse_site_name("").is_err());
+        assert!(parse_site_name("   ").is_err());
+        assert!(parse_site_name(&"x".repeat(MAX_SITE_NAME_CHARS + 1)).is_err());
     }
 
     #[test]

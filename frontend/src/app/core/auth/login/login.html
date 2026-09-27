@@ -13,7 +13,16 @@
         />
       </svg>
       <div class="titles">
-        <mat-card-title>{{ 'auth.signInTitle' | transloco }}</mat-card-title>
+        <!-- Which site this signs into: what a reader who administers more than one needs, and
+             the product's own name where the deployment never named itself - which is what this
+             card said before a deployment could have a name. -->
+        <mat-card-title>
+          @if (siteName(); as site) {
+            {{ 'auth.signInTitleFor' | transloco: { site } }}
+          } @else {
+            {{ 'auth.signInTitle' | transloco }}
+          }
+        </mat-card-title>
       </div>
     </mat-card-header>
     <mat-card-content>

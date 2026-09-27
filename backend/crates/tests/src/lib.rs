@@ -86,6 +86,10 @@ pub trait TestBackend: Sized {
     /// wiring that fills it in is what this pins down.
     const PREVIEW_SITE_URL: &'static str = "https://preview.example.test";
 
+    /// What the test deployments call themselves, likewise reported to clients: a reader who
+    /// administers more than one site has nothing else telling the screens apart.
+    const SITE_NAME: &'static str = "Example site";
+
     /// A storage of its own, with whatever scratch space it needs. Dropping it cleans up.
     ///
     /// `hint` names the scratch space; it is unique per test so tests can run at once.

@@ -7,7 +7,17 @@
   >
     <mat-icon>menu</mat-icon>
   </button>
-  <span class="brand">{{ 'app.name' | transloco }}</span>
+  <!-- What is being administered, then what administers it: a reader who has two of these open
+       reads the deployment's own name first, and Tsubame is the product both are made of. A
+       deployment that never named itself is the product's name alone, as it always was. -->
+  @if (siteName(); as site) {
+    <span class="brand named">
+      <span class="site-name">{{ site }}</span>
+      <span class="product">{{ 'app.name' | transloco }}</span>
+    </span>
+  } @else {
+    <span class="brand">{{ 'app.name' | transloco }}</span>
+  }
   <span class="spacer"></span>
   <app-language-switcher />
   @if (auth.user(); as user) {

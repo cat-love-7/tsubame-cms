@@ -46,6 +46,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         module,
         http::cors_layer(&config.cors_allowed_origins),
         config.preview_site_url.clone(),
+        config.site_name.clone(),
     );
 
     let addr = config.socket_addr()?;

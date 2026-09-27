@@ -146,6 +146,7 @@ global names or the world outside the account:
 | `preview_url`, `preview_certificate_arn` | a name of its own, never a path under `app_url` (`docs/preview-site.md` §7) |
 | `cognito_domain_prefix` | unique across *all* accounts in the region, so the default usually has to change |
 | `cors_allowed_origins` | the preview origin, and anything else that calls the API |
+| `site_name` | what the screens of *this* deployment call the site they administer; empty shows the product's name, as before |
 | the state key in `backend.hcl` | one state per environment: `<project>/<environment>/terraform.tfstate` |
 | `frontend_bucket`, `images_bucket` | only when the default (`<name>-app`, `<name>-images`) is taken - S3 names are unique across every account |
 

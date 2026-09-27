@@ -41,6 +41,11 @@ export class Login {
    */
   public passwordLogin = this.capabilities.passwordLogin;
   public loginUrl = this.capabilities.loginUrl;
+  /**
+   * What this deployment calls itself, or null where it never said: the card then names the
+   * product instead, which is what every deployment showed before the name existed.
+   */
+  public siteName = this.capabilities.siteName;
 
   public username = '';
   public password = '';

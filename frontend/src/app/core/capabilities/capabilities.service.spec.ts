@@ -23,6 +23,22 @@ describe('CapabilitiesService', () => {
     expect(service.imageUpload()).toBe('proxied');
     // Guessing a preview site would hand out a link that goes nowhere, so silence means none.
     expect(service.previewSiteUrl()).toBeNull();
+    // A deployment that has not named itself is shown by the product's name, which is what every
+    // deployment looked like before a name could be set: nothing to invent here either.
+    expect(service.siteName()).toBeNull();
+  });
+
+  it('takes the deployment at its word about what it administers', () => {
+    service.load();
+    httpMock.expectOne('/api/auth/capabilities').flush({
+      password_login: true,
+      password_reset: 'link',
+      image_upload: 'proxied',
+      site_name: '公式サイト管理画面(dev)',
+    });
+
+    // The operator's own wording, passed through exactly as it arrived.
+    expect(service.siteName()).toBe('公式サイト管理画面(dev)');
   });
 
   it('takes the preview site from the deployment', () => {

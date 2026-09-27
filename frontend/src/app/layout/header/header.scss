@@ -14,6 +14,30 @@
   font-weight: 600;
 }
 
+/// A deployment that named itself: two lines rather than one, so the name read first does not
+/// make the product disappear. The app bar is 64px, which is room for both at these sizes.
+.brand.named {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  /// The name is the operator's and may be long ("公式サイト管理画面(dev)"); the bar still has to
+  /// fit the account, the language switch and the buttons beside it, so it is the name that gives
+  /// way - and where it is too narrow even for that, it is cut rather than wrapped.
+  min-width: 0;
+
+  .site-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .product {
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-label-small);
+    font-weight: 400;
+  }
+}
+
 .user-email {
   max-width: 22ch;
   margin-inline: 8px 4px;

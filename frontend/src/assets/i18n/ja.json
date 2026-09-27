@@ -5,6 +5,7 @@
   },
   "auth": {
     "signInTitle": "Tsubame にサインイン",
+    "signInTitleFor": "{{site}} にサインイン",
     "username": "ID",
     "password": "パスワード",
     "signIn": "サインイン",

@@ -64,6 +64,7 @@ impl TestBackend for OnPremises {
             module,
             test_cors(),
             Some(OnPremises::PREVIEW_SITE_URL.to_string()),
+            Some(OnPremises::SITE_NAME.to_string()),
         )
     }
 
@@ -155,7 +156,12 @@ impl TestBackend for Aws {
     }
 
     fn router(module: Arc<AppModule<Self::Storage>>) -> Router {
-        tsubame_aws::build_router(module, test_cors(), Some(Aws::PREVIEW_SITE_URL.to_string()))
+        tsubame_aws::build_router(
+            module,
+            test_cors(),
+            Some(Aws::PREVIEW_SITE_URL.to_string()),
+            Some(Aws::SITE_NAME.to_string()),
+        )
     }
 
     async fn sign_in_admin(&self, _module: &Arc<AppModule<Self::Storage>>) -> String {

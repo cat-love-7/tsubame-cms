@@ -418,7 +418,8 @@ the MFA and `NEW_PASSWORD_REQUIRED` challenge flows.
         `POST /auth/me/password`) as **501** (because a 404 would be read as "the URL is wrong"). The
         messages name Cognito.
       - Both expose `GET /api/auth/capabilities`: `password_login` / `password_reset`
-        (`link` | `temporary` | null) / `image_upload` (`proxied` | `presigned`) / `login_url`.
+        (`link` | `temporary` | null) / `image_upload` (`proxied` | `presigned`) / `login_url` /
+        `site_name` (what the deployment is the admin screen for; unset unless an operator named it).
       - The contract suite skips the 6 password-related tests with `Backend::PASSWORD_LOGIN`, and asserts
         the shape of "what is handed over" with `Backend::PASSWORD_RESET`. AWS account creation goes
         through the **real routes** (only the provider is fake, because there is no Cognito emulator).

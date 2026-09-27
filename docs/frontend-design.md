@@ -100,6 +100,15 @@ the same file.
   than the window, and before this the buttons travelled off the right edge with the last columns; a Schema now costs
   width when its list columns grow, never the buttons. Only what the account may do is in the menu, and an account with
   neither copy nor delete gets no ⋮ button at all.
+- **A deployment can name what it administers, and the screens say it**: `SITE_NAME` reaches the browser
+  through `/auth/capabilities` as `site_name`, and is drawn in three places - the app bar (the name, with
+  `Tsubame` under it as the product), the sign-in card ("Sign in to <name>", where the card is the only part
+  of the screen a signed-out reader sees) and `document.title` ("<name> — Tsubame", set by the root
+  component, because the tab is what tells two open CMSs apart while a form is being filled in). A
+  deployment that sets nothing keeps the product's name alone everywhere, which is what every deployment
+  showed before the setting existed. It is the operator's wording and is **not translated**
+  (`docs/i18n.md` §2.3); it is one line, and the app bar gives way to the account, the language switch and
+  the buttons beside it rather than the other way round.
 - **Accounts were inside the Schema**: the fourth item under "Settings → Schema" in the sidebar was
   "Accounts". What a Schema describes is **content**, and an Account is not content.
   It was made a sibling of "Schema" directly under Settings, and the name also stays `accounts.title`, the same as on the screen

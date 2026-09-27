@@ -8,6 +8,7 @@ import { TranslocoPipe } from '@jsverse/transloco';
 import { RouterLink } from '@angular/router';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { CapabilitiesService } from '../../core/capabilities/capabilities.service';
 import { LanguageSwitcher } from '../../shared/language-switcher/language-switcher';
 
 @Component({
@@ -29,6 +30,12 @@ export class Header {
   @Output() toggleNavigation = new EventEmitter<void>();
 
   public auth = inject(AuthService);
+
+  /**
+   * What this deployment calls itself, or null where it never said: the brand then reads as the
+   * product's name alone, which is what every deployment showed before the name existed.
+   */
+  public siteName = inject(CapabilitiesService).siteName;
 
   logout() {
     this.auth.logout();

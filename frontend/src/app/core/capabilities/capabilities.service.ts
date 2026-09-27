@@ -33,6 +33,14 @@ export interface Capabilities {
    */
   preview_site_url?: string | null;
   /**
+   * What this deployment is the admin screen *for*, as its operator named it, or absent where the
+   * deployment did not name itself.
+   *
+   * It is shown wherever "which site is this?" would otherwise be answered by the product's own
+   * name alone. The operator's wording, so it is drawn as it arrives and never translated.
+   */
+  site_name?: string | null;
+  /**
    * The largest image the deployment accepts, in bytes. Absent from a server that predates the
    * answer, and absent until the answer arrives: the client then lets the upload go and shows
    * what the server says, rather than refusing a file on a number it invented.
@@ -80,6 +88,14 @@ export class CapabilitiesService {
 
   /** The preview site's origin, or null where the deployment has none. */
   readonly previewSiteUrl = computed(() => this.known().preview_site_url ?? null);
+
+  /**
+   * What the deployment calls itself, or null where it did not say.
+   *
+   * A deployment that administers one site has always been named by the product alone, so silence
+   * means the screens keep showing that name rather than inventing one.
+   */
+  readonly siteName = computed(() => this.known().site_name ?? null);
 
   /** How large an image may be, or null while that is not known. */
   readonly maxImageBytes = computed(() => this.known().max_image_bytes ?? null);

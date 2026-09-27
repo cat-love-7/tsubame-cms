@@ -7,6 +7,7 @@
  * the screen really works against the API:
  *
  *   - signing in through the form
+ *   - the deployment's own name on the sign-in card, in the app bar and in the tab title
  *   - the tab icon reading on a light tab strip and on a dark one
  *   - one page of 25 rows, ordered by id, with the total in the pager
  *   - the status badge and the Updated column
@@ -34,6 +35,8 @@ const PREVIEW_SITE = process.env.PREVIEW_SITE_URL ?? BASE;
 const API = `${BASE}/api`;
 const USERNAME = process.env.ADMIN_USERNAME ?? process.env.ADMIN_EMAIL ?? 'admin@example.com';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin-password';
+/** What the harness's backend calls itself (`SITE_NAME`), which the screens have to show. */
+const SITE_NAME = process.env.SITE_NAME ?? 'e2e content site';
 /** Enough items for several pages, and for a 50-row page. */
 const COLLECTION = process.env.COLLECTION ?? 'e2e_blog';
 const TOTAL = Number(process.env.TOTAL ?? 60);
@@ -477,6 +480,44 @@ async function theTabIconReadsOnAnyTabStrip() {
       `明るいタブ: 最暗 ${measured.light.darkest} / 暗いタブ: 最明 ${measured.dark.brightest}`,
     );
   }
+}
+
+/**
+ * The deployment's own name where a reader meets it before signing in.
+ *
+ * Which site a CMS administers is otherwise answered by the product's name, which is the same
+ * wherever it is deployed: someone with two of these open has nothing telling the screens apart.
+ * The name arrives as a setting (`SITE_NAME`), so this is the whole path - the environment, the
+ * capabilities answer, and the screen.
+ */
+async function theDeploymentNamesItself() {
+  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
+
+  // The sign-in screen has no shell around it, so the card is the one place that can say it - and
+  // the tab is what is left of the screen while a form is being filled in.
+  const card = (await page.locator('mat-card-title').textContent())?.trim();
+  check('サインイン画面に配備の名前が出る', card === `Sign in to ${SITE_NAME}`, `${card}`);
+  check(
+    'タブのタイトルに配備の名前が出る',
+    (await page.title()) === `${SITE_NAME} — Tsubame`,
+    await page.title(),
+  );
+}
+
+/** The same name in the app bar, which exists only with a session behind it. */
+async function theDeploymentNamesItselfInTheShell() {
+  await page.goto(`${BASE}/collections/${COLLECTION}`, { waitUntil: 'networkidle' });
+  await dataRows().first().waitFor({ timeout: 15000 });
+
+  // The name being administered first, the product under it: neither is lost, and the bar keeps
+  // the account, the language switch and the buttons it had.
+  const site = (await page.locator('.brand .site-name').textContent())?.trim();
+  const product = (await page.locator('.brand .product').textContent())?.trim();
+  check(
+    'アプリバーに配備の名前と製品名が出る',
+    site === SITE_NAME && product === 'Tsubame',
+    `${site} / ${product}`,
+  );
 }
 
 /** The language switch. */
@@ -2952,7 +2993,9 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
 const SCENARIOS = [
   ['the tab icon, on either tab strip', theTabIconReadsOnAnyTabStrip],
   ['the language switch', theLanguageSwitch],
+  ['the deployment names itself', theDeploymentNamesItself],
   ['sign in through the form', signInThroughTheForm],
+  ['the deployment names itself in the shell', theDeploymentNamesItselfInTheShell],
   ['a plain array, edited as JSON', aPlainArrayEditedAsJSON],
   ['first page', firstPage],
   ['status and updated columns', statusAndUpdatedColumns],

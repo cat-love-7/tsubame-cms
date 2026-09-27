@@ -97,10 +97,14 @@ pub fn build_app_module(config: &Config) -> AppModule<repository::RkvRepository>
 /// keeps itself. Composing them here — rather than compiling them in or out of the shared
 /// layer — is what lets the same `http` module serve a backend whose object store does all of
 /// that.
+///
+/// The last two arguments are the deployment's own description of itself, which
+/// `/auth/capabilities` reports (`docs/preview-site.md`, and `Config::site_name`).
 pub fn build_router(
     module: std::sync::Arc<AppModule<repository::RkvRepository>>,
     cors: tower_http::cors::CorsLayer,
     preview_site_url: Option<String>,
+    site_name: Option<String>,
 ) -> axum::Router {
     // Everything this backend has that a deployment without local storage does not: serving and
     // accepting image bytes, and the password endpoints (it is the CMS, not an identity
@@ -111,6 +115,7 @@ pub fn build_router(
             tsubame_core::models::capabilities::Capabilities::on_premises(
                 module.limits.max_image_bytes,
                 preview_site_url,
+                site_name,
             ),
         ));
     let extra_protected =

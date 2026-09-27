@@ -33,6 +33,14 @@ pub struct Capabilities {
     /// A client that finds this absent offers nothing rather than a link nobody can read.
     #[serde(default)]
     pub preview_site_url: Option<String>,
+    /// What this deployment is the admin screen *for* (`config::Config::site_name`), as an
+    /// operator chose to name it, or `None` where the deployment did not name itself.
+    ///
+    /// A client shows it wherever "which site is this?" is otherwise answered by the product's
+    /// own name alone - the app bar, the sign-in screen, the tab. It is the operator's wording and
+    /// is passed through untranslated.
+    #[serde(default)]
+    pub site_name: Option<String>,
     /// The largest image this deployment accepts, in bytes (`config::Limits::max_image_bytes`).
     ///
     /// A browser knows the size of the file before it sends it, so this is what lets it refuse a
@@ -66,7 +74,11 @@ pub enum ImageUpload {
 
 impl Capabilities {
     /// The on-premises deployment: it is the CMS that verifies passwords and keeps the bytes.
-    pub fn on_premises(max_image_bytes: usize, preview_site_url: Option<String>) -> Capabilities {
+    pub fn on_premises(
+        max_image_bytes: usize,
+        preview_site_url: Option<String>,
+        site_name: Option<String>,
+    ) -> Capabilities {
         Capabilities {
             password_login: true,
             password_reset: Some(PasswordResetKind::Link),
@@ -74,6 +86,7 @@ impl Capabilities {
             // This deployment *is* the sign-in page.
             login_url: None,
             preview_site_url,
+            site_name,
             max_image_bytes,
         }
     }
@@ -91,6 +104,7 @@ impl Capabilities {
         login_url: Option<String>,
         max_image_bytes: usize,
         preview_site_url: Option<String>,
+        site_name: Option<String>,
     ) -> Capabilities {
         Capabilities {
             password_login: false,
@@ -98,6 +112,7 @@ impl Capabilities {
             image_upload: ImageUpload::Presigned,
             login_url,
             preview_site_url,
+            site_name,
             max_image_bytes,
         }
     }

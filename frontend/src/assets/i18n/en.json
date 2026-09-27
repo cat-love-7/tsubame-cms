@@ -5,6 +5,7 @@
   },
   "auth": {
     "signInTitle": "Sign in to Tsubame",
+    "signInTitleFor": "Sign in to {{site}}",
     "username": "ID",
     "password": "Password",
     "signIn": "Sign in",

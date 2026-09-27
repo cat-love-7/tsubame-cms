@@ -11,6 +11,17 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ## [Unreleased]
 
+### Added
+
+- **A deployment can say what it is the admin screen for.** `SITE_NAME` (a Terraform variable, or an
+  environment variable for a self-hosted deployment) is reported by `/auth/capabilities` as
+  `site_name` and drawn in the app bar - with `Tsubame` under it, so neither name is lost - on the
+  sign-in card, and in the browser tab title. Until now every deployment showed the product's name
+  alone, which says nothing to somebody who administers two sites with it. The name is the
+  operator's wording and is not translated: it is one line, at most 80 characters, and a value that
+  would not fit the places it is drawn in (a newline, or a paragraph) stops the process at startup
+  rather than being cut. A deployment that sets nothing shows the product's name, exactly as before.
+
 ### Changed
 
 - **A relation holds one reference, and several references are an `Array` of relations.** The

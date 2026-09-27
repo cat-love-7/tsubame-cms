@@ -33,6 +33,9 @@ async fn capabilities_say_how_this_deployment_signs_users_in() {
     // has a preview site names it here and a client can hand a reviewer something readable; the
     // harness sets one so both backends are shown to pass it through.
     assert_eq!(body["preview_site_url"], Backend::PREVIEW_SITE_URL);
+    // What the deployment calls itself, which is what a screen shows where "which site is this?"
+    // would otherwise be answered by the product's name alone.
+    assert_eq!(body["site_name"], Backend::SITE_NAME);
     // The image limit travels with the answer, so a browser can refuse a file it already knows is
     // too big instead of uploading it to be told afterwards. The harness runs with the defaults,
     // so this is also what a deployment that sets nothing reports.

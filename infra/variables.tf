@@ -44,6 +44,21 @@ variable "bootstrap_admin_usernames" {
   default     = []
 }
 
+variable "site_name" {
+  description = <<-EOT
+    What this deployment is the admin screen *for*, as the screens show it: a name for the site
+    whose content lives in this CMS, for example `Catnest` or `Official site (dev)`.
+
+    Empty means the screens show the product's own name and nothing else, which is what a
+    deployment that administers one site has always looked like. It travels to the browser through
+    `/auth/capabilities` and is drawn in the app bar, on the sign-in card and in the tab title, so
+    it is the operator's wording - it is not translated, and it is one line (at most 80 characters,
+    no control characters, or the function refuses to start).
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "cors_allowed_origins" {
   description = "Origins the browser may call the API from."
   type        = list(string)

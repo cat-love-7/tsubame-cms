@@ -67,6 +67,9 @@ locals {
       AWS_IMAGE_URL_TTL_SECONDS = tostring(var.image_url_ttl_seconds)
     },
     var.webhook_secret == "" ? {} : { WEBHOOK_SECRET = var.webhook_secret },
+    # What the screens call this deployment. Only when an operator named one: a deployment that
+    # administers one site has always shown the product's name alone.
+    var.site_name == "" ? {} : { SITE_NAME = var.site_name },
     # Only when an operator has an opinion: the defaults belong to the application, and a
     # deployment that never mentions them should follow the application when they change.
     var.max_request_bytes == null ? {} : { MAX_REQUEST_BYTES = tostring(var.max_request_bytes) },
