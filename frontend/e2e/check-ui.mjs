@@ -244,6 +244,35 @@ const page = await context.newPage();
 
 const consoleErrors = [];
 /**
+ * Requests that came back refused, as `<who> <status> <url>`.
+ *
+ * The console message for a failed subresource is only `Failed to load resource: the server
+ * responded with a status of 404 (Not Found)` - the *what* and the *where* are in the request, not
+ * in the text - so a failure of the check at the end of the run is unreadable without this. It is
+ * reported beside the console errors rather than checked on its own: a 404 the run provokes is a
+ * console error already, and one a screen handles without logging is not this check's business.
+ */
+const refusedRequests = [];
+/**
+ * A console message with the resource it is about.
+ *
+ * Chromium's message for a refused subresource is only `Failed to load resource: the server
+ * responded with a status of 404 (Not Found)`: which resource it was is in the message's location,
+ * and a failure that does not name it cannot be acted on - one CI run of this suite failed with
+ * exactly that sentence twice and nothing else.
+ */
+function withLocation(message) {
+  const where = message.location()?.url;
+  return where ? `${message.text()} (${where})` : message.text();
+}
+function recordRefusals(who, from) {
+  from.on('response', (response) => {
+    if (response.status() >= 400) {
+      refusedRequests.push(`${who} ${response.status()} ${response.url()}`);
+    }
+  });
+}
+/**
  * Console errors this run provokes on purpose.
  *
  * A screen that has to show a refusal makes a request that fails, and the browser logs it. The
@@ -253,9 +282,10 @@ const expectedConsoleErrors = [];
 function expectConsoleError(pattern) {
   expectedConsoleErrors.push(pattern);
 }
+recordRefusals(USERNAME, page);
 page.on('pageerror', (error) => consoleErrors.push(String(error)));
 page.on('console', (message) => {
-  if (message.type() === 'error') consoleErrors.push(message.text());
+  if (message.type() === 'error') consoleErrors.push(withLocation(message));
 });
 // Deleting asks for confirmation through window.confirm.
 /**
@@ -349,9 +379,10 @@ async function createAccount(username, password, extra = {}, token) {
 async function openAs(username, password) {
   const roleContext = await newContext();
   const rolePage = await roleContext.newPage();
+  recordRefusals(username, rolePage);
   rolePage.on('pageerror', (error) => consoleErrors.push(`${username}: ${error}`));
   rolePage.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(`${username}: ${message.text()}`);
+    if (message.type() === 'error') consoleErrors.push(`${username}: ${withLocation(message)}`);
   });
   rolePage.on('dialog', answerDialog);
 
@@ -2840,9 +2871,10 @@ async function anAdministratorHandsOutAPasswordResetLink() {
   // ...the owner opens it with no session at all and chooses a password.
   const resetContext = await newContext();
   const resetPage = await resetContext.newPage();
+  recordRefusals('reset', resetPage);
   resetPage.on('pageerror', (error) => consoleErrors.push(`reset: ${error}`));
   resetPage.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(`reset: ${message.text()}`);
+    if (message.type() === 'error') consoleErrors.push(`reset: ${withLocation(message)}`);
   });
   await resetPage.goto(resetUrl, { waitUntil: 'networkidle' });
   await resetPage.fill('input[name=next]', 'chosen-by-the-owner');
@@ -3077,7 +3109,14 @@ async function writingMarkdownWithoutKnowingMarkdownAndBoxHeights() {
   check(
     'There are no browser console errors',
     unexpectedErrors.length === 0,
-    unexpectedErrors.slice(0, 2).join(' | '),
+    // The console text says only that something was refused, so the refused requests are named
+    // beside it: without them a failure here cannot be acted on.
+    [
+      unexpectedErrors.slice(0, 2).join(' | '),
+      refusedRequests.length === 0 ? '' : `refused: ${refusedRequests.slice(0, 4).join(' | ')}`,
+    ]
+      .filter(Boolean)
+      .join('  //  '),
   );
 }
 
