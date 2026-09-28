@@ -535,3 +535,54 @@ async fn only_an_administrator_may_change_which_schemas_allow_previews() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["code"], "preview_disabled");
 }
+
+/// An editor - `can_edit`, and not an administrator - can issue a link, and it is a real one.
+///
+/// The two rules are different and easy to run together. *Issuing* is the middleware's write rule
+/// (`can_edit`), because an editor can already read the draft the link shows and reviewing it with
+/// a client is what the link is for (`create_collection_item_preview_link` in the CMS says so).
+/// *Enabling* is administration: which Schemas may be previewed is a `PUT .../settings`, and the
+/// test above this one pins that a non-administrator cannot make that change. A deployment where an
+/// editor sees no button at all is almost always the second rule rather than the first - the
+/// setting is off, and off is the default, so a Schema that was migrated into the CMS has no
+/// setting until an administrator turns it on once.
+#[tokio::test]
+async fn an_editor_may_issue_a_preview_link() {
+    let app = test_app().await;
+    let item = create_sample_item(&app, "blog").await;
+    allow_collection_preview(&app, "blog").await;
+
+    let (status, created) = create_account(
+        &app,
+        json!({
+            "username": "preview-editor@example.com",
+            "password": "editor-password",
+            "is_admin": false,
+            "permission": Permission::editor(),
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let (status, body) = login(&app, "preview-editor@example.com", "editor-password").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let editor = body["token"].as_str().unwrap().to_string();
+
+    let (status, link) = send(
+        &app.router,
+        Method::POST,
+        &format!("/api/models/collections/blog/items/{item}/preview-link"),
+        Some(&editor),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "an editor may issue a link: {link}");
+    let path = link["path"].as_str().expect("a path").to_string();
+    assert!(path.starts_with(&format!(
+        "/api/preview/collections/blog/items/{item}?token="
+    )));
+
+    // And it is the same link an administrator's is: the signature is the credential.
+    let (status, body) = send(&app.router, Method::GET, &path, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["id"], item);
+}
