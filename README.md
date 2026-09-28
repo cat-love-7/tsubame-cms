@@ -180,6 +180,18 @@ Every setting the two binaries read is in [`.env.example`](.env.example); the se
 environment, not a file, so load it however you like (`set -a && . ./.env && set +a`, or
 `docker run --env-file`).
 
+**To open it with content already in it**, `scripts/demo.sh` runs the two commands above and writes
+the sample site into the result - four categories, five articles with a cover each and a home page,
+the same fixture the pictures above come from - then leaves both servers running:
+
+```bash
+scripts/demo.sh                # http://localhost:4200 as editor@tsubame.dev / tsubame-demo-password
+```
+
+Ctrl-C stops it, and the content goes with the temporary directory it was written to. The delivery
+API a site builds from runs alongside it, so a front end can be pointed at
+`http://127.0.0.1:8080/api/content/collections/articles` while you edit.
+
 The same binary is a **self-hosted deployment** if a machine is what you have: one process, a data
 directory beside it, and whatever serves the built app. That is a deliberate second answer rather
 than the recommended one - it needs a machine that is always on, which is the bill this project is

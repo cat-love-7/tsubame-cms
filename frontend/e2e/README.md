@@ -159,6 +159,21 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node e2e/hosted-accounts.mjs
 
 Even if it fails partway through, no account is left behind (`finally` deletes it).
 
+## The Sample Site
+
+`sample-site.mjs` is not part of this suite. It is the fixture the README's pictures and the local
+demo are made of: `scripts/screenshots.sh` photographs it (through `screenshots.mjs`) and
+`scripts/demo.sh` leaves it running for a reader. It writes over HTTP alone, with no browser in the
+loop, so the demo needs nothing installed beyond Node.
+
+```bash
+BASE_URL=http://localhost:4200 ADMIN_USERNAME=... ADMIN_PASSWORD=... node e2e/sample-site.mjs
+```
+
+It replaces the `categories` and `articles` collections and the `home` single page **by name**, so
+point it at a server whose content you do not mind losing. Both callers hand it a throwaway data
+directory.
+
 ## Data
 
 Each run recreates `e2e_blog` / `e2e_small` / `e2e_images` / `e2e_composite` and the Composite field definition

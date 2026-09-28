@@ -4,7 +4,7 @@
 # server, seeds a small site into it, drives a real browser over the screens, and writes
 # `docs/images/*.png`. Both servers are thrown away afterwards.
 #
-# The seeding is in `frontend/e2e/screenshots.mjs`; this only gives it a server to talk to.
+# The sample site is in `frontend/e2e/sample-site.mjs`; this only gives it a server to talk to.
 #
 # Prerequisites: Chromium for Playwright (see frontend/e2e/README.md), and ports 8080 and 4200
 # free. In this constrained container both installs want PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers.

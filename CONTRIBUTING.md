@@ -22,7 +22,8 @@ cd backend && cargo build          # the API
 cd ../frontend && npm ci           # the admin app
 ```
 
-To run it, see "Run it locally" in the [README](README.md). `.env.example` lists every setting the
+To run it, see "Run it locally" in the [README](README.md) - `scripts/demo.sh` is the short version,
+which starts both servers with a sample site already in them. `.env.example` lists every setting the
 two binaries read.
 
 ## Running the tests
@@ -47,8 +48,9 @@ together, and more than one real bug in this project was only visible there.
 
 `docs/images/*.png` are generated rather than drawn. `scripts/screenshots.sh` starts a CMS with
 throwaway data, seeds a small site (four categories, five articles, one page, four images - see
-`frontend/e2e/screenshots.mjs`), and photographs the screens with a real browser. It wants the same
-Chromium as the browser suite and the same two free ports.
+`frontend/e2e/sample-site.mjs`), and photographs the screens with a real browser. It wants the same
+Chromium as the browser suite and the same two free ports. That fixture is also what
+`scripts/demo.sh` puts in front of a reader, so a change to it shows up in both.
 
 Run it when a change moves something a reader would see, and commit what it writes: a picture that
 no longer matches the screen is worse than no picture. If a screen looks wrong while you are at it,

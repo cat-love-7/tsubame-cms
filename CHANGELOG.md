@@ -11,6 +11,16 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ## [Unreleased]
 
+### Added
+
+- **A local demo with the sample site already in it.** `scripts/demo.sh` starts the self-hosted
+  backend on a throwaway data directory and the admin dev server, writes the fixture the README's
+  pictures are made of (four categories, five articles, a home page and four covers) through the
+  API, and stays up until Ctrl-C - so trying the CMS is one command that leaves nothing behind. The
+  fixture moved out of `frontend/e2e/screenshots.mjs` into `frontend/e2e/sample-site.mjs`, and is
+  now written over HTTP rather than through a browser: that is what lets the demo need nothing but
+  Node, and it keeps the pictures and the demo showing the same site.
+
 ### Changed
 
 - **The two npm packages' JSDoc types are checked** (`scripts/check-package-types.sh`, which CI runs
