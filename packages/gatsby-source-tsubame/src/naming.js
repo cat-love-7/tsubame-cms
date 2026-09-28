@@ -17,7 +17,20 @@
 
 const FIELD_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;
 
-/** Whether a string is already a name GraphQL will accept. */
+/**
+ * Hands out GraphQL names, remembering the ones already taken.
+ *
+ * @typedef {object} NameAllocator
+ * @property {(name: string) => boolean} used whether a name is already taken
+ * @property {(base: string) => string} take the base, or the first free `base_<n>`
+ */
+
+/**
+ * Whether a string is already a name GraphQL will accept.
+ *
+ * @param {unknown} name the candidate name
+ * @returns {boolean} true when GraphQL accepts it
+ */
 function isGraphqlName(name) {
   return typeof name === 'string' && FIELD_NAME.test(name) && !name.startsWith('__');
 }
@@ -31,6 +44,9 @@ function isGraphqlName(name) {
  * Splitting on every non-alphanumeric character also removes the underscores, so the result can
  * never start with `__` - which is why there is no check for introspection here and there is one in
  * [`sanitizeFieldName`], where underscores survive.
+ *
+ * @param {unknown} raw the name the CMS gave
+ * @returns {string} a name GraphQL accepts
  */
 function sanitizeTypeName(raw) {
   const words = String(raw)
@@ -52,6 +68,9 @@ function sanitizeTypeName(raw) {
  * This keeps the shape of the original name visible (`published-at` -> `published_at`), which is
  * what makes a renamed field findable; two names that collide after rewriting are told apart by
  * [`createNameAllocator`] rather than by dropping one.
+ *
+ * @param {unknown} raw the name the CMS gave
+ * @returns {string} a name GraphQL accepts
  */
 function sanitizeFieldName(raw) {
   let name = String(raw).replace(/[^0-9A-Za-z_]/g, '_');
@@ -74,15 +93,28 @@ function sanitizeFieldName(raw) {
  * asks: the allocator is the only place that decides, so two callers that ask in the same order
  * get the same answer. Callers are expected to sort their input, because the CMS does not promise
  * a stable order for a schema or a list of collection names.
+ *
+ * @param {Iterable<string>} [seed] names that are already taken
+ * @returns {NameAllocator} the allocator
  */
 function createNameAllocator(seed = []) {
   const used = new Set(seed);
   return {
-    /** Whether a name has already been handed out (or was reserved to begin with). */
+    /**
+     * Whether a name has already been handed out (or was reserved to begin with).
+     *
+     * @param {string} name the name to check
+     * @returns {boolean} true when it is taken
+     */
     used(name) {
       return used.has(name);
     },
-    /** The name itself, or the first free `name_<n>` after it. */
+    /**
+     * The name itself, or the first free `name_<n>` after it.
+     *
+     * @param {string} base the wanted name
+     * @returns {string} the name to use
+     */
     take(base) {
       let name = base;
       let suffix = 2;

@@ -33,6 +33,7 @@ const { graphqlFieldType, relationUnionKey, schemaKey } = require('./model');
  * polymorphic on purpose - a field type is a string (`"Image"`) in one entry and an object
  * (`{"Text":{}}`) in the next - which is what makes Gatsby warn about conflicting field types.
  *
+ * @param {import('./model.js').ContentModel} model the model
  * @returns {string} the SDL the plugin declares
  */
 function buildTypeDefinitions(model) {
@@ -91,6 +92,11 @@ function buildTypeDefinitions(model) {
   return parts.join('\n\n');
 }
 
+/**
+ * @param {{typeName: string, kind: 'collection' | 'page', name: string, schema: import('./fields.js').SchemaField[], mapping: import('./model.js').FieldMapping | undefined, model: import('./model.js').ContentModel}} content
+ *   the type to declare
+ * @returns {string} its SDL declaration
+ */
 function contentTypeDefinition({ typeName, kind, name, schema, mapping, model }) {
   const lines = [`type ${typeName} implements Node {`];
   if (kind === 'collection') {
@@ -116,6 +122,11 @@ function contentTypeDefinition({ typeName, kind, name, schema, mapping, model })
  * `articles`), and the CMS keeps it unique per target, so every name here is a list of one concrete
  * type. The value is an array of node ids, which is what `@link` resolves - the same mechanism as a
  * forward relation, read from the other end.
+ *
+ * @param {'collection' | 'page'} kind which kind of content type it is
+ * @param {string} name the collection's or page's name
+ * @param {import('./model.js').ContentModel} model the model
+ * @returns {string[]} one line per inverse field
  */
 function inverseFieldLines(kind, name, model) {
   const declared = model.inverseDeclarationsByTarget.get(schemaKey(kind, name)) ?? [];
@@ -137,6 +148,10 @@ function inverseFieldLines(kind, name, model) {
  * `id` is the definition's own id (the same value the schema names), and `values` is the untyped
  * object the API sent, kept beside the typed fields so a field the definition does not declare is
  * still readable.
+ *
+ * @param {{typeName: string, schema: import('./fields.js').SchemaField[], mapping: import('./model.js').FieldMapping | undefined, model: import('./model.js').ContentModel}} definition
+ *   the definition to declare
+ * @returns {string} its SDL declaration
  */
 function compositeTypeDefinition({ typeName, schema, mapping, model }) {
   const lines = [`type ${typeName} {`];
@@ -152,6 +167,12 @@ function compositeTypeDefinition({ typeName, schema, mapping, model }) {
  *
  * A field the model left out is not in the mapping, so it is not declared here either; that is the
  * one place the "left out" decision has to be read, and `src/nodes.js` reads the same mapping.
+ *
+ * @param {import('./fields.js').SchemaField[]} schema the owner's schema
+ * @param {import('./model.js').FieldMapping | undefined} mapping the owner's name mapping
+ * @param {import('./model.js').ContentModel} model the model
+ * @param {string} ownerTypeName the owner's GraphQL type
+ * @returns {string[]} one line per declared field
  */
 function fieldLines(schema, mapping, model, ownerTypeName) {
   const lines = [];
@@ -169,6 +190,11 @@ function fieldLines(schema, mapping, model, ownerTypeName) {
   return lines;
 }
 
+/**
+ * @param {import('./model.js').GraphqlNames} names the plugin's own GraphQL names
+ * @param {import('./model.js').ContentModel} model the model
+ * @returns {string} the SDL for the types that are the same for every project
+ */
 function staticTypeDefinitions(names, model) {
   // `File` is `gatsby-source-filesystem`'s type, so it is only named when the plugin actually
   // creates File nodes. A site that does not download images does not have to install it - and

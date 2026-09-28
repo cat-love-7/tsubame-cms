@@ -10,6 +10,12 @@ const { resolvePreview } = preview;
 
 const API = 'https://cms.example.test';
 
+/** The shapes the wire and the resolved answer use, so the fixtures below say what they build. */
+/** @typedef {import('../src/field-types.js').SchemaField} SchemaField */
+/** @typedef {import('../src/field-types.js').PublishedReference} PublishedReference */
+/** @typedef {import('../src/resolve.js').PreviewProblem} PreviewProblem */
+/** @typedef {import('../src/resolve.js').PreviewOptions} PreviewOptions */
+
 const REFERENCE = { target: 'authors', item: 9 };
 
 /** A relation holds one reference; several are an `Array` whose item types are all relations. */
@@ -55,8 +61,14 @@ function values() {
   };
 }
 
-/** The published side of the world: the author is published, item 10 is not. */
+/**
+ * The published side of the world: the author is published, item 10 is not.
+ *
+ * @param {{ nested?: boolean }} [options]
+ * @returns {Pick<PreviewOptions, 'loadPublished' | 'loadCompositeSchema'>}
+ */
 function content({ nested = false } = {}) {
+  /** @type {SchemaField[]} */
   const authorSchema = [{ name: 'name', field_type: { Text: {} } }];
   if (nested) {
     authorSchema.push({ name: 'mentor', field_type: RELATION });
@@ -82,6 +94,12 @@ function content({ nested = false } = {}) {
   };
 }
 
+/**
+ * Resolve the stock working copy, with any option overridden.
+ *
+ * @param {Partial<PreviewOptions>} [overrides]
+ * @returns {Promise<Record<string, unknown>>}
+ */
 function resolve(overrides = {}) {
   return resolvePreview({
     apiUrl: API,
@@ -117,6 +135,7 @@ describe('resolvePreview', () => {
   });
 
   it('keeps the raw text when the renderer throws, and says so', async () => {
+    /** @type {PreviewProblem[]} */
     const problems = [];
     const result = await resolve({
       renderMarkdown: () => {
@@ -271,6 +290,7 @@ describe('resolvePreview relations', () => {
   });
 
   it('reads a single-page reference as a page, not an item', async () => {
+    /** @type {PublishedReference[]} */
     const asked = [];
     const result = await resolve({
       schema: [

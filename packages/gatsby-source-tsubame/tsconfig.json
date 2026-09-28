@@ -1,0 +1,30 @@
+{
+  // The plugin ships JavaScript (`files` publishes `gatsby-node.js` and `src/`), so this does not
+  // compile anything: it checks the JSDoc types already in the source with TypeScript's `checkJs`.
+  // `scripts/check-package-types.sh` runs it, and CI with it.
+  //
+  // TypeScript and `@types/node` come from the admin app's install rather than from a dependency
+  // here: this package has none at all (`dependencies` is empty), and adding a toolchain to it to
+  // check its own types would be the first thing a site using it has to download.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // `engines.node` is >= 18, so these are the Node types that describe what the plugin may use.
+    "typeRoots": ["../../frontend/node_modules/@types"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["gatsby-node.js", "src/**/*.js", "test/*.mjs"],
+  // The build test needs Gatsby itself, which only the job that installs it has
+  // (`scripts/test-gatsby-build.sh`); checking it here would mean downloading Gatsby to check
+  // types, and what it exercises is the build, not the types.
+  "exclude": ["test/build/**"]
+}

@@ -16,7 +16,9 @@ const {
   toImageValue,
 } = fields;
 
+/** @param {string} path a path the API returned @returns {string} its absolute URL */
 const resolveUrl = (path) => `https://cms.example.com${path}`;
+/** @param {string} path a path under the API prefix @returns {string} its absolute URL */
 const resolveApiPath = (path) => `https://cms.example.com/api${path}`;
 const resolve = { resolveUrl, resolveApiPath };
 const composites = new Map(Object.entries(COMPOSITE_FIELDS));
@@ -67,7 +69,7 @@ describe('toImageValue', () => {
 
   it('answers a null localFile for an image that was not downloaded', () => {
     const imageFiles = new Map();
-    assert.equal(toImageValue({ id: 3, url: '/api/images/logo.png' }, { ...resolve, imageFiles }).localFile, null);
+    assert.equal(toImageValue({ id: 3, url: '/api/images/logo.png' }, { ...resolve, imageFiles })?.localFile, null);
   });
 });
 

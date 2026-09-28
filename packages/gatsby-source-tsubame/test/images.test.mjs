@@ -13,7 +13,9 @@ import images from '../src/images.js';
 const { extensionOf, imageSource, reusableFiles, sourceKey } = images;
 
 const client = {
+  /** @param {string} path a path the API returned @returns {string} its absolute URL */
   absoluteUrl: (path) => `https://cms.example.com${path}`,
+  /** @param {string} path a path under the API prefix @returns {string} its absolute URL */
   apiPathUrl: (path) => `https://cms.example.com/api${path}`,
 };
 
@@ -67,7 +69,7 @@ describe('reusableFiles', () => {
       { id: 'file:remote-again', url: 'https://host/abc.png?X-Amz-Signature=older' },
     ];
     const byKey = reusableFiles(() => files);
-    assert.equal(byKey.get('https://host/abc.png').id, 'file:remote');
+    assert.equal(byKey.get('https://host/abc.png')?.id, 'file:remote');
     assert.equal(byKey.size, 1);
   });
 

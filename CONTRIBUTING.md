@@ -35,6 +35,7 @@ two binaries read.
 | `scripts/test-gatsby-source.sh` | the Gatsby source plugin | `node` |
 | `scripts/test-gatsby-build.sh` | the plugin under a real `gatsby build` | `npm install` in `packages/gatsby-source-tsubame` (it is skipped without it) |
 | `scripts/test-preview.sh` | the preview renderer | `node` |
+| `scripts/check-package-types.sh` | the packages' JSDoc types (`tsc --noEmit`, `checkJs`) | `npm ci` in `frontend` (it borrows that toolchain) |
 | `scripts/coverage.sh` | coverage for the Rust and Angular suites | `cargo-llvm-cov` |
 | `scripts/smoke-test.sh <url>` | a deployment, over HTTP | nothing (no credentials) |
 

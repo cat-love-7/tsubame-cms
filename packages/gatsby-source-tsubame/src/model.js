@@ -15,10 +15,139 @@ const { describeFieldType, isRelationArray, relationOptionsOf } = require('./fie
  * over one input is what makes that agreement checkable rather than hopeful.
  */
 
+/**
+ * The GraphQL names this plugin uses, all built from the configured prefix.
+ *
+ * @typedef {object} GraphqlNames
+ * @property {string} collection the collection metadata type
+ * @property {string} markdown the markdown node type
+ * @property {string} image the image value type
+ * @property {string} composite the opaque composite value type
+ */
+
+/**
+ * One type's CMS field name -> GraphQL field name mapping.
+ *
+ * @typedef {Map<string, string>} FieldMapping
+ */
+
+/**
+ * The mappings every type carries inside its `fieldNames`.
+ *
+ * @typedef {object} FieldNameMappings
+ * @property {Map<string, FieldMapping>} collections by collection name
+ * @property {Map<string, FieldMapping>} pages by page name
+ * @property {Map<string, FieldMapping>} composites by definition id
+ */
+
+/**
+ * Which GraphQL type each collection, page and composite definition uses.
+ *
+ * @typedef {object} ContentPlan
+ * @property {string} prefix the configured type prefix
+ * @property {Map<string, string>} collections by collection name
+ * @property {Map<string, string>} pages by page name
+ * @property {Map<string, string>} composites by definition id
+ */
+
+/**
+ * The options the model reads: the type prefix, and whether images are downloaded.
+ *
+ * @typedef {object} ModelOptions
+ * @property {string} typePrefix prefix of every generated type
+ * @property {{download?: boolean}} [images] the image options
+ */
+
+/**
+ * One content type or definition's identity, keyed the way the node's owner key is built.
+ *
+ * @typedef {object} OwnerDescriptor
+ * @property {'collection' | 'single_page'} kind which kind of content it is
+ * @property {string} name the collection's or page's name
+ * @property {number | null} item the item's id, null for a single page
+ */
+
+/**
+ * One reverse reference a referring schema declares.
+ *
+ * @typedef {object} InverseDeclaration
+ * @property {string} inverseName the name the target answers to
+ * @property {import('./fields.js').RelationTarget} target the content the declaration is against
+ */
+
+/**
+ * One reverse reference as the target reads it.
+ *
+ * @typedef {object} DeclaredInverse
+ * @property {string} inverseName the name the target answers to
+ * @property {string} declaringTypeName the GraphQL type of the referrers
+ */
+
+/**
+ * A union planned for one relation field whose elements need not be one node type.
+ *
+ * @typedef {object} RelationUnion
+ * @property {string} name the union's GraphQL name
+ * @property {string} ownerType the type the field belongs to
+ * @property {string} field the field's GraphQL name
+ * @property {string[]} members the member node types
+ */
+
+/**
+ * A relation target the CMS does not answer, reported for a warning.
+ *
+ * @typedef {object} MissingRelationTarget
+ * @property {string} ownerType the type the field belongs to
+ * @property {string} field the field's GraphQL name
+ * @property {import('./fields.js').RelationTarget} target the declared target
+ * @property {boolean} fieldLeftOut whether the whole field was left out
+ */
+
+/**
+ * What `TsubameClient.fetchSchemaSnapshot()` read: the input the model is built from.
+ *
+ * @typedef {object} SchemaSnapshot
+ * @property {string[]} collectionNames the collections with published items
+ * @property {string[]} pageNames the published single pages
+ * @property {Map<string, import('./fields.js').SchemaField[]>} collections by collection name
+ * @property {Map<string, import('./fields.js').SchemaField[]>} pages by page name
+ * @property {Map<string, import('./fields.js').SchemaField[]>} composites by definition id
+ * @property {string[]} unpublishedPageTargets single-page targets with no public schema
+ */
+
+/**
+ * The GraphQL type of a field, and whether its value is a link to a node.
+ *
+ * @typedef {object} GraphqlFieldType
+ * @property {string} type the GraphQL type
+ * @property {boolean} link whether `@link` resolves the value
+ */
+
+/**
+ * The model one build is read against.
+ *
+ * @typedef {object} ContentModel
+ * @property {ModelOptions} options the options the model was built with
+ * @property {GraphqlNames} names the plugin's own GraphQL names
+ * @property {ContentPlan} plan which type each collection, page and definition gets
+ * @property {FieldNameMappings} fieldNames each type's CMS field name -> GraphQL name
+ * @property {Map<string, FieldMapping>} inverseFieldNames each type's inverse name -> GraphQL name
+ * @property {Map<string, InverseDeclaration[]>} inverseDeclarationsBySchema what each schema declares
+ * @property {Map<string, DeclaredInverse[]>} inverseDeclarationsByTarget what each target answers to
+ * @property {Map<string, RelationUnion>} relationUnions by owner type and field
+ * @property {MissingRelationTarget[]} missingRelationTargets the targets the CMS does not answer
+ * @property {SchemaSnapshot} snapshot the schema the model was built from
+ */
+
 /** The types that are the same for every project, after the configurable prefix. */
 const STATIC_TYPE_SUFFIXES = ['Collection', 'Markdown', 'Image', 'Composite'];
 
-/** The GraphQL names this plugin uses, all built from the configured prefix. */
+/**
+ * The GraphQL names this plugin uses, all built from the configured prefix.
+ *
+ * @param {string} prefix the configured type prefix
+ * @returns {GraphqlNames} the plugin's own GraphQL names
+ */
 function graphqlNamesFor(prefix) {
   return {
     collection: `${prefix}Collection`,
@@ -28,12 +157,23 @@ function graphqlNamesFor(prefix) {
   };
 }
 
-/** `collection:blog` / `page:home`: the key a schema (or a content type) is looked up by. */
+/**
+ * `collection:blog` / `page:home`: the key a schema (or a content type) is looked up by.
+ *
+ * @param {string} kind `collection` or `page`
+ * @param {string} name the collection's or page's name
+ * @returns {string} the lookup key
+ */
 function schemaKey(kind, name) {
   return `${kind}:${name}`;
 }
 
-/** `collection:authors` / `page:home`: the key a relation target is looked up by. */
+/**
+ * `collection:authors` / `page:home`: the key a relation target is looked up by.
+ *
+ * @param {import('./fields.js').RelationTarget} target the relation target
+ * @returns {string} the lookup key
+ */
 function targetKey(target) {
   return `${target.kind === 'single_page' ? 'page' : 'collection'}:${target.name}`;
 }
@@ -43,12 +183,20 @@ function targetKey(target) {
  *
  * `values.js` builds the same key from a reference, which is what lets a reverse reference be
  * answered with `createNodeId` and nothing else.
+ *
+ * @param {OwnerDescriptor} owner the collection item or single page
+ * @returns {string} the node key
  */
 function ownerNodeKey({ kind, name, item }) {
   return kind === 'collection' ? `tsubame-item:${name}:${item}` : `tsubame-page:${name}`;
 }
 
-/** A relation target, with the two kinds spelled the way the rest of the model spells them. */
+/**
+ * A relation target, with the two kinds spelled the way the rest of the model spells them.
+ *
+ * @param {import('./fields.js').WireRelationTarget | null | undefined} target the unchecked target
+ * @returns {import('./fields.js').RelationTarget | null} the normalized target, or null
+ */
 function normalizeTarget(target) {
   if (target === null || typeof target !== 'object' || typeof target.name !== 'string') {
     return null;
@@ -63,6 +211,12 @@ function normalizeTarget(target) {
  * composite definitions; each sorted), because two of them can want the same name and the
  * allocator's answer depends on who asked first. Sorting is what makes it stable: the API does not
  * promise an order, and a name allocated in a different order would be a different name.
+ *
+ * @param {Iterable<string>} collectionNames the collections
+ * @param {Iterable<string>} pageNames the single pages
+ * @param {Iterable<string>} compositeIds the composite definition ids
+ * @param {string} prefix the configured type prefix
+ * @returns {ContentPlan} which type each thing got
  */
 function planTypeNames(collectionNames, pageNames, compositeIds, prefix) {
   const allocator = createNameAllocator(STATIC_TYPE_SUFFIXES.map((suffix) => `${prefix}${suffix}`));
@@ -92,6 +246,10 @@ function planTypeNames(collectionNames, pageNames, compositeIds, prefix) {
  * parent/child links, so a CMS field of that name would collide with a field the consumer did not
  * ask for but gets anyway. A composite is not a node, but its `id` and `values` are still the
  * plugin's own.
+ *
+ * @param {'item' | 'page' | 'composite'} kind which kind of thing the fields belong to
+ * @param {GraphqlNames} names the plugin's own GraphQL names
+ * @returns {string[]} the CMS field names the plugin does not let a schema use
  */
 function reservedFieldNames(kind, names) {
   if (kind === 'composite') {
@@ -125,6 +283,12 @@ function reservedFieldNames(kind, names) {
  * is not. An inverse name is a label the CMS lets an editor choose, so it is rewritten the same
  * way; the CMS already guarantees one inverse name per target, and the allocator is what keeps a
  * name from colliding with the target's own fields.
+ *
+ * @param {'item' | 'page' | 'composite'} kind which kind of thing the fields belong to
+ * @param {import('./fields.js').SchemaField[]} schema the schema's fields
+ * @param {Iterable<string>} inverseNames the inverse names declared against this type
+ * @param {GraphqlNames} names the plugin's own GraphQL names
+ * @returns {{fields: FieldMapping, inverses: FieldMapping}} the two mappings
  */
 function planTypeFields(kind, schema, inverseNames, names) {
   const allocator = createNameAllocator(reservedFieldNames(kind, names));
@@ -150,15 +314,31 @@ function planTypeFields(kind, schema, inverseNames, names) {
 }
 
 /** The fields of a schema, without any inverse names: what a composite definition needs. */
+/**
+ * @param {'item' | 'page' | 'composite'} kind which kind of thing the fields belong to
+ * @param {import('./fields.js').SchemaField[]} schema the schema's fields
+ * @param {GraphqlNames} names the plugin's own GraphQL names
+ * @returns {FieldMapping} CMS field name -> GraphQL name
+ */
 function planFieldNames(kind, schema, names) {
   return planTypeFields(kind, schema, [], names).fields;
 }
 
+/**
+ * @param {FieldMapping} mapping a name mapping
+ * @returns {Record<string, string>} the same mapping as a plain object
+ */
 function mappingToObject(mapping) {
   return Object.fromEntries(mapping);
 }
 
-/** The type of one relation's target, or null when the target is not part of this build. */
+/**
+ * The type of one relation's target, or null when the target is not part of this build.
+ *
+ * @param {ContentPlan} plan which type each thing got
+ * @param {import('./fields.js').WireRelationTarget | null | undefined} target the relation target
+ * @returns {string | null} the target's GraphQL type, or null
+ */
 function relationTargetTypeName(plan, target) {
   const normalized = normalizeTarget(target);
   if (normalized === null) {
@@ -170,7 +350,13 @@ function relationTargetTypeName(plan, target) {
   return plan.collections.get(normalized.name) ?? null;
 }
 
-/** The key a planned relation union is looked up by: one field of one type. */
+/**
+ * The key a planned relation union is looked up by: one field of one type.
+ *
+ * @param {string} ownerTypeName the type the field belongs to
+ * @param {string} fieldName the field's GraphQL name
+ * @returns {string} the lookup key
+ */
 function relationUnionKey(ownerTypeName, fieldName) {
   return `${ownerTypeName}\u0000${fieldName}`;
 }
@@ -184,9 +370,15 @@ function relationUnionKey(ownerTypeName, fieldName) {
  * relation names always gets a type, published or not, so `missing` is a **dangling declaration**:
  * the schema still names a collection somebody deleted, and the delivery API therefore has no
  * reference to serve either (it drops references whose target is not published content).
+ *
+ * @param {ContentPlan} plan which type each thing got
+ * @param {import('./fields.js').FieldType} fieldType the field's `field_type`
+ * @returns {{typed: string[], missing: import('./fields.js').RelationTarget[]}} the split targets
  */
 function relationTargetTypes(plan, fieldType) {
+  /** @type {string[]} */
   const typed = [];
+  /** @type {import('./fields.js').RelationTarget[]} */
   const missing = [];
   for (const options of relationOptionsOf(fieldType)) {
     const target = normalizeTarget(options.target);
@@ -219,8 +411,12 @@ function relationTargetTypes(plan, fieldType) {
  * The mappings handed in are **trimmed in place**, so a field that is left out is in none of the
  * three places that have to agree: the GraphQL type, the node's own fields, and `fieldNames`.
  *
- * @returns {{ unions: Map<string, {name: string, ownerType: string, field: string, members: string[]}>,
- *   missing: Array<{ownerType: string, field: string, target: object, fieldLeftOut: boolean}> }}
+ * @param {ContentPlan} plan which type each thing got
+ * @param {GraphqlNames} names the plugin's own GraphQL names
+ * @param {FieldNameMappings} fieldNames the mappings to trim in place
+ * @param {SchemaSnapshot} snapshot the schema the model is built from
+ * @returns {{unions: Map<string, RelationUnion>, missing: MissingRelationTarget[]}} the planned
+ *   unions and the missing targets to warn about
  */
 function planRelationFields(plan, names, fieldNames, snapshot) {
   const allocator = createNameAllocator([
@@ -229,9 +425,16 @@ function planRelationFields(plan, names, fieldNames, snapshot) {
     ...plan.pages.values(),
     ...plan.composites.values(),
   ]);
+  /** @type {Map<string, RelationUnion>} */
   const unions = new Map();
+  /** @type {MissingRelationTarget[]} */
   const missing = [];
 
+  /**
+   * @param {string | undefined} ownerTypeName the owner's GraphQL type
+   * @param {import('./fields.js').SchemaField[] | undefined} schema the owner's schema
+   * @param {FieldMapping | undefined} mapping the owner's mapping
+   */
   const consider = (ownerTypeName, schema, mapping) => {
     if (ownerTypeName === undefined || mapping === undefined) {
       return;
@@ -302,6 +505,11 @@ function planRelationFields(plan, names, fieldNames, snapshot) {
  *
  * `JSON` is the last fallback that keeps an unknown or ambiguous field queryable: the whole value
  * is still there, under `values`.
+ *
+ * @param {ContentModel} model the model
+ * @param {import('./fields.js').FieldType} fieldType the field's `field_type`
+ * @param {string} [unionName] the union the model planned for this field, when it planned one
+ * @returns {GraphqlFieldType} the field's GraphQL type, and whether it is a link
  */
 function graphqlFieldType(model, fieldType, unionName) {
   const { kind, options } = describeFieldType(fieldType);
@@ -384,15 +592,28 @@ function graphqlFieldType(model, fieldType, unionName) {
  *
  * - `bySchema`: what a content type declares, for the walk that builds the reverse index.
  * - `byTarget`: what a target answers to, for the declared fields and their types.
+ *
+ * @param {SchemaSnapshot} snapshot the schema the model is built from
+ * @param {ContentPlan} plan which type each thing got
+ * @returns {{bySchema: Map<string, InverseDeclaration[]>, byTarget: Map<string, DeclaredInverse[]>}}
+ *   the declarations from the referring side and from the target's side
  */
 function collectInverseDeclarations(snapshot, plan) {
+  /** @type {Map<string, InverseDeclaration[]>} */
   const bySchema = new Map();
+  /** @type {Map<string, DeclaredInverse[]>} */
   const byTarget = new Map();
 
+  /**
+   * @param {import('./fields.js').SchemaField[] | undefined} schema the declaring schema
+   * @param {string} declaringSchemaKey the declaring schema's lookup key
+   * @param {string | undefined} declaringTypeName the declaring type's GraphQL name
+   */
   const consider = (schema, declaringSchemaKey, declaringTypeName) => {
     if (declaringTypeName === undefined) {
       return;
     }
+    /** @type {InverseDeclaration[]} */
     const declarations = [];
     for (const field of Array.isArray(schema) ? schema : []) {
       for (const options of relationOptionsOf(field.field_type)) {
@@ -449,6 +670,11 @@ function collectInverseDeclarations(snapshot, plan) {
  * to. A name already taken by a CMS field keeps that field's entry (the allocator gave the inverse
  * a suffix, so the two are still separate GraphQL fields; only the lookup table is shadowed, and
  * only when a schema names an inverse exactly like one of the target's own fields).
+ *
+ * @param {ContentModel} model the model
+ * @param {'collection' | 'page'} kind which kind of content type it is
+ * @param {string} name the collection's or page's name
+ * @returns {Record<string, string>} CMS field name (and inverse name) -> GraphQL name
  */
 function contentFieldNames(model, kind, name) {
   const mapping = kind === 'collection' ? model.fieldNames.collections.get(name) : model.fieldNames.pages.get(name);
@@ -469,6 +695,10 @@ function contentFieldNames(model, kind, name) {
  * (the index), every collection and page a relation names (whose schema is public whether or not
  * they have published items), the published pages, the composite definitions, and the single-page
  * targets that are not published and therefore have no public schema.
+ *
+ * @param {SchemaSnapshot} snapshot what the client read from the delivery API
+ * @param {ModelOptions} options the options the model reads
+ * @returns {ContentModel} the model
  */
 function buildContentModel(snapshot, options) {
   const names = graphqlNamesFor(options.typePrefix);
@@ -476,7 +706,9 @@ function buildContentModel(snapshot, options) {
   const plan = planTypeNames([...snapshot.collections.keys()], pageNames, [...snapshot.composites.keys()], options.typePrefix);
   const { bySchema, byTarget } = collectInverseDeclarations(snapshot, plan);
 
+  /** @type {FieldNameMappings} */
   const fieldNames = { collections: new Map(), pages: new Map(), composites: new Map() };
+  /** @type {Map<string, FieldMapping>} */
   const inverseFieldNames = new Map();
 
   for (const [name, schema] of snapshot.collections) {

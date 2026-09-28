@@ -514,6 +514,11 @@ These are limits decided by the delivery API contract.
 The unit tests need neither Gatsby nor the CMS. There are no dependencies (only `fetch` and Node's
 `node:test`).
 
+Their types are JSDoc, and `scripts/check-package-types.sh` checks them (`tsc --noEmit` with
+`checkJs`): there is nothing to compile, so this is what stops an annotation from quietly becoming
+wrong. That check borrows the admin app's TypeScript (`npm ci` in `frontend/`); the plugin itself
+still needs nothing to run.
+
 ```console
 $ scripts/test-gatsby-source.sh
 # or

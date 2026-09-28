@@ -30,6 +30,11 @@ const { DEFAULT_TYPE_PREFIX } = require('./options');
  * `kind` is `'item'` (a collection item), `'page'` (a single page) or `'composite'`, which is what
  * decides the names reserved for the plugin's own fields (`values`, `fieldNames`, ...) and therefore
  * which CMS names have to be suffixed to make room.
+ *
+ * @param {string} kind `'item'`, `'page'` or `'composite'`
+ * @param {import('./fields.js').SchemaField[]} schema the content type's schema
+ * @param {{typePrefix?: string}} [options] the site's type prefix
+ * @returns {Record<string, string>} CMS field name -> GraphQL name
  */
 function previewFieldNames(kind, schema, { typePrefix = DEFAULT_TYPE_PREFIX } = {}) {
   const names = graphqlNamesFor(typePrefix);
@@ -43,6 +48,9 @@ function previewFieldNames(kind, schema, { typePrefix = DEFAULT_TYPE_PREFIX } = 
  * Composite definitions reserve only `id` and `values`, so this needs no type prefix - which is also
  * why it is a separate call rather than a `kind` of the one above: there is one answer, not a
  * choice.
+ *
+ * @param {import('./fields.js').SchemaField[]} schema the definition's schema
+ * @returns {Record<string, string>} CMS field name -> GraphQL name
  */
 function previewCompositeFieldNames(schema) {
   return mappingToObject(planFieldNames('composite', schema, graphqlNamesFor(DEFAULT_TYPE_PREFIX)));

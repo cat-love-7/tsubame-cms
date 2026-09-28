@@ -117,3 +117,8 @@ $ scripts/test-preview.sh
 
 No network, CMS, or Gatsby is needed. `fetch` is injectable, and the delivery API is
 replaced with fake responses shaped like `docs/content-api.md`.
+
+The types are JSDoc, and `scripts/check-package-types.sh` checks them (`tsc --noEmit` with
+`checkJs`): there is nothing to compile, so this is what stops an annotation from quietly becoming
+wrong. That check borrows the admin app's TypeScript (`npm ci` in `frontend/`) - this package still
+has no dependency of its own.

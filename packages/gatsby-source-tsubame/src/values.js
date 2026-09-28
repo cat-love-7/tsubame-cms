@@ -15,10 +15,28 @@ const { ownerNodeKey } = require('./model');
  * (see `planMarkdown`), so what this function puts in the field is that node's id. Markdown inside
  * a composite is what `/api/content/composite-fields` newly makes reachable - without the
  * definition there was no way to know that a string under `blocks[0].text` was Markdown at all.
+ */
+
+/**
+ * Everything a value needs to be resolved: the model, the node-id factory, and the two seams into
+ * the caller (`planMarkdown`, and the two URL resolvers).
  *
- * @param {object} fieldTypeDescriptor the field's `field_type`, as the CMS sends it
- * @param {*} value the raw value
- * @param {object} context `{ model, createNodeId, planMarkdown, resolveUrl, topField, path }`
+ * @typedef {object} ResolveContext
+ * @property {import('./model.js').ContentModel} model the model
+ * @property {(key: string) => string} createNodeId the Gatsby node-id factory
+ * @property {(path: string, raw: string, field: string) => string} planMarkdown creates a markdown node
+ * @property {(path: string) => string | null} resolveUrl makes a path the API returned absolute
+ * @property {(path: string) => string | null} resolveApiPath makes a path under the API prefix absolute
+ * @property {Map<string, string> | null} [imageFiles] image key -> `File` node id
+ * @property {string} topField the top-level CMS field's name
+ * @property {string} path the value's full path (`blocks.0.text`)
+ */
+
+/**
+ * @param {import('./fields.js').FieldType} fieldTypeDescriptor the field's `field_type`, as the CMS sends it
+ * @param {any} value the raw value
+ * @param {ResolveContext} context the model and the seams the walk needs
+ * @returns {any} the value shaped for the GraphQL type the model declared
  */
 function resolveFieldValue(fieldTypeDescriptor, value, context) {
   const { kind, options } = describeFieldType(fieldTypeDescriptor);
@@ -74,6 +92,10 @@ function resolveFieldValue(fieldTypeDescriptor, value, context) {
  *
  * A definition that is not part of the build (an id no `/api/content/composite-fields` entry
  * answers) leaves the object as `{id, values}`, which is what the opaque fallback type declares.
+ *
+ * @param {any} value the raw composite value
+ * @param {ResolveContext} context the model and the seams the walk needs
+ * @returns {any} the composite with its typed fields beside the raw values
  */
 function resolveComposite(value, context) {
   const composite = toCompositeValue(value);
@@ -81,6 +103,7 @@ function resolveComposite(value, context) {
     return null;
   }
 
+  /** @type {Record<string, any>} */
   const result = { id: composite.id, values: composite.values };
   const definition = context.model.snapshot.composites.get(composite.id);
   const mapping = context.model.fieldNames.composites.get(composite.id);
@@ -110,6 +133,10 @@ function resolveComposite(value, context) {
  * this article" when the author is not on the site yet. A target the CMS does not have at all is not
  * a value that can arrive here: the delivery API drops references it cannot serve, and a field that
  * declares such a target is left out of the schema (`src/model.js`).
+ *
+ * @param {any} value the raw relation value
+ * @param {ResolveContext} context the model and the seams the walk needs
+ * @returns {string | null} the target node's id, or null when the value is not a reference
  */
 function resolveRelation(value, context) {
   if (
@@ -129,15 +156,25 @@ function resolveRelation(value, context) {
  * Every element is a reference the delivery API served, which means the content it names is
  * published and this build has a node for it, so every element is that node's id. The field is
  * `[T]` for one target and a union of node types for several, and `@link` resolves both.
+ *
+ * @param {any} value the raw array of references
+ * @param {ResolveContext} context the model and the seams the walk needs
+ * @returns {string[]} one node id per element
  */
 function resolveRelationArray(value, context) {
   return references(value).map((reference) => relationNodeId(reference, context.createNodeId));
 }
 
-/** The references of an array value, without the entries that are not references at all. */
+/**
+ * The references of an array value, without the entries that are not references at all.
+ *
+ * @param {any} value the raw array value
+ * @returns {import('./fields.js').RelationReference[]} the reference entries
+ */
 function references(value) {
   return (Array.isArray(value) ? value : []).filter(
-    (reference) => reference !== null && typeof reference === 'object' && typeof reference.target === 'string',
+    (/** @type {any} */ reference) =>
+      reference !== null && typeof reference === 'object' && typeof reference.target === 'string',
   );
 }
 
@@ -147,12 +184,21 @@ function references(value) {
  * The same key `nodes.js` creates the node with: the two have to be written from one place in
  * spirit, and this is that place's mirror - a reference with an `item` is a collection item, one
  * without is a single page, whose identity is its name.
+ *
+ * @param {import('./fields.js').RelationReference} reference the reference
+ * @param {(key: string) => string} createNodeId the Gatsby node-id factory
+ * @returns {string} the target node's id
  */
 function relationNodeId(reference, createNodeId) {
   return createNodeId(ownerNodeKey(referenceDescriptor(reference)));
 }
 
-/** A reference as the content it points at: an item id, or a page name. */
+/**
+ * A reference as the content it points at: an item id, or a page name.
+ *
+ * @param {import('./fields.js').RelationReference} reference the reference
+ * @returns {import('./model.js').OwnerDescriptor} the content it points at
+ */
 function referenceDescriptor(reference) {
   return {
     kind: typeof reference.item === 'number' ? 'collection' : 'single_page',
@@ -170,8 +216,19 @@ function referenceDescriptor(reference) {
  * walk. Going through composites and arrays is not optional for either: the delivery API's own
  * reverse lookup walks the whole value, and a Markdown body can show an image that sits inside a
  * block.
+ *
+ * @param {import('./fields.js').SchemaField[]} schema the content type's schema
+ * @param {any} values the content's raw values
+ * @param {Map<string, import('./fields.js').SchemaField[]> | undefined} composites the definitions by id
+ * @param {(kind: string, value: any) => void} onValue called for each relation and image value
+ * @returns {void}
  */
 function walkValues(schema, values, composites, onValue) {
+  /**
+   * @param {import('./fields.js').FieldType} fieldType the field's `field_type`
+   * @param {any} value the field's raw value
+   * @returns {void}
+   */
   const visitType = (fieldType, value) => {
     const { kind, options } = describeFieldType(fieldType);
     if (kind === 'Relation' || kind === 'Image') {
@@ -226,11 +283,15 @@ function walkValues(schema, values, composites, onValue) {
  * (`DeliveryMaps::holds_reference` walks the whole value), so a reference inside a composite still
  * puts the item on the target's list.
  *
- * @returns {Array<{kind: string, name: string, item: number|null}>} one entry per target, deduped
+ * @param {import('./fields.js').SchemaField[]} schema the content type's schema
+ * @param {any} values the content's raw values
+ * @param {Map<string, import('./fields.js').SchemaField[]>} composites the definitions by id
+ * @returns {import('./model.js').OwnerDescriptor[]} one entry per target, deduped
  */
 function collectReferenceKeys(schema, values, composites) {
+  /** @type {Map<string, import('./model.js').OwnerDescriptor>} */
   const found = new Map();
-  walkValues(schema, values, composites, (kind, value) => {
+  walkValues(schema, values, composites, (/** @type {string} */ kind, /** @type {any} */ value) => {
     if (kind !== 'Relation') {
       return;
     }
@@ -252,11 +313,15 @@ function collectReferenceKeys(schema, values, composites) {
  * and `gatsby-transformer-sharp` reads a local file, so each image has to be fetched and given a
  * `File` node before the content that points at it is created.
  *
- * @returns {Array<{id: number|null, url: string}>}
+ * @param {import('./fields.js').SchemaField[]} schema the content type's schema
+ * @param {any} values the content's raw values
+ * @param {Map<string, import('./fields.js').SchemaField[]>} composites the definitions by id
+ * @returns {import('./fields.js').NormalizedImage[]} one entry per image, deduped
  */
 function collectImageValues(schema, values, composites) {
+  /** @type {Map<string, import('./fields.js').NormalizedImage>} */
   const found = new Map();
-  walkValues(schema, values, composites, (kind, value) => {
+  walkValues(schema, values, composites, (/** @type {string} */ kind, /** @type {any} */ value) => {
     if (kind !== 'Image') {
       return;
     }

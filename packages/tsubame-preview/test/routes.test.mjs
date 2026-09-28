@@ -45,11 +45,13 @@ describe('checkTarget', () => {
   it('says what is missing rather than letting a broken link be built', () => {
     assert.equal(checkTarget(item), null);
     assert.equal(checkTarget(page), null);
-    assert.match(checkTarget({ kind: 'collection', collection: '', id: 1 }), /collection name/);
-    assert.match(checkTarget({ kind: 'collection', collection: 'blog', id: 'x' }), /item id/);
-    assert.match(checkTarget({ kind: 'single_page', page: 3 }), /page name/);
-    assert.match(checkTarget({ kind: 'nonsense' }), /collection item or a single page/);
-    assert.match(checkTarget(null), /object/);
+    // `assert.match` takes a string, and these are exactly the targets `checkTarget` answers a
+    // message for; the cast records what each test is asserting.
+    assert.match(/** @type {string} */ (checkTarget({ kind: 'collection', collection: '', id: 1 })), /collection name/);
+    assert.match(/** @type {string} */ (checkTarget({ kind: 'collection', collection: 'blog', id: 'x' })), /item id/);
+    assert.match(/** @type {string} */ (checkTarget({ kind: 'single_page', page: 3 })), /page name/);
+    assert.match(/** @type {string} */ (checkTarget({ kind: 'nonsense' })), /collection item or a single page/);
+    assert.match(/** @type {string} */ (checkTarget(null)), /object/);
   });
 });
 

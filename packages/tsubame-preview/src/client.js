@@ -19,19 +19,82 @@ const { checkTarget, previewApiPath } = require('./routes');
  * Everything here takes a `fetchImpl` so a test (or a runtime with its own fetch) can supply one.
  */
 
+/**
+ * The part of a `fetch` answer this package reads. Naming only these keeps a test's small answer
+ * object as good as a real `Response`, and `globalThis.fetch` still satisfies it.
+ *
+ * @typedef {object} FetchResponseLike
+ * @property {boolean} ok
+ * @property {number} status
+ * @property {() => Promise<any>} json
+ */
+
+/**
+ * A `fetch` this package can use: `globalThis.fetch`, or a lookup table in a test.
+ *
+ * @typedef {(url: string, init?: { headers?: Record<string, string> }) => Promise<FetchResponseLike>} FetchLike
+ */
+
+/**
+ * A refusal from the CMS: an Error that also carries the HTTP status a screen shows. The status is
+ * what tells a caller a link was malformed (401), out of date (403) or the CMS broke.
+ *
+ * @typedef {Error & { status: number }} RefusalError
+ */
+
+/**
+ * A preview link's own address, split into what the fetch needs.
+ *
+ * @typedef {object} FetchPreviewOptions
+ * @property {string} [apiUrl]
+ * @property {string} [apiPrefix]
+ * @property {import('./routes.js').TargetLike | null | undefined} [target]
+ * @property {string} [token]
+ * @property {FetchLike} [fetchImpl]
+ */
+
+/**
+ * The published side of the CMS as a preview uses it: fetch one published target, and read the
+ * composite field definitions once however many fields ask for them.
+ *
+ * @typedef {object} ContentClient
+ * @property {(reference: import('./field-types.js').PublishedReference) => Promise<import('./field-types.js').DeliveryPayload | null>} loadPublished
+ * @property {(id: string) => Promise<import('./field-types.js').SchemaField[] | null>} loadCompositeSchema
+ */
+
+/**
+ * Join a base URL and a path with exactly one slash between them, which is the only thing either
+ * side promises about the other.
+ *
+ * @param {unknown} base
+ * @param {unknown} path
+ * @returns {string}
+ */
 function joinUrl(base, path) {
   const root = String(base ?? '').replace(/\/+$/, '');
   const rest = String(path ?? '');
   return `${root}${rest.startsWith('/') ? rest : `/${rest}`}`;
 }
 
-/** A refusal from the CMS, as an Error carrying what a screen needs to say. */
+/**
+ * A refusal from the CMS, as an Error carrying what a screen needs to say.
+ *
+ * @param {FetchResponseLike} response
+ * @param {string} message
+ * @returns {RefusalError}
+ */
 function refusal(response, message) {
-  const error = new Error(message);
+  const error = /** @type {RefusalError} */ (new Error(message));
   error.status = response.status;
   return error;
 }
 
+/**
+ * The API's own words from a refusal body, or null when it did not send any.
+ *
+ * @param {FetchResponseLike} response
+ * @returns {Promise<string | null>}
+ */
 async function readMessage(response) {
   try {
     const body = await response.json();
@@ -48,6 +111,9 @@ async function readMessage(response) {
  * both. `token` is the `expires.signature` value from the link's query string; the API refuses a
  * link that is malformed (401), not ours (401) or out of date (403), and those travel as an Error
  * carrying `status` rather than as an empty preview.
+ *
+ * @param {FetchPreviewOptions} [options]
+ * @returns {Promise<import('./field-types.js').DeliveryPayload>}
  */
 async function fetchPreview({
   apiUrl = '',
@@ -74,6 +140,7 @@ async function fetchPreview({
     throw refusal(response, message ?? `the preview link was refused (${response.status})`);
   }
 
+  /** @type {Partial<import('./field-types.js').DeliveryPayload>} */
   const body = await response.json();
   return {
     schema: Array.isArray(body?.schema) ? body.schema : [],
@@ -90,6 +157,9 @@ async function fetchPreview({
  *
  * `loadCompositeSchema` reads the definitions once and remembers them: a page full of blocks would
  * otherwise ask for the same definition once per block.
+ *
+ * @param {{ apiUrl?: string, apiPrefix?: string, fetchImpl?: FetchLike }} [options]
+ * @returns {ContentClient}
  */
 function createContentClient({
   apiUrl = '',
@@ -97,8 +167,16 @@ function createContentClient({
   fetchImpl = globalThis.fetch,
 } = {}) {
   const prefix = normalizePrefix(apiPrefix);
+  /** @type {Map<string, import('./field-types.js').SchemaField[]> | null} */
   let compositeSchemas = null;
 
+  /**
+   * One delivery request. A 404 is "not published", which is null rather than a failure; anything
+   * else that is not ok is a refusal the caller has to see.
+   *
+   * @param {string} path
+   * @returns {Promise<any>}
+   */
   async function get(path) {
     const response = await fetchImpl(joinUrl(apiUrl, path), {
       headers: { accept: 'application/json' },
@@ -113,6 +191,12 @@ function createContentClient({
     return response.json();
   }
 
+  /**
+   * One published target: a collection item, or a single page when the reference has no item.
+   *
+   * @param {import('./field-types.js').PublishedReference} reference
+   * @returns {Promise<import('./field-types.js').DeliveryPayload | null>}
+   */
   async function loadPublished(reference) {
     const name = typeof reference?.name === 'string' ? encodeURIComponent(reference.name) : '';
     if (name === '') {
@@ -122,6 +206,7 @@ function createContentClient({
       reference.kind === 'single_page'
         ? `${prefix}/content/single-pages/${name}`
         : `${prefix}/content/collections/${name}/items/${reference.item}`;
+    /** @type {Partial<import('./field-types.js').DeliveryPayload> | null} */
     const body = await get(path);
     if (body === null) {
       return null;
@@ -132,6 +217,12 @@ function createContentClient({
     };
   }
 
+  /**
+   * The definition of one composite field, or null when this CMS has none for that id.
+   *
+   * @param {string} id
+   * @returns {Promise<import('./field-types.js').SchemaField[] | null>}
+   */
   async function loadCompositeSchema(id) {
     if (compositeSchemas === null) {
       const body = await get(`${prefix}/content/composite-fields`);

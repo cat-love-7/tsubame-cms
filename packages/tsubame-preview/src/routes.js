@@ -16,10 +16,36 @@ const { normalizePrefix } = require('./field-types');
  * in this file and nowhere else.
  */
 
+/**
+ * A target this package understands, once `checkTarget` has passed it: a collection item, or a
+ * single page. The `kind` is what tells the two apart.
+ *
+ * @typedef {{ kind: 'collection', collection: string, id: number }} CollectionTarget
+ * @typedef {{ kind: 'single_page', page: string }} SinglePageTarget
+ * @typedef {CollectionTarget | SinglePageTarget} PreviewTarget
+ */
+
+/**
+ * A target as it arrives from an untyped caller - a query string, a stored link - before
+ * `checkTarget` has judged it. Every property is `unknown` because anything may be there, and the
+ * checks in `checkTarget` are what narrow it.
+ *
+ * @typedef {object} TargetLike
+ * @property {unknown} [kind]
+ * @property {unknown} [collection]
+ * @property {unknown} [id]
+ * @property {unknown} [page]
+ */
+
 const COLLECTION_ROUTE = /(?:^|\/)preview\/collections\/([^/]+)\/items\/(\d+)\/?$/;
 const SINGLE_PAGE_ROUTE = /(?:^|\/)preview\/single_pages\/([^/]+)\/?$/;
 
-/** A preview target, or a message saying what is wrong with the one given. */
+/**
+ * A preview target, or a message saying what is wrong with the one given.
+ *
+ * @param {TargetLike | null | undefined} target
+ * @returns {string | null}
+ */
 function checkTarget(target) {
   if (target === null || typeof target !== 'object') {
     return 'a preview target is an object';
@@ -28,7 +54,7 @@ function checkTarget(target) {
     if (typeof target.collection !== 'string' || target.collection === '') {
       return 'a collection target needs a collection name';
     }
-    if (!Number.isInteger(target.id) || target.id < 1) {
+    if (!Number.isInteger(target.id) || /** @type {number} */ (target.id) < 1) {
       return 'a collection target needs an item id';
     }
     return null;
@@ -48,18 +74,30 @@ function checkTarget(target) {
  * An empty string for a target this package does not understand, rather than a throw: this is
  * called while building a link, and a link that cannot be built should show up as one rather than
  * as a screen that failed to draw.
+ *
+ * @param {TargetLike | null | undefined} target
+ * @returns {string}
  */
 function previewRoutePath(target) {
   if (checkTarget(target) !== null) {
     return '';
   }
-  if (target.kind === 'collection') {
-    return `/preview/collections/${encodeURIComponent(target.collection)}/items/${target.id}`;
+  // `checkTarget` passing is exactly what makes the target one of the two shapes; a cast here says
+  // so once rather than at each property.
+  const valid = /** @type {PreviewTarget} */ (target);
+  if (valid.kind === 'collection') {
+    return `/preview/collections/${encodeURIComponent(valid.collection)}/items/${valid.id}`;
   }
-  return `/preview/single_pages/${encodeURIComponent(target.page)}`;
+  return `/preview/single_pages/${encodeURIComponent(valid.page)}`;
 }
 
-/** The API route that serves the working copy, prefix included - what a preview link carries. */
+/**
+ * The API route that serves the working copy, prefix included - what a preview link carries.
+ *
+ * @param {TargetLike | null | undefined} target
+ * @param {unknown} [apiPrefix]
+ * @returns {string}
+ */
 function previewApiPath(target, apiPrefix = '/api') {
   const route = previewRoutePath(target);
   return route === '' ? '' : `${normalizePrefix(apiPrefix)}${route}`;
@@ -72,6 +110,9 @@ function previewApiPath(target, apiPrefix = '/api') {
  * query string is the credential the rest of the work needs. The leading part of the path is
  * deliberately not required to be exactly `/preview/...`: a site may be mounted under its own base
  * path, and where it is mounted is a deployment's business rather than this parser's.
+ *
+ * @param {unknown} pathname
+ * @returns {PreviewTarget | null}
  */
 function parsePreviewRoute(pathname) {
   if (typeof pathname !== 'string') {
@@ -108,6 +149,11 @@ function parsePreviewRoute(pathname) {
  * The same rule the admin screen applies in TypeScript
  * (`frontend/src/app/shared/share-link.ts`): an admin client in any other language gets it
  * from here.
+ *
+ * @param {unknown} apiPath
+ * @param {unknown} siteOrigin
+ * @param {unknown} [apiPrefix]
+ * @returns {string}
  */
 function previewSiteUrl(apiPath, siteOrigin, apiPrefix = '/api') {
   const origin = String(siteOrigin ?? '').replace(/\/+$/, '');
@@ -117,6 +163,13 @@ function previewSiteUrl(apiPath, siteOrigin, apiPrefix = '/api') {
   return `${origin}${route.startsWith('/') ? route : `/${route}`}`;
 }
 
+/**
+ * Decode a path segment, keeping the encoded spelling when it is not valid percent-encoding rather
+ * than throwing while a page is being read.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
 function safeDecode(value) {
   try {
     return decodeURIComponent(value);

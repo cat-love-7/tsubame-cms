@@ -21,22 +21,44 @@ const { ownerNodeKey } = modelModule;
 const model = createModel();
 const composites = new Map(Object.entries(COMPOSITE_FIELDS));
 
+/**
+ * The markdown nodes `planMarkdown` was asked to create, in order.
+ *
+ * @typedef {{id: string, path: string, raw: string, field: string}} MarkdownPlan
+ */
+
+/**
+ * A resolve context over the fixture model, recording the markdown nodes it is asked to create.
+ *
+ * @param {Partial<import('../src/values.js').ResolveContext>} [overrides] context fields to replace
+ * @returns {{context: import('../src/values.js').ResolveContext, markdown: MarkdownPlan[]}} the context and the record
+ */
 function makeContext(overrides = {}) {
+  /** @type {MarkdownPlan[]} */
   const markdown = [];
-  const context = {
+  const context = /** @type {import('../src/values.js').ResolveContext} */ ({
     model,
+    /** @param {string} key the node key @returns {string} the node id */
     createNodeId: (key) => `node:${key}`,
+    /**
+     * @param {string} path the value's full path
+     * @param {string} raw the markdown source
+     * @param {string} field the top-level CMS field's GraphQL name
+     * @returns {string} the markdown node's id
+     */
     planMarkdown: (path, raw, field) => {
       const id = `node:tsubame-markdown:owner:${path}`;
       markdown.push({ id, path, raw, field });
       return id;
     },
+    /** @param {string} path a path the API returned @returns {string} its absolute URL */
     resolveUrl: (path) => `https://cms.example.com${path}`,
+    /** @param {string} path a path under the API prefix @returns {string} its absolute URL */
     resolveApiPath: (path) => `https://cms.example.com/api${path}`,
     topField: 'body',
     path: 'body',
     ...overrides,
-  };
+  });
   return { context, markdown };
 }
 
@@ -209,6 +231,7 @@ describe('relations', () => {
 
 describe('relationNodeId', () => {
   it('uses the same key the node was created with', () => {
+    /** @param {string} key the node key @returns {string} the node id */
     const createNodeId = (key) => `node:${key}`;
     assert.equal(relationNodeId({ target: 'authors', item: 7 }, createNodeId), 'node:tsubame-item:authors:7');
     assert.equal(relationNodeId({ target: 'home' }, createNodeId), 'node:tsubame-page:home');

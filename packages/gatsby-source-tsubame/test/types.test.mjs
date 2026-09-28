@@ -10,7 +10,13 @@ import { createModel } from './fixtures.mjs';
 const { buildTypeDefinitions } = typesModule;
 const sdl = buildTypeDefinitions(createModel());
 
-/** The body of one declared type, for assertions that are about one type only. */
+/**
+ * The body of one declared type, for assertions that are about one type only.
+ *
+ * @param {string} text the SDL to search
+ * @param {string} name the type's name
+ * @returns {string} the type's body, or an empty string
+ */
 function typeBody(text, name) {
   const match = text.match(new RegExp(`type ${name}[^{]*\\{([\\s\\S]*?)\\n\\}`));
   return match === null ? '' : match[1];

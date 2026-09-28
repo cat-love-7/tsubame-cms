@@ -37,6 +37,137 @@ const { collectImageValues, collectReferenceKeys, resolveFieldValue } = require(
  * `dependencies.createRemoteFileNode` is the sharp integration's seam: production leaves it out and
  * the plugin loads `gatsby-source-filesystem` itself, while a test passes a stand-in.
  */
+
+/**
+ * The `internal` object every Gatsby node carries. `content` and `mediaType` are what
+ * gatsby-transformer-remark reads; the rest is free-form node metadata.
+ *
+ * @typedef {{type: string, description?: string, contentDigest?: string, mediaType?: string, content?: string} & Record<string, any>} GatsbyNodeInternal
+ */
+
+/**
+ * A Gatsby node. The plugin's own data sits beside `internal`, keyed by GraphQL field name.
+ *
+ * @typedef {{id: string, parent: string | null, children: string[], internal: GatsbyNodeInternal} & Record<string, any>} GatsbyNode
+ */
+
+/**
+ * The node actions the plugin calls.
+ *
+ * @typedef {object} GatsbyActions
+ * @property {(node: GatsbyNode) => void} createNode creates a node
+ * @property {(link: {parent: GatsbyNode, child: GatsbyNode}) => void} createParentChildLink links a child
+ * @property {(node: GatsbyNode) => void} touchNode keeps a node from an earlier build
+ * @property {(definition: string | object | Array<string | object>) => void} createTypes declares SDL
+ */
+
+/**
+ * The reporter methods the plugin calls.
+ *
+ * @typedef {object} GatsbyReporter
+ * @property {(message: string) => void} warn reports a warning
+ * @property {(message: string) => void} info reports a summary
+ * @property {(message: string) => void} verbose reports detail
+ * @property {(message: string) => void} panic stops the build
+ */
+
+/**
+ * The Gatsby node API the plugin uses.
+ *
+ * @typedef {object} GatsbyApi
+ * @property {GatsbyActions} actions the node actions
+ * @property {(key: string) => string} createNodeId the deterministic node-id factory
+ * @property {(data: any) => string} createContentDigest the content digest
+ * @property {GatsbyReporter} reporter the reporter
+ * @property {any} [cache] the build cache
+ * @property {any} [getCache] the cache factory
+ * @property {((type: string) => any[]) | undefined} [getNodesByType] the node store lookup
+ * @property {any} [schema] the type builders (used by tests)
+ */
+
+/**
+ * The subset of the Gatsby API a node-creating helper needs.
+ *
+ * @typedef {Pick<GatsbyApi, 'actions' | 'createNodeId' | 'createContentDigest'>} GatsbyNodeApi
+ */
+
+/**
+ * What one run sourced.
+ *
+ * @typedef {object} SourceCounters
+ * @property {number} collections collection metadata nodes
+ * @property {number} items content items
+ * @property {number} pages single pages
+ * @property {number} markdown markdown nodes
+ */
+
+/**
+ * One collection read whole, waiting to become nodes.
+ *
+ * @typedef {object} CollectionContent
+ * @property {string} name the collection's name
+ * @property {string} typeName its GraphQL type
+ * @property {import('./model.js').FieldMapping} mapping its CMS field name -> GraphQL name
+ * @property {import('./fields.js').SchemaField[]} schema its schema
+ * @property {import('./fields.js').WireContentItem[]} items its published items
+ * @property {number} total how many items the CMS reports
+ */
+
+/**
+ * One published single page, waiting to become a node.
+ *
+ * @typedef {object} PageContent
+ * @property {string} name the page's name
+ * @property {string} typeName its GraphQL type
+ * @property {import('./model.js').FieldMapping} mapping its CMS field name -> GraphQL name
+ * @property {import('./fields.js').SchemaField[]} schema its schema
+ * @property {any} values its raw values
+ * @property {string | null} publishedAt when it was published
+ * @property {string | null} lastPublishedAt when it was last published
+ */
+
+/**
+ * One markdown value waiting to become a child node.
+ *
+ * @typedef {object} MarkdownPlan
+ * @property {string} id the node id to create
+ * @property {string} path the value's full path
+ * @property {string} raw the markdown source
+ * @property {string} field the top-level CMS field's GraphQL name
+ */
+
+/**
+ * Everything one item or page node needs.
+ *
+ * @typedef {object} ContentNodeInput
+ * @property {'item' | 'page'} kind which kind of content it is
+ * @property {string} typeName its GraphQL type
+ * @property {import('./fields.js').SchemaField[]} schema its schema
+ * @property {import('./model.js').FieldMapping} mapping its CMS field name -> GraphQL name
+ * @property {any} values its raw values
+ * @property {number | null} remoteId the item's id, null for a page
+ * @property {string | null} collection the collection's name, null for a page
+ * @property {string | null} pageName the page's name, null for an item
+ * @property {string | null} publishedAt when it was published
+ * @property {string | null} lastPublishedAt when it was last published
+ * @property {Map<string, string[]>} inverse inverse name -> referrer node keys
+ * @property {Map<string, string> | null} imageFiles image key -> `File` node id
+ */
+
+/**
+ * The seams a test may replace.
+ *
+ * @typedef {object} SourceDependencies
+ * @property {(options: import('./images.js').RemoteFileOptions) => Promise<{id: string}>} [createRemoteFileNode]
+ */
+
+/**
+ * @param {GatsbyApi} gatsbyApi the Gatsby node API
+ * @param {import('./client.js').TsubameClient} client the delivery API client
+ * @param {import('./options.js').NormalizedOptions} options the plugin options
+ * @param {SourceDependencies} [dependencies] the seams a test may replace
+ * @returns {Promise<SourceCounters>} what was sourced
+ */
 async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
   const { actions, createNodeId, createContentDigest, reporter } = gatsbyApi;
   const snapshot = await client.fetchSchemaSnapshot();
@@ -44,6 +175,7 @@ async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
 
   // Read the whole site before creating anything: a reverse reference is answered from the
   // published content on the other side, which may be read before or after the node it points at.
+  /** @type {CollectionContent[]} */
   const collections = [];
   for (const collectionName of [...snapshot.collectionNames].sort()) {
     const typeName = model.plan.collections.get(collectionName);
@@ -69,6 +201,7 @@ async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
     });
   }
 
+  /** @type {PageContent[]} */
   const pages = [];
   for (const pageName of [...snapshot.pageNames].sort()) {
     const typeName = model.plan.pages.get(pageName);
@@ -107,6 +240,7 @@ async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
       })
     : null;
 
+  /** @type {SourceCounters} */
   const counters = { collections: 0, items: 0, pages: 0, markdown: 0 };
 
   // Sorted, because the model allocated the type names in sorted order and the two have to agree
@@ -177,11 +311,20 @@ async function sourceAll(gatsbyApi, client, options, dependencies = {}) {
  * answers to; the walk is what decides whether this particular copy holds the reference, which is
  * the same pair of questions the delivery API's `?populate=<inverse_name>` asks.
  *
+ * @param {import('./model.js').ContentModel} model the model
+ * @param {CollectionContent[]} collections the collections that were read
+ * @param {PageContent[]} pages the pages that were read
  * @returns {Map<string, Map<string, string[]>>} target node key -> inverse name -> referrer keys
  */
 function buildReverseIndex(model, collections, pages) {
+  /** @type {Map<string, Map<string, string[]>>} */
   const reverse = new Map();
 
+  /**
+   * @param {string} targetNodeKey the target's node key
+   * @param {string} inverseName the name the target answers to
+   * @param {string} referrerKey the referrer's node key
+   */
   const add = (targetNodeKey, inverseName, referrerKey) => {
     let byName = reverse.get(targetNodeKey);
     if (byName === undefined) {
@@ -198,6 +341,13 @@ function buildReverseIndex(model, collections, pages) {
     }
   };
 
+  /**
+   * @param {'collection' | 'page'} schemaKind which part of the snapshot the schema came from
+   * @param {string} name the content type's name
+   * @param {import('./fields.js').SchemaField[]} schema its schema
+   * @param {any} values its raw values
+   * @param {string} referrerKey the node key of the content holding the reference
+   */
   const visit = (schemaKind, name, schema, values, referrerKey) => {
     const declarations = model.inverseDeclarationsBySchema.get(schemaKey(schemaKind, name));
     if (declarations === undefined) {
@@ -235,6 +385,11 @@ function buildReverseIndex(model, collections, pages) {
   return reverse;
 }
 
+/**
+ * @param {Map<string, Map<string, string[]>>} reverse the reverse index
+ * @param {import('./model.js').OwnerDescriptor} owner the node whose referrers are wanted
+ * @returns {Map<string, string[]>} inverse name -> referrer node keys
+ */
 function lookupInverse(reverse, owner) {
   return reverse.get(ownerNodeKey(owner)) ?? new Map();
 }
@@ -244,10 +399,20 @@ function lookupInverse(reverse, owner) {
  *
  * The same image is usually referenced from several items (and from Markdown inside composites), so
  * this is what keeps one download per image rather than one per reference.
+ *
+ * @param {import('./model.js').ContentModel} model the model
+ * @param {CollectionContent[]} collections the collections that were read
+ * @param {PageContent[]} pages the pages that were read
+ * @returns {import('./fields.js').NormalizedImage[]} the images
  */
 function collectAllImages(model, collections, pages) {
+  /** @type {Map<string, import('./fields.js').NormalizedImage>} */
   const found = new Map();
 
+  /**
+   * @param {import('./fields.js').SchemaField[]} schema the content type's schema
+   * @param {any} values its raw values
+   */
   const take = (schema, values) => {
     for (const image of collectImageValues(schema, values, model.snapshot.composites)) {
       const key = imageKey(image);
@@ -271,7 +436,14 @@ function collectAllImages(model, collections, pages) {
   return [...found.values()];
 }
 
+/**
+ * @param {GatsbyNodeApi} gatsbyApi the node actions and factories
+ * @param {import('./model.js').ContentModel} model the model
+ * @param {{name: string, typeName: string, schema: import('./fields.js').SchemaField[], itemCount: number, mapping: import('./model.js').FieldMapping}} content
+ *   what the collection node holds
+ */
 function createCollectionNode({ actions, createNodeId, createContentDigest }, model, { name, typeName, schema, itemCount, mapping }) {
+  /** @type {Record<string, any>} */
   const data = {
     name,
     itemTypeName: typeName,
@@ -299,19 +471,26 @@ function createCollectionNode({ actions, createNodeId, createContentDigest }, mo
  * the owner's `@link` fields have to hold those ids. `createNodeId` is a pure function of its key,
  * so knowing the id early costs nothing and avoids creating a node and then mutating it - which
  * Gatsby does not allow.
+ *
+ * @param {GatsbyNodeApi} gatsbyApi the node actions and factories
+ * @param {import('./model.js').ContentModel} model the model
+ * @param {import('./client.js').TsubameClient} client the delivery API client
+ * @param {ContentNodeInput} content what the node holds
+ * @returns {number} how many markdown nodes were created
  */
 function createContentNode({ actions, createNodeId, createContentDigest }, model, client, { kind, typeName, schema, mapping, values, remoteId, collection, pageName, publishedAt, lastPublishedAt, inverse, imageFiles }) {
   const typedValues = values !== null && typeof values === 'object' ? values : {};
   const schemaKind = kind === 'item' ? 'collection' : 'page';
-  const schemaName = kind === 'item' ? collection : pageName;
+  const schemaName = kind === 'item' ? /** @type {string} */ (collection) : /** @type {string} */ (pageName);
 
   const ownerKey = ownerNodeKey(
     kind === 'item'
-      ? { kind: 'collection', name: collection, item: remoteId }
-      : { kind: 'single_page', name: pageName, item: null },
+      ? { kind: 'collection', name: /** @type {string} */ (collection), item: remoteId }
+      : { kind: 'single_page', name: /** @type {string} */ (pageName), item: null },
   );
   const ownerId = createNodeId(ownerKey);
 
+  /** @type {Record<string, any>} */
   const data =
     kind === 'item'
       ? {
@@ -320,23 +499,32 @@ function createContentNode({ actions, createNodeId, createContentDigest }, model
           publishedAt,
           lastPublishedAt,
           values: typedValues,
-          fieldNames: contentFieldNames(model, schemaKind, schemaName),
+          fieldNames: contentFieldNames(model, schemaKind, /** @type {string} */ (schemaName)),
         }
       : {
           name: pageName,
           publishedAt,
           lastPublishedAt,
           values: typedValues,
-          fieldNames: contentFieldNames(model, schemaKind, schemaName),
+          fieldNames: contentFieldNames(model, schemaKind, /** @type {string} */ (schemaName)),
         };
 
+  /** @type {MarkdownPlan[]} */
   const markdownPlans = [];
+  /**
+   * @param {string} path the value's full path
+   * @param {string} raw the markdown source
+   * @param {string} field the top-level CMS field's GraphQL name
+   * @returns {string} the markdown node's id
+   */
   const planMarkdown = (path, raw, field) => {
     const id = createNodeId(`tsubame-markdown:${ownerId}:${path}`);
     markdownPlans.push({ id, path, raw, field });
     return id;
   };
+  /** @param {string} path the path the API returned @returns {string | null} the absolute URL */
   const resolveUrl = (path) => client.absoluteUrl(path);
+  /** @param {string} path the path under the API prefix @returns {string | null} the absolute URL */
   const resolveApiPath = (path) => client.apiPathUrl(path);
 
   for (const field of Array.isArray(schema) ? schema : []) {

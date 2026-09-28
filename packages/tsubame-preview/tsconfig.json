@@ -1,0 +1,26 @@
+{
+  // The package ships JavaScript (`files` publishes `src/`), so this does not compile anything: it
+  // checks the JSDoc types already in the source with TypeScript's `checkJs`.
+  // `scripts/check-package-types.sh` runs it, and CI with it.
+  //
+  // TypeScript and `@types/node` come from the admin app's install rather than from a dependency
+  // here: this package is deliberately zero-dependency (`docs/preview-site.md`), and a toolchain
+  // to check its own types is not something a preview site should have to download.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // `engines.node` is >= 18, so these are the Node types that describe what the package may use.
+    "typeRoots": ["../../frontend/node_modules/@types"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/**/*.js", "test/*.mjs"]
+}

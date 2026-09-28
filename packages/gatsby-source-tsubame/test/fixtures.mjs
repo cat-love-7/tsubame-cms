@@ -11,8 +11,35 @@ import modelModule from '../src/model.js';
 
 const { buildContentModel } = modelModule;
 
+/**
+ * The fake `fetch` `createApiFetch` returns: a `FetchLike` that also records the URLs it was asked
+ * for.
+ *
+ * @typedef {import('../src/client.js').FetchLike & {requests: string[]}} ApiFetch
+ */
+
+/**
+ * What `createGatsbyApi` hands back: the API Gatsby would pass, and the records the tests read.
+ *
+ * @typedef {object} GatsbyHarness
+ * @property {import('../src/nodes.js').GatsbyApi} api the API the plugin is called with
+ * @property {Map<string, any>} nodes the created nodes, by id
+ * @property {any[]} types what `createTypes` was given
+ * @property {Array<{parent: string, child: string}>} links what `createParentChildLink` was given
+ * @property {string[]} warnings what `warn` was given
+ * @property {string[]} infos what `info` was given
+ * @property {string[]} touched what `touchNode` was given
+ */
+
+/**
+ * The options `createModel` accepts, so a test can override just the type prefix or the images.
+ *
+ * @typedef {{typePrefix?: string, images?: {download?: boolean, concurrency?: number, requestHeaders?: Record<string, any>}}} ModelOverrides
+ */
+
 /** `seo` holds a Markdown-less pair; `block` reaches itself through an array and holds both a
- *  Markdown field and a relation; `cta` points back at a single page. */
+ *  Markdown field and a relation; `cta` points back at a single page.
+ *  @type {Record<string, import('../src/fields.js').SchemaField[]>} */
 export const COMPOSITE_FIELDS = {
   seo: [
     { name: 'description', field_type: { Text: {} }, required: false, width: 12, height: 1 },
@@ -58,6 +85,7 @@ export const COMPOSITE_FIELDS = {
   ],
 };
 
+/** @type {import('../src/fields.js').SchemaField[]} */
 export const BLOG_SCHEMA = [
   { name: 'title', field_type: { Text: {} }, required: true, width: 12, height: 1, is_title: true },
   { name: 'slug', field_type: { Slug: {} }, required: true, width: 12, height: 1 },
@@ -138,11 +166,13 @@ export const BLOG_SCHEMA = [
   { name: 'values', field_type: { Text: {} }, required: false, width: 12, height: 1 },
 ];
 
+/** @type {import('../src/fields.js').SchemaField[]} */
 export const AUTHORS_SCHEMA = [
   { name: 'name', field_type: { Text: {} }, required: true, width: 12, height: 1, is_title: true },
 ];
 
-/** A collection a relation names that has no published items: its schema is public, its list is empty. */
+/** A collection a relation names that has no published items: its schema is public, its list is empty.
+ *  @type {import('../src/fields.js').SchemaField[]} */
 export const EDITORS_SCHEMA = [
   { name: 'name', field_type: { Text: {} }, required: true, width: 12, height: 1, is_title: true },
   // Points at a single page that is not published, so the target has no public schema at all. The
@@ -158,6 +188,7 @@ export const EDITORS_SCHEMA = [
   },
 ];
 
+/** @type {import('../src/fields.js').SchemaField[]} */
 export const HOME_SCHEMA = [
   { name: 'title', field_type: { Text: {} }, required: false, width: 12, height: 1 },
   { name: 'intro', field_type: { Markdown: {} }, required: false, width: 12, height: 1 },
@@ -174,6 +205,7 @@ export const HOME_SCHEMA = [
   },
 ];
 
+/** @type {import('../src/fields.js').WireContentItem[]} */
 export const BLOG_ITEMS = [
   {
     id: 1,
@@ -236,10 +268,12 @@ export const BLOG_ITEMS = [
   },
 ];
 
+/** @type {import('../src/fields.js').WireContentItem[]} */
 export const AUTHORS_ITEMS = [
   { id: 7, published_at: '2025-12-01T00:00:00Z', last_published_at: '2025-12-01T00:00:00Z', values: { name: 'Ada' } },
 ];
 
+/** @type {import('../src/fields.js').WireContentPage} */
 export const HOME_PAGE = {
   schema: HOME_SCHEMA,
   published_at: '2025-11-01T00:00:00Z',
@@ -252,6 +286,7 @@ export const HOME_PAGE = {
   },
 };
 
+/** @type {Record<string, {schema: import('../src/fields.js').SchemaField[], items: import('../src/fields.js').WireContentItem[]}>} */
 const COLLECTIONS = {
   blog: { schema: BLOG_SCHEMA, items: BLOG_ITEMS },
   authors: { schema: AUTHORS_SCHEMA, items: AUTHORS_ITEMS },
@@ -259,6 +294,11 @@ const COLLECTIONS = {
   editors: { schema: EDITORS_SCHEMA, items: [] },
 };
 
+/**
+ * @param {any} body the body to answer with
+ * @param {number} [status] the HTTP status
+ * @returns {import('../src/client.js').FetchResponse} a response the client can read
+ */
 function jsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -277,10 +317,14 @@ function jsonResponse(body, status = 200) {
  *
  * The page size of the *request* decides how much comes back, exactly as the server does, so a
  * test can make the plugin walk several pages by asking for a small `pageSize`.
+ *
+ * @returns {ApiFetch} the fake fetch, with the URLs it was asked for on `requests`
  */
 export function createApiFetch() {
+  /** @type {string[]} */
   const requests = [];
-  const fetchImpl = async (url) => {
+  /** @type {ApiFetch} */
+  const fetchImpl = /** @type {ApiFetch} */ (async (/** @type {string} */ url) => {
     requests.push(url);
     const parsed = new URL(url);
     const { pathname } = parsed;
@@ -326,7 +370,7 @@ export function createApiFetch() {
     }
 
     return jsonResponse({ code: 'not_found' }, 404);
-  };
+  });
   fetchImpl.requests = requests;
   return fetchImpl;
 }
@@ -338,17 +382,28 @@ export function createApiFetch() {
  * which is what the real action does (`gatsby/src/redux/actions/public.js`). `files` is what a
  * previous build left in the store, which the image reuse looks through; `touched` is what the
  * plugin asked Gatsby to keep.
+ *
+ * @param {{files?: Array<Record<string, any> | null>}} [options] the files a previous build left
+ * @returns {GatsbyHarness} the API and the records
  */
 export function createGatsbyApi({ files = [] } = {}) {
+  /** @type {Map<string, any>} */
   const nodes = new Map();
+  /** @type {any[]} */
   const types = [];
+  /** @type {Array<{parent: string, child: string}>} */
   const links = [];
+  /** @type {string[]} */
   const warnings = [];
+  /** @type {string[]} */
   const infos = [];
+  /** @type {string[]} */
   const touched = [];
 
+  /** @type {import('../src/nodes.js').GatsbyApi} */
   const api = {
     actions: {
+      /** @param {string | object | Array<string | object>} definition the definitions to declare */
       createTypes(definition) {
         // `createTypes` takes SDL, type-builder objects, or an array of both; the fake keeps them in
         // the order they were handed over, so a test can read what the plugin declared.
@@ -356,15 +411,18 @@ export function createGatsbyApi({ files = [] } = {}) {
           types.push(entry);
         }
       },
+      /** @param {import('../src/nodes.js').GatsbyNode} node the node to store */
       createNode(node) {
         nodes.set(node.id, node);
       },
+      /** @param {{parent: import('../src/nodes.js').GatsbyNode, child: import('../src/nodes.js').GatsbyNode}} link the pair to link */
       createParentChildLink({ parent, child }) {
         links.push({ parent: parent.id, child: child.id });
         if (!parent.children.includes(child.id)) {
           parent.children.push(child.id);
         }
       },
+      /** @param {import('../src/nodes.js').GatsbyNode} node the node to keep */
       touchNode(node) {
         touched.push(node.id);
       },
@@ -373,16 +431,24 @@ export function createGatsbyApi({ files = [] } = {}) {
     // (`{kind, config}`, `gatsby/dist/schema/types/type-builders.js`). The unit tests read those
     // descriptors instead of Gatsby's schema.
     schema: {
+      /** @param {any} config the union's config @returns {{kind: string, config: any}} the descriptor */
       buildUnionType: (config) => ({ kind: 'UNION', config }),
+      /** @param {any} config the object's config @returns {{kind: string, config: any}} the descriptor */
       buildObjectType: (config) => ({ kind: 'OBJECT', config }),
     },
+    /** @param {string} key the node key @returns {string} the node id */
     createNodeId: (key) => `node:${key}`,
+    /** @param {any} data the node data @returns {string} the digest */
     createContentDigest: (data) => `digest:${typeof data === 'string' ? data : JSON.stringify(data)}`,
+    /** @param {string} type the node type @returns {Array<Record<string, any> | null>} the stored files */
     getNodesByType: (type) => (type === 'File' ? files : []),
     reporter: {
+      /** @param {string} message the warning @returns {number} the new length */
       warn: (message) => warnings.push(message),
+      /** @param {string} message the summary @returns {number} the new length */
       info: (message) => infos.push(message),
       verbose: () => {},
+      /** @param {string} message why the build stops */
       panic: (message) => {
         throw new Error(message);
       },
@@ -403,6 +469,8 @@ export const MARKDOWN_TYPE = 'TsubameMarkdown';
  * `editors` is in `collections` although it is not in `collectionNames`: it has no published items,
  * so the index does not list it, but a relation names it and its schema is what the relation field
  * was declared against.
+ *
+ * @returns {import('../src/model.js').SchemaSnapshot} the snapshot
  */
 export function createSnapshot() {
   return {
@@ -419,12 +487,20 @@ export function createSnapshot() {
   };
 }
 
-/** The model a build over the fake API is read against. */
+/**
+ * The model a build over the fake API is read against.
+ *
+ * @param {ModelOverrides} [overrides] options to override the defaults with
+ * @returns {import('../src/model.js').ContentModel} the model
+ */
 export function createModel(overrides = {}) {
-  return buildContentModel(createSnapshot(), {
-    typePrefix: 'Tsubame',
-    images: { download: false, concurrency: 4, requestHeaders: {} },
-    ...overrides,
-  });
+  return buildContentModel(
+    createSnapshot(),
+    /** @type {import('../src/model.js').ModelOptions} */ ({
+      typePrefix: 'Tsubame',
+      images: { download: false, concurrency: 4, requestHeaders: {} },
+      ...overrides,
+    }),
+  );
 }
 

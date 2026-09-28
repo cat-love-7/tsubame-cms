@@ -19,12 +19,31 @@ const { sourceAll } = nodesModule;
 const { TsubameClient } = clientModule;
 const { normalizeOptions } = optionsModule;
 
+/**
+ * The type `globalThis.fetch` has, so a fake `fetch` can be installed for a run.
+ *
+ * @typedef {(input: string | URL | Request, init?: RequestInit) => Promise<Response>} GlobalFetch
+ */
+
+/**
+ * A run's harness: the fixture's records plus the fake fetch it was driven with.
+ *
+ * @typedef {import('./fixtures.mjs').GatsbyHarness & {fetchImpl: import('./fixtures.mjs').ApiFetch}} PluginHarness
+ */
+
+/** @type {import('../src/options.js').PluginOptions} */
 const PLUGIN_OPTIONS = { apiUrl: 'https://cms.example.com' };
 
+/**
+ * Run both plugin hooks against the fake API.
+ *
+ * @param {import('../src/options.js').PluginOptions} [pluginOptions] the plugin options
+ * @returns {Promise<PluginHarness>} the harness the hooks recorded into
+ */
 async function run(pluginOptions = PLUGIN_OPTIONS) {
   const fetchImpl = createApiFetch();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = fetchImpl;
+  globalThis.fetch = /** @type {GlobalFetch} */ (/** @type {unknown} */ (fetchImpl));
   try {
     const harness = createGatsbyApi();
     await plugin.createSchemaCustomization(harness.api, pluginOptions);
@@ -62,11 +81,11 @@ describe('createSchemaCustomization', () => {
     // `blog.mentions` names it too, but keeps the target it does have.
     assert.equal(warnings.length, 2);
     assert.match(
-      warnings.find((warning) => warning.includes('.ghost ')),
+      warnings.find((warning) => warning.includes('.ghost ')) ?? '',
       /TsubameBlogItem\.ghost names collection 'nowhere'.*the field is left out of the schema/,
     );
     assert.match(
-      warnings.find((warning) => warning.includes('.mentions ')),
+      warnings.find((warning) => warning.includes('.mentions ')) ?? '',
       /TsubameBlogItem\.mentions names collection 'nowhere'.*that target is left out of the field/,
     );
     // `blog.mentions` names authors and `nowhere`: the field stays, as a list of the target it has.
@@ -368,7 +387,7 @@ describe('options', () => {
     const harness = createGatsbyApi();
     const fetchImpl = createApiFetch();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = fetchImpl;
+    globalThis.fetch = /** @type {GlobalFetch} */ (/** @type {unknown} */ (fetchImpl));
     try {
       await plugin.sourceNodes(harness.api, { apiUrl: 'https://cms.example.com', pageSize: 500 });
     } finally {
@@ -382,11 +401,16 @@ describe('images.download', () => {
   /**
    * `sourceAll` with a stand-in for `createRemoteFileNode`: the real one needs
    * gatsby-source-filesystem, which the tests do not install (and should not have to).
+   *
+   * @param {{failing?: string[], files?: Array<Record<string, any> | null>}} [options]
+   *   which image names fail, and what a previous build left in the store
+   * @returns {Promise<import('./fixtures.mjs').GatsbyHarness & {downloads: Array<{url: string, ext: string | null | undefined}>}>}
+   *   the harness, plus what the stand-in was asked to download
    */
   async function runWithDownload({ failing = [], files = [] } = {}) {
     const fetchImpl = createApiFetch();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = fetchImpl;
+    globalThis.fetch = /** @type {GlobalFetch} */ (/** @type {unknown} */ (fetchImpl));
     try {
       const harness = createGatsbyApi({ files });
       const options = normalizeOptions(
@@ -394,7 +418,12 @@ describe('images.download', () => {
         harness.api.reporter,
       );
       const client = new TsubameClient(options, { reporter: harness.api.reporter, fetchImpl });
+      /** @type {Array<{url: string, ext: string | null | undefined}>} */
       const downloads = [];
+      /**
+       * @param {import('../src/images.js').RemoteFileOptions} fileOptions what to download
+       * @returns {Promise<{id: string}>} the created `File` node
+       */
       const createRemoteFileNode = async ({ url, ext, createNode }) => {
         if (failing.some((name) => url.endsWith(name))) {
           throw new Error(`404 for ${url}`);

@@ -12,6 +12,61 @@ const { sanitizeTypeName } = require('./naming');
  * stage has to wonder whether `pageSize` is a number.
  */
 
+/**
+ * Raw plugin options as `gatsby-config` writes them, before any default is applied.
+ *
+ * @typedef {object} PluginOptions
+ * @property {string} [apiUrl] the root of the CMS
+ * @property {string} [apiPrefix] the path the API is mounted under
+ * @property {number} [pageSize] items per request
+ * @property {number} [requestTimeout] milliseconds before a request is abandoned
+ * @property {number} [retries] extra attempts
+ * @property {number} [concurrency] requests in flight
+ * @property {string} [typePrefix] prefix of every generated type
+ * @property {Record<string, any>} [fetchOptions] extra options for `fetch`
+ * @property {PluginImageOptions} [images] the image options
+ */
+
+/**
+ * The `images` plugin option as written in `gatsby-config`.
+ *
+ * @typedef {object} PluginImageOptions
+ * @property {boolean} [download] whether to download images
+ * @property {number} [concurrency] images downloaded at once
+ * @property {Record<string, any>} [requestHeaders] headers sent when fetching an image
+ */
+
+/**
+ * The `images` option after normalization.
+ *
+ * @typedef {object} NormalizedImageOptions
+ * @property {boolean} download whether to download images
+ * @property {number} concurrency images downloaded at once
+ * @property {Record<string, any>} requestHeaders headers sent when fetching an image
+ */
+
+/**
+ * Plugin options as the rest of the plugin uses them: every value present and usable.
+ *
+ * @typedef {object} NormalizedOptions
+ * @property {string} apiUrl the root of the CMS
+ * @property {string} apiPrefix the path the API is mounted under
+ * @property {number} pageSize items per request
+ * @property {number} requestTimeout milliseconds before a request is abandoned
+ * @property {number} retries extra attempts
+ * @property {number} concurrency requests in flight
+ * @property {string} typePrefix prefix of every generated type
+ * @property {Record<string, any>} fetchOptions extra options for `fetch`
+ * @property {NormalizedImageOptions} images the image options
+ */
+
+/**
+ * The one reporter method normalization needs. A fuller reporter is assignable to it.
+ *
+ * @typedef {object} WarningReporter
+ * @property {(message: string) => void} warn reports a warning
+ */
+
 /** The delivery API lives under `/api`; see `docs/content-api.md`. */
 const DEFAULT_API_PREFIX = '/api';
 
@@ -33,6 +88,10 @@ const noopReporter = { warn() {}, info() {}, verbose() {} };
  * `apiUrl` is the root of the CMS (`http://127.0.0.1:8000`), not the API base: the `/api` prefix
  * is added from `apiPrefix`. Requiring the prefix to be passed twice is how a deployment ends up
  * with `/api/api/content/...` in it.
+ *
+ * @param {PluginOptions} [pluginOptions] the options as Gatsby or `gatsby-config` wrote them
+ * @param {WarningReporter} [reporter] where to report a clamped or ignored option
+ * @returns {NormalizedOptions} the options the plugin uses
  */
 function normalizeOptions(pluginOptions = {}, reporter = noopReporter) {
   const apiUrl = normalizeApiUrl(pluginOptions.apiUrl, reporter);
@@ -57,6 +116,11 @@ function normalizeOptions(pluginOptions = {}, reporter = noopReporter) {
   };
 }
 
+/**
+ * @param {unknown} value the `apiUrl` option
+ * @param {WarningReporter} reporter where to report a problem
+ * @returns {string} the root of the CMS, without a trailing slash
+ */
 function normalizeApiUrl(value, reporter) {
   const apiUrl = typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
   if (apiUrl === '') {
@@ -68,6 +132,11 @@ function normalizeApiUrl(value, reporter) {
   return apiUrl;
 }
 
+/**
+ * @param {unknown} value the `apiPrefix` option
+ * @param {WarningReporter} reporter where to report a problem
+ * @returns {string} the path the API is mounted under, always starting with `/`
+ */
 function normalizeApiPrefix(value, reporter) {
   if (value === undefined || value === null || value === '') {
     return DEFAULT_API_PREFIX;
@@ -84,6 +153,11 @@ function normalizeApiPrefix(value, reporter) {
   return prefix === '' ? DEFAULT_API_PREFIX : prefix;
 }
 
+/**
+ * @param {unknown} value the `typePrefix` option
+ * @param {WarningReporter} reporter where to report a rewritten prefix
+ * @returns {string} a prefix GraphQL accepts
+ */
 function normalizeTypePrefix(value, reporter) {
   const raw = value === undefined || value === null || value === '' ? DEFAULT_TYPE_PREFIX : String(value);
   const sanitized = sanitizeTypeName(raw);
@@ -95,6 +169,12 @@ function normalizeTypePrefix(value, reporter) {
   return sanitized;
 }
 
+/**
+ * @param {unknown} value the option to read
+ * @param {WarningReporter} reporter where to report the wrong type
+ * @param {string} name the option's name, for the warning
+ * @returns {Record<string, any>} the option when it is a plain object, `{}` otherwise
+ */
 function normalizeFetchOptions(value, reporter, name) {
   if (value === undefined || value === null) {
     return {};
@@ -103,7 +183,7 @@ function normalizeFetchOptions(value, reporter, name) {
     reporter.warn(`[gatsby-source-tsubame] \`${name}\` should be an object; ignoring it.`);
     return {};
   }
-  return value;
+  return /** @type {Record<string, any>} */ (value);
 }
 
 /**
@@ -113,9 +193,13 @@ function normalizeFetchOptions(value, reporter, name) {
  * site that renders the API's URLs directly (or uses `gatsby-plugin-image` on its own files) does
  * not want either. On, the plugin creates a `File` node per image and links it, which is what
  * `gatsby-transformer-sharp` reads.
+ *
+ * @param {unknown} value the `images` option
+ * @param {WarningReporter} reporter where to report a wrong type
+ * @returns {NormalizedImageOptions} the image options the plugin uses
  */
 function normalizeImages(value, reporter) {
-  const raw = value === undefined || value === null ? {} : value;
+  const raw = /** @type {PluginImageOptions} */ (value === undefined || value === null ? {} : value);
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     reporter.warn('[gatsby-source-tsubame] `images` should be an object; ignoring it.');
     return { download: false, concurrency: DEFAULT_IMAGE_CONCURRENCY, requestHeaders: {} };
@@ -133,6 +217,14 @@ function normalizeImages(value, reporter) {
  * Clamping rather than refusing: a page size over the API's maximum is a request the CMS would
  * answer with a 400, and "50 instead of 500" is a build that works, which is a better outcome than
  * a build that stops over an option that has an obvious nearest usable value.
+ *
+ * @param {unknown} value the option to read
+ * @param {number} fallback the value to use when it is missing or not a whole number
+ * @param {number} min the smallest usable value
+ * @param {number} max the largest usable value
+ * @param {string} name the option's name, for the warning
+ * @param {WarningReporter} reporter where to report a clamped value
+ * @returns {number} the whole number to use
  */
 function clampInteger(value, fallback, min, max, name, reporter) {
   if (value === undefined || value === null) {

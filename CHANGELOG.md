@@ -11,6 +11,14 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ## [Unreleased]
 
+### Changed
+
+- **The two npm packages' JSDoc types are checked** (`scripts/check-package-types.sh`, which CI runs
+  with the admin app's TypeScript): both still ship JavaScript with no build step and no runtime
+  dependency, and an annotation that stops being true is now a failing check rather than a comment.
+  The check wants `npm ci` in `frontend/`, which is where TypeScript and `@types/node` come from -
+  the packages themselves carry no toolchain.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

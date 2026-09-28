@@ -11,8 +11,12 @@ import { BLOG_ITEMS, createApiFetch } from './fixtures.mjs';
 
 const { TsubameClient, TsubameHttpError, mapWithConcurrency } = clientModule;
 
+/**
+ * @param {Partial<import('../src/options.js').NormalizedOptions>} [overrides] options to override
+ * @returns {import('../src/options.js').NormalizedOptions} the client options
+ */
 function options(overrides = {}) {
-  return {
+  return /** @type {import('../src/options.js').NormalizedOptions} */ ({
     apiUrl: 'https://cms.example.com',
     apiPrefix: '/api',
     pageSize: 2,
@@ -21,9 +25,14 @@ function options(overrides = {}) {
     concurrency: 2,
     fetchOptions: {},
     ...overrides,
-  };
+  });
 }
 
+/**
+ * @param {any} body the body to answer with
+ * @param {number} [status] the HTTP status
+ * @returns {import('../src/client.js').FetchResponse} a response the client can read
+ */
 function jsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -70,7 +79,7 @@ describe('fetchCollection', () => {
       BLOG_ITEMS.map((item) => item.id),
     );
     assert.equal(content.total, BLOG_ITEMS.length);
-    assert.equal(content.schema[0].name, 'title');
+    assert.equal(content.schema?.[0]?.name, 'title');
     assert.ok(fetchImpl.requests.some((url) => url.includes('offset=2')));
   });
 
@@ -128,14 +137,15 @@ describe('fetchCompositeFields', () => {
   it('answers the definitions by id', async () => {
     const client = new TsubameClient(options(), { fetchImpl: createApiFetch() });
     const composites = await client.fetchCompositeFields();
-    assert.equal(composites.get('block')[0].name, 'text');
+    assert.equal(composites.get('block')?.[0]?.name, 'text');
   });
 
   it('answers an empty map when the route predates the feature', async () => {
+    /** @type {string[]} */
     const warnings = [];
     const client = new TsubameClient(options(), {
       fetchImpl: async () => jsonResponse({ code: 'not_found' }, 404),
-      reporter: { warn: (message) => warnings.push(message) },
+      reporter: { warn: (/** @type {string} */ message) => warnings.push(message) },
     });
     // Building against a CMS older than the route still works, with a warning that says why the
     // composite fields are untyped.
@@ -153,7 +163,7 @@ describe('fetchSchemaSnapshot', () => {
 
     assert.deepEqual(snapshot.collectionNames, ['blog', 'authors']);
     assert.deepEqual(snapshot.pageNames, ['home']);
-    assert.equal(snapshot.pages.get('home')[0].name, 'title');
+    assert.equal(snapshot.pages.get('home')?.[0]?.name, 'title');
     assert.ok(fetchImpl.requests.some((url) => url.includes('limit=1')));
   });
 

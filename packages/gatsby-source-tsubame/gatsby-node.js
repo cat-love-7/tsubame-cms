@@ -20,6 +20,10 @@ const { buildTypeDefinitions } = require('./src/types');
 const { sourceAll } = require('./src/nodes');
 const { loadRemoteFileCreator } = require('./src/images');
 
+/**
+ * @param {{Joi: any}} gatsby the injected Joi
+ * @returns {any} the options schema
+ */
 exports.pluginOptionsSchema = ({ Joi }) =>
   Joi.object({
     apiUrl: Joi.string()
@@ -77,6 +81,12 @@ exports.pluginOptionsSchema = ({ Joi }) =>
     }).description('Image files: whether to download them for the sharp plugins.'),
   });
 
+/**
+ * @param {Pick<import('./src/nodes.js').GatsbyApi, 'actions' | 'reporter'>} gatsbyApi
+ *   the actions and reporter Gatsby hands the hook
+ * @param {import('./src/options.js').PluginOptions} pluginOptions the plugin options
+ * @returns {Promise<void>} a promise that resolves once the schema is declared
+ */
 exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions) => {
   const options = normalizeOptions(pluginOptions, reporter);
 
@@ -114,6 +124,11 @@ exports.createSchemaCustomization = async ({ actions, reporter }, pluginOptions)
   );
 };
 
+/**
+ * @param {import('./src/nodes.js').GatsbyApi} gatsbyApi the Gatsby node API
+ * @param {import('./src/options.js').PluginOptions} pluginOptions the plugin options
+ * @returns {Promise<void>} a promise that resolves once the nodes are sourced
+ */
 exports.sourceNodes = async (gatsbyApi, pluginOptions) => {
   const options = normalizeOptions(pluginOptions, gatsbyApi.reporter);
   const client = new TsubameClient(options, { reporter: gatsbyApi.reporter });

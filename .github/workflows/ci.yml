@@ -114,6 +114,10 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: ../scripts/test-frontend.sh
+      # The packages' JSDoc types, checked with the TypeScript this job just installed: they ship
+      # JavaScript and have no toolchain of their own, which is why the check lives here rather
+      # than in their jobs (those download nothing, by design).
+      - run: ../scripts/check-package-types.sh
 
   migration:
     name: Migration script

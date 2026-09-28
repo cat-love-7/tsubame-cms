@@ -19,6 +19,39 @@ const { imageKey } = require('./fields');
  */
 
 /**
+ * The two URL resolvers downloading needs, so a test can pass a stand-in for the client.
+ *
+ * @typedef {{absoluteUrl: (path: string) => string | null, apiPathUrl: (path: string) => string | null}} UrlResolver
+ */
+
+/**
+ * The options `createRemoteFileNode` is called with. Only the ones the plugin passes are described.
+ *
+ * @typedef {object} RemoteFileOptions
+ * @property {string} url the URL to fetch
+ * @property {any} [cache] Gatsby's cache
+ * @property {any} [getCache] the cache factory
+ * @property {(node: import('./nodes.js').GatsbyNode) => void} createNode creates the `File` node
+ * @property {(key: string) => string} createNodeId the node-id factory
+ * @property {Record<string, any>} [httpHeaders] headers sent when fetching the image
+ * @property {string | null} [ext] the file extension, dot included
+ */
+
+/**
+ * `createRemoteFileNode`, or a stand-in.
+ *
+ * @typedef {(options: RemoteFileOptions) => Promise<{id: string}>} RemoteFileCreator
+ */
+
+/**
+ * Where an image's bytes are fetched from, and the identity those bytes are reused by.
+ *
+ * @typedef {object} ImageSource
+ * @property {string} url the absolute URL to fetch
+ * @property {string | null} key the identity to reuse by, null when it can never be reused
+ */
+
+/**
  * `createRemoteFileNode`, or a refusal that says what to install.
  *
  * Resolved from the site root first, not from this file's own directory: a plugin installed by path
@@ -29,6 +62,9 @@ const { imageKey } = require('./fields');
  *
  * `reporter.panic` rather than a thrown error: this is a build that cannot proceed, not a page that
  * cannot render, and the message is the whole value.
+ *
+ * @param {import('./options.js').WarningReporter & {panic: (message: string) => void}} reporter the reporter
+ * @returns {RemoteFileCreator} the loaded creator
  */
 function loadRemoteFileCreator(reporter) {
   let filesystem = null;
@@ -66,7 +102,12 @@ function loadRemoteFileCreator(reporter) {
  * CMS no longer serves should cost one picture, not the whole site. The image's own `url`/`id`
  * fields still carry the remote location either way.
  *
- * @param {object} params `createRemoteFileNode` is injectable for tests; otherwise it is loaded.
+ * @param {object} params the run's pieces
+ * @param {import('./nodes.js').GatsbyApi} params.gatsbyApi the Gatsby node API
+ * @param {UrlResolver} params.client the URL resolvers
+ * @param {import('./fields.js').NormalizedImage[]} params.images the images to fetch
+ * @param {import('./options.js').NormalizedOptions} params.options the plugin options
+ * @param {RemoteFileCreator} [params.createRemoteFileNode] a stand-in for tests
  * @returns {Promise<Map<string, string>>} image key -> `File` node id
  */
 async function downloadImages({ gatsbyApi, client, images, options, createRemoteFileNode }) {
@@ -82,8 +123,8 @@ async function downloadImages({ gatsbyApi, client, images, options, createRemote
 
     const reusable = source.key === null ? undefined : existing.get(source.key);
     if (reusable !== undefined) {
-      actions.touchNode(reusable);
-      return [imageKey(image), reusable.id];
+      actions.touchNode(/** @type {import('./nodes.js').GatsbyNode} */ (reusable));
+      return /** @type {[string, string]} */ ([imageKey(image), reusable.id]);
     }
 
     try {
@@ -98,9 +139,9 @@ async function downloadImages({ gatsbyApi, client, images, options, createRemote
         // looks at images, so the URL's extension is what makes the File usable.
         ext: extensionOf(image.url),
       });
-      return [imageKey(image), fileNode.id];
+      return /** @type {[string, string]} */ ([imageKey(image), fileNode.id]);
     } catch (error) {
-      reporter.warn(`[gatsby-source-tsubame] could not download image ${source.url}: ${error.message}`);
+      reporter.warn(`[gatsby-source-tsubame] could not download image ${source.url}: ${/** @type {Error} */ (error).message}`);
       return null;
     }
   });
@@ -114,8 +155,12 @@ async function downloadImages({ gatsbyApi, client, images, options, createRemote
  * `File` nodes carry the `url` they were fetched from (`createRemoteFileNode` sets it), which is the
  * only thing that says which of them are this plugin's remote images: a locally sourced file has no
  * `url`, and another plugin's would have a different one.
+ *
+ * @param {((type: string) => Array<Record<string, any> | null>) | undefined} getNodesByType the node store lookup
+ * @returns {Map<string, Record<string, any>>} the reusable files, by the identity of their bytes
  */
 function reusableFiles(getNodesByType) {
+  /** @type {Map<string, Record<string, any>>} */
   const byKey = new Map();
   if (typeof getNodesByType !== 'function') {
     return byKey;
@@ -136,6 +181,10 @@ function reusableFiles(getNodesByType) {
  * Where an image's bytes are fetched from, and the identity those bytes are reused by.
  *
  * `key` is null for the id link - see [`sourceKey`] for why that one can never be reused.
+ *
+ * @param {import('./fields.js').NormalizedImage} image the image value
+ * @param {UrlResolver} client the URL resolvers
+ * @returns {ImageSource | null} where to fetch it from, or null when there is nowhere
  */
 function imageSource(image, client) {
   if (typeof image.url === 'string' && image.url !== '') {
@@ -165,6 +214,9 @@ function imageSource(image, client) {
  * (`docs/content-api.md`, "Replacement applies only to …"), and it is the same mistake here. The id link is
  * deliberately given no key: it resolves to whatever the object is now, so its path survives a
  * replacement and reusing it would keep serving the picture that was replaced.
+ *
+ * @param {string} url the URL to identify
+ * @returns {string | null} the identity, or null when it is not a URL
  */
 function sourceKey(url) {
   try {
@@ -175,7 +227,12 @@ function sourceKey(url) {
   }
 }
 
-/** The URL's extension, dot included, when it looks like one; null lets the caller derive it. */
+/**
+ * The URL's extension, dot included, when it looks like one; null lets the caller derive it.
+ *
+ * @param {unknown} url the URL
+ * @returns {string | null} the extension, or null
+ */
 function extensionOf(url) {
   if (typeof url !== 'string') {
     return null;

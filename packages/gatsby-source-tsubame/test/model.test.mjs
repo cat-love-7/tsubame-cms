@@ -60,23 +60,23 @@ describe('reservedFieldNames', () => {
 
 describe('buildContentModel', () => {
   it('renames a field that collides with one of the plugin\'s own', () => {
-    assert.equal(model.fieldNames.collections.get('blog').get('values'), 'values_2');
+    assert.equal(model.fieldNames.collections.get('blog')?.get('values'), 'values_2');
   });
 
   it('rewrites a name GraphQL cannot take', () => {
-    assert.equal(model.fieldNames.collections.get('blog').get('body-parts'), 'body_parts');
+    assert.equal(model.fieldNames.collections.get('blog')?.get('body-parts'), 'body_parts');
   });
 
   it('maps the fields of a composite definition', () => {
-    assert.equal(model.fieldNames.composites.get('block').get('text'), 'text');
-    assert.equal(model.fieldNames.composites.get('block').get('link'), 'link');
+    assert.equal(model.fieldNames.composites.get('block')?.get('text'), 'text');
+    assert.equal(model.fieldNames.composites.get('block')?.get('link'), 'link');
   });
 
   it('plans a type for a page a relation names but the index does not list', () => {
     assert.equal(model.plan.pages.get('contact'), 'TsubameContactPage');
     // No public schema, so no CMS fields - but it still answers to the inverse declared against it.
-    assert.equal(model.fieldNames.pages.get('contact').size, 0);
-    assert.equal(model.inverseFieldNames.get(schemaKey('page', 'contact')).get('editors'), 'editors');
+    assert.equal(model.fieldNames.pages.get('contact')?.size, 0);
+    assert.equal(model.inverseFieldNames.get(schemaKey('page', 'contact'))?.get('editors'), 'editors');
   });
 
   it('accepts a snapshot without the new composite map', () => {
@@ -232,10 +232,10 @@ describe('relation fields', () => {
   });
 
   it('trims a field that is left out of the mapping, so type, node and fieldNames agree', () => {
-    assert.equal(model.fieldNames.collections.get('blog').has('ghost'), false);
+    assert.equal(model.fieldNames.collections.get('blog')?.has('ghost'), false);
     // The fields that stay keep their names.
-    assert.equal(model.fieldNames.collections.get('blog').get('title'), 'title');
-    assert.equal(model.fieldNames.collections.get('blog').get('mentions'), 'mentions');
+    assert.equal(model.fieldNames.collections.get('blog')?.get('title'), 'title');
+    assert.equal(model.fieldNames.collections.get('blog')?.get('mentions'), 'mentions');
   });
 
   it('plans a union for a field inside a composite definition too', () => {
@@ -286,7 +286,7 @@ describe('relation fields', () => {
     const plain = buildContentModel(snapshot, { typePrefix: 'Tsubame' });
     assert.equal(plain.relationUnions.size, 0);
     assert.equal(plain.missingRelationTargets.length, 2);
-    assert.equal(plain.fieldNames.collections.get('blog').has('related'), false);
+    assert.equal(plain.fieldNames.collections.get('blog')?.has('related'), false);
   });
 });
 
@@ -313,7 +313,7 @@ describe('inverse declarations', () => {
     assert.deepEqual(model.inverseDeclarationsByTarget.get('collection:editors'), [
       { inverseName: 'editor_of', declaringTypeName: 'TsubameBlogItem' },
     ]);
-    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'editors')).get('editor_of'), 'editor_of');
+    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'editors'))?.get('editor_of'), 'editor_of');
   });
 
   it('ignores a name declared inside a composite definition', () => {
@@ -321,13 +321,13 @@ describe('inverse declarations', () => {
     // collections, so it is not a declaration - the same rule the delivery API follows.
     const declared = model.inverseDeclarationsByTarget.get('collection:authors') ?? [];
     assert.equal(declared.some((entry) => entry.inverseName === 'blocks'), false);
-    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors')).has('blocks'), false);
+    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors'))?.has('blocks'), false);
   });
 
   it('plans a GraphQL name for each inverse', () => {
-    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors')).get('articles'), 'articles');
-    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors')).get('features'), 'features');
-    assert.equal(model.inverseFieldNames.get(schemaKey('page', 'contact')).get('editors'), 'editors');
+    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors'))?.get('articles'), 'articles');
+    assert.equal(model.inverseFieldNames.get(schemaKey('collection', 'authors'))?.get('features'), 'features');
+    assert.equal(model.inverseFieldNames.get(schemaKey('page', 'contact'))?.get('editors'), 'editors');
   });
 
   it('reports them in the node\'s fieldNames beside the CMS fields', () => {
@@ -345,6 +345,6 @@ describe('the model over the fixture blog schema', () => {
     }
     // One less than the schema, because `blog.ghost` names a target the CMS does not answer and is
     // left out of the mapping with the type.
-    assert.equal(BLOG_SCHEMA.length - 1, model.fieldNames.collections.get('blog').size);
+    assert.equal(BLOG_SCHEMA.length - 1, model.fieldNames.collections.get('blog')?.size);
   });
 });

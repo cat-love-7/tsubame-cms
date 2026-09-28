@@ -10,9 +10,23 @@ const { fetchPreview, createContentClient } = preview;
 
 const CMS = 'https://cms.example.test';
 
-/** A `fetch` that answers from a table of `path -> answer` and remembers what it was asked. */
+/**
+ * A refusal the API answered, as the tests read it back.
+ *
+ * @typedef {import('../src/client.js').RefusalError} RefusalError
+ */
+
+/**
+ * A `fetch` that answers from a table of `path -> answer` and remembers what it was asked. A missing
+ * path is a 404, a number is that status, and anything else is the JSON body.
+ *
+ * @param {Record<string, unknown>} answers
+ * @returns {{ fetchImpl: import('../src/client.js').FetchLike, calls: string[] }}
+ */
 function fakeFetch(answers) {
+  /** @type {string[]} */
   const calls = [];
+  /** @type {import('../src/client.js').FetchLike} */
   const fetchImpl = async (url) => {
     calls.push(url);
     const path = url.replace(CMS, '').split('?')[0];
@@ -72,7 +86,7 @@ describe('fetchPreview', () => {
         token: '1.abc',
         fetchImpl,
       }),
-      (error) => error.status === 403 && /refused 403/.test(error.message),
+      (/** @type {RefusalError} */ error) => error.status === 403 && /refused 403/.test(error.message),
     );
   });
 
@@ -153,7 +167,7 @@ describe('createContentClient', () => {
 
     await assert.rejects(
       client.loadPublished({ kind: 'collection', name: 'authors', item: 9 }),
-      (error) => error.status === 500,
+      (/** @type {RefusalError} */ error) => error.status === 500,
     );
   });
 });
