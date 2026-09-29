@@ -21,8 +21,8 @@ package itself ships `gatsby-node.js`, `src/` and this README.
 ## 1. Usage
 
 ```console
+$ npm install gatsby-source-tsubame
 $ npm install gatsby-transformer-remark
-$ npm install ../path/to/packages/gatsby-source-tsubame   # the plugin in this repository
 ```
 
 ```javascript

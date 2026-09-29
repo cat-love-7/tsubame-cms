@@ -25,7 +25,7 @@ Reads composite field definitions    GET https://cms.example.com/api/content/com
 4. Render it with the site's own components
 
 ```console
-$ npm install ../path/to/packages/tsubame-preview
+$ npm install tsubame-preview
 ```
 
 ## Usage (framework-agnostic)
