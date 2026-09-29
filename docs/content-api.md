@@ -40,6 +40,13 @@ neither copy.
   This is what makes the "can edit but cannot publish" role safe.
 - No working copy = no pending changes. `publish` replaces the published copy with the working
   copy and deletes the working copy (if there is nothing, it only updates `published_at`).
+- **A save with nothing to change writes nothing.** Values that are what the published copy already
+  holds leave no working copy behind and do not move `updated_at`, so pressing save on an untouched
+  published item is not a change - the screens read `has_draft`, which is the working copy being
+  there at all, and a working copy identical to the published one would report changes that no
+  comparison can show. Values are compared the way a read is formatted, so a field the form filled
+  in with its default is not a difference either. An item that is off the site has no published copy
+  to be unchanged from, so its saves always wait as a working copy.
 - Status and timestamps live in a **separate store** (`item_metadata`) from the values. A Schema
   field named `status` or `published_at` does not collide.
 - Deleting a Collection / Single page / Item also deletes the working copy and the metadata.
@@ -59,8 +66,8 @@ neither copy.
   through unpublish ("the day this article was published" is a fact about the Item, not the current
   state). The **time the update was published** is held by `updated_at`.
 - `created_at` is the time it was first saved, `updated_at` is **the time the content last changed**
-  (on save, or when changes were published). A publish with nothing pending moves neither (only
-  `published_by` is updated).
+  (on save, or when changes were published). A publish with nothing pending moves neither, and
+  neither does a save with nothing to change (see above).
 - The admin API metadata returns `has_draft`. Published + `has_draft: true` is the state "published,
   but with unpublished changes", and the admin screen shows this as "has changes".
 - **You may `publish` an already published Item again.** That is the operation that applies pending

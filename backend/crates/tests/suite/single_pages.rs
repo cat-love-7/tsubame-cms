@@ -155,3 +155,85 @@ async fn single_page_crud_round_trip() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// A published page saved with the values it already has is not a change (see
+/// `publishing::saving_what_the_site_already_serves_is_not_a_change`).
+#[tokio::test]
+async fn saving_a_published_page_unchanged_leaves_no_working_copy() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/about/schema",
+        Some(&token),
+        Some(sample_schema()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/single_pages/about/item",
+        Some(&token),
+        Some(json!({ "title": "About", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        "/api/models/single_pages/about/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, values) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/single_pages/about/item",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, before) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/single_pages/about/item/metadata",
+        Some(&token),
+        None,
+    )
+    .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        "/api/models/single_pages/about/item",
+        Some(&token),
+        Some(values),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, after) = send(
+        &app.router,
+        Method::GET,
+        "/api/models/single_pages/about/item/metadata",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        after["has_draft"], false,
+        "nothing is waiting to be published"
+    );
+    assert_eq!(
+        timestamp(&after["updated_at"]),
+        timestamp(&before["updated_at"]),
+        "and the content clock does not move either"
+    );
+}

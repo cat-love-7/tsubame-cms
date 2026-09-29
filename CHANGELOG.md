@@ -29,6 +29,18 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   The check wants `npm ci` in `frontend/`, which is where TypeScript and `@types/node` come from -
   the packages themselves carry no toolchain.
 
+### Fixed
+
+- **Saving a published item without changing anything no longer leaves an unpublished draft.** The
+  screens report "unpublished changes" from a working copy being there at all, so pressing save on
+  an untouched item left one that differed from the published copy in no field: a notice no
+  comparison could justify, over a publish that would have released nothing, and a moved
+  `updated_at` for content nobody changed. A save whose values are what the site already serves now
+  writes no working copy and leaves the content clock alone - the rule publishing with nothing
+  waiting already followed. Saving the published values *back* drops the working copy and gives up
+  the unique value it was holding, and an item that is off the site keeps waiting in one. Single
+  pages follow the same rule.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

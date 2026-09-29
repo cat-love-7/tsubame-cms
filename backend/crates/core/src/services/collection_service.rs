@@ -658,15 +658,15 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 // The same normalisation as a create: a save stores the canonical slug, so the
                 // index keeps holding what a URL will ask for.
                 let item_data = self.normalise_slugs(&schema, item_data)?;
+                // Read once: validating these values and comparing them with the published copy
+                // both need the composite definitions.
+                let composite_schemas = self
+                    .composite_field_repository
+                    .list_composite_field_schemas()
+                    .await
+                    .map_err(map_internal_error)?;
                 item_data
-                    .validate_draft(
-                        &self
-                            .composite_field_repository
-                            .list_composite_field_schemas()
-                            .await
-                            .map_err(map_internal_error)?,
-                        &schema,
-                    )
+                    .validate_draft(&composite_schemas, &schema)
                     .map_err(|e| e.into_http_error())?;
                 // Everything below works from the normalised copy.
                 let item_data = &item_data;
@@ -692,6 +692,21 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     .map_err(map_internal_error)?
                     .unwrap_or_default()
                     .is_published();
+                // A save that writes back what the site is already serving is not a change. The
+                // admin screens report "unpublished changes" from a working copy being there at
+                // all (`has_draft`), so an untouched save used to leave one that differs from the
+                // published copy in no field: changes no diff can show, and a publish button
+                // offering to release nothing.
+                //
+                // Compared the way a read is formatted (`format_to_schema`), so a field the form
+                // filled in with its default - or one the stored copy predates - is not a
+                // difference either. Only a published item has a copy to be unchanged from: an
+                // item that is off the site has no live version to report changes against.
+                let untouched = is_published
+                    && published.as_ref().is_some_and(|stored| {
+                        stored.format_to_schema(&composite_schemas, &schema)
+                            == item_data.format_to_schema(&composite_schemas, &schema)
+                    });
                 let before = Self::held_unique_values_for_status(
                     &schema,
                     is_published,
@@ -702,19 +717,27 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     &schema,
                     is_published,
                     published.as_ref(),
-                    Some(item_data),
+                    // A save that changed nothing leaves the published copy as the only one.
+                    if untouched { None } else { Some(item_data) },
                 );
                 let (reserve, release) = Self::unique_difference(&before, &after);
                 self.reserve_unique_values(collection_name, &item_id, &reserve)
                     .await?;
 
                 // Saved into the working copy: the published item keeps serving the live
-                // site until this version is published.
-                if let Err(e) = self
-                    .collection_repository
-                    .set_collection_item_draft(collection_name, &item_id, item_data)
-                    .await
-                {
+                // site until this version is published. A save with nothing to change writes no
+                // working copy at all - the state a publish with nothing waiting already finds
+                // the item in - which is also what gives up whatever the copy it replaces held.
+                let stored = if untouched {
+                    self.collection_repository
+                        .delete_collection_item_draft(collection_name, &item_id)
+                        .await
+                } else {
+                    self.collection_repository
+                        .set_collection_item_draft(collection_name, &item_id, item_data)
+                        .await
+                };
+                if let Err(e) = stored {
                     // Nothing was made visible, so give back what this call claimed.
                     self.release_unique_values(collection_name, &item_id, &reserve)
                         .await;
@@ -723,7 +746,8 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 self.release_unique_values(collection_name, &item_id, &release)
                     .await;
                 // Both copies while the item is published: the site is still serving the published
-                // one, and this save only replaced the working copy.
+                // one, and this save only replaced the working copy - or dropped it, when there
+                // was nothing to change.
                 self.record_image_references(
                     collection_name,
                     &item_id,
@@ -735,7 +759,11 @@ impl<CR: CollectionRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                     },
                 )
                 .await;
-                self.stamp_item(collection_name, item_id, false).await?;
+                // Nothing changed, so the content clock does not move either: the rule a publish
+                // with nothing waiting already follows.
+                if !untouched {
+                    self.stamp_item(collection_name, item_id, false).await?;
+                }
                 Ok(())
             }
         }

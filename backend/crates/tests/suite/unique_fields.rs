@@ -215,6 +215,105 @@ async fn a_published_value_stays_reserved_while_a_draft_changes_it() {
     );
 }
 
+/// Saving the published value back drops the working copy, so the value that copy was holding has
+/// to be given up with it: the index follows the copies, and that one is gone.
+#[tokio::test]
+async fn saving_the_published_value_back_frees_the_working_copy_value() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+
+    let schema = json!([{
+        "name": "slug",
+        "field_type": { "Text": {} },
+        "required": false,
+        "width": 12,
+        "height": 1,
+        "unique": true
+    }]);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/schema",
+        Some(&token),
+        Some(schema),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/items/1/publish",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // An edit holds the value it moved to...
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/api/models/collections/pages/items/1",
+        Some(&token),
+        Some(json!({ "slug": "welcome" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "welcome" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "the working copy holds it");
+
+    // ...and saving the published value back leaves no working copy, so that value goes with it.
+    let (status, body) = send_raw(
+        &app.router,
+        Method::PUT,
+        "/api/models/collections/pages/items/1",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let (status, body) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "welcome" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "nothing holds it any more: {}",
+        String::from_utf8_lossy(&body)
+    );
+    // The published value is still the published one, and it is still held.
+    let (status, _) = send_raw(
+        &app.router,
+        Method::POST,
+        "/api/models/collections/pages/item",
+        Some(&token),
+        Some(json!({ "slug": "intro" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "the live copy still holds it");
+}
+
 /// Taking a published item down frees the value its published copy held, while the working copy
 /// keeps its own: nothing serves the published copy any more, but that draft is still an item's
 /// content.

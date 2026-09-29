@@ -492,28 +492,62 @@ impl<SR: SinglePageRepository, CFR: CompositeFieldRepository, IR: ImageRepositor
                 name
             ))),
             Some(schema) => {
+                // Read once: validating these values and comparing them with the published copy
+                // both need the composite definitions.
+                let composite_schemas = self
+                    .composite_field_repository
+                    .list_composite_field_schemas()
+                    .await
+                    .map_err(map_internal_error)?;
                 // A working copy may be incomplete; publishing is what asks for the required
                 // fields (see `FieldValueMap::validate_draft`).
                 item_data
-                    .validate_draft(
-                        &self
-                            .composite_field_repository
-                            .list_composite_field_schemas()
-                            .await
-                            .map_err(map_internal_error)?,
-                        &schema,
-                    )
+                    .validate_draft(&composite_schemas, &schema)
                     .map_err(|e| e.into_http_error())?;
 
-                // Saved into the working copy: the published page keeps serving the live
-                // site until this version is published.
-                self.single_page_repository
-                    .set_single_page_item_draft(name, item_data)
+                // A save that writes back what the site is already serving is not a change: the
+                // screens report "unpublished changes" from a working copy being there at all,
+                // so an untouched save would report changes that no diff can show (see
+                // `CollectionService::update_collection_item` for the comparison).
+                let published = self
+                    .single_page_repository
+                    .get_single_page_item(name)
                     .await
                     .map_err(map_internal_error)?;
+                let is_published = self
+                    .single_page_repository
+                    .get_page_metadata(name)
+                    .await
+                    .map_err(map_internal_error)?
+                    .unwrap_or_default()
+                    .is_published();
+                let untouched = is_published
+                    && published.as_ref().is_some_and(|stored| {
+                        stored.format_to_schema(&composite_schemas, &schema)
+                            == item_data.format_to_schema(&composite_schemas, &schema)
+                    });
+
+                if untouched {
+                    // The state the page is already in: nothing is waiting to be published.
+                    self.single_page_repository
+                        .delete_single_page_item_draft(name)
+                        .await
+                        .map_err(map_internal_error)?;
+                } else {
+                    // Saved into the working copy: the published page keeps serving the live
+                    // site until this version is published.
+                    self.single_page_repository
+                        .set_single_page_item_draft(name, item_data)
+                        .await
+                        .map_err(map_internal_error)?;
+                }
                 // Both copies: the published one may still be serving.
                 self.record_image_references(name).await;
-                self.stamp_page(name).await?;
+                // Nothing changed, so the content clock does not move either (see the collection
+                // side).
+                if !untouched {
+                    self.stamp_page(name).await?;
+                }
                 Ok(())
             }
         }

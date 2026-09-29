@@ -1586,6 +1586,25 @@ async function whatIsLiveAndTakingChangesBack() {
       .has_draft === false,
   );
 
+  // Saving the published values back must not leave the item claiming to have changes: the screen
+  // reports "Unsaved changes" from a working copy being there at all, so an untouched save used to
+  // report changes that no comparison can show.
+  await saveAndWait();
+  await page.goto(`${BASE}/collections/${COLLECTION}/edit/1`, { waitUntil: 'networkidle' });
+  await titleField.waitFor({ timeout: 15000 });
+  const afterNoopSave = await api(
+    'GET',
+    `/models/collections/${COLLECTION}/items/1/metadata`,
+    undefined,
+    token,
+  );
+  check(
+    'Saving an unchanged published item reports no unpublished changes',
+    afterNoopSave.has_draft === false &&
+      (await page.locator('.draft-note', { hasText: 'Unsaved changes' }).count()) === 0,
+    `has_draft=${afterNoopSave.has_draft}`,
+  );
+
   // Leaving with unsaved edits asks first: the answer is the person's.
   await titleField.fill(`left behind ${Date.now()}`);
   dialogAnswer = 'dismiss';

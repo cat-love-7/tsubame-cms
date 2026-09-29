@@ -669,3 +669,93 @@ async fn edits_wait_in_the_working_copy_until_they_are_published() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["values"]["title"], "Waiting");
 }
+
+/// A save that writes back what the site is already serving is not a change.
+///
+/// The screens report "unpublished changes" from `has_draft`, which is a working copy being there
+/// at all - so an untouched save used to leave one that differed from the published copy in no
+/// field: a notice no diff could justify, over a publish that would release nothing.
+#[tokio::test]
+async fn saving_what_the_site_already_serves_is_not_a_change() {
+    let app = test_app().await;
+    let token = app.admin_token.clone();
+    let item_id = create_sample_item(&app, "blog").await;
+    let item_url = format!("/api/models/collections/blog/items/{item_id}");
+    let metadata_url = format!("{item_url}/metadata");
+    let content_url = format!("/api/content/collections/blog/items/{item_id}");
+
+    // Publish, so there is a copy the site serves for the save to be unchanged from.
+    let (status, _) = send(
+        &app.router,
+        Method::POST,
+        &format!("{item_url}/publish"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, values) = send(&app.router, Method::GET, &item_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, before) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The editor opens the item and presses save without touching a field.
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(values.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, after) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        after["has_draft"], false,
+        "nothing is waiting to be published"
+    );
+    assert_eq!(
+        timestamp(&after["updated_at"]),
+        timestamp(&before["updated_at"]),
+        "and the content clock does not move either"
+    );
+
+    // A change is still a change: it waits in the working copy, and the site keeps serving the
+    // published copy until it is released.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(json!({ "title": "Edited", "tags": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, pending) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(pending["has_draft"], true, "an edit is waiting");
+    let (_, live) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(live["values"]["title"], "Hello");
+
+    // Saving the published values back is the undo: the working copy it was compared against is
+    // gone, and nothing had to be published to get there.
+    let (status, _) = send(
+        &app.router,
+        Method::PUT,
+        &item_url,
+        Some(&token),
+        Some(values),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, undone) = send(&app.router, Method::GET, &metadata_url, Some(&token), None).await;
+    assert_eq!(
+        undone["has_draft"], false,
+        "the working copy it replaced is gone"
+    );
+    let (status, body) = send(&app.router, Method::GET, &content_url, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["values"]["title"], "Hello");
+}
