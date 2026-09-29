@@ -45,7 +45,7 @@ scripts/smoke-test.sh <app-url>   # what a deployment answers over HTTP; no AWS 
 # A release is a tag: `release.yml` checks the version, stages both packages on npm with OIDC, and
 # creates the GitHub Release. `npm publish` by hand is only for a package's very first version.
 #   scripts/stage-packages.sh   # what the tag runs; a person approves the staged versions with 2FA
-#   scripts/changelog-notes.sh v0.2.0   # the release notes, as `gh release create` wants them
+#   scripts/changelog-notes.sh v0.2.1   # the release notes, as `gh release create` wants them
 # Against a deployment, with APP_URL/ADMIN_USERNAME/ADMIN_PASSWORD (staging; see e2e/README.md):
 #   node frontend/e2e/hosted-signin.mjs    # sign in through the provider
 #   node frontend/e2e/hosted-accounts.mjs  # create, reset, sign in as it, remove

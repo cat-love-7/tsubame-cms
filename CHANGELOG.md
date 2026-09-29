@@ -11,6 +11,8 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-29
+
 ### Added
 
 - **A local demo with the sample site already in it.** `scripts/demo.sh` starts the self-hosted
@@ -37,6 +39,12 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   dependency, and an annotation that stops being true is now a failing check rather than a comment.
   The check wants `npm ci` in `frontend/`, which is where TypeScript and `@types/node` come from -
   the packages themselves carry no toolchain.
+
+- **The published packages' READMEs install from npm.** They told a reader to install
+  `../path/to/packages/...`, which is how this repository installs them from a checkout and is wrong
+  for everybody else: `npm install gatsby-source-tsubame` and `npm install tsubame-preview` are what
+  they say now, both manifests carry an `author`, and the plugin's README ends with how to develop it
+  against a local CMS and how to send a change.
 
 ### Fixed
 
@@ -219,6 +227,7 @@ not. The npm packages are published from short of a build: `tsubame-preview` ren
 - **The design documents** in `docs/`: the content API, relations, the frontend's vocabulary,
   localisation, the preview-site contract, and the AWS decision record.
 
-[Unreleased]: https://github.com/cat-love-7/tsubame-cms/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/cat-love-7/tsubame-cms/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cat-love-7/tsubame-cms/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cat-love-7/tsubame-cms/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cat-love-7/tsubame-cms/releases/tag/v0.1.0

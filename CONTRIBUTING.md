@@ -105,16 +105,20 @@ crates inherit `version.workspace = true` rather than repeating it.
 Before `1.0.0` there is no major number to move, so the convention here is that **a breaking change
 is a minor bump** and a fix is a patch: `0.1.x` is compatible with `0.1.0`, and `0.2.0` is where the
 relation model changed. A release that only adds something is a minor bump too; there is no
-"compatible feature" rung below it while the number starts with zero.
+"compatible feature" rung below it while the number starts with zero. "Adds something" is what a
+deployment or a site sees - the API, the admin interface, the packages - so a release of fixes and
+of the tooling around them (scripts, CI, the design documents, this repository's own packaging) is a
+patch.
 
 1. Bump the number in all four places: `backend/Cargo.toml` (`[workspace.package]`), both
    `packages/*/package.json`, and `frontend/package.json` - private, but it carries the number so
-   that `grep 0.2.0` finds every place at once. `frontend/package-lock.json` repeats it, because
+   that `grep 0.2.1` finds every place at once. `frontend/package-lock.json` repeats it, because
    `npm ci` compares the two: run `npm install --package-lock-only` in `frontend/` (or let the check
-   below name the file for you).
+   below name the file for you). `backend/Cargo.lock` repeats it too, for the workspace's own crates;
+   a `cargo check` writes it.
 2. Move `CHANGELOG.md`'s `Unreleased` section under the new number with the date.
-3. Run the release check with the tag the commit is about to get: `scripts/check-version.sh v0.2.0`.
-4. Tag it and push the tag: `git tag -a v0.2.0 -m v0.2.0`, then `git push origin v0.2.0`.
+3. Run the release check with the tag the commit is about to get: `scripts/check-version.sh v0.2.1`.
+4. Tag it and push the tag: `git tag -a v0.2.1 -m v0.2.1`, then `git push origin v0.2.1`.
 
 The tag starts `.github/workflows/release.yml`, which checks the tag against the manifests again,
 runs both packages' suites, **stages** the two versions on npm, and creates the GitHub Release with

@@ -36,7 +36,7 @@ body:
     attributes:
       label: What you are running
       description: The release or commit, and which half - the on-premises binary, or the AWS deployment. For a plugin, the package and version.
-      placeholder: '0.2.0, on-premises, Node 24'
+      placeholder: '<version>, on-premises, Node 24'
     validations:
       required: true
 
