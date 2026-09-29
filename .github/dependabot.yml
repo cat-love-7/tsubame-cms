@@ -1,0 +1,62 @@
+# Keep the pinned dependencies current without a person watching them.
+#
+# One entry per manifest that has dependencies, so each update is its own pull request and CI's
+# per-area jobs answer for it: a group keeps a week's updates in one pull request rather than one
+# per package, which is what a repository with one maintainer wants.
+#
+# `packages/tsubame-preview` has no dependencies at all (`dependencies: {}`), so there is nothing
+# to watch there.
+version: 2
+updates:
+  # The workflows pin an action per job. A stale action is a security report waiting to happen, and
+  # these move rarely enough that one weekly pull request is the whole cost.
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: '/backend'
+    schedule:
+      interval: weekly
+    groups:
+      crates:
+        patterns: ['*']
+
+  # The admin app is the manifest with the most dependencies of the three.
+  - package-ecosystem: npm
+    directory: '/frontend'
+    schedule:
+      interval: weekly
+    groups:
+      admin:
+        patterns: ['*']
+
+  # The plugin's manifest is only the Gatsby it runs its real build test against.
+  - package-ecosystem: npm
+    directory: '/packages/gatsby-source-tsubame'
+    schedule:
+      interval: weekly
+    groups:
+      plugin:
+        patterns: ['*']
+
+  # The providers are pinned by `versions.tf` in each root; neither has a lock file to update.
+  - package-ecosystem: terraform
+    directory: '/infra'
+    schedule:
+      interval: weekly
+    groups:
+      providers:
+        patterns: ['*']
+
+  - package-ecosystem: terraform
+    directory: '/infra/bootstrap'
+    schedule:
+      interval: weekly
+    groups:
+      providers:
+        patterns: ['*']
