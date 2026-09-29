@@ -16,7 +16,7 @@ const sources = (
   import.meta as unknown as {
     glob(pattern: string, options: Record<string, unknown>): Record<string, string>;
   }
-).glob('../../**/*.{html,ts}', { query: '?raw', import: 'default', eager: true });
+).glob('/src/app/**/*.{html,ts}', { query: '?raw', import: 'default', eager: true });
 
 /** Just the code that ships: not the specs, and not this file. */
 const CODE = Object.entries(sources).filter(
