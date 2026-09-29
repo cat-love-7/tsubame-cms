@@ -1,8 +1,15 @@
 # Keep the pinned dependencies current without a person watching them.
 #
 # One entry per manifest that has dependencies, so each update is its own pull request and CI's
-# per-area jobs answer for it: a group keeps a week's updates in one pull request rather than one
-# per package, which is what a repository with one maintainer wants.
+# per-area jobs answer for it: a group keeps a week's non-breaking updates in one pull request
+# rather than one per package, which is what a repository with one maintainer wants.
+#
+# A group holds **minor and patch updates only**. The first run after this file was added made the
+# case: the admin group arrived as one pull request with nineteen updates in it, from a patch of
+# `jsdom` to TypeScript 7 and Vitest 5 - so the whole thing failed CI and none of the safe updates
+# could be taken without also taking the unsafe ones. A major version is a change somebody has to
+# make, not a version to bump: it arrives alone, where the pull request, the CI failure and the
+# release notes are all about it.
 #
 # `packages/tsubame-preview` has no dependencies at all (`dependencies: {}`), so there is nothing
 # to watch there.
@@ -17,6 +24,7 @@ updates:
     groups:
       actions:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: cargo
     directory: '/backend'
@@ -25,6 +33,7 @@ updates:
     groups:
       crates:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   # The admin app is the manifest with the most dependencies of the three.
   - package-ecosystem: npm
@@ -34,6 +43,7 @@ updates:
     groups:
       admin:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   # The plugin's manifest is only the Gatsby it runs its real build test against.
   - package-ecosystem: npm
@@ -43,6 +53,7 @@ updates:
     groups:
       plugin:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   # The providers are pinned by `versions.tf` in each root; neither has a lock file to update.
   - package-ecosystem: terraform
@@ -52,6 +63,7 @@ updates:
     groups:
       providers:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: terraform
     directory: '/infra/bootstrap'
@@ -60,3 +72,4 @@ updates:
     groups:
       providers:
         patterns: ['*']
+        update-types: ['minor', 'patch']
