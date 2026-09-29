@@ -25,6 +25,14 @@ updates:
       actions:
         patterns: ['*']
         update-types: ['minor', 'patch']
+    ignore:
+      # `dtolnay/rust-toolchain@1.98.1` is a **Rust version**, not an action version: all four Rust
+      # jobs pin the oldest Rust this project claims to support ("Rust 1.98+", README and
+      # CONTRIBUTING), so "updating" it would stop testing the claim. The pull request that carried
+      # `1.120.0` failed every Rust job and the Lambda build within seconds, because that ref does
+      # not exist (the API answers 404 for the tag). Moving the minimum is a decision - the four
+      # `uses:` lines and the two documents change together.
+      - dependency-name: 'dtolnay/rust-toolchain'
 
   - package-ecosystem: cargo
     directory: '/backend'
