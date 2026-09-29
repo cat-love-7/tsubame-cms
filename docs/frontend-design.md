@@ -363,3 +363,23 @@ it (measured: a Text of height 3 was a **24px** input in a 216px cell, a Markdow
   `<textarea>` only when the Schema says "multi-line". Markdown is a box from the start.
 - The cell's minimum height and the number of rows **come from the same number**, so moving the height handle in the
   schema editing preview stretches the box, and the same happens on the content editing screen.
+
+## 13. The build's size budget
+
+`angular.json` warns when the initial bundle passes **680 kB** (raw) and fails at 1 MB. The warning
+is a tripwire rather than a target, and it is worth knowing what it watches: of the **644 kB**
+measured when Angular 22.2 landed, about **85% is Angular itself** (`@angular/core` 202 kB,
+`@angular/cdk` 130 kB, `@angular/router` 103 kB, `@angular/material` 100 kB, `@angular/common`
+39 kB), our own code and styles are **89 kB**, and what the browser actually downloads is **158 kB**,
+because what serves it compresses it. The screens that are not the first one are already chunks of
+their own (220 kB, 165 kB and 107 kB, fetched when they are opened), so the initial bundle grows by
+adding to the shell or by adding a library to the shell - which is exactly what the tripwire should
+catch.
+
+The numbers come from `ng build --stats-json`: the initial set is `main` plus the chunks it imports
+statically (following `imports` of kind `import-statement`), and the per-package figures are the
+`bytesInOutput` of that set's inputs.
+
+The threshold was 640 kB before, which Angular 22.2 crossed by 4 kB - none of it ours. A warning
+that is always on is one nobody reads, including on the day it means something, so the threshold
+moved rather than the code, leaving about 5% of room before the next real conversation.
