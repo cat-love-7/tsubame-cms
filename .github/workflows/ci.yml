@@ -28,7 +28,7 @@ jobs:
     # multiples of what the job takes on a good day.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The version number lives in four files and the tag, and a crate that forgets
       # `publish = false` could be pushed to crates.io by one command with no undo. Neither is
       # something a test notices. Fast, and first, so a drift is the first thing a pull request
@@ -42,7 +42,7 @@ jobs:
     # multiples of what the job takes on a good day.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit. `rustfmt` is not part of the
       # default profile of a pinned toolchain, and the check below needs it.
@@ -63,7 +63,7 @@ jobs:
     # multiples of what the job takes on a good day.
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
       - uses: dtolnay/rust-toolchain@1.98.1
@@ -104,8 +104,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -126,8 +126,8 @@ jobs:
     # tests are the pure decisions (mapping, ordering, value translation).
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: scripts/test-migration.sh
@@ -139,8 +139,8 @@ jobs:
     # `fetch`, and its tests drive the two Gatsby hooks against a faked delivery API.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: scripts/test-gatsby-source.sh
@@ -157,8 +157,8 @@ jobs:
       run:
         working-directory: packages/gatsby-source-tsubame
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -173,8 +173,8 @@ jobs:
     # delivery API is faked, so this is the same shape as the plugin job above.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: scripts/test-preview.sh
@@ -186,7 +186,7 @@ jobs:
     # multiples of what the job takes on a good day.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
       - uses: dtolnay/rust-toolchain@1.98.1
@@ -226,14 +226,14 @@ jobs:
     # waits on for a first signal.
     needs: [rust, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
       - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -244,7 +244,7 @@ jobs:
         working-directory: frontend
       - run: scripts/test-e2e.sh
       # The harness writes what it saw to these logs; without them a failure is a mystery.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-logs
