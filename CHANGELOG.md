@@ -21,6 +21,15 @@ themselves are not published at all: `cargo add tsubame-core` is not a way to us
   now written over HTTP rather than through a browser: that is what lets the demo need nothing but
   Node, and it keeps the pictures and the demo showing the same site.
 
+- **A tag publishes the packages, after a person approves them.** Pushing a `v*` tag runs
+  `.github/workflows/release.yml`: the tag is checked against the four manifests, both packages'
+  suites are run, the two versions are **staged** on npm, and the GitHub Release is created with the
+  changelog's section for that version as its notes. The workflow authenticates with npm's trusted
+  publishing - an OIDC token, no npm token stored anywhere - and the packages' settings allow it to
+  stage only, so a version waits in npm's staging area until a maintainer approves it with 2FA:
+  reviewable, rejectable, and not installable until then. `CONTRIBUTING.md` has the one-time steps
+  around it (the first publish of a package, the trusted publisher, and forbidding tokens).
+
 ### Changed
 
 - **The two npm packages' JSDoc types are checked** (`scripts/check-package-types.sh`, which CI runs

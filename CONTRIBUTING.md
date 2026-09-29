@@ -115,14 +115,45 @@ relation model changed. A release that only adds something is a minor bump too; 
 2. Move `CHANGELOG.md`'s `Unreleased` section under the new number with the date.
 3. Run the release check with the tag the commit is about to get: `scripts/check-version.sh v0.2.0`.
 4. Tag it and push the tag: `git tag -a v0.2.0 -m v0.2.0`, then `git push origin v0.2.0`.
-5. Create the GitHub release from the tag, with the changelog section as its notes.
-6. Publish the packages when the release carries something for them:
+
+The tag starts `.github/workflows/release.yml`, which checks the tag against the manifests again,
+runs both packages' suites, **stages** the two versions on npm, and creates the GitHub Release with
+that changelog section as its notes. Nothing publishes from a branch, and nothing publishes from a
+merge: only a tag moves a version. The two things it does have their own scripts
+(`scripts/stage-packages.sh`, `scripts/changelog-notes.sh`), so either can be run from a checkout to
+see what it would do.
+
+5. Approve the staged versions. That is the step a person does, and it is why the workflow stages
+   rather than publishes:
+
+```bash
+npm stage list                 # what is waiting, with its stage id
+npm stage view <stage-id>      # what would ship, and where it was built
+npm stage approve <stage-id>   # asks for 2FA
+```
+
+The **Staged Packages** tab on npmjs.com lists the same thing, and its Approve button does the same.
+A version that is wrong is rejected instead of approved, and one that is never approved is not
+installable by anybody.
+
+### The first publish of a package, once
+
+Staging needs the package to exist on npm, so the first version of each package goes up by hand,
+once:
 
 ```bash
 cd packages/tsubame-preview
 npm pack --dry-run          # what would ship: the `files` list, plus README and LICENSE
 npm publish
 ```
+
+Then, on npmjs.com and once per package, **Settings → Trusted Publisher → GitHub Actions**: the
+repository (`cat-love-7/tsubame-cms`), the workflow filename (`release.yml` - exactly that, with the
+extension), and optionally an environment for the job. Under **Allowed actions**, permit
+**`npm stage publish` only**: that is what makes the workflow unable to publish directly, whatever
+it is told to run. Finally **Settings → Publishing access → "Require two-factor authentication
+and disallow tokens"**, so that no long-lived token can publish either - trusted publishers use
+OIDC and are not affected.
 
 Both are already `"license": "MIT"` with the licence text beside them, and neither has a dependency;
 `gatsby-source-tsubame` declares its `peerDependencies.gatsby` range, which needs widening when

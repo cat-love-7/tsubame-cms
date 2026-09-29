@@ -1,0 +1,77 @@
+# Publishing a release.
+#
+# The tag is the release (`CONTRIBUTING.md`, "Releasing"): a tag push checks the tag against the
+# four manifests, runs the two packages' suites, and hands those versions to npm's **staging area**,
+# where a person approves them with 2FA before they become installable. The GitHub Release for the
+# tag is written from the changelog's section for it.
+#
+# Staging rather than publishing is what the packages' trusted publishers are configured to allow,
+# which is why `npm publish` appears nowhere here: the credential this workflow is granted (an OIDC
+# token - short-lived, workflow-specific, from `id-token: write`) can put a version in front of a
+# reviewer, not on the registry. Staged publishing needs npm 11.15.0 or later, which the Node 24 on
+# the runner carries; `scripts/stage-packages.sh` says so plainly if it ever does not.
+#
+# Nothing is published from a branch, and nothing is published by a merge: only a tag moves a
+# version.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# What the token every job gets may do, unless the job asks for something else: one job stages the
+# packages, the other writes the repository's releases, and neither needs the other's permission.
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    name: Stage the packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # The OIDC token npm exchanges for a short-lived publish credential. Only this workflow asks
+      # for it; CI's own jobs run with a read-only token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          # A release build takes nothing from a cache: what is staged has to be what this checkout
+          # and this runner produced.
+          package-manager-cache: false
+      # The tag is the release, so the manifests have to carry the number it names - and a crate
+      # that forgot `publish = false` fails here rather than being one command away from crates.io.
+      - run: scripts/check-version.sh
+      # Neither package has a dependency, so these download nothing and need no install: they run
+      # the published source against a fake delivery API.
+      - run: scripts/test-preview.sh
+      - run: scripts/test-gatsby-source.sh
+      - run: scripts/stage-packages.sh
+
+  release:
+    name: Create the GitHub Release
+    needs: stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # The notes are the changelog's section for this version, extracted rather than retyped.
+      - run: scripts/changelog-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Re-running a release that half-finished updates the notes rather than failing on a
+          # release that is already there.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
+              --verify-tag --notes-file "$RUNNER_TEMP/notes.md"
+          fi
