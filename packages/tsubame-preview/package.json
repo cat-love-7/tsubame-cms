@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Render a signed Tsubame preview link without a build: fetch the working copy, resolve its fields against the schema, and shape it for a page. Framework-independent.",
   "license": "MIT",
+  "author": "cat-love-7 (https://github.com/cat-love-7)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cat-love-7/tsubame-cms.git",
