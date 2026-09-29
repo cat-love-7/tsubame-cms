@@ -4,6 +4,10 @@ A small package for rendering `Tsubame` **signed preview links** as pages withou
 through a build. It **depends on neither Gatsby nor React** (zero dependencies, just
 `fetch` and plain objects).
 
+Every `docs/...` and `scripts/...` path below is in the
+[Tsubame repository](https://github.com/cat-love-7/tsubame-cms) this package is published from; the
+package itself ships `src/` and this README.
+
 The full contract lives in `docs/preview-site.md`. This README covers usage and the API only.
 
 ## What it does

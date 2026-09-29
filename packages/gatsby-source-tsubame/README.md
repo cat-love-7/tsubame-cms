@@ -14,6 +14,10 @@ It is the thin plugin described under "Using it from Gatsby" in `docs/content-ap
 - **Images can become `File` nodes with `images.download`**, so `gatsby-transformer-sharp` +
   `gatsby-plugin-image` can produce `gatsbyImageData` (§5).
 
+Every `docs/...`, `scripts/...` and `packages/...` path below is in the
+[Tsubame repository](https://github.com/cat-love-7/tsubame-cms) this package is published from; the
+package itself ships `gatsby-node.js`, `src/` and this README.
+
 ## 1. Usage
 
 ```console
@@ -543,3 +547,24 @@ $ scripts/test-gatsby-build.sh
 
 Without that install the script says so and skips, the way the AWS half of `scripts/test-rust.sh`
 skips when the emulators are down.
+
+## 9. Developing it locally, and contributing
+
+The package lives at `packages/gatsby-source-tsubame` in the
+[Tsubame repository](https://github.com/cat-love-7/tsubame-cms); everything below is run from a
+checkout of it.
+
+**A CMS to read.** `scripts/demo.sh` starts the on-premises CMS with a sample site already in it
+(four categories, five articles, a home page) on `http://127.0.0.1:8080`, and throws the content
+away when you stop it. Pointing `apiUrl` at that address is enough to run a query against real
+content.
+
+**A site to read it with.** The three-file site `scripts/test-gatsby-build.sh` copies to a temporary
+directory is the smallest one there is; any Gatsby site with `apiUrl` set behaves the same way.
+
+**The tests** are §8, and `scripts/check-package-types.sh` checks the JSDoc types on top of them.
+CI runs both alongside the rest of the repository's suites.
+
+**Changes** go through a pull request, and `.github/pull_request_template.md` lists what one has to
+carry. `CONTRIBUTING.md` has the setup, the suites and the conventions a change is reviewed against;
+`SECURITY.md` says where to report a vulnerability privately rather than in an issue.
