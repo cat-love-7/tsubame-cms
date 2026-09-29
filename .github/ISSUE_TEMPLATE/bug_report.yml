@@ -1,0 +1,50 @@
+name: Bug report
+description: Something did what it should not, or did not do what it should
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A report with the steps, what happened and what you expected is worth more than a
+        description; a response body, a server log or a screenshot is worth more again.
+
+        **A security problem does not belong here** - [report it privately](https://github.com/cat-love-7/tsubame-cms/security/advisories/new),
+        as `SECURITY.md` says.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The steps in order, and what the screen or the API answered.
+      placeholder: |
+        1. Open the articles collection
+        2. Publish an item, then save it without changing anything
+        3. The list says the item has unpublished changes
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead, and why
+      description: If the behaviour is documented somewhere, say where - a doc that disagrees with the code is a bug in one of them.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: What you are running
+      description: The release or commit, and which half - the on-premises binary, or the AWS deployment. For a plugin, the package and version.
+      placeholder: '0.2.0, on-premises, Node 24'
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, responses, screenshots
+      description: Optional. Redact tokens, credentials and content you would rather not make public.
+      render: shell
+    validations:
+      required: false

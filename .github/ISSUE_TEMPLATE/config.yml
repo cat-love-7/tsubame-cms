@@ -1,0 +1,13 @@
+# Where else to go, offered before an issue is opened. `blank_issues_enabled` stays on: a question
+# or an idea that fits no template is still worth receiving.
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/cat-love-7/tsubame-cms/security/advisories/new
+    about: Privately, through the advisory form - not in a public issue (SECURITY.md).
+  - name: How to set it up, and what a change has to pass
+    url: https://github.com/cat-love-7/tsubame-cms/blob/master/CONTRIBUTING.md
+    about: The setup, the suites to run and the conventions a change is reviewed against.
+  - name: Run it locally
+    url: https://github.com/cat-love-7/tsubame-cms#run-it-locally
+    about: Two commands, or scripts/demo.sh for the same CMS with a sample site already in it.
