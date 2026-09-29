@@ -61,6 +61,13 @@ rkv = "0.20.0"
 lambda_http = "1.3.1"
 # `legacy-client` on aws-config is deliberate: it selects the rustls stack with the *ring*
 # provider. The default HTTPS client would pull aws-lc-rs, which needs CMake to build.
+#
+# The price is rustls 0.21, and with it rustls-webpki 0.101, which carries RustSec advisories
+# (RUSTSEC-2026-0049 among them: CRL matching) that no 0.101.x release fixes - the fix is in 0.103,
+# which this tree already uses for its own outbound TLS (`reqwest` above, through rustls 0.23). No
+# version of the AWS SDK that keeps `legacy-client` can be moved off it, which is why Dependabot's
+# attempt at exactly this failed, and why the alert is worth dismissing with that reason: the
+# alternative is aws-lc-rs, and therefore CMake, in the Lambda build.
 aws-config = { version = "1", default-features = false, features = [
     "behavior-version-latest",
     "rt-tokio",
