@@ -35,8 +35,8 @@ jobs:
       # for it; CI's own jobs run with a read-only token.
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -60,7 +60,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The notes are the changelog's section for this version, extracted rather than retyped.
       - run: scripts/changelog-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
       - name: Create or update the release
