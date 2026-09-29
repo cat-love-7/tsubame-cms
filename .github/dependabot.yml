@@ -52,6 +52,24 @@ updates:
       admin:
         patterns: ['*']
         update-types: ['minor', 'patch']
+      # The ten `@angular/*` packages are one version and peer-depend on each other, so a major is
+      # a change to all of them at once: ten separate pull requests would be ten broken trees, and
+      # each one red on its own.
+      angular:
+        patterns: ['@angular/*']
+        update-types: ['major']
+      # The coverage provider is the runner's other half and moves with it.
+      vitest:
+        patterns: ['vitest', '@vitest/coverage-v8']
+        update-types: ['major']
+    ignore:
+      # `@angular/compiler-cli@22.2.0` and `@angular/build@22.2.0` both peer-depend on
+      # `typescript: >=6.0 <6.1`, and `typescript-eslint@8.71.0` peers on `>=4.8.4 <6.1.0`, so a
+      # TypeScript 7 cannot be installed at all yet: the pull request that carried it failed on the
+      # peer resolution, which is a fact about Angular, not about us. Patches and minors inside 6.0
+      # still arrive; the major waits until Angular's range widens.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   # The plugin's manifest is only the Gatsby it runs its real build test against.
   - package-ecosystem: npm
@@ -62,6 +80,11 @@ updates:
       plugin:
         patterns: ['*']
         update-types: ['minor', 'patch']
+      # React and React DOM are one version too, and a tree with 19 and 18 in it is a broken pair -
+      # which is exactly how the two separate pull requests for them arrived, and why both failed.
+      react:
+        patterns: ['react', 'react-dom']
+        update-types: ['major']
 
   # The providers are pinned by `versions.tf` in each root; neither has a lock file to update.
   - package-ecosystem: terraform
