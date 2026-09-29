@@ -46,7 +46,7 @@ jobs:
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit. `rustfmt` is not part of the
       # default profile of a pinned toolchain, and the check below needs it.
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@v4
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
@@ -189,7 +189,7 @@ jobs:
       - uses: actions/checkout@v4
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           # The artifact is built for Graviton; nothing here runs it, but it has to build - and a
           # cross build is the kind of thing that rots quietly when only one machine ever does it.
@@ -229,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       # Pinned: `stable` moves under the build, and a night-time release should not be able to
       # break a branch nobody touched. Bumping it is a commit.
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
